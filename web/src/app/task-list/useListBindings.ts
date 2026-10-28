@@ -16,6 +16,15 @@ import type { RowActions } from './TaskListRow'
 import type { ListRoute } from './useListModel'
 import type { ListUi } from './useListShortcuts'
 
+/**
+ * The ids a row's actions menu acts on (task-row-context-menu): the ticked
+ * selection when the row is one of it, else just the row. Shared by every trigger
+ * — right-click, the keyboard's `.`, a touch hold's release.
+ */
+export function rowMenuIds(task: Task, ticked: ReadonlySet<string>): string[] {
+  return ticked.has(task.id) ? [...ticked] : [task.id]
+}
+
 export interface BindingContext {
   route: ListRoute
   rows: ListRow[]
@@ -43,6 +52,12 @@ export interface BindingContext {
   startInline?: (id: string, e?: React.MouseEvent) => boolean
   /** The row whose details are shown (row-expand D4): one per list, closed when the list changes. */
   setExpandedId: (update: (id: string | null) => string | null) => void
+  /** Opens the actions menu anchored at a pointer position (task-row-context-menu); stable. */
+  openContextMenu: (ids: string[], x: number, y: number) => void
+  /** Opens the row's actions menu for a task at a point: the right-click and a touch hold's release share this rule. */
+  openRowMenu: (task: Task, x: number, y: number) => void
+  /** While a row drag is lifted the right-click is ignored (the drag wins, ux-feedback-2 D4). */
+  draggingId: string | null
 }
 
 export function useListBindings(c: BindingContext): RowActions {
@@ -167,6 +182,14 @@ export function useListBindings(c: BindingContext): RowActions {
     expand: (id) => {
       setSelectedId(id)
       live.current.setExpandedId((cur) => (cur === id ? null : id))
+    },
+    context: (e, task) => {
+      // Right-click: the same actions menu the keyboard opens, at the pointer — the
+      // shared rule picks the ticked selection when the row is one of them, else
+      // just the row (task-row-context-menu).
+      e.preventDefault()
+      if (live.current.draggingId) return
+      live.current.openRowMenu(task, e.clientX, e.clientY)
     },
   }), [setSelectedId])
 }
