@@ -5213,7 +5213,6 @@
   "Thumbs up": "Pulgar arriba",
   "Thursday": "Jueves",
   "Tick every task in the list": "Marcar todas las tareas de la lista",
-  "Tick it and show every checkbox; Select tasks in the page menu does the same, Close hides them": "La marca y muestra todas las casillas; «Seleccionar tareas» en el menú de la página hace lo mismo, «Cerrar» las oculta",
   "Tick me off when you have read this": "Márcame cuando hayas leído esto",
   "Tick the selected task for a bulk action (Space with Vim keybindings on)": "Marcar la tarea seleccionada para una acción en bloque (Espacio con los atajos de Vim activados)",
   "Tick {title}": "Marcar {title}",
@@ -7082,5 +7081,6 @@
   "Your account is end-to-end encrypted. Imported text is written in plaintext until one of your unlocked devices re-encrypts it, and duplicates cannot be found by encrypted project or label names.": "Tu cuenta tiene cifrado de extremo a extremo. El texto importado se escribe en claro hasta que uno de tus dispositivos desbloqueados lo vuelva a cifrar, y no se pueden encontrar duplicados por nombres cifrados de proyectos o etiquetas.",
   "Suggest after adding": "Sugerir tras añadir",
   "This device: after an add, the assistant proposes a title, project, subtasks. You review.": "Este dispositivo: tras añadir, el asistente propone título, proyecto, subtareas. Tú revisas.",
-  "Suggest after adding (this device)": "Sugerir tras añadir (este dispositivo)"
+  "Suggest after adding (this device)": "Sugerir tras añadir (este dispositivo)",
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select tasks in the page menu does the same, Close hides them": "La marca y muestra todas las casillas (tocar el tirador del borde de la fila hace lo mismo); «Seleccionar tareas» en el menú de la página hace lo mismo, «Cerrar» las oculta"
 }

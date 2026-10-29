@@ -5213,7 +5213,6 @@
   "Thumbs up": "Pouce levé",
   "Thursday": "Jeudi",
   "Tick every task in the list": "Cocher toutes les tâches de la liste",
-  "Tick it and show every checkbox; Select tasks in the page menu does the same, Close hides them": "La coche et affiche toutes les cases ; « Sélectionner des tâches » dans le menu de la page fait de même, « Fermer » les masque",
   "Tick me off when you have read this": "Cochez-moi quand vous avez lu ceci",
   "Tick the selected task for a bulk action (Space with Vim keybindings on)": "Cocher la tâche sélectionnée pour une action groupée (Espace avec les raccourcis Vim activés)",
   "Tick {title}": "Cocher {title}",
@@ -7082,5 +7081,6 @@
   "Your account is end-to-end encrypted. Imported text is written in plaintext until one of your unlocked devices re-encrypts it, and duplicates cannot be found by encrypted project or label names.": "Votre compte est chiffré de bout en bout. Le texte importé est écrit en clair jusqu’à ce qu’un de vos appareils déverrouillés le chiffre à nouveau, et les doublons ne peuvent pas être trouvés par les noms chiffrés de projets ou d’étiquettes.",
   "Suggest after adding": "Suggérer après l’ajout",
   "This device: after an add, the assistant proposes a title, project, subtasks. You review.": "Cet appareil : après un ajout, l’assistant propose titre, projet, sous-tâches. Vous relisez.",
-  "Suggest after adding (this device)": "Suggérer après l’ajout (cet appareil)"
+  "Suggest after adding (this device)": "Suggérer après l’ajout (cet appareil)",
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select tasks in the page menu does the same, Close hides them": "La coche et affiche toutes les cases (un appui sur la poignée au bord de la ligne fait de même) ; « Sélectionner des tâches » dans le menu de la page fait de même, « Fermer » les masque"
 }

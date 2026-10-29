@@ -5213,7 +5213,6 @@
   "Thumbs up": "Pollice in su",
   "Thursday": "Giovedì",
   "Tick every task in the list": "Spunta tutte le attività dell’elenco",
-  "Tick it and show every checkbox; Select tasks in the page menu does the same, Close hides them": "La spunta e mostra tutte le caselle; «Seleziona attività» nel menu della pagina fa lo stesso, «Chiudi» le nasconde",
   "Tick me off when you have read this": "Spuntami quando hai letto questo",
   "Tick the selected task for a bulk action (Space with Vim keybindings on)": "Spunta l’attività selezionata per un’azione di gruppo (Spazio con le scorciatoie Vim attive)",
   "Tick {title}": "Spunta {title}",
@@ -7082,5 +7081,6 @@
   "Your account is end-to-end encrypted. Imported text is written in plaintext until one of your unlocked devices re-encrypts it, and duplicates cannot be found by encrypted project or label names.": "Il tuo account è cifrato end-to-end. Il testo importato viene scritto in chiaro finché uno dei tuoi dispositivi sbloccati non lo cifra di nuovo, e i duplicati non si trovano tramite i nomi cifrati di progetti o etichette.",
   "Suggest after adding": "Suggerisci dopo l’aggiunta",
   "This device: after an add, the assistant proposes a title, project, subtasks. You review.": "Questo dispositivo: dopo l’aggiunta, l’assistente propone titolo, progetto, sotto-attività. Controlli tu.",
-  "Suggest after adding (this device)": "Suggerisci dopo l’aggiunta (questo dispositivo)"
+  "Suggest after adding (this device)": "Suggerisci dopo l’aggiunta (questo dispositivo)",
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select tasks in the page menu does the same, Close hides them": "La spunta e mostra tutte le caselle (un tocco sulla maniglia al bordo della riga fa lo stesso); «Seleziona attività» nel menu della pagina fa lo stesso, «Chiudi» le nasconde"
 }
