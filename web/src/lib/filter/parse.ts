@@ -11,6 +11,8 @@ import { durationMinutes } from '../time'
 //   term    := "@" name | "##" name | "#" name | "p1".."p4"
 //            | ("due" | "created" | "deadline" | "start" | "completed") cmp date | keyword | "search:" text
 //            | "origin:" value                        (task origins, OpenSpec task-origin)
+//            | "energy:" ("deep" | "medium" | "low")   (task energy, OpenSpec task-energy)
+//            | "workspace:" name                      (workspaces, OpenSpec group-mentions)
 //            | "tracked" cmp duration                 (tracked time, OpenSpec time-tracking)
 //            | field cmp value | "no" field          (custom fields, OpenSpec custom-fields)
 //   date    := day | period   (a day is a period of one day; see resolveRange)
@@ -32,6 +34,8 @@ export type Token =
   | { type: 'priority'; value: Priority; pos: number; raw: string }
   | { type: 'search'; text: string; pos: number; raw: string }
   | { type: 'origin'; value: string; pos: number; raw: string }
+  | { type: 'energy'; value: 'deep' | 'medium' | 'low'; pos: number; raw: string }
+  | { type: 'workspace'; name: string; pos: number; raw: string }
   | { type: 'word'; value: string; pos: number; raw: string }
   | { type: 'string'; value: string; pos: number; raw: string }
 
@@ -138,10 +142,25 @@ export function tokenize(src: string): Token[] {
       out.push({ type: 'search', text, pos, raw: src.slice(pos, i) })
       continue
     }
+    if (/^workspace:/i.test(word)) {
+      const name = readPrefixed('workspace:')
+      if (!name) throw new FilterSyntaxError(t('Expected a workspace name after "workspace:" at position {pos}', { pos: pos + 1 }), pos, ['workspace name'])
+      out.push({ type: 'workspace', name, pos, raw: src.slice(pos, i) })
+      continue
+    }
     if (/^origin:/i.test(word)) {
       const value = readPrefixed('origin:')
       if (!value) throw new FilterSyntaxError(t('Expected a provider or kind after "origin:" at position {pos}', { pos: pos + 1 }), pos, ['origin'])
       out.push({ type: 'origin', value, pos, raw: src.slice(pos, i) })
+      continue
+    }
+    // `energy: deep|medium|low`, case ignored, quotes allowed (task-energy D5).
+    if (/^energy:/i.test(word)) {
+      const value = readPrefixed('energy:').toLowerCase()
+      if (value !== 'deep' && value !== 'medium' && value !== 'low') {
+        throw new FilterSyntaxError(t('Energy must be deep, medium or low at position {pos}', { pos: pos + 1 }), pos, ['"deep"', '"medium"', '"low"'])
+      }
+      out.push({ type: 'energy', value, pos, raw: src.slice(pos, i) })
       continue
     }
     const pm = /^p([1-4])$/i.exec(word)
@@ -156,7 +175,7 @@ export function tokenize(src: string): Token[] {
 
 // ---- AST ----
 
-export type Keyword = 'overdue' | 'today' | 'tomorrow' | 'no date' | 'no project' | 'no labels' | 'no time' | 'no deadline' | 'no start' | 'someday' | 'deferred' | 'evening' | 'completed' | 'open' | 'subtask' | 'blocked' | 'unblocked' | 'habit' | 'origin' | 'no origin' | 'tracked'
+export type Keyword = 'overdue' | 'today' | 'tomorrow' | 'no date' | 'no project' | 'no labels' | 'no time' | 'no deadline' | 'no start' | 'someday' | 'deferred' | 'evening' | 'morning' | 'afternoon' | 'completed' | 'open' | 'subtask' | 'blocked' | 'unblocked' | 'available' | 'habit' | 'origin' | 'no origin' | 'tracked' | 'energy' | 'no energy'
 
 /**
  * today = 0, tomorrow = 1, yesterday = -1, `N days` = N, `N days ago` = -N.
@@ -183,6 +202,10 @@ export type Node =
   | { kind: 'search'; text: string }
   /** `origin: value`: the origin's provider, else its kind, equals value ignoring case (task-origin). */
   | { kind: 'origin'; value: string }
+  /** `energy: value`: the task's energy equals value (task-energy D5). */
+  | { kind: 'energy'; value: 'deep' | 'medium' | 'low' }
+  /** `workspace: name`: the task's workspace has that name, ignoring case (group-mentions D6). */
+  | { kind: 'workspace'; name: string; pos: number }
   /** `name cmp value` over a custom field (custom-fields); `opPos` places type errors. */
   | { kind: 'field'; name: string; op: Cmp; value: FieldValueExpr; pos: number; opPos: number }
   /** `no name`: a project defining the field, no value. */
@@ -198,8 +221,8 @@ export type FieldValueExpr =
   | { type: 'date'; date: DateExpr }
 
 export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
-const SIMPLE_KEYWORDS = new Set<Keyword>(['overdue', 'today', 'tomorrow', 'completed', 'open', 'subtask', 'someday', 'deferred', 'evening', 'blocked', 'unblocked', 'habit', 'origin'])
-const NO_KEYWORDS = ['date', 'project', 'labels', 'time', 'deadline', 'start', 'origin'] as const
+const SIMPLE_KEYWORDS = new Set<Keyword>(['overdue', 'today', 'tomorrow', 'completed', 'open', 'subtask', 'someday', 'deferred', 'evening', 'morning', 'afternoon', 'blocked', 'unblocked', 'available', 'habit', 'origin', 'energy'])
+const NO_KEYWORDS = ['date', 'project', 'labels', 'time', 'deadline', 'start', 'origin', 'energy'] as const
 /** Words that start a date expression in a field term's value; a number starts one only before a unit. */
 const DATE_STARTS = new Set(['today', 'tomorrow', 'yesterday', 'this', 'last', 'next'])
 const DATE_UNITS = new Set(['days', 'week', 'weeks', 'month', 'months'])
@@ -207,11 +230,31 @@ const CMP_EXPECTED =['"<"', '"<="', '"="', '">="', '">"', '"before"', '"after"']
 
 // ---- parser ----
 
+/**
+ * The limits on a query (OpenSpec change filter-limits), the same as MaxQueryLength
+ * and MaxNesting in internal/filter: the longest query in characters (code points),
+ * and the deepest nesting of "(" and "!", each of which opens one level.
+ */
+export const MAX_QUERY_LENGTH = 4096
+export const MAX_NESTING = 64
+
+function codePoints(s: string): number {
+  let n = 0
+  for (const _ of s) n++
+  return n
+}
+
 /** Parse a query. Returns null for an empty (whitespace-only) query; throws FilterSyntaxError otherwise. */
 export function parse(src: string): Node | null {
+  // Code points, like the server: a UTF-16 length within the limit is always within it.
+  if (src.length > MAX_QUERY_LENGTH) {
+    const count = codePoints(src)
+    if (count > MAX_QUERY_LENGTH) throw new FilterSyntaxError(t('Query is too long: {count} characters, at most {max}', { count, max: MAX_QUERY_LENGTH }), MAX_QUERY_LENGTH, [])
+  }
   const tokens = tokenize(src)
   if (tokens.length === 0) return null
   let i = 0
+  let depth = 0
   const end = src.length
 
   const peek = (): Token | undefined => tokens[i]
@@ -245,20 +288,30 @@ export function parse(src: string): Node | null {
     return items.length === 1 ? items[0] : { kind: 'and', items }
   }
 
+  /** Opens one nesting level at `tok` ("(" or "!"), refusing one beyond MAX_NESTING. */
+  const enter = (tok: Token): void => {
+    if (++depth > MAX_NESTING) fail(t('Too deeply nested at position {pos}; use at most {max} levels of "(" and "!"', { pos: tok.pos + 1, max: MAX_NESTING }), tok.pos, [])
+  }
+
   function parseNot(prev: Token | undefined): Node {
     const tok = peek()
     if (!tok) return missingTerm(prev)
     if (tok.type === 'not') {
       i++
-      return { kind: 'not', item: parseNot(tok) }
+      enter(tok)
+      const item = parseNot(tok)
+      depth--
+      return { kind: 'not', item }
     }
     if (tok.type === 'lparen') {
       i++
+      enter(tok)
       const inner = parseOr(tok)
       const close = peek()
       if (!close) return fail(t('Missing ")" at end of query'), end, ['")"'])
       if (close.type !== 'rparen') return fail(t('Expected "&", "|" or ")" before "{before}" at position {pos}', { before: close.raw, pos: close.pos + 1 }), close.pos, ['"&"', '"|"', '")"'])
       i++
+      depth--
       return inner
     }
     return parseTerm(prev)
@@ -282,6 +335,12 @@ export function parse(src: string): Node | null {
       case 'origin':
         i++
         return { kind: 'origin', value: tok.value }
+      case 'energy':
+        i++
+        return { kind: 'energy', value: tok.value }
+      case 'workspace':
+        i++
+        return { kind: 'workspace', name: tok.name, pos: tok.pos }
       case 'word':
         return parseWordTerm(tok)
       case 'string':
@@ -563,6 +622,10 @@ export function printQuery(n: Node): string {
       return `search: ${quote(n.text)}`
     case 'origin':
       return `origin: ${quote(n.value)}`
+    case 'energy':
+      return `energy: ${n.value}`
+    case 'workspace':
+      return `workspace: ${quote(n.name)}`
     case 'field':
       // Field names are always quoted: a bare one could collide with a reserved word.
       return `${quoteAlways(n.name)} ${n.op} ${printFieldValue(n.value)}`

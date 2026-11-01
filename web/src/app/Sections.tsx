@@ -1,13 +1,21 @@
 // Section headings, per-section quick add and "Add section" (OpenSpec `board-view`).
 // Shared by the grouped list and the board columns. Every write goes through
 // lib/sections, so all of it works offline and converges like any other edit.
-import { CatalogueIcon, HUES, hueFor, IconButton, IconPicker, isCatalogueIcon, ListGroupHeader } from '../ui'
+import { CatalogueIcon, HUES, hueFor, Icon, IconButton, IconPicker, isCatalogueIcon, ListGroupHeader } from '../ui'
 import { hueName } from '../lib/colourNames'
-import { ActionMenu, type ActionGroup } from './menus/ActionMenu'
+import { ActionMenu, type ActionGroup, type ActionItem } from './menus/ActionMenu'
+import { sectionFlowItem } from './menus/flowMenu'
+import { useMethodMode } from '../lib/method/mode'
+import { useProjects } from '../lib/localData'
 import { colourPickerSpec, iconPickerSpec } from './menus/stylePickers'
 import { useRowMenuShortcut } from './menus/useRowMenuShortcut'
-import { type FormEvent, type KeyboardEvent, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useRef, useState } from 'react'
 import { createTask } from '../lib/ops'
+import { preferredPlacement } from '../lib/userPrefs'
+import { selectTask } from './signals'
+import { addTasksUndoable } from '../lib/pasteTasks'
+import { showBulkToast } from './bulk/toastStore'
+import { announceIfOutOfSight } from './task-list/announceAdded'
 import { createSection, deleteSection, renameSection, reorderSection, setSectionStyle } from '../lib/sections'
 import type { Label, Project, Section } from '../lib/types'
 import { QuickAdd, type QuickAddInput } from './QuickAdd'
@@ -16,7 +24,7 @@ import { act } from './actionError'
 
 /** The section menu as data (labels-and-menus 3.1). */
 export function sectionMenuGroups(title: string, o: { first: boolean; last: boolean; layout: 'list' | 'board'; count: number },
-  a: { rename: () => void; move: (delta: -1 | 1) => unknown; remove: () => unknown; section?: Section }): ActionGroup[] {
+  a: { rename: () => void; move: (delta: -1 | 1) => unknown; remove: () => unknown; section?: Section; flow?: ActionItem | null }): ActionGroup[] {
   const board = o.layout === 'board'
   const section = a.section
   // Colour and icon (icons-and-section-style): steps inside the same overlay.
@@ -37,7 +45,7 @@ export function sectionMenuGroups(title: string, o: { first: boolean; last: bool
     } },
   ] : []
   return [
-    { items: [{ kind: 'action', id: 'rename', label: t('Rename'), icon: 'pencil', shortcut: 'F2', onSelect: a.rename }, ...style] },
+    { items: [{ kind: 'action', id: 'rename', label: t('Rename'), icon: 'pencil', shortcut: 'F2', onSelect: a.rename }, ...style, ...(a.flow ? [a.flow] : [])] },
     { items: [
       { kind: 'action', id: 'before', label: board ? t('Move left') : t('Move up'), icon: 'arrow-up', disabled: o.first, reason: t('Already first'), onSelect: () => a.move(-1) },
       { kind: 'action', id: 'after', label: board ? t('Move right') : t('Move down'), icon: 'arrow-down', disabled: o.last, reason: t('Already last'), onSelect: () => a.move(1) },
@@ -118,8 +126,12 @@ export function SectionHeader({ section, count, layout, editable, first, last, c
   }
   const [menuOpen, setMenuOpen] = useState(false)
   const startRename = () => { if (section) { setName(section.name); setRenaming(true) } }
+  // "Flow…" (project-flow-modes D7): for whoever may rename the section.
+  const mode = useMethodMode()
+  const project = useProjects().find((p) => p.id === section?.project_id)
   const groups = section ? sectionMenuGroups(title, { first, last, layout, count }, {
     section,
+    flow: sectionFlowItem(section, project, { mode, canEdit: editable }),
     rename: startRename,
     move: (d) => reorderSection(section.id, d),
     remove: () => deleteSection(section.id),
@@ -145,7 +157,7 @@ export function SectionHeader({ section, count, layout, editable, first, last, c
   // section with only completed tasks keeps its header with "n completed" and Show.
   return (
     <div data-section-heading={section?.id ?? ''} onKeyDown={editable && section && !renaming ? onRowKey : undefined}>
-      <ListGroupHeader title={titleNode} count={count} tone={section ? 'default' : 'muted'}
+      <ListGroupHeader title={titleNode} count={count} countTone={layout === 'board' ? 'muted' : 'faint'} bar={layout !== 'board'} kind={section ? 'named' : 'generated'}
         collapsed={collapsed} onToggle={onToggleCollapse}
         note={count === 0 && completed > 0 ? (
           <span className="flex items-center gap-1">
@@ -178,19 +190,37 @@ export function SectionQuickAdd({ project, sectionId, sectionName, projects, lab
   labels: Label[]
   onClose: () => void
 }) {
+  const root = useRef<HTMLDivElement>(null)
   const onAdd = async ({ project_id, ...rest }: QuickAddInput) => {
     // A #project typed in the line wins; the section only applies inside this project.
     const target = project_id ?? project.id
-    await createTask({ ...rest, project_id: target, section_id: target === project.id ? sectionId : null })
+    // Top or bottom of the section or column (add-position D3).
+    const placement = await preferredPlacement()
+    const id = await createTask({ ...rest, placement, project_id: target, section_id: target === project.id ? sectionId : null })
+    // Out of sight in a long section or column: say where it went (add-position D5).
+    const list = root.current?.closest<HTMLElement>('[data-list-page]')
+    if (target === project.id && list) void announceIfOutOfSight(id, { list: sectionName, placement, root: list, select: (x) => selectTask.request(x) })
+  }
+  // A pasted list (paste-to-tasks D3): every line in this section unless it names a #project; one batch, one Undo.
+  const onAddMany = async (inputs: QuickAddInput[]) => {
+    const placement = await preferredPlacement()
+    const added = await addTasksUndoable(inputs.map(({ project_id, ...rest }) => {
+      const target = project_id ?? project.id
+      return { ...rest, project_id: target, section_id: target === project.id ? sectionId : null }
+    }), { placement })
+    showBulkToast(added.label, added.undoId)
   }
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
   }
   return (
-    <div className="px-1 py-1" onKeyDown={onKeyDown} onBlur={(e) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node | null) && !(e.target as HTMLInputElement).value) onClose()
+    <div ref={root} className="px-1 py-1" onKeyDown={onKeyDown} onBlur={(e) => {
+      // Focus moving into the paste offer (an overlay) is not leaving the add row.
+      const to = e.relatedTarget as Element | null
+      if (to?.closest?.('[data-overlay-root]')) return
+      if (!e.currentTarget.contains(to) && !(e.target as HTMLInputElement).value) onClose()
     }}>
-      <QuickAdd onAdd={onAdd} projects={projects} labels={labels} hideHint autoFocus placeholder={t('Add a task to {sectionName}…', { sectionName })} label={t('Add a task to {sectionName}', { sectionName })} />
+      <QuickAdd onAdd={onAdd} onAddMany={onAddMany} projects={projects} labels={labels} hideHint autoFocus placeholder={t('Add a task to {sectionName}…', { sectionName })} label={t('Add a task to {sectionName}', { sectionName })} />
     </div>
   )
 }
@@ -206,14 +236,20 @@ export function AddSection({ projectId, layout }: { projectId: string; layout: '
     await createSection(projectId, name)
   }
   if (!open) {
+    // On the board, a dashed column the height of the board (precision-boards-timeline D4).
+    if (layout === 'board') return (
+      <button type="button" className="ui-column-add" data-add-section onClick={() => setOpen(true)}>
+        <Icon name="plus" size="sm" />{t('Add a section')}
+      </button>
+    )
     return (
-      <button type="button" className={`ui-btn ui-btn--ghost ui-btn--sm text-meta text-muted ${layout === 'board' ? 'w-72 shrink-0 justify-start self-start' : ''}`} onClick={() => setOpen(true)}>
+      <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm text-meta text-muted" onClick={() => setOpen(true)}>
         {t('+ Add section')}
       </button>
     )
   }
   return (
-    <form onSubmit={(e) => void submit(e)} className={layout === 'board' ? 'w-72 shrink-0 self-start' : 'max-w-xs'}>
+    <form onSubmit={(e) => void submit(e)} className={layout === 'board' ? 'ui-column-add' : 'max-w-xs'}>
       <input className="ui-input py-1 text-body" autoFocus placeholder={t('Section name, Enter to add')} aria-label={t('New section name')} value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); setName('') } }}

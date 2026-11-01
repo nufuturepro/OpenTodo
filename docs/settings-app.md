@@ -16,12 +16,18 @@ The **App** group of [Settings](settings.md) is about how the app behaves. Setti
 
 ## General
 
-- **Language**: the language of the app on all your devices. See [The app in your language](language.md).
-- **Start view**: the view this device opens on, including **Display: Today** and **Display: Upcoming** for a tablet or a wall panel; a project or saved view display is pinned from the display's own menu. See [Views](views.md#choose-where-the-app-opens) and [Display mode](display-mode.md).
-- **Date and time**: how dates and times look and where weeks start, on all your devices (see below).
-- **Calendar**: when the Day and Week grid starts and ends, and how long your working day is. See [Time blocking](time-blocking.md#adjust-the-grid).
-- **Keyboard**: **Show shortcut hints** prints the keys in the app itself (next to quick add, beside the sidebar's destinations, in prompts) as well as in tooltips and menus, and **Vim keybindings** turns the Vim layer on; both for this device. See [Keyboard shortcuts](keyboard.md#vim-keybindings).
-- **Focus**: the timer of the [Focus](focus.md) screen, its lengths and breaks, the break reminder and the sound, on all your devices.
+- **Start view and briefing**: the start view is the view this device opens on, including **Display: Today** and **Display: Upcoming** for a wall panel. See [Views](views.md#choose-where-the-app-opens) and [Display mode](display-mode.md). **Show the briefing**: the sentence under Today's title.
+- **Keyboard**: **Show shortcut hints** prints the keys in the app itself as well as in tooltips, and **Vim keybindings** turns the Vim layer on; both for this device. See [Keyboard shortcuts](keyboard.md#vim-keybindings).
+- **Focus timer**: the [Focus](focus.md) timer, its lengths, breaks, sound, presets and noise, on all your devices (the noise volume is per device).
+- **Maps**: maps and address search on your devices, if the owner allows. See [Locations and places](locations-and-places.md).
+
+## Language and region
+
+All following your account:
+
+- **Language**: the language of the app. See [The app in your language](language.md).
+- **Date and time**: how dates and times look and where weeks start (see below).
+- **Calendar grid**: the Day and Week grid's hours, your day length, and whether meetings count toward it. See [Time blocking](time-blocking.md#adjust-the-grid).
 
 ### Date and time
 
@@ -36,13 +42,13 @@ The **Preview** shows which day is today, a due date, a date, a due time, a comm
 
 ## Notifications
 
-Push notifications for reminders on this device, and a test that shows whether they arrive. See [Notifications](notifications.md) and [Push notifications](push-notifications.md).
+**Push notifications** for reminders on this device, and a test that shows whether they arrive. See [Notifications](notifications.md) and [Push notifications](push-notifications.md). **Delivery channels**: [ntfy, Pushover, Gotify or a webhook](notification-channels.md).
 
 **Weekly digest**: an email on the day you choose with last week's numbers; it needs outgoing email from the server owner. See [the weekly digest](statistics.md#weekly-digest-by-email).
 
 ## Capture
 
-- **Quick add**: turn natural-language parsing on or off, pick the languages it understands, and the order of day and month in dates like `12/11`. See [Quick add syntax](quick-add.md#languages).
+- **Quick add**: turn natural-language parsing on or off, and pick the languages it understands. Dates like `12/11` follow your date format. See [Quick add syntax](quick-add.md#languages).
 - **Voice capture**: dictate tasks into quick add. Off until you turn it on, and the app explains first what your browser does with the audio. See [Quick add syntax](quick-add.md#voice).
 - **Bookmarklet and extension**: the **Add to OpenTodo** bookmarklet, to save the page you're reading as a task. See [Capturing pages](capture.md).
-- **Email to task**: your own secret address; an email sent there becomes an Inbox task, with the subject as its title, the text as its description and the attachment names listed, up to an hourly limit. Anyone who knows the address can add tasks, so keep it private: **New address…** replaces it, and the old one stops working at once. See [Email to task](email.md).
+- **Email to task**: your own secret address; an email sent there becomes an Inbox task, with the subject as its title, the text as its description and the attachment names listed, up to an hourly limit. Anyone who knows the address can add tasks, so keep it private: **New address** replaces it, and the old one stops working at once. See [Email to task](email.md).

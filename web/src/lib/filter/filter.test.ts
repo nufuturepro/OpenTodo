@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import filtersDoc from '../../../../docs/filters.md?raw'
 import type { Label, Project, Task } from '../types'
-import { compile, mentionsState, runFilter, type FilterContext } from './evaluate'
-import { FilterSyntaxError, parse, printQuery, resolveDate, tokenize, type Node } from './parse'
+import { compile, mentionsState, runFilter, withCompletedTasks, type FilterContext } from './evaluate'
+import { FilterSyntaxError, MAX_NESTING, MAX_QUERY_LENGTH, parse, printQuery, resolveDate, tokenize, type Node } from './parse'
+import limits from '../../../../internal/filter/testdata/limits.json'
 import { originSuggestions } from './suggest'
 
 /** Canonical, fully parenthesised form of a query. */
@@ -193,7 +194,7 @@ describe('parse: errors', () => {
     expect(errorOf('p0 | p1').message).toBe('Priority must be p1, p2, p3 or p4 at position 1')
     expect(errorOf('"milk"').message).toBe('Unexpected text "milk" at position 1; quote names after "@" or "#", or use search:')
     expect(errorOf('no').message).toBe('Expected "date", "project", "labels", "time", "deadline", "start", "origin" or a field name after "no" at position 1')
-    expect(errorOf('no').expected).toEqual(['"date"', '"project"', '"labels"', '"time"', '"deadline"', '"start"', '"origin"', 'field name'])
+    expect(errorOf('no').expected).toEqual(['"date"', '"project"', '"labels"', '"time"', '"deadline"', '"start"', '"origin"', '"energy"', 'field name'])
   })
 
   it('reports incomplete date terms', () => {
@@ -207,6 +208,27 @@ describe('parse: errors', () => {
     expect(errorOf('due > 7').message).toBe('Expected "days", "weeks" or "months" after "7" at position 7')
     expect(errorOf('due > 7 day').message).toBe('Expected "days", "weeks" or "months" after "7" at position 7')
     expect(errorOf('due > 7 days ago ago').message).toBe('Expected "&" or "|" before "ago" at position 18')
+  })
+})
+
+describe('parse: limits (OpenSpec filter-limits)', () => {
+  const query = (v: (typeof limits.vectors)[number]) => v.prefix + v.repeat.repeat(v.times) + v.suffix + v.close.repeat(v.closeTimes)
+
+  it('uses the limits of the server parser', () => {
+    expect([MAX_QUERY_LENGTH, MAX_NESTING]).toEqual([limits.maxQueryLength, limits.maxNesting])
+  })
+
+  it('accepts and refuses the shared vectors with the server messages', () => {
+    for (const v of limits.vectors) {
+      const q = query(v)
+      if (v.error === null) expect(() => parse(q), q.slice(0, 40)).not.toThrow()
+      else expect(errorOf(q).message, q.slice(0, 40)).toBe(v.error)
+    }
+  })
+
+  it('shows completed tasks for a query at the nesting limit', () => {
+    const ast = parse('('.repeat(MAX_NESTING) + 'p1' + ')'.repeat(MAX_NESTING))!
+    expect(printQuery(withCompletedTasks(ast))).toBe(printQuery(parse('p1 & (open | completed)')!))
   })
 })
 
@@ -497,6 +519,17 @@ describe('evaluate: start, Someday and evening (OpenSpec someday-and-evening 4.1
   it('#Home & evening, whatever the date', () => {
     expect(ids('#Home & evening', L, ctx)).toEqual(['home-evening'])
   })
+  it('#Home & morning matches the stored part, not a morning due time (day-parts)', () => {
+    const M: Task[] = [
+      task('home-morning', { project_id: 'p-home', day_part: 'morning' }),
+      task('home-nine', { project_id: 'p-home', due: { date: '2026-10-14', time: '09:00' } }),
+      task('home-old-evening', { project_id: 'p-home', day_part: 'morning', evening: true }),
+      task('home-afternoon', { project_id: 'p-home', day_part: 'afternoon' }),
+    ]
+    expect(ids('#Home & morning', M, ctx)).toEqual(['home-morning'])
+    expect(ids('afternoon', M, ctx)).toEqual(['home-afternoon'])
+    expect(ids('evening', M, ctx)).toEqual(['home-old-evening'])
+  })
   it('someday, no start, and start never matching parked or empty starts', () => {
     expect(ids('someday', L, ctx)).toEqual(['wait-parked'])
     expect(ids('no start & @call', L, ctx)).toEqual(['wait-plain'])
@@ -531,6 +564,39 @@ describe('evaluate: habits (OpenSpec habits 4.3)', () => {
     expect(show('habit&!overdue')).toBe('(habit & !overdue)')
     const ast = parse('habit | @call')!
     expect(stripPos(parse(printQuery(ast))!)).toEqual(stripPos(ast))
+  })
+})
+
+describe('evaluate: energy terms (OpenSpec task-energy 2.3)', () => {
+  const L: Task[] = [
+    task('deep-work', { project_id: 'p-work', energy: 'deep' }),
+    task('deep-done', { energy: 'deep', completed_at: at('2026-10-09') }),
+    task('low-today', { energy: 'low', due: { date: '2026-10-10' } }),
+    task('low-later', { energy: 'low', due: { date: '2026-10-20' } }),
+    task('medium', { energy: 'medium' }),
+    task('none', { energy: '' }),
+    task('future', { energy: 'high' }),
+    task('legacy'),
+  ]
+  it('energy: value matches the open tasks with that energy, case ignored', () => {
+    expect(ids('energy: deep', L)).toEqual(['deep-work'])
+    expect(ids('energy:DEEP & #Work', L)).toEqual(['deep-work'])
+    expect(ids('energy: "low" & today', L)).toEqual(['low-today'])
+  })
+  it('energy and no energy; an unknown value reads as none', () => {
+    expect(ids('energy', L)).toEqual(sorted('deep-work', 'low-today', 'low-later', 'medium'))
+    expect(ids('no energy', L)).toEqual(sorted('none', 'future', 'legacy'))
+  })
+  it('an unknown value is an error naming the three', () => {
+    expect(() => parse('energy: high')).toThrow('Energy must be deep, medium or low at position 1')
+  })
+  it('energy is a reserved word: a field named energy needs its quoted name', () => {
+    expect(parse('energy')).toEqual({ kind: 'keyword', keyword: 'energy' })
+    expect(() => parse('energy = x')).toThrow(FilterSyntaxError)
+    expect(parse('"energy" = x')).toMatchObject({ kind: 'field', name: 'energy' })
+  })
+  it('round-trips through printing', () => {
+    expect(printQuery(parse('energy:Low & no energy')!)).toBe('(energy: low & no energy)')
   })
 })
 
@@ -713,7 +779,7 @@ describe('docs examples', () => {
   })
 
   it('every row of the error table produces exactly the documented message', () => {
-    const section = filtersDoc.slice(filtersDoc.indexOf('## Errors'), filtersDoc.indexOf('## The Filter view'))
+    const section = filtersDoc.slice(filtersDoc.indexOf('## Errors'), filtersDoc.indexOf('## The New view page'))
     const rows = [...section.matchAll(/^\| `(.+?)` \| `(.+?)` \|$/gm)].map((m) => [m[1], m[2]].map((s) => s.replace(/\\\|/g, '|')))
     expect(rows.length).toBeGreaterThanOrEqual(5)
     for (const [q, msg] of rows) expect(errorOf(q).message, q).toBe(msg)
@@ -758,5 +824,32 @@ describe('blocked and unblocked (task-dependencies)', () => {
       expect(stripPos(parse(printQuery(ast))!)).toEqual(stripPos(ast))
     }
     expect(compile(parse('blocked')!, CTX).warnings).toEqual(['Blocked tasks cannot be told apart here'])
+  })
+})
+
+describe('available (project-flow-modes)', () => {
+  const projects = [...PROJECTS, project('p-move', 'Move house', null, { flow_mode: 'sequential' })]
+  const tasks: Task[] = [
+    task('van', { title: 'Book van', project_id: 'p-move', position: 1, labels: ['l-call'] }),
+    task('pack', { title: 'Pack kitchen', project_id: 'p-move', position: 2, labels: ['l-call'], due: { date: TODAY } }),
+    task('keys', { title: 'Hand over keys', project_id: 'p-move', position: 3 }),
+    task('phone', { title: 'Phone bank', labels: ['l-call'] }),
+    task('parked', { title: 'Parked', start: 'someday', labels: ['l-call'] }),
+  ]
+  const ctx: FilterContext = { ...CTX, projects, tasks }
+  it('What can be done now: only the current step of a sequential project', () => {
+    expect(ids('available & @Call', tasks, ctx)).toEqual(['phone', 'van'])
+  })
+  it('Waiting step is not blocked', () => {
+    expect(ids('!available & unblocked & !someday', tasks, ctx)).toEqual(['keys', 'pack'])
+    expect(ids('blocked', tasks, ctx)).toEqual([])
+  })
+  it('completing the current step makes the next one available at the next evaluation', () => {
+    const after = tasks.map((t) => (t.id === 'van' ? { ...t, completed_at: at('2026-10-10') } : t))
+    expect(ids('available & today', after, { ...ctx, tasks: after })).toEqual(['pack'])
+  })
+  it('round-trips through printQuery', () => {
+    const ast = parse('available & !available')!
+    expect(stripPos(parse(printQuery(ast))!)).toEqual(stripPos(ast))
   })
 })

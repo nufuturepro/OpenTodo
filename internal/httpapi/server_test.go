@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -15,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/webhook"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
+	"github.com/OpenTodoApp/opentodo/internal/webhook"
 )
 
 type env struct {
@@ -34,6 +33,11 @@ type env struct {
 	// hooks and clock drive the webhook worker deterministically.
 	hooks *webhook.Service
 	clock *testClock
+	// server is the Server behind handler, when the env was built by newEnvWith;
+	// do waits for the work its handlers leave running.
+	server *Server
+	// now is the server's own clock (WithClock): real time until a test freezes it.
+	now *stepClock
 }
 
 func newEnv(t *testing.T, allowSignup bool) *env {
@@ -52,18 +56,53 @@ func newEnvWith(t *testing.T, allowSignup bool, opts ...Option) *env {
 	}
 	t.Cleanup(func() { db.Close() })
 	cfg := config.Config{SessionTTL: time.Hour, AllowSignup: allowSignup, DataDir: dir}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	syncSvc := opsync.NewService(db)
 	clock := &testClock{t: time.UnixMilli(1_760_000_000_000)}
-	hooks := webhook.New(db, syncSvc, webhook.Options{Version: "test", Log: log, Now: clock.Now, Rand: func() float64 { return 0.5 }})
-	syncSvc.SetObserver(hooks.Observe)
-	h := New(cfg, auth.NewService(db, cfg.SessionTTL, allowSignup), syncSvc, nil, log, "test", append([]Option{WithWebhooks(hooks)}, opts...)...)
+	set := testSet(t, cfg, db, services.Options{WebhookOptions: func(o *webhook.Options) {
+		o.Now, o.Rand = clock.Now, func() float64 { return 0.5 }
+	}})
+	syncSvc, hooks := set.Sync, set.Hooks
+	var server *Server
+	opts = append(opts, func(s *Server) { server = s })
+	now := &stepClock{}
+	h := New(set, nil, append([]Option{WithClock(now.Now)}, opts...)...)
 	srv := httptest.NewServer(h)
+	// Open event streams would otherwise hold srv.Close (testSet closes them first).
 	t.Cleanup(srv.Close)
-	// Open event streams would otherwise hold srv.Close; mirror main.go's shutdown hook.
-	t.Cleanup(syncSvc.Notifier().CloseAll)
 	jar, _ := cookiejar.New(nil)
-	return &env{t: t, srv: srv, client: &http.Client{Jar: jar}, db: db, handler: h, sync: syncSvc, hooks: hooks, clock: clock}
+	return &env{t: t, srv: srv, client: &http.Client{Jar: jar}, db: db, handler: h, sync: syncSvc, hooks: hooks, clock: clock, server: server, now: now}
+}
+
+// stepClock is the server's clock in tests: time.Now until Freeze, then a fixed
+// time that moves one millisecond per reading, so every timestamp the server takes
+// is distinct and ordered without sleeping (T2).
+type stepClock struct {
+	mu     gosync.Mutex
+	frozen bool
+	t      time.Time
+}
+
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.frozen {
+		return time.Now()
+	}
+	c.t = c.t.Add(time.Millisecond)
+	return c.t
+}
+
+// Freeze pins the clock at t; each later reading is one millisecond on.
+func (c *stepClock) Freeze(t time.Time) {
+	c.mu.Lock()
+	c.frozen, c.t = true, t
+	c.mu.Unlock()
+}
+
+// Advance moves a frozen clock forward by d.
+func (c *stepClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
 }
 
 // testClock is the injectable clock handed to the webhook worker.
@@ -104,6 +143,9 @@ func (e *env) do(method, path string, body any, headers ...string) (*http.Respon
 		e.t.Fatal(err)
 	}
 	defer resp.Body.Close()
+	if e.server != nil {
+		e.server.background.Wait()
+	}
 	var out map[string]any
 	raw, _ := io.ReadAll(resp.Body)
 	if len(raw) > 0 {
@@ -168,7 +210,7 @@ func TestFirstRunSetupThenSignupClosed(t *testing.T) {
 
 func newClientFor(e *env) *env {
 	jar, _ := cookiejar.New(nil)
-	return &env{t: e.t, srv: e.srv, client: &http.Client{Jar: jar}, db: e.db}
+	return &env{t: e.t, srv: e.srv, client: &http.Client{Jar: jar}, db: e.db, server: e.server}
 }
 
 // newClientAt is newClientFor with its own client address for rate limiting.

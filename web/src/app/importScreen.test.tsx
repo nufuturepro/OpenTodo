@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_OPTIONS, ImportView, type ImportViewProps } from './ImportScreen'
 import { parseRoute, routePath } from './router'
-import type { ImportJob, ImportPreview, ImportTotals, Project } from '../lib/types'
+import type { ImportJob, ImportPreview, ImportTotals, Project, Workspace } from '../lib/types'
 
 const noop = () => {}
 const project = (id: string, name: string, parent_id: string | null = null): Project =>
@@ -23,7 +23,7 @@ const job = (j: Partial<ImportJob>): ImportJob => ({
 function render(p: Partial<ImportViewProps> = {}) {
   const props: ImportViewProps = {
     offline: false, fileName: null, format: '', options: { ...DEFAULT_OPTIONS, targetProject: '' },
-    projects: [work, client], zones: ['Europe/Rome'], preview: null, busy: false, error: null,
+    projects: [work, client], workspaces: [], workspace: '', onWorkspace: noop, zones: ['Europe/Rome'], preview: null, busy: false, error: null,
     job: null, jobs: [], onPickFile: noop, onFormat: noop, onOption: noop, onPreview: noop, onStart: noop, onUndo: noop,
     ...p,
   }
@@ -73,12 +73,12 @@ describe('ImportView', () => {
   it('shows section, recurrence and reminder counts, notes and the section option', () => {
     const preview: ImportPreview = {
       format: 'opentodo', options: {}, truncated: false, version: 1,
-      totals: totals({ rows: 6, create: 6, newSections: 2, recurring: 1, reminders: 3, deadlines: 2 }),
+      totals: totals({ rows: 6, create: 6, newSections: 2, recurring: 1, reminders: 3, deadlines: 2, fields: 1 }),
       rows: [{ kind: 'section', title: 'Doing', outcome: 'create' }],
       notes: ['4 comments are not imported: a comment keeps its author'],
     }
     const html = render({ preview, fileName: 'opentodo-export.json' })
-    expect(html).toContain('2 new sections · 1 recurring · 3 reminders · 2 with deadlines')
+    expect(html).toContain('2 new sections · 1 recurring · 3 reminders · 2 with deadlines · 1 new field')
     expect(html).toContain('4 comments are not imported')
     expect(html).toContain('Keep as sections')
     expect(html).toMatch(/<option value="section" selected="">Keep as sections/)
@@ -112,7 +112,9 @@ describe('import route', () => {
 
   it('offers the named app formats and shows archive entry names (named-importers)', () => {
     const html = render()
-    for (const label of ['Todoist backup (ZIP)', 'Todoist project (CSV)', 'Things 3 database', 'TickTick backup (CSV)', 'Linear export (CSV)']) {
+    for (const label of ['Todoist backup (ZIP)', 'Todoist project (CSV)', 'Things 3 database', 'TickTick backup (CSV)', 'Linear export (CSV)',
+      'Google Tasks (Takeout JSON)', 'Trello board (JSON)', 'Asana project (CSV)', 'Microsoft To Do (JSON from the PowerShell script)',
+      'Apple Reminders (JSON from the Shortcut)', 'Any.do (JSON from a data request)']) {
       expect(html).toContain(label)
     }
     const preview: ImportPreview = {
@@ -133,6 +135,40 @@ describe('import route', () => {
     expect(html).toContain('From a template…')
     expect(html).not.toContain('Importing it creates it once.</p>')
     expect(render({ preview: { ...preview, template: undefined } })).not.toContain('data-template-hint')
+  })
+
+  describe('workspace choice (import-workspace)', () => {
+    const ws = (id: string, name: string, isDefault = false): Workspace => ({ id, name, icon: '', color: '', default: isDefault, role: 'owner', ownerId: 'me' })
+    const both = [ws('w1', 'Personal', true), ws('w2', 'Work')]
+    const csvPreview = (newProjects: number): ImportPreview => ({
+      format: 'csv', options: {}, truncated: false, totals: totals({ rows: 3, create: 3, newProjects }), rows: [],
+    })
+
+    it('is hidden with one workspace and names no target', () => {
+      const html = render({ workspaces: [both[0]], workspace: 'w1', preview: csvPreview(2) })
+      expect(html).not.toContain('data-import-workspace')
+      expect(html).not.toContain('data-import-into')
+    })
+
+    it('lists the workspaces, shows the chosen one and names it in the preview', () => {
+      const html = render({ workspaces: both, workspace: 'w2', preview: csvPreview(12) })
+      expect(html).toMatch(/<select class="ui-input" data-import-workspace="true">/)
+      expect(html).toContain('<option value="w2" selected="">Work</option>')
+      expect(html).not.toContain('As in the export')
+      expect(html).toContain('12 new projects into Work')
+      expect(render({ workspaces: both, workspace: 'w2', preview: csvPreview(0) })).toContain('Everything goes into Work')
+    })
+
+    it('offers As in the export for an own export', () => {
+      const own: ImportPreview = { ...csvPreview(1), format: 'opentodo' }
+      const html = render({ workspaces: both, workspace: '', preview: own })
+      expect(html).toContain('<option value="" selected="">As in the export</option>')
+      expect(html).not.toContain('data-import-into')
+    })
+
+    it('is disabled offline', () => {
+      expect(render({ workspaces: both, workspace: 'w1', offline: true })).toMatch(/<select class="ui-input" disabled="" data-import-workspace="true">/)
+    })
   })
 })
 

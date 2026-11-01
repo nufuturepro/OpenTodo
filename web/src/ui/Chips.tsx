@@ -1,21 +1,21 @@
 // The metadata language of rows and cards (OpenSpec change ux-overhaul,
 // task-list-presentation "Metadata language", design D7): three styles only.
 // `ToneText` for a date or a deadline (a tone, an optional icon, the text),
-// `LabelChip` for a label (its colour dot and name; `LabelDots` for all of a
-// row's labels in Calm rows, calm-rows D6) and `NeutralChip` for a count
-// or a name (estimate, subtask progress, comments, attachments, project), in the
+// `LabelChip` for a label (its colour dot and name; `LabelChips` for a row's labels,
+// rows-v2 D5: the only pills of a row) and `NeutralChip` for a count or a name in
+// the task panel and settings (rows use muted text instead, rows-v2 D4), in the
 // metadata size with tabular figures, never a monospace face. Icons in chips are
 // 12 px ("Secondary text is one size").
 //
 // A chip's full phrase ("3 comments", "Has notes") is visually hidden text inside it,
 // never an aria-label: a span has no role, so screen readers ignore a name on it
 // (OpenSpec assistive-tech-semantics; the lint rule a11y/no-generic-aria-label).
-import type { ReactNode } from 'react'
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react'
 import { Icon, type IconName } from './Icon'
 import { Tooltip } from './Tooltip'
 import { t } from '../lib/i18n'
 
-export type Tone = 'danger' | 'success' | 'warning' | 'accent' | 'violet' | 'indigo' | 'muted' | 'faint'
+export type Tone = 'danger' | 'success' | 'warning' | 'accent' | 'violet' | 'indigo' | 'default' | 'muted' | 'faint'
 
 /**
  * Text read differently than it is shown: the visible text is hidden from assistive
@@ -41,6 +41,7 @@ const TONE: Record<Tone, string> = {
   accent: 'text-accent',
   violet: 'text-(--ot-hue-violet-text)',
   indigo: 'text-(--ot-hue-indigo-text)',
+  default: 'text-default',
   muted: 'text-muted',
   faint: 'text-faint',
 }
@@ -109,36 +110,82 @@ export function LabelChip({ name, color, onRemove, className }: LabelChipProps) 
   )
 }
 
-export interface LabelDotsProps {
+export interface LabelChipsProps {
   /** The task's labels in its order (already resolved). */
   labels: readonly { id: string; name: string; color: string }[]
-  /** A label left out because its own view is open (calm-rows D3). */
+  /** A label left out because its own view is open (the omission table). */
   omit?: string
+  /** Chips shown before "+n" (rows-v2 D5: two). */
+  max?: number
+  /** One line with as many chips as its width holds, then "+n" (row-layouts D2); `max` is ignored. */
+  fit?: boolean
+}
+
+/** Room kept for "+n" while measuring, in px. */
+const MORE_W = 28
+const CHIP_GAP = 4
+
+/**
+ * How many of a group's chips fit its width on one line (row-layouts D2): every chip
+ * stays in the page to be measured, the ones past the count are taken out of the flow.
+ * Without a measurable width (tests, before layout) every chip counts as fitting.
+ */
+function useChipsThatFit(ref: RefObject<HTMLElement | null>, total: number, on: boolean): number {
+  const [n, setN] = useState(total)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!on || !el) return
+    const measure = () => {
+      const avail = el.clientWidth
+      const widths = [...el.querySelectorAll<HTMLElement>('[data-fit-chip]')].map((c) => c.offsetWidth)
+      if (!avail || widths.every((w) => w === 0)) return setN(total)
+      let used = 0
+      let fit = 0
+      for (let i = 0; i < widths.length; i++) {
+        const next = used + (i ? CHIP_GAP : 0) + widths[i]
+        const room = i < widths.length - 1 ? CHIP_GAP + MORE_W : 0
+        if (next + room > avail) break
+        used = next
+        fit++
+      }
+      // One chip always shows (truncated by its maximum width), so a label is never only "+n".
+      setN(Math.max(1, fit))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, total, on])
+  return on ? Math.min(n, total) : total
 }
 
 /**
- * A row's labels in Calm rows (OpenSpec change calm-rows, design D6; labels "Assign
- * and unassign labels"): one 6 px colour dot per label in the task's order, the first
- * name and "+n" for the rest. Every name is read by assistive technology; when some
- * are hidden, the group takes keyboard focus and a tooltip shows them all on hover
- * and focus. Nothing is rendered when no label is left.
+ * A row's labels (rows-v2 D5, task-list-presentation "Metadata language"): the only
+ * chips of a row, each with its colour dot and name, at most `max`, then "+n". The
+ * group is read as "Labels: a, b, c" with every name in order, and while it has
+ * hidden names it is a tab stop whose tooltip lists them all.
  */
-export function LabelDots({ labels, omit }: LabelDotsProps) {
+export function LabelChips({ labels, omit, max = 2, fit = false }: LabelChipsProps) {
   const shown = omit ? labels.filter((l) => l.id !== omit) : labels
+  const ref = useRef<HTMLSpanElement>(null)
+  const fitting = useChipsThatFit(ref, shown.length, fit)
   if (shown.length === 0) return null
   const names = shown.map((l) => l.name).join(', ')
-  const spoken = t('Labels: {names}', { names })
-  const more = shown.length - 1
+  const count = fit ? fitting : max
+  const more = shown.length - count
   const group = (
-    <span role="group" data-label-dots="" tabIndex={more > 0 ? 0 : undefined}
-      className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-chip text-meta text-muted outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-      <span aria-hidden="true" className="inline-flex shrink-0 items-center gap-0.5">
-        {shown.map((l) => <span key={l.id} data-label-dot="" className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: l.color }} />)}
-      </span>
-      <ReadAs label={spoken}>
-        <span className="truncate">{shown[0].name}</span>
-        {more > 0 && <span className="tabular-nums" data-label-more="">{` +${more}`}</span>}
-      </ReadAs>
+    // The chips wrap in a narrow row (a dashboard panel), or keep one line when they fit
+    // (row-layouts D2); the full list is read once, as visually hidden text, while the
+    // chips themselves are hidden from assistive technology.
+    <span ref={ref} role="group" data-label-chips="" data-fit={fit ? '' : undefined} tabIndex={more > 0 ? 0 : undefined}
+      className={`relative inline-flex max-w-full min-w-0 items-center gap-1 rounded-chip outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-focus ${fit ? 'w-full flex-nowrap overflow-hidden' : 'flex-wrap'}`}>
+      <span className="sr-only">{t('Labels: {names}', { names })}</span>
+      {(fit ? shown : shown.slice(0, max)).map((l, i) => (
+        <span key={l.id} aria-hidden="true" data-fit-chip={fit ? '' : undefined}
+          className={`inline-flex max-w-full min-w-0 ${fit && i >= count ? 'invisible absolute' : ''} ${fit ? 'shrink-0' : ''}`}><LabelChip name={l.name} color={l.color} className="max-w-32" /></span>
+      ))}
+      {more > 0 && <span aria-hidden="true" className="text-meta tabular-nums text-muted" data-label-more="">+{more}</span>}
     </span>
   )
   return more > 0 ? <Tooltip label={names} side="top">{group}</Tooltip> : group

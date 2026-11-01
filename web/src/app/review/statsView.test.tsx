@@ -10,8 +10,9 @@ import { setDateTime } from '../../lib/dates'
 import { createProject, createTask, resetDeviceId } from '../../lib/ops'
 import { compute, periodFor, PERIOD_LABELS } from '../../lib/stats'
 import type { ActivityEntry } from '../../lib/types'
-import { click, flush, key, render } from '../../ui/test-utils'
-import { panelTaskId, resetPanel } from '../panel'
+import { click, key, render, waitFor } from '../../ui/test-utils'
+import { resetPanel } from '../panel'
+import { openedTask, resetTaskPage } from '../taskPage.testkit'
 import { StatsContent, StatsView } from './StatsView'
 
 const NOW = new Date(2026, 9, 14, 12, 0) // Wednesday 14 October 2026
@@ -19,6 +20,7 @@ const at = (d: number, h = 10, month = 9) => new Date(2026, month, d, h).getTime
 
 let fetchSpy: ReturnType<typeof vi.fn>
 beforeEach(async () => {
+  resetTaskPage()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   await db.delete()
@@ -34,14 +36,9 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
   resetPanel()
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const tile = (root: ParentNode, k: string) => root.querySelector(`[data-tile="${k}"] [data-tile-value]`)?.textContent ?? ''
 
 async function seedWeek(): Promise<string> {
@@ -115,11 +112,26 @@ describe('Statistics dashboard', () => {
     await r.unmount()
   })
 
+  it('Surfaces: tiles are cards with the display figure; panels are flat, with no border or shadow class of their own (surfaces-v2)', async () => {
+    const r = await render(<StatsContent tasks={[]} projects={[]} memberships={[]} me="u1" today="2026-10-14" weekStart={1} period="this-week" />)
+    for (const tl of r.container.querySelectorAll('[data-tile]')) {
+      expect(tl.className).toContain('surface-card')
+      expect(tl.querySelector('[data-tile-value]')!.className).toMatch(/\btext-display\b.*\btabular-nums\b/)
+    }
+    const panels = [...r.container.querySelectorAll('[data-panel]')]
+    expect(panels.length).toBe(6)
+    for (const p of panels) {
+      expect(p.className).toContain('ui-section-flat')
+      expect(p.className).not.toMatch(/\b(rounded-card|shadow-\d|border-dashed|border-input|surface-card)\b/)
+    }
+    await r.unmount()
+  })
+
   it('Phone: tiles wrap to two per row, panels stack in one column, the heatmap scrolls inside its figure', async () => {
     const r = await render(<StatsContent tasks={[]} projects={[]} memberships={[]} me="u1" today="2026-10-14" weekStart={1} period="this-week" />)
     const tiles = r.container.querySelector('[data-testid="stats-tiles"]')!.className
     expect(tiles).toMatch(/\bgrid-cols-1\b/)
-    expect(tiles).toMatch(/min-\[340px\]:grid-cols-2/)
+    expect(tiles).toMatch(/min-\[21.25rem\]:grid-cols-2/)
     expect(tiles).toMatch(/\blg:grid-cols-4\b/)
     expect(r.container.querySelector('[data-testid="stats-panels"]')!.className).toMatch(/\bgrid-cols-1 .*lg:grid-cols-2/)
     const heatmap = r.container.querySelector('[data-heatmap]')!
@@ -192,7 +204,7 @@ describe('keeps slipping', () => {
     expect(panel.textContent).toContain("Based on this device's history")
     expect(panel.textContent).toContain('Inbox · moved 3 times')
     await click(panel.querySelector(`[data-slipping="${id}"]`)!)
-    expect(panelTaskId()).toBe(id)
+    expect(openedTask()).toBe(id)
     expect(fetchSpy).not.toHaveBeenCalled()
     await r.unmount()
   })

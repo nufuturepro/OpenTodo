@@ -1,6 +1,7 @@
 import { errorMessage } from './i18n/errors'
 import { t } from './i18n/catalog'
 import { fetchWithTimeout, NetworkError, RequestTimeoutError, timeouts } from './http'
+import type { Branding } from './branding'
 import type { AssistantSkill } from './assistantSkills'
 import type { AgentAccess, ApiToken, McpStatus, TokenScope } from './assistants'
 import type { AssistantStatus } from './assistantStatus'
@@ -9,12 +10,20 @@ import type { KeyRecord } from './crypto'
 import type { RelayDevice } from './relay'
 import type { AssertionJSON, CreationOptionsJSON, RegistrationJSON, RequestOptionsJSON } from './passkeys'
 import type {
+  Profile,
+  SpeechService,
+  SpeechSettings,
+  SpeechSettingsInput,
   ConfigWarning,
   AppPassword, CaldavSetting, EmailDigest, EmailDigestInput, EmailInbox,
-  AccountRole, ActivityPage, AttachmentLimits, AttachmentSettings, CalendarEvent, CalendarFeed, CalendarSubscription, AdminUser, AppNotification, AuditEvent, AuditFilters, AuditSettings, AuthStatus, LinkedIdentity, OidcSettings, OidcSettingsInput, OidcStatus, OidcTestResult, BackupSecretFlags, BackupSecretUpdate, BackupSettings, BackupStatus, RestoreArchive, RestoreSource, RestoreState, StagedRestore, ImportJob, ImportOptions, ImportPreview, Invitation, InvitationPreview, LoginResult, HistoryPage, PendingSignup, SmtpSettings, SmtpSettingsInput, SmtpTestResult, Membership, MfaPolicy, ProjectInvite, ProjectInvitePreview, MfaStatus, Op, Passkey, ProjectRole, PurgeCounts, PushSubscriptionStatus, PushTestResponse, ResetPreview, SyncResponse, TrustedDevice, User, PublicLink, PublicList,
+  AccountRole, ActivityPage, AttachmentLimits, AttachmentSettings, StorageStatus, CalendarEvent, CalendarFeed, CalendarSubscription, AdminUser, AppNotification, AuditEvent, AuditFilters, AuditSettings, AuthStatus, LinkedIdentity, OidcSettings, OidcSettingsInput, OidcStatus, OidcTestResult, BackupSecretFlags, BackupSecretUpdate, BackupSettings, BackupStatus, RestoreArchive, RestoreSource, RestoreState, StagedRestore, ImportJob, ImportOptions, ImportPreview, Invitation, InvitationPreview, LoginResult, HistoryPage, PendingSignup, SmtpSettings, SmtpSettingsInput, SmtpTestResult, Membership, MfaPolicy, ProjectInvite, ProjectInvitePreview, MfaStatus, Op, Passkey, ProjectRole, PurgeCounts, PushSubscriptionStatus, PushTestResponse, ResetPreview, SyncResponse, TrustedDevice, User, PublicLink, PublicList,
+  MemberInvitation, PendingAnswer,
   Webhook, WebhookDelivery, WebhookEvent, WebhookInput, IssueActionResult, IssueConnection, IssueConnectionInput,
+  CalendarConnection, CalendarConnectionPatch, CalendarSyncRun, GoogleClientSetting,
   OwnTaskPage, PublishTaskPageInput, TaskPageCreated, TaskPageStatus,
+  AutomationsSetting, RuleRun, RulesStatus,
 } from './types'
+import { createSignal } from './store'
 
 export { fetchWithTimeout, isTransientNetworkError, NetworkError, RequestTimeoutError, setRequestTimeouts, transferTimeoutMs } from './http'
 
@@ -61,7 +70,7 @@ export interface MapsSetting {
 }
 let reauthHandler: ReauthHandler | null = null
 let reauthInFlight: Promise<boolean> | null = null
-const enrolmentListeners = new Set<() => void>()
+const enrolment = createSignal()
 
 /** Registers the re-authentication prompt; returns an unregister function. */
 export function setReauthHandler(h: ReauthHandler): () => void {
@@ -72,9 +81,16 @@ export function setReauthHandler(h: ReauthHandler): () => void {
 }
 
 /** Subscribes to "this session must enrol a second factor"; returns an unsubscribe function. */
-export function onEnrolmentRequired(fn: () => void): () => void {
-  enrolmentListeners.add(fn)
-  return () => enrolmentListeners.delete(fn)
+export const onEnrolmentRequired = enrolment.subscribe
+
+/**
+ * Opens the registered re-authentication prompt without a refused request, for
+ * flows that leave the app (linking a provider account starts with a
+ * navigation, so the prompt has to come first). Resolves false when nobody is
+ * listening or the user cancelled.
+ */
+export function promptReauth(): Promise<boolean> {
+  return reauthenticate()
 }
 
 function reauthenticate(): Promise<boolean> {
@@ -92,7 +108,7 @@ interface RequestOptions { signal?: AbortSignal }
 /** Sync protocol additions this client supports (POST /api/v1/sync `features`). */
 export const SYNC_FEATURES = ['clock_skew', 'backfill_ack']
 
-async function request<T>(method: string, path: string, body?: unknown, retried = false, opts: RequestOptions = {}): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown, retried = false, opts: RequestOptions = {}): Promise<T> {
   try {
     return await send<T>(method, path, body, opts)
   } catch (err) {
@@ -100,7 +116,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
       if (err.code === 'reauth_required' && !retried && (await reauthenticate())) {
         return request<T>(method, path, body, true, opts)
       }
-      if (err.code === 'mfa_enrolment_required') enrolmentListeners.forEach((fn) => fn())
+      if (err.code === 'mfa_enrolment_required') enrolment.notify()
     }
     throw err
   }
@@ -123,6 +139,12 @@ async function upload<T>(path: string, file: Blob, filename: string, options: Im
   form.append('options', JSON.stringify(options))
   form.append('file', file, filename)
   const res = await fetchWithTimeout(path, { method: 'POST', body: form, credentials: 'same-origin', timeoutMs: timeouts.transfer })
+  return parse<T>(res)
+}
+
+/** A raw body upload (the profile picture, a recorded phrase; their routes need no recent confirmation). */
+async function sendRaw<T>(method: 'PUT' | 'POST', path: string, body: Blob, timeoutMs?: number): Promise<T> {
+  const res = await fetchWithTimeout(path, { method, headers: { 'Content-Type': body.type || 'application/octet-stream' }, body, credentials: 'same-origin', ...(timeoutMs ? { timeoutMs } : {}) })
   return parse<T>(res)
 }
 
@@ -212,6 +234,19 @@ async function parse<T>(res: Response): Promise<T> {
   return data as T
 }
 
+/**
+ * One owner switch at /api/v1/settings/<name>: `get` reads it and `put` sets
+ * `{ [field]: on }`. The client side of the server's `switchRoutes`
+ * (internal/httpapi/switch.go); every switch route goes through it.
+ */
+export function ownerSwitch<Get = { enabled: boolean }, Put = Get>(name: string, field = 'enabled') {
+  const path = `/api/v1/settings/${name}`
+  return {
+    get: () => request<Get>('GET', path),
+    put: (on: boolean) => request<Put>('PUT', path, { [field]: on }),
+  }
+}
+
 export const api = {
   authStatus: () => request<AuthStatus>('GET', '/api/v1/auth/status'),
   /** Hosted servers only: the owner's download of the whole server (multi-tenant-host). */
@@ -239,7 +274,7 @@ export const api = {
   reauth: (input: { password: string } | { code: string }) =>
     request<{ reauthAt: number; validForMs: number }>('POST', '/api/v1/auth/reauth', input, true),
   /** `config_warnings` is present for the owner's session only (trusted-proxies-lenient). */
-  me: () => request<{ user: User; mfa: MfaStatus; config_warnings?: ConfigWarning[]; attachments?: AttachmentLimits; maps?: boolean }>('GET', '/api/v1/me'),
+  me: () => request<{ user: User; mfa: MfaStatus; config_warnings?: ConfigWarning[]; attachments?: AttachmentLimits; maps?: boolean; agent_excluded_projects?: string[]; speech?: SpeechService }>('GET', '/api/v1/me'),
   mfaStatus: () => request<{ mfa: MfaStatus }>('GET', '/api/v1/mfa'),
   enrollTotp: () => request<{ secret: string; uri: string; expiresAt: number }>('POST', '/api/v1/mfa/totp/enroll', {}),
   confirmTotp: (code: string) => request<{ recoveryCodes: string[]; mfa: MfaStatus }>('POST', '/api/v1/mfa/totp/confirm', { code }),
@@ -269,9 +304,20 @@ export const api = {
       features: SYNC_FEATURES, ...(backfillAck > 0 ? { backfillAck } : {}),
     }, false, { signal }),
   // Project sharing: membership is server-side authorization data, changed only through these routes.
+  // Keep a project away from AI assistants (agent-planning-fields D9).
+  getProjectAgentAccess: (projectId: string) => request<{ kept_away: boolean; inherited_from: string | null }>('GET', `/api/v1/projects/${encodeURIComponent(projectId)}/agent-access`),
+  setProjectAgentAccess: (projectId: string, keptAway: boolean) => request<{ kept_away: boolean; inherited_from: string | null }>('PUT', `/api/v1/projects/${encodeURIComponent(projectId)}/agent-access`, { kept_away: keptAway }),
   listMembers: (projectId: string) => request<Membership>('GET', `/api/v1/projects/${encodeURIComponent(projectId)}/members`),
+  /** 201 with the membership, or 202 `{pending: true}` when the person is asked first (member-add-consent). */
   addMember: (projectId: string, email: string, role: ProjectRole) =>
-    request<Membership>('POST', `/api/v1/projects/${encodeURIComponent(projectId)}/members`, { email, role }),
+    request<Membership | PendingAnswer>('POST', `/api/v1/projects/${encodeURIComponent(projectId)}/members`, { email, role }),
+  cancelProjectInvitation: (projectId: string, invitationId: string) =>
+    request<void>('DELETE', `/api/v1/projects/${encodeURIComponent(projectId)}/member-invitations/${encodeURIComponent(invitationId)}`),
+  // Membership invitations sent to this account (member-add-consent).
+  listMemberInvitations: () => request<{ invitations: MemberInvitation[] }>('GET', '/api/v1/me/member-invitations'),
+  acceptMemberInvitation: (id: string) =>
+    request<{ kind: MemberInvitation['kind']; targetId: string; role: MemberInvitation['role'] }>('POST', `/api/v1/me/member-invitations/${encodeURIComponent(id)}/accept`, {}),
+  declineMemberInvitation: (id: string) => request<void>('POST', `/api/v1/me/member-invitations/${encodeURIComponent(id)}/decline`, {}),
   setMemberRole: (projectId: string, userId: string, role: ProjectRole) =>
     request<Membership>('PATCH', `/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, { role }),
   removeMember: (projectId: string, userId: string) =>
@@ -333,8 +379,7 @@ export const api = {
   }),
   deleteEncryptionKeys: () => request<void>('DELETE', '/api/v1/encryption/keys'),
   purgeEncryptionHistory: () => request<{ purged: number; notice: string }>('POST', '/api/v1/encryption/purge-history'),
-  caldavSetting: () =>request<CaldavSetting>('GET', '/api/v1/settings/caldav'),
-  setCaldavEnabled: (enabled: boolean) => request<CaldavSetting>('PUT', '/api/v1/settings/caldav', { enabled }),
+  caldavSwitch: ownerSwitch<CaldavSetting>('caldav'),
   listAppPasswords: () => request<{ appPasswords: AppPassword[] }>('GET', '/api/v1/app-passwords'),
   createAppPassword: (name: string) => request<{ appPassword: AppPassword; secret: string }>('POST', '/api/v1/app-passwords', { name }),
   revokeAppPassword: (id: string) => request<void>('DELETE', `/api/v1/app-passwords/${encodeURIComponent(id)}`),
@@ -390,9 +435,7 @@ export const api = {
   previewProjectInvite: (token: string) => request<ProjectInvitePreview>('GET', `/api/v1/project-invites/${encodeURIComponent(token)}`),
   acceptProjectInvite: (token: string) =>
     request<{ projectId: string; role: ProjectRole }>('POST', `/api/v1/project-invites/${encodeURIComponent(token)}/accept`, {}),
-  getProjectInviteSettings: () => request<{ membersCanInviteNewPeople: boolean }>('GET', '/api/v1/settings/project-invites'),
-  putProjectInviteSettings: (membersCanInviteNewPeople: boolean) =>
-    request<{ membersCanInviteNewPeople: boolean }>('PUT', '/api/v1/settings/project-invites', { membersCanInviteNewPeople }),
+  projectInvitesSwitch: ownerSwitch<{ membersCanInviteNewPeople: boolean }>('project-invites', 'membersCanInviteNewPeople'),
 
   // User administration (OpenSpec `user-management`): owner and admins. Every
   // mutating route is a sensitive one (reauth_required is answered by the
@@ -456,9 +499,14 @@ export const api = {
   // owner's settings travel over these routes.
   uploadAttachment: (id: string, blob: Blob, onProgress?: (fraction: number) => void) => uploadAttachmentContent(id, blob, onProgress),
   attachmentSettings: () => request<AttachmentSettings>('GET', '/api/v1/settings/attachments'),
+  storageStatus: () => request<StorageStatus>('GET', '/api/v1/settings/storage'),
+  // Instance branding (instance-branding): the owner's name and logo.
+  brandingSettings: () => request<Branding>('GET', '/api/v1/settings/branding'),
+  putBrandingName: (name: string) => request<Branding>('PUT', '/api/v1/settings/branding', { name }),
+  putBrandingLogo: (logo: Blob) => sendRaw<Branding>('PUT', '/api/v1/settings/branding/logo', logo),
+  deleteBrandingLogo: () => request<Branding>('DELETE', '/api/v1/settings/branding/logo'),
   // Calendar feeds (OpenSpec calendar-feeds).
-  calendarFeedsSetting: () => request<{ enabled: boolean }>('GET', '/api/v1/settings/calendar-feeds'),
-  setCalendarFeedsSetting: (enabled: boolean) => request<{ enabled: boolean }>('PUT', '/api/v1/settings/calendar-feeds', { enabled }),
+  calendarFeedsSwitch: ownerSwitch('calendar-feeds'),
   calendarSubscriptions: () => request<{ subscriptions: CalendarSubscription[] }>('GET', '/api/v1/calendar-feeds/subscriptions'),
   createCalendarSubscription: (body: { url: string; name?: string; color?: string }) =>
     request<{ subscription: CalendarSubscription }>('POST', '/api/v1/calendar-feeds/subscriptions', body),
@@ -472,6 +520,20 @@ export const api = {
   calendarFeed: () => request<{ feed: CalendarFeed | null }>('GET', '/api/v1/calendar-feeds/feed'),
   rotateCalendarFeed: () => request<{ feed: CalendarFeed; url: string }>('POST', '/api/v1/calendar-feeds/feed'),
   revokeCalendarFeed: () => request<void>('DELETE', '/api/v1/calendar-feeds/feed'),
+  // Calendar sync (OpenSpec change calendar-two-way): connections are server data, never ops.
+  calendarSyncSwitch: ownerSwitch<{ enabled: boolean; google: boolean; max_connections: number }, { enabled: boolean }>('calendar-sync'),
+  getGoogleClient: () => request<GoogleClientSetting>('GET', '/api/v1/settings/calendar-sync/google'),
+  putGoogleClient: (body: { client_id: string; client_secret?: string }) => request<GoogleClientSetting>('PUT', '/api/v1/settings/calendar-sync/google', body),
+  listCalendarConnections: () => request<{ connections: CalendarConnection[] }>('GET', '/api/v1/calendar-sync/connections'),
+  createCalendarConnection: (body: { server_url: string; username: string; password: string; name?: string }) =>
+    request<{ connection: CalendarConnection }>('POST', '/api/v1/calendar-sync/connections', body),
+  patchCalendarConnection: (id: string, body: CalendarConnectionPatch) =>
+    request<{ connection: CalendarConnection }>('PATCH', `/api/v1/calendar-sync/connections/${encodeURIComponent(id)}`, body),
+  deleteCalendarConnection: (id: string) => request<void>('DELETE', `/api/v1/calendar-sync/connections/${encodeURIComponent(id)}`),
+  syncCalendarConnection: (id: string) =>
+    request<{ ok: boolean; reason?: string; run?: CalendarSyncRun; connection: CalendarConnection }>('POST', `/api/v1/calendar-sync/connections/${encodeURIComponent(id)}/sync`),
+  startGoogleCalendar: (connectionId?: string) =>
+    request<{ url: string }>('POST', '/api/v1/calendar-sync/google/start', connectionId ? { connection_id: connectionId } : {}),
   // Issue import (OpenSpec issue-connections): connections are server data, never ops.
   /** Maps (task-locations): address search and reverse search through the server's map proxy. */
   mapSearch: (q: string, lang: string) =>
@@ -480,8 +542,12 @@ export const api = {
     request<{ result: MapResult | null }>('GET', `/api/v1/maps/reverse?lat=${lat}&lon=${lon}&lang=${encodeURIComponent(lang)}`),
   getMapsSetting: () => request<MapsSetting>('GET', '/api/v1/settings/maps'),
   putMapsSetting: (s: { enabled: boolean; tiles_url?: string; geocoder_url?: string }) => request<MapsSetting>('PUT', '/api/v1/settings/maps', s),
-  getIssuesSetting: () => request<{ enabled: boolean }>('GET', '/api/v1/settings/issues'),
-  putIssuesSetting: (enabled: boolean) => request<{ enabled: boolean }>('PUT', '/api/v1/settings/issues', { enabled }),
+  /** Automation rules (automation-rules): the server's state, run log and switches; the rules themselves sync. */
+  myRules: () => request<RulesStatus>('GET', '/api/v1/me/rules'),
+  ruleRuns: (id: string) => request<{ runs: RuleRun[] }>('GET', `/api/v1/rules/${encodeURIComponent(id)}/runs`),
+  pauseRules: (paused: boolean) => request<{ enabled: boolean; paused: boolean }>('PUT', '/api/v1/me/rules/paused', { paused }),
+  automationsSwitch: ownerSwitch<AutomationsSetting>('automations'),
+  issuesSwitch: ownerSwitch('issues'),
   listIssueConnections: () => request<{ connections: IssueConnection[] }>('GET', '/api/v1/issues/connections'),
   createIssueConnection: (body: IssueConnectionInput) => request<{ connection: IssueConnection }>('POST', '/api/v1/issues/connections', body),
   patchIssueConnection: (id: string, body: IssueConnectionInput) =>
@@ -502,6 +568,20 @@ export const api = {
   getAuditSettings: () => request<AuditSettings>('GET', '/api/v1/settings/audit'),
   updateAuditSettings: (patch: Partial<AuditSettings>) => request<AuditSettings>('PUT', '/api/v1/settings/audit', patch),
   myActivity: () => request<{ events: AuditEvent[] }>('GET', '/api/v1/me/activity'),
+  // Profile (settings-refresh D10): server account data, every call needs a connection.
+  profile: () => request<Profile>('GET', '/api/v1/me/profile'),
+  renameProfile: (name: string) => request<Profile>('PATCH', '/api/v1/me/profile', { name }),
+  changeEmail: (email: string) => request<Profile>('POST', '/api/v1/me/email', { email }),
+  cancelEmailChange: () => request<Profile>('DELETE', '/api/v1/me/email'),
+  confirmEmail: (token: string) => request<Profile>('POST', '/api/v1/me/email/confirm', { token }),
+  putAvatar: (picture: Blob) => sendRaw<Profile>('PUT', '/api/v1/me/avatar', picture),
+  deleteAvatar: () => request<Profile>('DELETE', '/api/v1/me/avatar'),
+  // Speech to text (settings-refresh D7): the owner's service, and one phrase through it.
+  speechSettings: () => request<SpeechSettings>('GET', '/api/v1/settings/stt'),
+  updateSpeechSettings: (input: SpeechSettingsInput) => request<SpeechSettings>('PUT', '/api/v1/settings/stt', input),
+  testSpeechSettings: (draft: SpeechSettingsInput) => request<{ ok: boolean; text?: string; error?: string }>('POST', '/api/v1/settings/stt/test', draft),
+  transcribe: (phrase: Blob, language: string, seconds: number) =>
+    sendRaw<{ text: string }>('POST', `/api/v1/voice/transcribe?language=${encodeURIComponent(language)}&seconds=${Math.ceil(seconds)}`, phrase, 40_000),
 
   // Import runs on the server (docs/import.md): preview is a dry run, start returns a running job.
   previewImport: (file: Blob, filename: string, options: ImportOptions) =>

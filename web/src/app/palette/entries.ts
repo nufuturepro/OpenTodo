@@ -24,6 +24,8 @@ export interface Entry {
   /** "completed", "archived": shown as a badge, ranked after the rest of its kind. */
   marker?: string
   icon?: IconName
+  /** A catalogue icon drawn instead of `icon` once known (a saved view's own, sidebar-polish D4); `icon` is the fallback. */
+  catalogueIcon?: string
   shortcut?: string
   /** Words the entry also matches on, never shown (the old name of a renamed page). */
   keywords?: string
@@ -33,15 +35,18 @@ export interface Entry {
   run: () => unknown | Promise<unknown>
 }
 
-/** Display text of the secondary line: the explicit secondary, the marker and the shortcut. */
-export function secondaryOf(e: Entry): string | undefined {
-  const parts = [e.marker, e.secondary, e.shortcut].filter(Boolean)
+/**
+ * Display text of the secondary line: the explicit secondary, the marker and the
+ * shortcut; without the shortcut where the palette shows it as keycaps (palette-quick-add D5).
+ */
+export function secondaryOf(e: Entry, withShortcut = true): string | undefined {
+  const parts = [e.marker, e.secondary, withShortcut ? e.shortcut : undefined].filter(Boolean)
   return parts.length ? parts.join(' · ') : undefined
 }
 
-/** Section headings of the palette (keyboard-shortcuts / search-and-command-palette: Recent, Tasks, Projects, Labels, Filters, Commands, Settings). */
+/** Section headings of the palette (keyboard-shortcuts / search-and-command-palette: Recent, Tasks, Projects, Labels, Views, Commands, Settings). */
 export const KIND_GROUP = translatedMap<EntryKind>({
-  command: msg('Commands'), task: msg('Tasks'), project: msg('Projects'), label: msg('Labels'), view: msg('Filters'), settings: msg('Settings'), filter: msg('Filters'),
+  command: msg('Commands'), task: msg('Tasks'), project: msg('Projects'), label: msg('Labels'), view: msg('Views'), settings: msg('Settings'), filter: msg('Views'),
 })
 
 export function groupOf(e: Entry): string {

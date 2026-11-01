@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
@@ -17,10 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
 )
 
 // newEnvConfig is newEnv with a caller-supplied configuration.
@@ -34,12 +32,11 @@ func newEnvConfig(t *testing.T, cfg config.Config) *env {
 	if cfg.SessionTTL == 0 {
 		cfg.SessionTTL = time.Hour
 	}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	syncSvc := opsync.NewService(db)
-	h := New(cfg, auth.NewService(db, cfg.SessionTTL, cfg.AllowSignup), syncSvc, nil, log, "test")
+	set := testSet(t, cfg, db, services.Options{})
+	syncSvc := set.Sync
+	h := New(set, nil)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	t.Cleanup(syncSvc.Notifier().CloseAll)
 	jar, _ := cookiejar.New(nil)
 	return &env{t: t, srv: srv, client: &http.Client{Jar: jar}, db: db, handler: h, sync: syncSvc}
 }
@@ -169,6 +166,7 @@ func TestImportInvalidOptions400(t *testing.T) {
 	}{
 		{map[string]any{"timeZone": "Atlantis/Capital"}, "invalid_input"},
 		{map[string]any{"targetProject": foreignProject}, "invalid_input"},
+		{map[string]any{"workspace": "no-such-workspace"}, "invalid_input"},
 		{map[string]any{"duplicates": "maybe"}, "invalid_input"},
 		{map[string]any{"format": "spreadsheet"}, "invalid_input"},
 		{map[string]any{"unknownOption": true}, "invalid_input"},
@@ -359,6 +357,9 @@ func TestRoundTripExportImportExport(t *testing.T) {
 	}
 	delete(exportA, "comments")
 	delete(exportB, "comments")
+	// Each account has its own default workspace id (OpenSpec change workspaces).
+	delete(exportA, "workspaces")
+	delete(exportB, "workspaces")
 	for _, k := range []string{"projects", "tasks", "labels", "sections", "reminders", "views"} {
 		if !reflect.DeepEqual(exportA[k], exportB[k]) {
 			ja, _ := json.MarshalIndent(exportA[k], "", " ")
@@ -518,6 +519,35 @@ func TestImportNamedFormatRefusals(t *testing.T) {
 	anon := &env{t: t, srv: e.srv, client: &http.Client{}}
 	resp, out = anon.upload("/api/v1/import/preview", "backup.zip", buf.Bytes(), nil)
 	anon.mustStatus(resp, 401, out)
+}
+
+// An Asana CSV names its project after the uploaded file and creates one
+// custom field for its "Effort" column (OpenSpec change more-importers).
+func TestImportAsanaPreviewOverHTTP(t *testing.T) {
+	e := newEnv(t, false)
+	e.register("owner@example.test")
+	data, err := os.ReadFile("../importer/testdata/asana-csv/export.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, out := e.upload("/api/v1/import/preview", "Renovation.csv", data, nil)
+	e.mustStatus(resp, 200, out)
+	if out["format"] != "asana-csv" {
+		t.Fatalf("preview = %v", out)
+	}
+	totals := out["totals"].(map[string]any)
+	if totals["fields"] != float64(1) || totals["newProjects"] != float64(1) {
+		t.Fatalf("preview totals = %v", totals)
+	}
+	named := false
+	for _, r := range out["rows"].([]any) {
+		if m := r.(map[string]any); m["kind"] == "project" && m["title"] == "Renovation" {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the project is not named after the file: %v", out["rows"])
+	}
 }
 
 func TestImportLinearOverHTTP(t *testing.T) {

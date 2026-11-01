@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,8 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/settings"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 // Archive format identifiers (see docs/backups.md).
@@ -86,19 +86,13 @@ func archiveTime(name string) (time.Time, bool) {
 	return t, err == nil
 }
 
-func randomHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // snapshot writes a transactionally consistent, WAL-free copy of the live
 // database into the temp directory with VACUUM INTO and returns its path.
 func (s *Service) snapshot(ctx context.Context) (string, error) {
 	if err := os.MkdirAll(s.tmpDir(), 0o700); err != nil {
 		return "", fmt.Errorf("create temp dir: %w", err)
 	}
-	path := filepath.Join(s.tmpDir(), "snapshot-"+s.now().UTC().Format(archiveTimeLayout)+"-"+randomHex(4)+".db")
+	path := filepath.Join(s.tmpDir(), "snapshot-"+s.now().UTC().Format(archiveTimeLayout)+"-"+ids.Hex(4)+".db")
 	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
 		os.Remove(path)
 		return "", fmt.Errorf("snapshot database: %w", err)
@@ -157,6 +151,18 @@ var attachmentEntry = regexp.MustCompile(`^attachments/([A-Za-z0-9-]{1,2})/([A-Z
 func validAttachmentEntry(name string) bool {
 	m := attachmentEntry.FindStringSubmatch(name)
 	return m != nil && strings.HasPrefix(m[2], m[1]) && (len(m[2]) <= 2 || len(m[1]) == 2)
+}
+
+// avatarEntry matches the archive name of a profile picture, <data>/avatars/<user id>.jpg
+// (OpenSpec change settings-refresh, design D10).
+var avatarEntry = regexp.MustCompile(`^avatars/[A-Za-z0-9-]{1,64}\.jpg$`)
+
+// dataDirs are the data-directory folders whose files are archived file by file.
+var dataDirs = []string{"attachments", "avatars"}
+
+// validDataEntry reports whether name is a well-formed attachment or profile picture entry.
+func validDataEntry(name string) bool {
+	return validAttachmentEntry(name) || avatarEntry.MatchString(name)
 }
 
 // writeArchive streams tar(manifest.json, opentodo.db) through optional gzip and

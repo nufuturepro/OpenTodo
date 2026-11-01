@@ -53,6 +53,7 @@ The writers are:
 | CalDAV clients | `/dav/` PUT, PROPPATCH, MKCALENDAR, DELETE → one op per changed property | `caldav:<app password id>` |
 | Email to task | IMAP poller → `ApplyStrict`, ids derived from account and Message-ID | `server:<boot id>` |
 | Issue import | poller → `ApplyStrict` per page, ids derived from connection and issue | `issues:<connection id>` |
+| Automation rules | observer queues events after commit; worker and minute scheduler → `ApplyStrict` per task, op ids derived from rule, run key and field | `rule:<rule id>` |
 | Import | background job, batches of 1,000 ops | `import` |
 | Server itself | reminder delivery (`delivered_at`), unassigning people who leave a project or whose account is deleted, recurring completion via REST | `server:<boot id>` |
 
@@ -74,14 +75,40 @@ REST collections, the export, MCP tools (the shared agent tool registry in `inte
 
 ### Background work
 
-Started by `cmd/opentodo` and stopped on shutdown:
+Every tenant describes its background work once, as a list of jobs (`tenant.Jobs`, package `jobs`): when each job is next due (`Next`) and what to run (`Run`). The same list runs in both modes:
 
-- **Reminder push scheduler** (`push.Service.Run`, unless `OPENTODO_PUSH=off`): one pass at startup and every 30 s. A single query over `scope_fields` (reminders are always personal) selects reminders whose `fire_at` has passed, not deleted, not delivered or dismissed for the current firing, whose task is open; each is encrypted and posted to every subscription of the owner (404/410 removes the subscription), then `delivered_at` is written through `sync.Apply` as device `server`. Delivery state lives in the op log, so a restart neither loses nor repeats a push (a crash between send and write can repeat one).
-- **Webhook worker** (`webhook.Run`): sends queued deliveries with retries; finishes the pass in progress on shutdown.
-- **Email poller** (`email.Run`): polls the configured IMAP mailbox, only when `OPENTODO_EMAIL_*` is set.
-- **Backup scheduler** (`backup.Start`): runs scheduled backups; a missed run executes once at startup.
-- **Trash retention** (`sync.RunRetention`): purges items older than `OPENTODO_TRASH_RETENTION_DAYS` at startup and daily.
-- **Audit pruning**: at startup and hourly. Old read notifications are swept at startup.
+- **Self-hosted:** `tenant.StartJobs` runs the list with `jobs.Runner`, only in the process that holds the jobs lock (`cmd/opentodo`, rolling updates). The runner sleeps until the earliest due time, asks a job again at least every 30 s, and never runs one job twice at once. Jobs run independently, so a long backup does not hold up a delivery.
+- **Host:** the host's shared scheduler writes the same due times into its index and calls the same `Run` (see `host`).
+
+Services report new work through the tenant's `jobs.Signal`:
+
+- **Wake-ups:**
+  - a queued webhook delivery or channel message, or a webhook or channel turned on again, wakes the webhooks job;
+  - a queued rule event wakes the rules job;
+  - a saved backup schedule wakes the backup job.
+- **Committed batches:** every committed batch asks every job again after one second (a new reminder, a moved task with a calendar event).
+- **Other processes:** a once-a-second `PRAGMA data_version` probe notices writes made by another process on the same data directory.
+
+A job that is still due after it ran waits its retry pause (30 s, 1 s for deliveries, 1 h for housekeeping). Stopping waits for the runs in progress, so their outcome is recorded before the database closes.
+
+The jobs:
+
+- **Reminders** (unless `OPENTODO_PUSH=off`): due at the earliest firing time.
+  - A single query over `scope_fields` (reminders are always personal) selects reminders whose `fire_at` has passed, not deleted, not delivered or dismissed for the current firing, whose task is open.
+  - Each is encrypted and posted to every subscription of the owner (404/410 removes the subscription), then `delivered_at` is written through `sync.Apply` as device `server`.
+  - Delivery state lives in the op log, so a restart neither loses nor repeats a push (a crash between send and write can repeat one).
+- **Webhooks:** sends queued webhook deliveries and notification channel messages (channels never on a demo instance) when they are due; retries follow `webhook.Backoff`.
+- **Calendars:** subscription fetches and calendar sync cycles, at their next due time, while their owner switches are on.
+- **Issues:** issue connection polls, at their next poll time, while the owner switch is on.
+- **Digest:** weekly digest emails at each user's chosen hour, while outgoing email is configured.
+- **Rules:** queued rule events at once, time triggers at the minute.
+- **Backup:** scheduled backups; a missed run executes once at startup.
+- **Housekeeping:**
+  - **Retention deadlines.** Each runs when the oldest item passes its retention: Trash retention (`OPENTODO_TRASH_RETENTION_DAYS`), the audit log (the owner's retention), expired sign-ups, the 30-day delivery logs and read notifications after 90 days.
+  - **Upkeep.** Hourly, and only after something changed: `PRAGMA optimize`, the delivery logs' size limits, the rule run log, and secrets of deleted connections.
+- **Compaction:** a day after its last complete pass (an hour after start-up for the first), and only after something changed: deletes superseded note versions received more than 30 days ago (`sync.CompactNotes`), returns freed pages with incremental vacuum and converts an older database once at a quiet moment; a pass larger than its 20-second budget continues a minute later. See [sync.md](sync.md#compaction).
+- **Email** (only when `OPENTODO_EMAIL_*` is set): polls the IMAP mailbox every `OPENTODO_EMAIL_POLL_SECONDS`.
+- **Demo** (demo instances only): expired sandboxes every 5 minutes, the reset at 03:00 UTC.
 
 ## Server packages (`cmd/opentodo`, `internal/`)
 
@@ -89,10 +116,16 @@ Started by `cmd/opentodo` and stopped on shutdown:
 | --- | --- |
 | `config` | `OPENTODO_*` environment variables with defaults and validation; nothing is mandatory |
 | `codesize` | Test only: `go test ./...` fails when a function under `internal/` is longer than 150 lines or a file longer than 1,100 lines; exceptions need a reason, and the list can only shrink |
-| `store` | Opens SQLite (pure-Go `modernc.org/sqlite`, WAL): one writer connection whose write transactions begin `IMMEDIATE`, and a pool of query-only reader connections (`OpenReader`) for pure reads such as `sync` List, Get and Pull; applies embedded migrations (`migrations/NNNN_*.sql`) by `PRAGMA user_version`; runs `PRAGMA optimize` at open and daily; `Lock` holds `<data>/opentodo.lock` for the process lifetime |
-| `tenant` | Builds one server around one data directory: the database and its lock, the services, the notifier, the HTTP handler and the background jobs. A self-hosted server opens exactly one tenant |
+| `store` | Opens SQLite (pure-Go `modernc.org/sqlite`, WAL): one writer connection whose write transactions begin `IMMEDIATE`, and a pool of query-only reader connections (`OpenReader`) for pure reads such as `sync` List, Get and Pull; applies embedded migrations (`migrations/NNNN_*.sql`) by `PRAGMA user_version`; runs `PRAGMA optimize` at open (and the housekeeping job hourly after changes); `Lock` holds `<data>/opentodo.lock` for the process lifetime |
+| `stt` | Speech to text: the owner's OpenAI-compatible transcription service (`OPENTODO_STT_*` overrides, key in `<data>/secrets/stt.json`), requests through `outbound`, audio and text in memory only. See [speech-to-text.md](self-hosting/speech-to-text.md) |
+| `daypart` | A task's part of the day (OpenSpec `day-parts`): reads Morning, Afternoon or Evening from `day_part` and the evening flag, and the pairing every server writer uses (REST, CalDAV, the agent tools, the CLI and the vault), like `web/src/lib/dayParts.ts`. See [day-parts.md](day-parts.md) |
+| `frames` | Calendar frames (OpenSpec `calendar-frames`): the occurrences of a user's recurring background windows for a date range, weekday lists and `HH:MM` wall times, kept identical to `web/src/lib/frames.ts` by shared vectors; used by the frames REST routes and the `list_frames` agent tool |
+| `closedlist` | Today's closed list (OpenSpec `today-closed-list`): fills the slots of the Today limit first come, first served (focus, taken slots, Earlier, creation order) with the available rule passed in, like `web/src/lib/closedList.ts` (shared vectors); used by `today_summary` and `ot today` |
+| `textutil` | Small string helpers shared by server packages: `Truncate` cuts a string to a byte limit on a character boundary, for names and messages stored under a length limit |
+| `tenant` | Builds one server around one data directory: the database and its lock, the services, the notifier, the HTTP handler and the background jobs. A self-hosted server opens exactly one tenant. Its sub-package `services` is the composition root: `Build` constructs, seeds and wires every service into a `Set`, which `httpapi.New` receives; registering routes builds nothing |
+| `jobs` | The one model of background work (change `one-job-model`): `Job{Name, Next, Run}` says when a job is next due and what to run; `tenant.Jobs` builds a tenant's list once, and both a self-hosted server (`Runner`) and a host's scheduler run it. Services report new work through a `Signal`; `Upkeep` is maintenance due only after a change; `Runner` sleeps until the earliest due time, wakes on a signal, waits a retry pause when work is still due after a run, and never runs a job twice at once |
 | `host` | Optional multi-tenant host, built only with `OPENTODO_HOST_URL`: a registry of tenants beside their data directories, host-name routing, lazy open and idle close, one scheduler for every tenant's background work, per-tenant limits and the operator interface a control plane drives |
-| `settings` | Owner-level key/value settings (`settings` table, JSON values) and 0600 secret files under `<data>/secrets/` |
+| `settings` | Owner-level key/value settings (`settings` table, JSON values), the owner on/off switches (`Switch`: cached, with a default and an optional environment override) and 0600 secret files under `<data>/secrets/` |
 | `sync` | Op schema and validation, `Apply` (idempotent, LWW, per-op authorisation and refusal reasons) and `ApplyStrict` (REST), `Pull` (cursor, member backfill), materialised reads, sharing scopes (`scope.go`) and membership (`members.go`), trash, history and purge, the post-commit observer and sinks, `Notifier` (per-user live wake-ups) |
 | `auth` | Users and roles, argon2id passwords, sessions, API tokens and their scopes, CalDAV app passwords, invitations, password resets, user administration, TOTP and recovery codes, step-up, passkeys storage, provider identities (subject-first matching, verified-email linking, provisioning, the SSO-only rule) |
 | `webauthn` | Passkey verification: clientDataJSON, authenticator data, COSE keys (ES256, Ed25519, RS256), signature checks; uses `fxamacker/cbor` for CBOR (the other third-party Go modules are SQLite and `golang.org/x/crypto` for argon2). `testauth` is a synthetic authenticator for tests |
@@ -100,15 +133,21 @@ Started by `cmd/opentodo` and stopped on shutdown:
 | `audit` | The closed catalogue of security events with typed constructors and an allow-list for details, recording (in the same transaction as credential changes), queries, NDJSON export and retention pruning |
 | `outbound` | The policy for every request to an address a user or the owner typed: http(s) only, no private network targets unless the owner allows them, the connection pinned to the address that was checked. Used by webhooks (and through their client by push and the assistant), by calendar subscriptions and by issue connections |
 | `demo` | The public demo instance (`OPENTODO_DEMO=true`): a hidden owner, a private short-lived sandbox per visitor seeded through the op log, the nightly reset; the HTTP side and its deny list are in `httpapi/demo.go` |
-| `httpapi` | Router (stdlib `net/http` with method patterns), middleware (auth, origin check, security headers, rate limits, logging), JSON error envelope, handlers for every `/api/v1` route, the CalDAV transport (`caldav_*.go`), the MCP transport (`mcp.go`) and the event stream |
+| `httpapi` | Router (stdlib `net/http` with method patterns), middleware (auth, origin check, security headers, rate limits, logging), JSON error envelope, handlers for every `/api/v1` route, the CalDAV app passwords and switch (`caldav.go`), the MCP transport (`mcp.go`) and the event stream. Its sub-package `httpx` holds what route packages share with it (the route policy and `Router`, the JSON envelope and body helpers, the caller of a request); route packages register through that `Router` and never build a mux: `speech` (speech to text), `maproutes` (the map proxy) and `davroutes` (the CalDAV endpoint `/dav/`) |
 | `web` | Embeds the Vite build (`internal/web/dist`) and serves it with SPA fallback and cache headers |
 | `notify` | Post-commit events for people: the `Sink` interface the sync service calls after a batch commits, and the in-app sink that stores `notifications` for assignments and mentions |
+| `channels` | A person's delivery channels (ntfy, Pushover, Gotify, a signed webhook): a notify sink and a consumer of the reminder scheduler that queue one message per channel and firing, one worker through `outbound` with the webhooks' retries, secrets in `<data>/secrets/notification-channels.json`. See [notification-channels.md](notification-channels.md) |
 | `activity` | Pure derivation of attributed activity events from ops (fold by actor and entity within 5 s, classify by touched fields, page newest first); mirrored by `web/src/lib/activity.ts` and pinned by a shared fixture |
 | `webhook` | Maps observed changes to events, durable queue in SQLite, one worker with retries, HMAC signing, SSRF-safe HTTP client. See [webhooks.md](webhooks.md) |
+| `deliveryq` | The machinery of the two durable outbound queues, webhook deliveries and notification channel messages: the parallel pass over due rows (`Fanout`, `Drain`), pruning the log, and the next-due times of the webhooks job. Each queue keeps its payloads, its send and the recording of an attempt (the retry schedule is `webhook.Backoff`) |
+| `compaction` | The notes compaction job (change `notes-compaction`): schedules `sync.CompactNotes`, reclaims freed pages with incremental vacuum, converts an older database to incremental mode once (quiet moment, free disk check), and keeps the report (`settings` key `compaction.last`) that `GET /api/v1/settings/storage` and the Database storage card show |
+| `poll` | The pass shared by the subscription pollers (calendar feeds, issue connections): `Each` handles the items due now with bounded concurrency; when a pass runs is the jobs' business |
 | `push` | Web push for reminders with the standard library: VAPID key pair in `<data>/push_vapid.pem`, ES256 JWTs, RFC 8291 `aes128gcm`, per-device subscriptions and the scheduler. See [reminders.md](reminders.md) |
 | `recurrence` | Parser and next-occurrence calculator for recurrence rules; mirrored by `web/src/lib/recurrence.ts` against shared vectors. See [recurrence.md](recurrence.md) |
 | `quickadd` | Go port of the quick-add parser (`web/src/lib/nlp`): dates and times, `#project @label p1 +30m`, recurrence and reminder phrases in six languages, kept identical by shared vectors; used by the CLI and the importer |
 | `zoned` | Resolves time-zone-fixed due values to instants (gaps and overlaps included); mirrored by `web/src/lib/dates.ts` against shared vectors |
+| `defaultreminder` | The default reminder rule: the reminder a person's write adds when a task gets a due date, its once-per-task id and the switch between a date only and a time; mirrored by `web/src/lib/defaultReminder.ts` against shared vectors and used by the REST task routes (`?default_reminder=true`) and the agent write tools |
+| `flow` | Project and section flows (Parallel, Sequential, Area) and the one "available task" rule: blocked, waiting in sequence, Someday and deferred; mirrored by `web/src/lib/flow.ts` against shared vectors and used by the agent tools, the MCP resources, the digest and the CLI |
 | `inbox` | Inbox membership: open, without a project and not scheduled (no do-on date, start date or Someday), with no placed parent; mirrored by `web/src/lib/inbox.ts` against shared vectors and used by the agent tools, the MCP views and the CLI |
 | `filter` | Go port of the filter query parser, used to validate saved views; evaluation stays on the client. See [filters.md](filters.md) |
 | `origin` | A task's origin (where it came from): the one validation of the `task.origin` value (the sync schema's check, the CLI, the agent tools, the importers, email to task) and the table that recognises GitHub, GitLab, Jira and Linear issue links, kept identical to `web/src/lib/taskOrigin.ts` by shared vectors. Never requests a URL. See [capture.md](capture.md#where-a-task-came-from) |
@@ -116,6 +155,9 @@ Started by `cmd/opentodo` and stopped on shutdown:
 | `importer` | Reads the own export, CSV and other apps' JSON exports into rows, plans projects, labels, parents and duplicates, and writes ops in background jobs with undo. `sanitize` is a command that turns a real export into a test fixture; it is never linked into the server. See [import.md](import.md) |
 | `blobs` | Attachment bytes as immutable files under `<data>/attachments/`, written once through a temporary file with the size and SHA-256 checked, streamed and never read whole. See [attachments.md](attachments.md) |
 | `calfeed` | Calendar feeds: other people's calendars read into read-only events (fetched through `outbound`), and the user's tasks written as an iCalendar feed. See [calendar-feeds.md](calendar-feeds.md) |
+| `ruleval` | Automation rule values (trigger, condition, actions) with their checks and the condition matcher; a leaf package `sync` uses for the `rule` entity's kinds, pinned to the web matcher by `web/src/lib/rules/match.vectors.json`. See [automations.md](automations.md) |
+| `rules` | Automation rules engine: the planner (shared fixture with the web planner), the post-commit observer, the durable queue, the worker with limits and loop depth, the minute scheduler for time triggers and the run log; the owner switch with `OPENTODO_AUTOMATIONS`. See [automations.md](automations.md) |
+| `calsync` | Calendar sync: a user's own CalDAV or Google calendar receives their dated tasks as events and sends changes back. Connections, secrets in `<data>/secrets/calendar-sync.json`, a WebDAV client on `outbound` (discovery, `sync-collection`, conditional writes), Google OAuth with PKCE, and the cycle on the jobs leader that pulls before it pushes and writes ops with device `calsync:<id>`; shown calendars are stored as managed `calfeed` subscriptions. `calsynctest` is an in-process CalDAV server for tests. See [calendar-sync.md](calendar-sync.md) |
 | `issues` | Issue import: per-user GitHub and GitLab connections, tokens in `<data>/secrets/issues.json`, two REST clients on `outbound` without redirects, the mapping of issues to task ops (deterministic ids, a field changes only when the issue changed it) and the poller on the jobs leader. Never writes to the provider. See [issue-import.md](issue-import.md) |
 | `backup` | Snapshots (`VACUUM INTO`), tar/gzip archives, `OTBK1` encryption, local / S3 (SigV4) / WebDAV destinations, scheduler, retention, `Restore`. See [backups.md](backups.md) |
 | `caldav` | Protocol pieces of the CalDAV endpoint: iCalendar tokenizer and serialiser for VTODO, the VTODO ↔ task mapping (unmapped lines kept in `ical_extra`), WebDAV XML parsing and multistatus rendering; HTTP handling lives in `httpapi`. See [caldav.md](caldav.md) |
@@ -130,17 +172,20 @@ Started by `cmd/opentodo` and stopped on shutdown:
 | `digest` | The opt-in weekly email digest: per-user settings, the scheduler on the jobs leader, and the content built from the user's materialised rows with the same definitions as the Statistics screen |
 | `e2ee` | Server side of end-to-end encryption: stores the wrapped key record with optimistic versioning, recognises ciphertext so server-side features degrade explicitly, purges superseded content ops. The server runs no content cryptography; its sub-package `crypt` is the same format for the `ot` client only (`ot encryption`, `ot mcp --decrypt`), on the standard library, pinned by the shared vectors and never linked into the server. See [e2ee.md](e2ee.md) |
 | `ids` | UUID v4, name-based ids (SHA-256, version 8 UUIDs, for recurring occurrences and tasks created from email) and random secrets |
+| `imgfit` | Scales the images the server stores, on the standard library alone: the centre square of a sign-in provider's picture to 256 px, the owner's logo to every icon size and a padded maskable icon (`oidc-profile-pictures`, `instance-branding`) |
 | `iconset` | The icon catalogue's names, categories and keywords, generated from `web/src/ui/icons/catalogue.json` and checked against it by a test; `Valid` checks an icon name in REST and MCP writes, `Search` orders matches as the app's icon picker does |
 | `cli` | The `ot` command-line client (`cmd/ot`): profiles, REST calls, table and `--json` output. See [cli.md](cli.md) |
+| `vault` | The Markdown vault behind `ot vault`, for the client only (a test keeps it out of the server): the Obsidian Tasks line grammar, the document parser and printer, the state file, the three-way merge per field and the sync loop over `POST /api/v1/sync` as device `vault:<id>`. See [vault.md](vault.md) |
 
 ### Tables
 
 | Area | Tables |
 | --- | --- |
 | Op log and current values | `ops` (append-only, `user_id` = author, `seq` autoincrement), `op_scopes` (the sharing scope of each op), `scope_fields` (winner per field within a scope), `purges` (markers for permanently deleted entities) |
-| Sharing | `project_scopes`, `project_members` (roles, outside the op log), `member_backfills` (history replay per member device) |
+| Sharing | `project_scopes`, `project_members` (effective roles, outside the op log; `via` names the groups a role comes from), `project_grants` (direct and group grants; `project_members` is recomputed from them), `member_backfills` (history replay per member device) |
+| Workspaces | `workspaces` (one `default` per account), `workspace_members`, `groups`, `group_members`, `workspace_invites` (hashed link secrets) |
 | Accounts and credentials | `users`, `user_status`, `sessions`, `session_auth`, `session_oidc`, `api_tokens`, `api_token_scopes`, `api_token_agent`, `user_agent_access`, `app_passwords`, `passkeys`, `identities`, `mfa_totp`, `mfa_recovery_codes`, `trusted_devices`, `invitations`, `password_resets` |
-| Features | `notifications`, `push_subscriptions`, `webhooks`, `webhook_deliveries`, `import_jobs`, `import_items`, `caldav_resources`, `email_inboxes`, `email_receipts`, `encryption_keys` |
+| Features | `notifications`, `push_subscriptions`, `notification_channels`, `notification_deliveries`, `webhooks`, `webhook_deliveries`, `import_jobs`, `import_items`, `caldav_resources`, `email_inboxes`, `email_receipts`, `encryption_keys` |
 | Operations | `settings` (owner key/value settings, also the log `generation`), `audit_events`, `backup_runs` |
 
 Files in the data directory: `opentodo.db` (plus WAL files), `opentodo.lock`, `push_vapid.pem`, `secrets/` (backup and single sign-on secrets, 0600, never archived) and `backups/` (default local backup folder).
@@ -150,7 +195,7 @@ Files in the data directory: `opentodo.db` (plus WAL files), `opentodo.lock`, `p
 | Module | Responsibility |
 | --- | --- |
 | `lib/db.ts` | Dexie database: `projects`, `tasks`, `labels`, `views`, `reminders`, `sections`, `comments`, `prefs` (synced `project_prefs`), `outbox`, `meta` (device settings), plus caches (`memberships`, `notifications`) and the local `activity` log |
-| `lib/types.ts` | Entity types; field names mirror `internal/sync/ops.go` |
+| `lib/types.ts` | Entity types; each extends its op fields from `generated/opSchema.ts`, which `internal/sync` generates from `Schema` with the row defaults and content fields |
 | `lib/hlc.ts` | Hybrid logical clock and the shared `wins()` rule |
 | `lib/ops.ts` | `applyOps` (per-field LWW into IndexedDB, merge-and-republish of note documents), `mutate` (local apply + outbox + notify), entity helpers and defaults |
 | `lib/sync.ts` | Background push/pull loop, triggers, live-update channel (`EventSource` with backoff), status store (`useSyncStatus`) |
@@ -172,7 +217,7 @@ The UI never talks to the server for task data. Views subscribe to IndexedDB wit
 
 ## Build and packaging
 
-`web/` builds into `internal/web/dist`, which `go:embed` compiles into the binary (`internal/web/dist/.gitkeep` keeps the embed compiling on a fresh clone). The Dockerfile runs both builds on the build platform, cross-compiles a static binary (`CGO_ENABLED=0`, `-trimpath -s -w`) and copies it into `gcr.io/distroless/static-debian12:nonroot`. CI publishes `linux/amd64` and `linux/arm64` images to GHCR and attaches the server and `ot` binaries, the browser extension zip, the agent skill and the **site bundle** (`opentodo-site-bundle-<version>.tar.gz`: the docs website, screenshots, colour tokens, icons, changelog and a feature manifest, which the website repository builds from) to releases; every CI run uploads the same bundle as an artefact. The server binary is about 27 MB (about 5 MB of it is the official Anthropic SDK for the in-app assistant, about 1.6 MB the five interface language catalogs). Nothing in the server may use `text/template`, `html/template` or `reflect.Value.MethodByName`: any of them stops the linker from pruning unused methods and adds about 13 MB.
+`web/` builds into `internal/web/dist`, which `go:embed` compiles into the binary (`internal/web/dist/.gitkeep` keeps the embed compiling on a fresh clone). The Dockerfile runs both builds on the build platform, cross-compiles a static binary (`CGO_ENABLED=0`, `-trimpath -s -w`) and copies it into `gcr.io/distroless/static-debian12:nonroot`. CI publishes `linux/amd64` and `linux/arm64` images to GHCR and attaches the server and `ot` binaries, the browser extension zip, the agent skill and the **site bundle** (`opentodo-site-bundle-<version>.tar.gz`: the docs website, screenshots, colour tokens, icons, the brand mark, changelog and a feature manifest, which the website repository builds from) to releases; every CI run uploads the same bundle as an artefact. The server binary is about 34 MB for linux/amd64, as released (about 5 MB of it is the official Anthropic SDK for the in-app assistant, about 1.6 MB the five interface language catalogs). Nothing in the server may use `text/template`, `html/template` or `reflect.Value.MethodByName`: any of them stops the linker from pruning unused methods and adds about 13 MB.
 
 ## Specs
 

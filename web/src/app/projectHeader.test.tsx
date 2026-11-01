@@ -6,7 +6,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import type { Project } from '../lib/types'
-import { click, flush, key, render } from '../ui/test-utils'
+import { click, key, render, waitFor } from '../ui/test-utils'
 import { panelOccupant, resetPanel } from './panel'
 import { PanelHost } from './PanelHost'
 import { ProjectHeader } from './ProjectHeader'
@@ -23,21 +23,16 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
 })
 afterEach(() => {
-  document.body.innerHTML = ''
   vi.unstubAllGlobals()
   resetPanel()
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const menuItem = (label: string) => [...document.querySelectorAll('[data-menu-label]')].find((e) => e.getAttribute('data-menu-label') === label) as HTMLElement
 
 describe('project header', () => {
   it('keeps Share and the layout control in the header; Activity and History open in the panel slot from the menu', async () => {
     const r = await render(<><ProjectHeader project={p('home', 'Home')} layout={<span data-layout-control>List</span>} /><PanelHost /></>)
-    await flush(40)
+    await waitFor(() => r.container.querySelector('[data-page-header] h1 [data-project-name]')?.textContent === 'Home', 'the header')
     const header = r.container.querySelector('[data-page-header]')!
     expect(header).toBeTruthy()
     expect(header.querySelector('h1 [data-project-name]')?.textContent).toBe('Home')
@@ -48,11 +43,11 @@ describe('project header', () => {
     expect(r.container.textContent).not.toContain('History')
 
     await click(header.querySelector('button[aria-label="Project menu"]')!)
-    await flush(30)
+    await waitFor(() => !!menuItem('Activity'), 'the project menu')
     const labels = [...document.querySelectorAll('[data-menu-label]')].map((e) => e.getAttribute('data-menu-label'))
     expect(labels).toEqual(expect.arrayContaining(['Activity', 'History']))
     await click(menuItem('Activity'))
-    await flush(30)
+    await waitFor(() => (panelOccupant() as { key?: string } | null)?.key === 'project-activity', 'the Activity panel')
     expect(panelOccupant()).toMatchObject({ kind: 'custom', key: 'project-activity' })
     await waitFor(() => document.querySelector('[data-panel-frame="project-activity"]') !== null)
     expect(document.querySelector('[data-panel-frame="project-activity"] h2')?.textContent).toBe('Activity')
@@ -65,15 +60,24 @@ describe('project header', () => {
 
     // History takes the slot over (one occupant at a time); Escape empties it.
     await click(header.querySelector('button[aria-label="Project menu"]')!)
-    await flush(30)
+    await waitFor(() => !!menuItem('History'), 'the project menu')
     await click(menuItem('History'))
-    await flush(30)
+    await waitFor(() => (panelOccupant() as { key?: string } | null)?.key === 'project-history', 'the History panel')
     expect(panelOccupant()).toMatchObject({ kind: 'custom', key: 'project-history' })
     await waitFor(() => document.querySelector('[data-panel-frame="project-history"]') !== null)
     expect(document.querySelectorAll('[data-panel-frame]')).toHaveLength(1)
     await key(document.body, 'Escape')
     await waitFor(() => panelOccupant() === null)
     expect(document.querySelector('[data-panel-frame]')).toBeNull()
+    await r.unmount()
+  })
+
+  it('reads "In maintenance" in the lead line while the project is in maintenance (project-review-cadence)', async () => {
+    const r = await render(<ProjectHeader project={{ ...p('home', 'Home'), status: 'maintenance' }} />)
+    await waitFor(() => !!r.container.querySelector('[data-project-maintenance]'), 'the maintenance note')
+    expect(r.container.querySelector('[data-project-maintenance]')!.textContent).toBe('In maintenance')
+    await r.rerender(<ProjectHeader project={{ ...p('home', 'Home'), status: 'active' }} />)
+    await waitFor(() => !r.container.querySelector('[data-project-maintenance]'), 'no maintenance note')
     await r.unmount()
   })
 })

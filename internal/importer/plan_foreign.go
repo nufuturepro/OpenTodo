@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/recurrence"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // Planning an import of a foreign format: every profile other than the own
@@ -45,6 +45,8 @@ type foreignPlan struct {
 	plans           []taskPlan
 	taskChanges     []*change
 	reminderChanges [][]change
+	// fieldChanges are custom field definitions this import creates (more-importers D3).
+	fieldChanges []*change
 }
 
 func (pl *planner) planForeign(rows []Row) []change {
@@ -54,6 +56,7 @@ func (pl *planner) planForeign(rows []Row) []change {
 	fp.projectParents()
 	fp.sections()
 	fp.tasks()
+	fp.customFields()
 	pl.dependencies(rows, fp.taskIdx, fp.plans, fp.taskChanges)
 	return fp.changes()
 }
@@ -261,7 +264,11 @@ func (fp *foreignPlan) resolve(i int) {
 	if row.Due != nil {
 		dueDate = row.Due.Date
 	}
-	if dup, ok := pl.fingerprints[fingerprint(row.Title, projectID, dueDate)]; ok {
+	place := projectID
+	if place == "" && pl.st.Partition != nil {
+		place = fingerprintPlace("", pl.st.Workspace)
+	}
+	if dup, ok := pl.fingerprints[fingerprint(row.Title, place, dueDate)]; ok {
 		if pl.opts.Duplicates != "import" {
 			res.Outcome, res.Reason = OutcomeSkip, ReasonPossibleDuplicate
 			tp.entityID = dup
@@ -408,6 +415,9 @@ func (fp *foreignPlan) taskFields(row Row, projectID, parentID string, due *Due)
 	if row.Evening {
 		fields = append(fields, field{"evening", raw(true)})
 	}
+	if row.Energy != "" {
+		fields = append(fields, field{"energy", raw(row.Energy)})
+	}
 	if row.Origin != nil {
 		fields = append(fields, field{"origin", raw(row.Origin)})
 	}
@@ -425,8 +435,8 @@ func (fp *foreignPlan) taskFields(row Row, projectID, parentID string, due *Due)
 }
 
 // changes lists the planned changes in apply order: used implicit labels, the
-// file's projects, used implicit projects, used sections, tasks, then their
-// reminders and links.
+// file's projects, used implicit projects, used sections, created custom field
+// definitions, tasks, then their reminders and links.
 func (fp *foreignPlan) changes() []change {
 	pl := fp.pl
 	var out []change
@@ -466,6 +476,9 @@ func (fp *foreignPlan) changes() []change {
 			{"position", raw(pl.nextPosition())},
 			{"created_at", raw(pl.now)},
 		}})
+	}
+	for _, c := range fp.fieldChanges {
+		out = append(out, *c)
 	}
 	for _, c := range fp.taskChanges {
 		if c != nil {
@@ -634,6 +647,9 @@ func (pl *planner) links(taskID string, list []Link, res *RowResult) []change {
 }
 
 func displaySource(s string) string {
+	for _, p := range []string{"google-tasks:", "trello:", "asana:", "microsoft-todo:", "apple-reminders:", "anydo:"} {
+		s = strings.TrimPrefix(s, p)
+	}
 	for _, p := range []string{"id:", "task:", "item:"} {
 		s = strings.TrimPrefix(s, p)
 	}

@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Badge, Button, ConfirmDialog, Field, HUES, hueFor, Icon, Input, ListRow, MenuItem, Notice, Select, SettingRow, SettingsSection, Switch, Dialog, Menu } from '../ui'
-import { api, ApiError, isNetworkError } from '../lib/api'
-import { refreshEvents } from '../lib/calendarFeeds'
+import { Button, ConfirmDialog, Field, HUES, hueFor, Icon, Input, ListRow, MenuItem, Notice, Select, SettingRow, SettingsSection, Switch, Dialog, Menu, StatusIndicator, toneForHue } from '../ui'
+import { api, isNetworkError } from '../lib/api'
+import { refreshAfterChange } from '../lib/calendarFeeds'
+import { ago } from '../lib/dates'
 import { cachedCalendarSubscriptions } from '../lib/localData'
 import { useEncryption } from '../lib/e2ee'
 import { useOnline } from '../lib/online'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 import type { CalendarFeed, CalendarSubscription } from '../lib/types'
 import { SecretReveal } from './TokensSection'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { useSettingsPending } from './settingsPending'
 
 // Settings → Integrations → Calendar feeds (OpenSpec change calendar-feeds, design
 // D9): the owner's switch, the user's subscribed calendars, and the private task
@@ -49,15 +53,6 @@ export interface CalendarFeedsViewProps {
   onDismissUrl: () => void
 }
 
-export function ago(ms: number, now = Date.now()): string {
-  const m = Math.max(0, Math.round((now - ms) / 60000))
-  if (m < 1) return t('just now')
-  if (m < 60) return t('{m} min ago', { m })
-  const h = Math.round(m / 60)
-  if (h < 24) return t('{h} h ago', { h })
-  return t('{d} d ago', { d: Math.round(h / 24) })
-}
-
 /** One line of status for a subscription row. */
 export function subscriptionStatus(s: CalendarSubscription, now = Date.now()): string {
   const last = s.lastSuccessAt ? t('last success {ago}', { ago: ago(s.lastSuccessAt, now) }) : t('never refreshed')
@@ -82,7 +77,7 @@ export function CalendarFeedsView(p: CalendarFeedsViewProps) {
       {p.enabled !== null && (
         <SettingRow label={rowCopy('calendar-feeds', 'server', { variant: 'owner' }).label}
           description={p.isOwner || !on ? rowCopy('calendar-feeds', 'server', { variant: p.isOwner ? 'owner' : 'member' }).description : undefined}
-          status={<Badge hue={on ? 'green' : 'slate'}>{on ? t('On') : t('Off')}</Badge>}
+          status={<StatusIndicator tone={toneForHue(on ? 'green' : 'slate')}>{on ? t('On') : t('Off')}</StatusIndicator>}
           control={p.isOwner && <Switch checked={on} disabled={disabled} onChange={p.onToggle} label={t('Allow calendar feeds on this server')} hideLabel />} />
       )}
       {p.error && <Notice tone="danger">{p.error}</Notice>}
@@ -110,7 +105,7 @@ export function CalendarFeedsView(p: CalendarFeedsViewProps) {
                       {s.warnings?.length ? <span className="block text-faint">{s.warnings.join(' · ')}</span> : null}
                     </span>
                   )}
-                  badges={s.lastError && s.enabled ? <Badge hue="red">{t('Failing')}</Badge> : !s.enabled ? <Badge hue="slate">{t('Off')}</Badge> : undefined}
+                  badges={s.lastError && s.enabled ? <StatusIndicator tone="danger">{t('Failing')}</StatusIndicator> : !s.enabled ? <StatusIndicator tone="off">{t('Off')}</StatusIndicator> : undefined}
                   menu={(
                     <Menu label={t('Actions for {name}', { name: s.name })} trigger={<Icon name="ellipsis" />} kind="menu" triggerClassName="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon">
                       <MenuItem label={t('Edit')} icon="pencil" disabled={disabled} onSelect={() => p.onDraftChange({ id: s.id, url: s.url ?? '', name: s.name, color: s.color })} />
@@ -199,27 +194,21 @@ export function CalendarFeedsView(p: CalendarFeedsViewProps) {
   )
 }
 
-function describe(err: unknown): string {
-  if (err instanceof ApiError) return err.message.charAt(0).toUpperCase() + err.message.slice(1)
-  if (isNetworkError(err)) return t('The server could not be reached.')
-  return t('Something went wrong.')
-}
-
 export function CalendarFeedsPanel({ isOwner }: { isOwner: boolean }) {
   const online = useOnline()
   const { enabled: encrypted } = useEncryption()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [subscriptions, setSubscriptions] = useState<CalendarSubscription[] | null>(null)
+  useSettingsPending(enabled === null || subscriptions === null)
   const [feed, setFeed] = useState<CalendarFeed | null | undefined>(undefined)
   const [unreachable, setUnreachable] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, setError, run, act } = useAction({ onError: (err) => { if (isNetworkError(err)) setUnreachable(true) } })
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null)
   const [feedUrl, setFeedUrl] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const { enabled: on } = await api.calendarFeedsSetting()
+      const { enabled: on } = await api.calendarFeedsSwitch.get()
       setEnabled(on)
       setUnreachable(false)
       if (!on) return
@@ -228,9 +217,9 @@ export function CalendarFeedsPanel({ isOwner }: { isOwner: boolean }) {
       setFeed(f.feed)
     } catch (err) {
       if (isNetworkError(err)) setUnreachable(true)
-      else setError(describe(err))
+      else setError(errorText(err))
     }
-  }, [])
+  }, [setError])
 
   // Offline: the subscriptions the device cached with the last event refresh.
   useEffect(() => {
@@ -247,37 +236,23 @@ export function CalendarFeedsPanel({ isOwner }: { isOwner: boolean }) {
 
   const connected = online && !unreachable
 
-  async function run(action: () => Promise<void>) {
-    setError(null)
-    setBusy(true)
-    try {
-      await action()
-    } catch (err) {
-      if (isNetworkError(err)) setUnreachable(true)
-      setError(describe(err))
-      throw err
-    } finally {
-      setBusy(false)
-    }
-  }
-  const quiet = (action: () => Promise<void>) => run(action).catch(() => undefined)
   const upsert = (s: CalendarSubscription) => setSubscriptions((cur) => {
     const list = cur ?? []
     return list.some((x) => x.id === s.id) ? list.map((x) => (x.id === s.id ? s : x)) : [...list, s]
   })
   // Day and Week read the device cache: refresh it after every change.
-  const changed = () => void refreshEvents()
+  const changed = () => void refreshAfterChange()
 
   return (
     <CalendarFeedsView isOwner={isOwner} enabled={enabled} connected={connected} encrypted={encrypted}
       subscriptions={subscriptions} feed={feed} busy={busy} error={error} draft={draft} feedUrl={feedUrl}
-      onToggle={(on) => void quiet(async () => {
-        await api.setCalendarFeedsSetting(on)
+      onToggle={(on) => void run(async () => {
+        await api.calendarFeedsSwitch.put(on)
         setEnabled(on)
         if (on) await load()
       })}
       onDraftChange={(d) => { setDraft(d); setError(null) }}
-      onSave={() => void quiet(async () => {
+      onSave={() => void run(async () => {
         if (!draft) return
         const body = { url: draft.url.trim(), name: draft.name.trim() || undefined, color: draft.color }
         const res = draft.id ? await api.updateCalendarSubscription(draft.id, body) : await api.createCalendarSubscription(body)
@@ -285,16 +260,16 @@ export function CalendarFeedsPanel({ isOwner }: { isOwner: boolean }) {
         setDraft(null)
         changed()
       })}
-      onRefresh={(s) => void quiet(async () => { upsert((await api.refreshCalendarSubscription(s.id)).subscription); changed() })}
-      onSetEnabled={(s, on) => void quiet(async () => { upsert((await api.updateCalendarSubscription(s.id, { enabled: on })).subscription); changed() })}
-      onDelete={(s) => run(async () => {
+      onRefresh={(s) => void run(async () => { upsert((await api.refreshCalendarSubscription(s.id)).subscription); changed() })}
+      onSetEnabled={(s, on) => void run(async () => { upsert((await api.updateCalendarSubscription(s.id, { enabled: on })).subscription); changed() })}
+      onDelete={(s) => act(async () => {
         await api.deleteCalendarSubscription(s.id)
         setSubscriptions((cur) => (cur ?? []).filter((x) => x.id !== s.id))
         changed()
       })}
-      onCreateFeed={() => void quiet(async () => { const r = await api.rotateCalendarFeed(); setFeed(r.feed); setFeedUrl(r.url) })}
-      onRotateFeed={() => run(async () => { const r = await api.rotateCalendarFeed(); setFeed(r.feed); setFeedUrl(r.url) })}
-      onRevokeFeed={() => run(async () => { await api.revokeCalendarFeed(); setFeed(null) })}
+      onCreateFeed={() => void run(async () => { const r = await api.rotateCalendarFeed(); setFeed(r.feed); setFeedUrl(r.url) })}
+      onRotateFeed={() => act(async () => { const r = await api.rotateCalendarFeed(); setFeed(r.feed); setFeedUrl(r.url) })}
+      onRevokeFeed={() => act(async () => { await api.revokeCalendarFeed(); setFeed(null) })}
       onDismissUrl={() => setFeedUrl(null)} />
   )
 }

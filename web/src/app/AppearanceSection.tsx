@@ -1,29 +1,38 @@
 // Settings → Appearance (OpenSpec change theming, design D9; ux-overhaul,
-// appearance-preferences "Appearance in Settings"): mode, accent theme, density,
-// the row detail (calm-rows) and the promoted sidebar destinations, all in the synced user_prefs row and
+// appearance-preferences "Appearance in Settings without a Rows choice"): mode,
+// accent theme, density and the promoted sidebar destinations, all in the synced user_prefs row and
 // applied at once. Theme tiles are a radio group with roving focus; each tile
 // previews its theme through the real tokens (a data-accent subtree). Below
-// 640 px the tiles are one scrollable row of named swatches.
+// 640 px the tiles are one scrollable row of named swatches. On a device that can
+// vibrate, a switch turns the haptic tick off (motion-v2 D6). Task details holds how a
+// task opens from a list, as a page or in a side panel (task-side-panel D1).
 import { readMethodMode } from '../lib/method/mode'
-import { type KeyboardEvent, useRef } from 'react'
-import { DENSITIES, type Density, DETAILS, type RowDetail, PROMOTABLE, type Promotable, readAppearance, setAppearance, setPromoted, THEME_MODES, type Appearance } from '../lib/appearance'
+import { type DragEvent, type KeyboardEvent, useRef, useState } from 'react'
+import { DENSITIES, type Density, destinationOrder, type DestinationId, FIXED_DESTINATIONS, moveDestination, PROMOTABLE, type Promotable, readAppearance, readSidebarCounts, setAppearance, setPromoted, setSidebarCounts, SIDEBAR_COUNTS, type SidebarCounts, THEME_MODES, type Appearance } from '../lib/appearance'
+import { ActionMenu } from './menus/ActionMenu'
 import { useUserPrefsRow } from '../lib/localData'
 import type { ThemeModePref, UserPrefs } from '../lib/types'
-import { SettingRow, SettingsSection, Switch } from '../ui'
+import { Icon, SettingRow, SettingsSection, Switch } from '../ui'
 import { ACCENTS, type AccentId } from '../ui'
 import { t, msg, translatedMap } from '../lib/i18n'
 import { accentName } from '../lib/colourNames'
 import { act } from './actionError'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
+import { hapticsPrefOn, setHapticsPref } from '../lib/haptics'
+import { canVibrate } from './motion'
+import { readTaskOpen, setTaskOpen, type TaskOpenPref } from '../lib/userPrefs'
+import { accountRowLayout, ROW_LAYOUTS, setAccountRowLayout, type RowLayout } from '../lib/rowLayout'
+import { ROW_LAYOUT_LABEL } from './views/DisplayPanel'
 
 const MODE_LABEL = translatedMap<ThemeModePref>({ system: msg('System'), light: msg('Light'), dark: msg('Dark') })
 const DENSITY_LABEL = translatedMap<Density>({ comfortable: msg('Comfortable'), compact: msg('Compact') })
-const DETAIL_LABEL = translatedMap<RowDetail>({ calm: msg('Calm'), detailed: msg('Detailed') })
+const TASK_OPEN: readonly TaskOpenPref[] = ['page', 'panel']
+const TASK_OPEN_LABEL = translatedMap<TaskOpenPref>({ page: msg('As a page'), panel: msg('In a side panel') })
 
 /** The destinations of the sidebar's More group, as the switches name them (app-shell "Sidebar structure"). */
 export const PROMOTABLE_LABEL = translatedMap<Promotable>({
   loop: msg('Loop home'), next: msg('Next actions'), waiting: msg('Waiting'),
-  anytime: msg('Anytime'), someday: msg('Someday'), assigned: msg('Assigned to me'), completed: msg('Completed'), feed: msg('Updates'), trash: msg('Trash'), filter: msg('Filter'),
+  anytime: msg('Anytime'), someday: msg('Someday'), assigned: msg('Assigned to me'), completed: msg('Completed'), feed: msg('Updates'), trash: msg('Trash'), filter: msg('New view'), focus: msg('Focus'),
 })
 
 export interface AppearanceViewProps {
@@ -31,10 +40,12 @@ export interface AppearanceViewProps {
   onMode: (m: ThemeModePref) => void
   onAccent: (a: AccentId) => void
   onDensity?: (d: Density) => void
-  /** Row detail (calm-rows D8): Calm or Detailed. */
-  onDetail?: (d: RowDetail) => void
   /** Motion preference (task-menu-refinement): on or off; off applies the root no-motion presentation. */
   onMotion?: (m: 'on' | 'off') => void
+  /** The account's task row layout (row-layouts D4): every list without its own choice. */
+  rows?: { value: RowLayout; onChange: (r: RowLayout) => void }
+  /** The haptics switch, only on a device that can vibrate (appearance-preferences "Haptic feedback preference"). */
+  haptics?: { on: boolean; onChange: (on: boolean) => void }
 }
 
 /** Roving focus over a radio group: arrows move and select, Home and End jump. */
@@ -69,7 +80,7 @@ function Segmented<T extends string>({ label, items, labels, value, onChange, te
   )
 }
 
-export function AppearanceView({ value, onMode, onAccent, onDensity, onDetail, onMotion }: AppearanceViewProps) {
+export function AppearanceView({ value, onMode, onAccent, onDensity, onMotion, rows, haptics }: AppearanceViewProps) {
   const tileRefs = useRef<(HTMLButtonElement | null)[]>([])
   const ids = ACCENTS.map((a) => a.id)
   return (
@@ -85,7 +96,7 @@ export function AppearanceView({ value, onMode, onAccent, onDensity, onDetail, o
             return (
               <button key={a.id} ref={(el) => { tileRefs.current[i] = el }} type="button" role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
                 data-accent={a.id} data-theme-tile={a.id}
-                className={`flex w-28 shrink-0 snap-start flex-col gap-2 rounded-card border bg-surface p-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:w-auto ${on ? 'border-accent ring-2 ring-accent' : 'border-default'}`}
+                className={`flex w-28 shrink-0 snap-start flex-col gap-2 rounded-card border bg-surface p-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-focus sm:w-auto ${on ? 'border-accent ring-2 ring-accent' : 'border-default'}`}
                 onClick={() => onAccent(a.id)}
                 onKeyDown={(e) => roving(e, ids, value.accent, onAccent, (n) => tileRefs.current[n]?.focus())}>
                 <span className="flex h-12 w-full overflow-hidden rounded-control border border-default" aria-hidden="true">
@@ -108,9 +119,13 @@ export function AppearanceView({ value, onMode, onAccent, onDensity, onDetail, o
         <SettingRow id="appearance-density" {...rowCopy('appearance', 'density')}
           control={<Segmented label={t('Density')} items={DENSITIES} labels={DENSITY_LABEL} value={value.density ?? 'comfortable'} onChange={onDensity} testId="appearance-density" />} />
       )}
-      {onDetail && (
+      {rows && (
         <SettingRow id="appearance-rows" {...rowCopy('appearance', 'rows')}
-          control={<Segmented label={t('Rows')} items={DETAILS} labels={DETAIL_LABEL} value={value.detail ?? 'calm'} onChange={onDetail} testId="appearance-rows" />} />
+          control={<Segmented label={t('Task rows')} items={ROW_LAYOUTS} labels={ROW_LAYOUT_LABEL} value={rows.value} onChange={rows.onChange} testId="appearance-rows" />} />
+      )}
+      {haptics && (
+        <SettingRow id="appearance-haptics" {...rowCopy('appearance', 'haptics')} htmlFor="appearance-haptics-switch"
+          control={<Switch id="appearance-haptics-switch" checked={haptics.on} onChange={haptics.onChange} label={t('Haptic feedback')} hideLabel />} />
       )}
       {onMotion && (
         <SettingRow id="appearance-motion" {...rowCopy('appearance', 'motion')} htmlFor="appearance-motion-switch"
@@ -121,14 +136,103 @@ export function AppearanceView({ value, onMode, onAccent, onDensity, onDetail, o
   )
 }
 
-/** The sidebar destinations (app-shell "Sidebar structure"): one switch per destination of the More group. */
-export function SidebarView({ promoted, onPromote, arranged = false }: { promoted: readonly Promotable[]; onPromote: (id: Promotable, on: boolean) => void; arranged?: boolean }) {
+/** The fixed primary destinations, as the destination list names them. */
+const FIXED_LABEL = translatedMap<(typeof FIXED_DESTINATIONS)[number]>({ inbox: msg('Inbox'), today: msg('Today'), upcoming: msg('Upcoming'), calendar: msg('Calendar') })
+const destinationLabel = (id: DestinationId): string => ((FIXED_DESTINATIONS as readonly string[]).includes(id) ? FIXED_LABEL[id as (typeof FIXED_DESTINATIONS)[number]] : PROMOTABLE_LABEL[id as Promotable])
+const COUNTS_LABEL = translatedMap<SidebarCounts>({ today: msg('Inbox and Today'), all: msg('Every list') })
+
+export interface SidebarViewProps {
+  promoted: readonly Promotable[]
+  onPromote: (id: Promotable, on: boolean) => void
+  /** Open Loops first: the method fixes the sidebar, so the list is disabled and kept. */
+  arranged?: boolean
+  /** The sidebar counts preference (appearance-preferences "Sidebar counts preference"). */
+  counts?: SidebarCounts
+  onCounts?: (v: SidebarCounts) => void
+  /** Every destination that can be primary, in the user's order (sidebar-polish D3). */
+  order?: readonly DestinationId[]
+  /** Moves a destination by `delta` places (one, or a drag's distance); resolves once stored. */
+  onMove?: (id: DestinationId, delta: number) => Promise<unknown>
+}
+
+/**
+ * The sidebar card (app-shell "Sidebar structure", sidebar-polish D1, D3): the counts
+ * choice, then every destination that can be primary in the user's order, each with a
+ * drag handle (Alt+↑ and Alt+↓ on it), Move up and Move down in its menu, and the
+ * promotion switch on the promotable ones.
+ */
+export function SidebarView({ promoted, onPromote, arranged = false, counts = 'today', onCounts, order = [...FIXED_DESTINATIONS, ...PROMOTABLE], onMove }: SidebarViewProps) {
+  const [announce, setAnnounce] = useState('')
+  const [dragId, setDragId] = useState<DestinationId | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const move = async (id: DestinationId, delta: -1 | 1, focus = true) => {
+    if (!onMove) return
+    const from = order.indexOf(id)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= order.length) return
+    await onMove(id, delta)
+    setAnnounce(t('{name} moved to position {n} of {count}', { name: destinationLabel(id), n: to + 1, count: order.length }))
+    if (focus) window.setTimeout(() => listRef.current?.querySelector<HTMLElement>(`[data-destination-row="${id}"] [data-destination-handle]`)?.focus(), 30)
+  }
+  const onHandleKey = (e: KeyboardEvent, id: DestinationId) => {
+    if (arranged || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+    e.preventDefault()
+    act(move(id, e.key === 'ArrowUp' ? -1 : 1))
+  }
+  const onDrop = async (e: DragEvent, target: DestinationId) => {
+    e.preventDefault()
+    const id = dragId
+    setDragId(null)
+    if (!id || arranged) return
+    const from = order.indexOf(id)
+    const to = order.indexOf(target)
+    if (from < 0 || to < 0 || from === to) return
+    await onMove?.(id, to - from)
+    setAnnounce(t('{name} moved to position {n} of {count}', { name: destinationLabel(id), n: to + 1, count: order.length }))
+  }
   return (
     <SettingsSection {...cardCopy('sidebar', { variant: arranged ? 'arranged' : 'standard' })}>
-      {PROMOTABLE.map((id) => (
-        <SettingRow key={id} id={`sidebar-${id}`} label={PROMOTABLE_LABEL[id]} htmlFor={`sidebar-switch-${id}`}
-          control={<Switch id={`sidebar-switch-${id}`} checked={promoted.includes(id)} disabled={arranged} onChange={(on) => onPromote(id, on)} label={t('Show {name} among the primary items', { name: PROMOTABLE_LABEL[id] })} hideLabel />} />
-      ))}
+      {onCounts && (
+        <SettingRow id="sidebar-counts" {...rowCopy('sidebar', 'counts')}
+          control={<Segmented label={t('Sidebar counts')} items={SIDEBAR_COUNTS} labels={COUNTS_LABEL} value={counts} onChange={onCounts} testId="sidebar-counts" />} />
+      )}
+      <div className="py-3" id="sidebar-destinations" tabIndex={-1} data-setting-row="sidebar-destinations">
+        <p id="sidebar-destinations-label" className="text-body font-medium text-default">{rowCopy('sidebar', 'destinations').label}</p>
+        <p className="mt-0.5 mb-2 text-meta text-muted">{rowCopy('sidebar', 'destinations').description}</p>
+        <ul ref={listRef} aria-labelledby="sidebar-destinations-label" className="divide-y divide-default rounded-card border border-default" data-destination-list>
+          {order.map((id, i) => {
+            const name = destinationLabel(id)
+            const promotable = (PROMOTABLE as readonly string[]).includes(id)
+            const ghost = dragId === id ? 'opacity-50' : '' // tone-lint-allow: the dragged destination's ghost
+            return (
+              <li key={id} id={promotable ? `sidebar-${id}` : undefined} data-setting-row={promotable ? `sidebar-${id}` : undefined} data-destination-row={id}
+                tabIndex={promotable ? -1 : undefined} draggable={!arranged && !!onMove} onDragStart={() => setDragId(id)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => void onDrop(e, id)}
+                className={`flex items-center gap-2 px-2 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-focus ${ghost}`}>
+                {onMove && (
+                  <button type="button" data-destination-handle disabled={arranged} aria-label={t('Move {name} (Alt+Up or Alt+Down)', { name })} onKeyDown={(e) => onHandleKey(e, id)}
+                    className="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon shrink-0 cursor-grab">
+                    <Icon name="grip-vertical" />
+                  </button>
+                )}
+                {promotable
+                  ? <label htmlFor={`sidebar-switch-${id}`} className="min-w-0 flex-1 truncate text-body text-default">{name}</label>
+                  : <span className="min-w-0 flex-1 truncate text-body text-default">{name}</span>}
+                {promotable && (
+                  <Switch id={`sidebar-switch-${id}`} checked={promoted.includes(id as Promotable)} disabled={arranged} onChange={(on) => onPromote(id as Promotable, on)}
+                    label={t('Show {name} among the primary items', { name })} hideLabel />
+                )}
+                {onMove && !arranged && (
+                  <ActionMenu label={t('Menu for {name}', { name })} title={name} groups={[{ items: [
+                    { kind: 'action', id: 'up', label: t('Move up'), icon: 'arrow-up', disabled: i === 0, reason: t('Already first'), onSelect: () => act(move(id, -1, false)) },
+                    { kind: 'action', id: 'down', label: t('Move down'), icon: 'arrow-down', disabled: i === order.length - 1, reason: t('Already last'), onSelect: () => act(move(id, 1, false)) },
+                  ] }]} triggerClassName="touch-target rounded-control px-1.5 py-0.5 text-faint hover:bg-sunken dark:hover:bg-raised" />
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        <span role="status" aria-live="polite" className="sr-only">{announce}</span>
+      </div>
     </SettingsSection>
   )
 }
@@ -142,12 +246,33 @@ export function AppearanceSection() {
   const row = usePrefsRow()
   const value = readAppearance(row)
   return <AppearanceView value={value} onMode={(m) => act(setAppearance('theme_mode', m))} onAccent={(a) => act(setAppearance('theme_accent', a))}
-    onDensity={(d) => act(setAppearance('density', d))} onDetail={(d) => act(setAppearance('row_detail', d))}
-    onMotion={(m) => act(setAppearance('motion', m === 'off' ? 'none' : ''))} />
+    onDensity={(d) => act(setAppearance('density', d))}
+    onMotion={(m) => act(setAppearance('motion', m === 'off' ? 'none' : ''))}
+    rows={{ value: accountRowLayout(row), onChange: (r) => act(setAccountRowLayout(r)) }}
+    haptics={canVibrate() ? { on: hapticsPrefOn(row), onChange: (on) => act(setHapticsPref(on)) } : undefined} />
 }
 
 export function SidebarSection() {
+  // Moves rewrite the whole order, so they wait for the stored one (it may hold ids this client does not know).
+  const loaded = useUserPrefsRow() !== undefined
   const row = usePrefsRow()
   const value = readAppearance(row)
-  return <SidebarView promoted={value.sidebar ?? []} arranged={readMethodMode(row) === 'first'} onPromote={(id, on) => act(setPromoted(row, id, on))} />
+  return <SidebarView promoted={value.sidebar ?? []} arranged={readMethodMode(row) === 'first'} onPromote={(id, on) => act(setPromoted(row, id, on))}
+    counts={readSidebarCounts(row)} onCounts={(v) => act(setSidebarCounts(v))}
+    order={destinationOrder(row)} onMove={loaded ? (id, delta) => moveDestination(row, id, delta) : undefined} />
+}
+
+/** Settings → Appearance → Task details (task-side-panel D1): the synced choice, written through ops. */
+export function TaskDetailsSection() {
+  const row = usePrefsRow()
+  return <TaskDetailsView value={readTaskOpen(row)} onChange={(v) => act(setTaskOpen(v))} />
+}
+
+export function TaskDetailsView({ value, onChange }: { value: TaskOpenPref; onChange: (v: TaskOpenPref) => void }) {
+  return (
+    <SettingsSection {...cardCopy('task-details')}>
+      <SettingRow id="task-open" {...rowCopy('task-details', 'open')}
+        control={<Segmented label={t('Open tasks')} items={TASK_OPEN} labels={TASK_OPEN_LABEL} value={value} onChange={onChange} testId="task-open" />} />
+    </SettingsSection>
+  )
 }

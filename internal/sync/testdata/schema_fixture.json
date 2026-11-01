@@ -1,5 +1,5 @@
 {
-  "about": "The op schema contract between the server and the web client (OpenSpec change test-integrity). internal/sync/schema_fixture_test.go checks it against sync.Schema and e2ee.ContentFields/ContentPrefixes; web/src/lib/schemaFixture.test.ts against ENTITIES, the row defaults in ops.ts and CONTENT_FIELDS/CONTENT_PREFIXES in e2ee.ts. Adding a field: add it here, in both implementations, and (for user-written text) to content_fields.",
+  "about": "The op schema contract between the server and the web client (OpenSpec change test-integrity), generated from sync.Schema by internal/sync TestGeneratedOpSchema. internal/sync/schema_fixture_test.go checks it against sync.Schema and e2ee; web/src/lib/schemaFixture.test.ts against ENTITIES, the row defaults in ops.ts and CONTENT_FIELDS/CONTENT_PREFIXES in e2ee.ts.",
   "entities": {
     "attachment": [
       "author_id",
@@ -36,12 +36,31 @@
       "project_id",
       "type"
     ],
+    "frame": [
+      "color",
+      "created_at",
+      "deleted_at",
+      "end",
+      "from_date",
+      "position",
+      "source",
+      "start",
+      "title",
+      "until_date",
+      "weekdays"
+    ],
     "label": [
       "color",
       "created_at",
       "deleted_at",
+      "group_by",
+      "manual_order",
       "name",
-      "position"
+      "position",
+      "row_layout",
+      "sort_by",
+      "sort_dir",
+      "workspace_id"
     ],
     "place": [
       "address",
@@ -57,15 +76,23 @@
       "created_at",
       "deleted_at",
       "description",
+      "flow_mode",
       "icon",
       "name",
       "notes_doc",
       "parent_id",
-      "position"
+      "position",
+      "status",
+      "workspace_id"
     ],
     "project_prefs": [
       "feed_seen_at",
-      "reviewed_at"
+      "group_by",
+      "review_every",
+      "reviewed_at",
+      "row_layout",
+      "sort_by",
+      "sort_dir"
     ],
     "reminder": [
       "created_at",
@@ -80,21 +107,46 @@
     "review": [
       "carry_over",
       "closed_at",
+      "closed_day",
       "completed_at",
       "daily_at",
       "focus",
       "focus_date",
+      "focus_slots",
       "monthly_at",
+      "slots",
+      "slots_date",
       "tomorrow_note"
+    ],
+    "rule": [
+      "actions",
+      "condition",
+      "created_at",
+      "deleted_at",
+      "enabled",
+      "name",
+      "position",
+      "trigger"
     ],
     "section": [
       "color",
       "created_at",
       "deleted_at",
+      "flow_mode",
       "icon",
       "name",
       "position",
       "project_id"
+    ],
+    "slot": [
+      "color",
+      "created_at",
+      "date",
+      "deleted_at",
+      "minutes",
+      "start",
+      "task_ids",
+      "title"
     ],
     "task": [
       "assignee_id",
@@ -102,16 +154,19 @@
       "completed_at",
       "completed_by",
       "created_at",
+      "day_part",
       "deadline",
       "deleted_at",
       "description",
       "due",
+      "energy",
       "estimate_minutes",
       "evening",
       "habit",
       "ical_extra",
       "labels",
       "location",
+      "note_mentions",
       "notes_doc",
       "origin",
       "parent_id",
@@ -119,11 +174,13 @@
       "priority",
       "project_id",
       "recurrence",
+      "sample",
       "section_id",
       "series_id",
       "skipped",
       "start",
-      "title"
+      "title",
+      "workspace_id"
     ],
     "time_entry": [
       "created_at",
@@ -136,10 +193,15 @@
       "user_id"
     ],
     "user_prefs": [
+      "add_position",
+      "bento_order",
+      "briefing",
       "date_format",
+      "day_parts",
       "day_start",
       "density",
       "disabled_plugins",
+      "energy",
       "favourites",
       "first_run",
       "focus_auto_start",
@@ -147,18 +209,32 @@
       "focus_long_break_every",
       "focus_long_break_minutes",
       "focus_mode",
+      "focus_noise",
+      "focus_presets",
       "focus_short_break_minutes",
       "focus_sound",
+      "focus_style",
       "focus_work_minutes",
+      "haptics",
       "language",
       "maps",
       "method_mode",
       "motion",
+      "reminder_default_dated",
+      "reminder_default_timed",
       "row_detail",
+      "row_layout",
+      "sidebar_counts",
       "sidebar_destinations",
+      "sidebar_order",
+      "start_checklist",
+      "task_open",
       "theme_accent",
       "theme_mode",
       "time_format",
+      "today_done",
+      "today_events",
+      "today_limit",
       "week_start",
       "welcome"
     ],
@@ -167,18 +243,28 @@
       "created_at",
       "deleted_at",
       "group_by",
+      "hidden_props",
+      "icon",
       "kind",
+      "layout",
+      "manual_order",
       "name",
       "on_drop",
       "panels",
       "pinned",
       "position",
       "query",
+      "row_layout",
+      "show_completed",
       "sort_by",
-      "sort_dir"
+      "sort_dir",
+      "workspace_id"
     ]
   },
   "field_prefixes": {
+    "comment": [
+      "reactions."
+    ],
     "task": [
       "fields."
     ]
@@ -197,13 +283,16 @@
       "name",
       "options"
     ],
+    "frame": [
+      "title"
+    ],
     "label": [
       "name"
     ],
     "place": [
-      "name",
       "address",
-      "geo"
+      "geo",
+      "name"
     ],
     "project": [
       "description",
@@ -213,16 +302,22 @@
     "review": [
       "tomorrow_note"
     ],
+    "rule": [
+      "name"
+    ],
     "section": [
       "name"
+    ],
+    "slot": [
+      "title"
     ],
     "task": [
       "description",
       "ical_extra",
+      "location",
       "notes_doc",
       "origin",
-      "title",
-      "location"
+      "title"
     ],
     "time_entry": [
       "note"

@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pixari/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
 )
 
 // Comments (OpenSpec change `comments-and-activity`, design D1/D2). A comment is
@@ -24,7 +24,11 @@ import (
 //   - body, mentions, edited_at, parent_id and created_at are the author's alone;
 //   - deleted_at may be set by the author, a project admin or the owner;
 //   - mentions are filtered to current members of the task's shared project
-//     (empty for a personal task) and the filtered value is what is stored.
+//     (empty for a personal task) and the filtered value is what is stored;
+//   - `reactions.<account>` (editor-everywhere D8) is written only by that
+//     account, by anyone who can see the comment, within the comment limit.
+//
+// A task's note_mentions (editor-everywhere D7) follow the same member filter.
 
 // ReasonRateLimited: the author created too many comments in the current window
 // (design risk "viewer comment spam"); the op is refused, not stored.
@@ -72,50 +76,15 @@ func (r *resolver) noteComment(op Op) {
 	}
 }
 
-// comment looks a comment up among the author's personal scope and every project
-// scope (once per batch).
+// comment looks a comment up in every scope (once per batch, entity-id-ownership).
 func (r *resolver) comment(id string) (*commentState, error) {
 	if st, ok := r.comments[id]; ok {
 		return st, nil
 	}
-	rows, err := r.tx.QueryContext(r.ctx, `SELECT scope_id, field, value FROM scope_fields
-		WHERE entity = 'comment' AND entity_id = ? AND field IN ('task_id','author_id') AND (scope_id = ? OR scope_id LIKE 'project:%')`,
-		id, r.acc.personal)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	type vals struct{ task, author string }
-	byScope := map[string]*vals{}
-	for rows.Next() {
-		var sc, field, value string
-		if err := rows.Scan(&sc, &field, &value); err != nil {
-			return nil, err
-		}
-		v := byScope[sc]
-		if v == nil {
-			v = &vals{}
-			byScope[sc] = v
-		}
-		if field == "task_id" {
-			v.task = idValue(json.RawMessage(value))
-		} else {
-			v.author = idValue(json.RawMessage(value))
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 	st := &commentState{}
-	best := 99
-	for sc, v := range byScope {
-		if rk := r.acc.rank(sc); rk < best {
-			best = rk
-			st.found, st.scope, st.task, st.author = true, sc, v.task, v.author
-		}
-	}
-	if st.found && !r.acc.canSee(st.scope) {
-		st.scope = ""
+	var err error
+	if st.found, st.scope, st.task, st.author, err = r.pairHome("comment", id, "task_id", "author_id"); err != nil {
+		return nil, err
 	}
 	r.comments[id] = st
 	return st, nil
@@ -147,6 +116,17 @@ func (r *resolver) resolveComment(op Op) (scope, reason string, err error) {
 				return "", ReasonForbidden, nil
 			}
 		default:
+			// Reactions (editor-everywhere D8): anyone who sees the comment, viewers
+			// included, writes only their own key; each counts against the comment limit.
+			if account, ok := ReactionAccount(op.Field); ok {
+				if account != r.acc.userID || !r.acc.canSee(st.scope) {
+					return "", ReasonForbidden, nil
+				}
+				if r.allowComment != nil && !r.allowComment() {
+					return "", ReasonRateLimited, nil
+				}
+				return st.scope, "", nil
+			}
 			if st.author != r.acc.userID {
 				return "", ReasonForbidden, nil
 			}
@@ -160,6 +140,9 @@ func (r *resolver) resolveComment(op Op) (scope, reason string, err error) {
 		return "", ReasonForbidden, nil
 	}
 	if (op.Field == "author_id" && idValue(op.Value) != b.author) || (op.Field == "task_id" && idValue(op.Value) != b.task) {
+		return "", ReasonForbidden, nil
+	}
+	if account, ok := ReactionAccount(op.Field); ok && account != r.acc.userID {
 		return "", ReasonForbidden, nil
 	}
 	scope, found, err := r.existingTaskScope(b.task)
@@ -202,8 +185,9 @@ func (r *resolver) resolveComment(op Op) (scope, reason string, err error) {
 }
 
 // filterMentions keeps the mentioned ids that are current members of a shared
-// project scope, without duplicates; a personal scope keeps none. changed reports
-// whether the value differs from what was sent.
+// project scope, and the groups of its workspace (group-mentions D2), without
+// duplicates; a personal scope keeps none. changed reports whether the value
+// differs from what was sent.
 func (r *resolver) filterMentions(scope string, raw json.RawMessage) (json.RawMessage, bool, error) {
 	var ids []string
 	if err := json.Unmarshal(raw, &ids); err != nil {
@@ -217,7 +201,7 @@ func (r *resolver) filterMentions(scope string, raw json.RawMessage) (json.RawMe
 				continue
 			}
 			seen[id] = true
-			ok, err := r.canBeAssigned(scope, id)
+			ok, err := r.keepMention(scope, id)
 			if err != nil {
 				return nil, false, err
 			}
@@ -288,6 +272,10 @@ func (s *Service) emitMentions(ctx context.Context, author string, at int64, cha
 	var actorName string
 	actorLoaded := false
 	for _, c := range changes {
+		if c.Entity == "task" && strings.HasPrefix(c.ScopeID, "project:") && !IsAgentDevice(c.Origin) {
+			s.emitNoteMentions(ctx, author, at, c)
+			continue
+		}
 		if c.Entity != "comment" || !strings.HasPrefix(c.ScopeID, "project:") {
 			continue
 		}
@@ -300,33 +288,85 @@ func (s *Service) emitMentions(ctx context.Context, author string, at int64, cha
 		if !ok {
 			continue
 		}
-		var before, after []string
-		_ = json.Unmarshal(fc.From, &before)
-		_ = json.Unmarshal(fc.To, &after)
-		had := map[string]bool{}
-		for _, id := range before {
-			had[id] = true
-		}
 		if raw := s.rawField(ctx, c.ScopeID, "comment", c.EntityID, "deleted_at"); raw != "" && raw != "null" {
 			continue
 		}
+		recipients, groupNames := s.newlyMentioned(ctx, c.ScopeID, author, fc)
 		taskID := idValue(json.RawMessage(s.rawField(ctx, c.ScopeID, "comment", c.EntityID, "task_id")))
-		for _, id := range after {
-			if had[id] || id == author {
-				continue
-			}
-			had[id] = true
+		for _, id := range recipients {
 			if !actorLoaded {
 				actorName = s.userName(ctx, author)
 				actorLoaded = true
 			}
 			e := notify.Mentioned{RecipientID: id, ActorID: author, ActorName: actorName, CommentID: c.EntityID, TaskID: taskID, At: at}
+			e.GroupID, e.GroupName = groupNames(id)
 			e.TaskTitle = s.stringField(ctx, c.ScopeID, "task", taskID, "title")
 			e.ProjectID = strings.TrimPrefix(c.ScopeID, "project:")
 			e.ProjectName = s.stringField(ctx, c.ScopeID, "project", e.ProjectID, "name")
 			e.Excerpt = excerpt(s.stringField(ctx, c.ScopeID, "comment", c.EntityID, "body"), 140)
 			s.sinks.Mentioned(ctx, e)
 		}
+	}
+}
+
+// newlyMentioned lists the accounts a mention change reaches that its previous
+// value did not, never the author, each once (group-mentions D3); groupOf names
+// the group through which an account was reached when it was not mentioned
+// directly.
+func (s *Service) newlyMentioned(ctx context.Context, scope, author string, fc FieldChange) (recipients []string, groupOf func(string) (string, string)) {
+	var before, after []string
+	_ = json.Unmarshal(fc.From, &before)
+	_ = json.Unmarshal(fc.To, &after)
+	had := map[string]bool{author: true}
+	if len(before) > 0 {
+		for _, id := range s.reach(ctx, scope, before).people {
+			had[id] = true
+		}
+	}
+	now := s.reach(ctx, scope, after)
+	for _, id := range now.people {
+		if !had[id] {
+			had[id] = true
+			recipients = append(recipients, id)
+		}
+	}
+	names := map[string]string{}
+	return recipients, func(id string) (string, string) {
+		g := now.via[id]
+		if g == "" {
+			return "", ""
+		}
+		if _, ok := names[g]; !ok {
+			names[g] = s.groupName(ctx, g)
+		}
+		return g, names[g]
+	}
+}
+
+// emitNoteMentions notifies the accounts newly listed in a task's note_mentions
+// (editor-everywhere D7): never an id the stored list already had, never the
+// author, never for a deleted task. The value was filtered to members at receipt.
+func (s *Service) emitNoteMentions(ctx context.Context, author string, at int64, c Change) {
+	fc, ok := c.Fields["note_mentions"]
+	if !ok {
+		return
+	}
+	if raw := s.rawField(ctx, c.ScopeID, "task", c.EntityID, "deleted_at"); raw != "" && raw != "null" {
+		return
+	}
+	recipients, groupNames := s.newlyMentioned(ctx, c.ScopeID, author, fc)
+	actorName := ""
+	for _, id := range recipients {
+		if actorName == "" {
+			actorName = s.userName(ctx, author)
+		}
+		e := notify.Mentioned{RecipientID: id, ActorID: author, ActorName: actorName, TaskID: c.EntityID, At: at, Source: "note"}
+		e.GroupID, e.GroupName = groupNames(id)
+		e.TaskTitle = s.stringField(ctx, c.ScopeID, "task", c.EntityID, "title")
+		e.ProjectID = strings.TrimPrefix(c.ScopeID, "project:")
+		e.ProjectName = s.stringField(ctx, c.ScopeID, "project", e.ProjectID, "name")
+		e.Excerpt = excerpt(s.stringField(ctx, c.ScopeID, "task", c.EntityID, "description"), 140)
+		s.sinks.Mentioned(ctx, e)
 	}
 }
 

@@ -31,16 +31,16 @@ Each panel answers one question:
 - **How good are my estimates?** For tasks with an estimate and at least 5 minutes tracked: how many times their estimate they take, and the projects or labels furthest from it.
 - **What keeps slipping?** Open tasks whose due date was moved later or removed three times or more in 90 days. It reads this device's history, so another device may list different tasks.
 
-Every chart has **Show as table**, and with the keyboard the arrow keys move through its days or values. A panel with nothing to show collapses to one line.
+Every chart has **Show as table**, and the arrow keys move through its days or values. A panel with nothing to show collapses to one line.
 
 **Export time entries** in the menu next to the period chooser downloads a CSV of the period's entries, made on this device. The columns are those of the [server's CSV](time-tracking.md#export).
 
-In a shared project a completed task counts for whoever completed it; older tasks count for their assignee, or for you when unassigned. Tasks in the Trash are left out.
+In a shared project a completed task counts for whoever completed it; older tasks count for their assignee, or for you when unassigned. Tasks in the Trash and the start guide's sample tasks are left out.
 
-Statistics are computed on this device. Nothing is sent or stored, they work offline, and synced devices show the same numbers. The [Loop home](method/overview.md)'s Loop pulse uses the same definitions.
+Statistics are computed on this device: nothing is sent or stored, they work offline, and synced devices agree. The [Loop home](method/overview.md)'s Loop pulse uses the same definitions.
 
 ## Weekly digest by email
 
-In **Settings → Notifications → Weekly digest**, turn on an email for your review day: last week's numbers, overdue tasks, what is due in the next seven days, projects without a next action, when you last reviewed, and a link to the review. What counts as without a next action is in [Places](method/places.md#projects-without-a-next-action). Pick the day and hour; your time zone and language come from the browser and are shown on the card.
+In **Settings → Notifications → Weekly digest**, turn on an email for your review day: last week's numbers, what is still open, what is due in the next seven days, projects without a next action, when you last reviewed, and a link to the review. What counts as without a next action is in [Places](method/places.md#projects-without-a-next-action). Pick the day and hour; your time zone and language come from the browser and are shown on the card.
 
 The digest uses the same definitions as Statistics, your day start included. It needs [outgoing email](self-hosting/outgoing-email.md) set up by the server owner, contains task names, and is not available with end-to-end encryption: turning encryption on switches it off. A failed send is retried for six hours.

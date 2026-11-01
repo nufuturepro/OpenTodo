@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
 )
 
 // Verified open sign-up (OpenSpec `outgoing-email` D4): the account is created
@@ -61,7 +62,7 @@ func (s *Service) BeginSignup(ctx context.Context, email, name, password, lang s
 		return "", false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO signup_verifications(id,token_hash,email,name,password_hash,lang,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)`,
-		ids.New(), hashToken(secret), email, truncate(strings.TrimSpace(name), 200), hash, lang, now.UnixMilli(), now.Add(SignupTTL).UnixMilli()); err != nil {
+		ids.New(), hashToken(secret), email, textutil.Truncate(strings.TrimSpace(name), 200), hash, lang, now.UnixMilli(), now.Add(SignupTTL).UnixMilli()); err != nil {
 		return "", false, err
 	}
 	return secret, false, tx.Commit()
@@ -124,11 +125,14 @@ func (s *Service) CompleteSignup(ctx context.Context, secret string) (*User, err
 		return nil, err
 	}
 	u := &User{ID: ids.New(), Email: email, Name: name, Role: "member", CreatedAt: s.clock().UnixMilli()}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-		u.ID, u.Email, u.Name, hash, u.Role, u.CreatedAt); err != nil {
+	if err := insertUser(ctx, tx, u, hash); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return nil, ErrEmailTaken
 		}
+		return nil, err
+	}
+	// The link went to this address: it is confirmed (sso-email-verified).
+	if _, err := tx.ExecContext(ctx, "UPDATE users SET email_verified_at = ? WHERE id = ?", u.CreatedAt, u.ID); err != nil {
 		return nil, err
 	}
 	return u, tx.Commit()

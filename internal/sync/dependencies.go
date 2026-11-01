@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
 )
 
 // Task dependencies (OpenSpec change task-dependencies, design D4, D5).
@@ -216,6 +216,13 @@ func (s *Service) emitUnblocked(ctx context.Context, author string, at int64, ch
 			}
 		}
 	}
+}
+
+// ScopeBlockedGraph reads every non-empty blocked_by list of a scope as stored:
+// the graph the agent tool planner checks cycles against, so it never accepts
+// a list ApplyStrict would refuse (agent-planning-fields D2).
+func (s *Service) ScopeBlockedGraph(ctx context.Context, scope string) (map[string][]string, error) {
+	return s.scopeBlockedGraph(ctx, scope)
 }
 
 // scopeBlockedGraph reads every non-empty blocked_by list of a scope.

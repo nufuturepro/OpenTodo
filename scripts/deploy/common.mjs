@@ -42,6 +42,21 @@ export function latestRelease(changelog) {
   return { major: m[1], minor: m[2], patch: m[3] }
 }
 
+/** The newest released version in CHANGELOG.md as x.y.z: what the tests expect the pinned templates to name. */
+export function releaseVersion(changelog) {
+  const r = latestRelease(changelog)
+  return `${r.major}.${r.minor}.${r.patch}`
+}
+
+/** A release after `version` (its next minor), for tests that make the pinned templates stale. */
+export function laterRelease(version) {
+  const [major, minor] = version.split('.').map(Number)
+  return `${major}.${minor + 1}.1`
+}
+
+/** `s` with every regular expression metacharacter escaped. */
+export const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+
 /** Every OPENTODO_* name written as a string literal in internal/config (tests excluded). */
 export function configVariables(root = ROOT) {
   const dir = join(root, 'internal/config')
@@ -67,12 +82,31 @@ export function checkFacts(facts, configVars) {
   return errors
 }
 
+/** -1, 0 or 1 as release a (x.y.z) is older than, the same as or newer than b; b may be x.y. */
+export function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number)
+  const pb = String(b).split('.').map(Number)
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1
+  return 0
+}
+
+/**
+ * The image name a release was first published under. The repository moved from the user pixari
+ * to the organization OpenTodoApp after `facts.legacy.lastRelease`: earlier releases exist only
+ * under the legacy name, so a reference pinned to one of them by digest keeps that name.
+ */
+export function imageFor(facts, version) {
+  const legacy = facts.legacy
+  return legacy && compareVersions(version, legacy.lastRelease) <= 0 ? legacy.image : facts.image
+}
+
 /**
  * The image a template names (OpenSpec changes stable-image-tag and platform-catalogs).
  * policy 'stable' (default): <image>:<tag from deploy.json>, the tag every release moves.
  * policy 'release': <image>:<latest release in CHANGELOG.md>, for stores that refuse moving tags.
  * policy 'release-digest': the same plus @sha256:<digest> of that release (Umbrel); the digest itself
- * is refreshed after a release by `node scripts/deploy/pin.mjs` and only its shape is checked here.
+ * is refreshed after a release by `node scripts/deploy/pin.mjs` and only its shape is checked here. A release
+ * from before the move to OpenTodoApp is pinned under its legacy name (imageFor).
  */
 export function checkImage(image, facts, policy = 'stable', changelog = null) {
   if (policy === 'stable') {
@@ -87,9 +121,11 @@ export function checkImage(image, facts, policy = 'stable', changelog = null) {
     return image === want ? [] : [`image must be ${want}, the latest release in CHANGELOG.md (this store refuses moving tags), got: ${image}`]
   }
   if (policy === 'release-digest') {
-    return new RegExp(`^${want.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@sha256:[0-9a-f]{64}$`).test(image ?? '')
+    // A digest belongs to the repository it was read from: a release from before the move keeps the legacy name.
+    const pinned = `${imageFor(facts, version)}:${version}`
+    return new RegExp(`^${pinned.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@sha256:[0-9a-f]{64}$`).test(image ?? '')
       ? []
-      : [`image must be ${want}@sha256:<index digest>, the latest release pinned by digest (run node scripts/deploy/pin.mjs after the release), got: ${image}`]
+      : [`image must be ${pinned}@sha256:<index digest>, the latest release pinned by digest (run node scripts/deploy/pin.mjs after the release), got: ${image}`]
   }
   return [`unknown image policy ${policy}`]
 }

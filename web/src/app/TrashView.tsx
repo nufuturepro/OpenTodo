@@ -1,4 +1,4 @@
-import { Button, EmptyState, Icon, PageBody, PageHeader } from '../ui'
+import { Button, EmptyState, Icon, PageBody, PageHeader, TruncatedText } from '../ui'
 import { keysOf } from '../lib/shortcuts'
 import { navigate } from './router'
 import { useEffect, useMemo, useState } from 'react'
@@ -9,6 +9,7 @@ import { emptyTrash, PENDING_PURGES_KEY, purgeItems, remainingDays, RETENTION_KE
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { useShortcutScope } from './shortcuts'
 import { t } from '../lib/i18n'
+import { messageOf } from '../lib/errorText'
 
 const NO_PURGES: PurgeRequest[] = []
 
@@ -43,7 +44,7 @@ export function TrashView() {
       if (it.entity === 'task') await restoreTask(it.id)
       else await restoreProject(it.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(messageOf(err))
     }
   }
 
@@ -54,7 +55,7 @@ export function TrashView() {
       if (target === 'all') await emptyTrash()
       else await purgeItems([{ entity: target.entity, id: target.id }])
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(messageOf(err))
     }
   }
 
@@ -90,7 +91,7 @@ export function TrashView() {
       )}
       {items.length === 0 ? (
         <div data-empty-state="trash">
-          <EmptyState title={t('The Trash is empty.')} action={{ label: t('Open Inbox'), onClick: () => navigate({ view: 'inbox' }), shortcut: keysOf('go.inbox') }} />
+          <EmptyState illustration="trash-empty" title={t('The Trash is empty.')} action={{ label: t('Open Inbox'), onClick: () => navigate({ view: 'inbox' }), shortcut: keysOf('go.inbox') }} />
         </div>
       ) : (
         <ul className="divide-y divide-(--ot-border)" aria-label={t('Deleted items')}>
@@ -100,10 +101,11 @@ export function TrashView() {
             const ok = allowed(it)
             return (
               <li key={`${it.entity}:${it.id}`} data-trash-id={it.id} onClick={() => setSelected(i)}
-                className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2 text-body ${i === selected ? 'bg-accent-soft' : ''}`}>
+                className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control px-2 py-2 text-body ${i === selected ? 'bg-selected-row' : ''}`}>
                 <span className="w-5 text-center" aria-hidden>{it.entity === 'project' ? <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: it.color }} /> : <Icon name="circle" size="xs" />}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{it.title}</span>
+                {/* At least 12rem for the name: on a phone Restore and Delete permanently wrap under it instead of squeezing it. */}
+                <span className="min-w-0 flex-[1_1_12rem]">
+                  <TruncatedText className="block" text={it.title} />
                   <span className="block text-meta text-faint">
                     {[
                       it.entity === 'project' ? t('Project') : it.projectName,

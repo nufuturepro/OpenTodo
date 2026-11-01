@@ -15,11 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/tenant"
-	"github.com/pixari/opentodo/internal/web"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/tenant"
+	"github.com/OpenTodoApp/opentodo/internal/web"
 )
 
 // Options configure Open.
@@ -97,6 +98,7 @@ func Open(cfg config.Config, o Options) (*Host, error) {
 		unlock()
 		return nil, err
 	}
+	httpapi.ConfigureClientIdentity(cfg)
 	reg, err := OpenRegistry(root, now)
 	if err != nil {
 		unlock()
@@ -134,6 +136,9 @@ func (h *Host) tenantConfig(rec Record) (config.Config, config.Limits) {
 	c.DataDir = h.TenantDir(rec.Name)
 	c.BaseURL = h.hc.TenantURL(rec.Name)
 	c.SetupToken = rec.setupToken
+	// A tenant's first account needs its setup token; the code stays on as the
+	// fallback for a record without one, whatever the process says.
+	c.SetupCodeRequired = true
 	c.Warnings = nil
 	lim := h.hc.Limits.Merge(rec.Limits)
 	if lim.ImportMB > 0 {
@@ -177,7 +182,8 @@ func (h *Host) openTenant(_ context.Context, name string) (*tenant.Tenant, error
 		// closing the tenant applies it on the next open.
 		Restart: func() { go h.pool.evict(name) },
 		Hosted: &tenant.Hosted{Name: name, PushSubject: h.hc.URL.Scheme + "://" + h.hc.URL.Host, Quota: q,
-			MaxMembers: lim.Members, Changed: func() { h.markDirty(name) }}}
+			MaxMembers: lim.Members, Changed: func() { h.markDirty(name) },
+			Workspaces: opsync.WorkspaceLimits{Workspaces: lim.Workspaces, Members: lim.WorkspaceMembers, Groups: lim.WorkspaceGroups, GroupMembers: lim.GroupMembers}}}
 	if h.adjust != nil {
 		h.adjust(name, &opts)
 	}
@@ -277,7 +283,9 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lim := h.hc.Limits.Merge(rec.Limits)
-	if !h.reqs.allow(name, lim.RequestsPerMinute) {
+	// Counted per client address: one client, signed in or not, cannot use up
+	// the budget of every other user of the tenant (hosted-demo-limits D1).
+	if !h.reqs.allow(name+" "+httpapi.ClientKey(r), lim.RequestsPerMinute) {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "limit_requests", "this server reached its limit of requests per minute: try again shortly")
 		return

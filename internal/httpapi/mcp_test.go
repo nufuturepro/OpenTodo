@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/mcp"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/mcp"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // mcpPost sends a raw JSON-RPC body to /mcp with the usual client headers.
@@ -346,7 +346,7 @@ func TestMcpSession(t *testing.T) {
 		t.Fatalf("initialized: %d", resp.StatusCode)
 	}
 	tools := c.rpc(secret, "tools/list", map[string]any{})["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 7 {
+	if len(tools) != 10 {
 		t.Fatalf("tools = %v", tools)
 	}
 	projects := c.mcpTool(secret, "list_projects", nil)["projects"].([]any)
@@ -369,7 +369,7 @@ func TestMcpSession(t *testing.T) {
 		t.Fatalf("summary = %v", sum)
 	}
 	res := c.rpc(secret, "resources/list", nil)["result"].(map[string]any)["resources"].([]any)
-	if len(res) != 5 {
+	if len(res) != 11 {
 		t.Fatalf("resources = %v", res)
 	}
 	read := c.rpc(secret, "resources/read", map[string]any{"uri": "opentodo://tasks/" + tid})
@@ -482,8 +482,7 @@ func TestMcpIsReadOnlyAndIsolated(t *testing.T) {
 	resp, out = e.do("POST", "/api/v1/tasks", map[string]any{"title": "Shared chores", "project_id": shared})
 	e.mustStatus(resp, 201, out)
 	sharedTask := out["id"].(string)
-	resp, out = e.do("POST", "/api/v1/projects/"+shared+"/members", map[string]any{"email": "member@example.com", "role": "editor"})
-	e.mustStatus(resp, 201, out)
+	addByEmail(e, m, "/api/v1/projects/"+shared+"/members", "member@example.com", "editor")
 	resp, out = e.do("PATCH", "/api/v1/tasks/"+sharedTask, map[string]any{"assignee_id": member})
 	e.mustStatus(resp, 200, out)
 	// Member: a personal task; a deleted one.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	opsync "github.com/pixari/opentodo/internal/sync"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 type fixtureCase struct {
@@ -94,6 +94,28 @@ func TestFixtureMatchesDevice(t *testing.T) {
 				t.Fatalf("per day = %v, want %v", s.PerDay, c.Expected.PerDay)
 			}
 		})
+	}
+}
+
+// TestFirstWeekWithSamples (OpenSpec change moments-and-onboarding, email-digest
+// "Sample tasks never reach the digest"): a week whose only completions are
+// sample tasks counts nothing and lists none of them; the fixture's sample rows
+// are read as samples here as on the device.
+func TestFirstWeekWithSamples(t *testing.T) {
+	_, fx := loadFixture(t)
+	var samples []Task
+	for _, task := range fx.Tasks {
+		if task.Sample {
+			samples = append(samples, task)
+		}
+	}
+	if len(samples) != 2 {
+		t.Fatalf("fixture sample rows = %d, want 2", len(samples))
+	}
+	in := Input{Me: fx.Me, Today: fx.Today, Loc: fx.Loc, Shared: map[string]string{}, Tasks: samples}
+	s := Compute(in, ThisWeek(fx.Today, 1))
+	if s.Completed != 0 || s.Created != 0 || s.Overdue != 0 || len(s.OverdueTasks) != 0 || len(in.Ahead(in.Counted())) != 0 {
+		t.Fatalf("samples counted: %+v", s)
 	}
 }
 

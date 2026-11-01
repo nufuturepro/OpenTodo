@@ -1,5 +1,14 @@
 import 'fake-indexeddb/auto'
-import { afterAll, afterEach } from 'vitest'
+import { afterAll, afterEach, beforeEach } from 'vitest'
+import { resetModuleState } from './lib/moduleState'
+import { teardown } from './test/teardown'
+
+// Module-level state (clocks, caches, stores) starts fresh in every test: each
+// stateful module registers its reset with src/lib/moduleState.ts. The clock is
+// one of them: received ops move it forward (the clock's receive rule), so a test
+// that applies ops stamped in the future would otherwise push the next test's
+// local edits past the timestamps it chose.
+beforeEach(resetModuleState)
 
 // No test reaches the network (OpenSpec web-lint-and-test-hygiene). Unless a test
 // mocks fetch itself (vi.stubGlobal('fetch', ...), vi.spyOn(globalThis, 'fetch')),
@@ -28,5 +37,10 @@ function report(): void {
   throw new Error(`Unexpected network request(s) in a test; mock fetch explicitly:\n  ${list.join('\n  ')}`)
 }
 
+// First after every test, while the file's mocks still answer (vite.config.ts runs
+// after-hooks in the order they are declared, `sequence.hooks: 'list'`, so these two
+// come before the file's own): unmount every render, real timers, stop background
+// work, close and delete the local databases (test/teardown.ts); then the network check.
+afterEach(teardown)
 afterEach(report)
 afterAll(report)

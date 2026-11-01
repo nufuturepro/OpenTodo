@@ -34,9 +34,11 @@ jobs:
           fetch-depth: 0
       - name: Find the latest upstream release
         id: latest
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          tag='${{ inputs.tag }}'
+          tag="$INPUT_TAG"
           if [ -z "$tag" ]; then
             tag=$(gh api repos/pixari/OpenTodo/releases/latest --jq .tag_name)
           fi
@@ -48,9 +50,11 @@ jobs:
           fi
       - name: Merge the release into a sync branch
         if: steps.latest.outputs.synced == 'no'
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
         run: |
           set -eu
-          tag='${{ steps.latest.outputs.tag }}'
+          tag="$TAG"
           base=$(git rev-parse HEAD)
           git config user.name "github-actions[bot]"
           git config user.email "41898009+github-actions[bot]@users.noreply.github.com"

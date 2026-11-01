@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/settings"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 // ErrRunning is returned when a backup is requested while one is in progress.
@@ -98,7 +98,10 @@ func (s *Service) execute(ctx context.Context, kind, actorID string) Run {
 	if ierr := s.insertRun(ctx, &r); ierr != nil {
 		s.log.Error("backup: record run", "err", ierr)
 	}
-	s.setRunning(&r)
+	// The status route reads the run in progress while this goroutine keeps
+	// filling r in: publish a copy, never r itself (found by the nightly race run).
+	snapshot := r
+	s.setRunning(&snapshot)
 	defer s.setRunning(nil)
 
 	var warn error
@@ -181,7 +184,7 @@ func (s *Service) backupTo(ctx context.Context, dest Destination, set Settings, 
 		}
 		f, err = os.CreateTemp(stageDir, localTempPrefix+name+"-*")
 	} else {
-		f, err = os.OpenFile(filepath.Join(stageDir, name+"."+randomHex(4)), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		f, err = os.OpenFile(filepath.Join(stageDir, name+"."+ids.Hex(4)), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("create archive: %w", err)
@@ -358,10 +361,25 @@ func (s *Service) extraFiles() []string {
 	return out
 }
 
-// attachmentFiles lists the attachment files under <data>/attachments, in a
-// stable order (OpenSpec attachments, design D11).
+// attachmentFiles lists the attachment files under <data>/attachments and the
+// profile pictures under <data>/avatars, in a stable order (OpenSpec
+// attachments, design D11; settings-refresh D10).
 func attachmentFiles(dataDir string) ([]archivedFile, error) {
-	root := filepath.Join(dataDir, "attachments")
+	var out []archivedFile
+	for _, dir := range dataDirs {
+		files, err := dataFiles(dataDir, dir)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, files...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out, nil
+}
+
+// dataFiles lists the well-formed entries under <data>/<dir>.
+func dataFiles(dataDir, dir string) ([]archivedFile, error) {
+	root := filepath.Join(dataDir, dir)
 	var out []archivedFile
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -378,11 +396,10 @@ func attachmentFiles(dataDir string) ([]archivedFile, error) {
 			return err
 		}
 		name := filepath.ToSlash(rel)
-		if validAttachmentEntry(name) {
+		if validDataEntry(name) {
 			out = append(out, archivedFile{name: name, path: path})
 		}
 		return nil
 	})
-	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out, err
 }

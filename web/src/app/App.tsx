@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { clearOwnAvatar } from '../lib/avatars'
 import { Skeleton } from '../ui'
 import { AppearanceProvider } from './AppearanceProvider'
 import { DateTimePrefsProvider } from './DateTimePrefsProvider'
@@ -18,8 +19,9 @@ import type { AuthStatus, User } from '../lib/types'
 import { AuthScreen } from './AuthScreen'
 import { InviteScreen } from './InviteScreen'
 import { ProjectInviteScreen, takePendingInvite } from './ProjectInviteScreen'
+import { WorkspaceInviteScreen } from './WorkspaceInviteScreen'
 import { ResetScreen } from './ResetScreen'
-import { ForgotScreen, VerifyScreen } from './EmailScreens'
+import { ConfirmEmailScreen, ForgotScreen, VerifyScreen } from './EmailScreens'
 import { setOutgoingEmail } from '../lib/outgoingEmail'
 import { PublicListScreen } from './PublicListScreen'
 import { ACCOUNT_CHANGED_EVENT } from './UsersPanel'
@@ -32,9 +34,11 @@ import { Shell } from './Shell'
 import { clearVimPref } from './vim/prefs'
 import { DEMO_LIMIT_NOTICE, expireSandboxIfGone, sandboxErrorMessage, setDemo, startSandbox, useDemo } from '../lib/demo'
 import { setHosted } from '../lib/hosted'
+import { setBranding } from '../lib/branding'
 import { PanelBoundary } from './PanelBoundary'
 import { UpdateBanner } from './UpdateBanner'
 import { DemoBanner } from './DemoBanner'
+import { forgetNoiseVolume } from '../lib/focus/prefs'
 
 export { DemoBanner }
 
@@ -67,6 +71,7 @@ export function App() {
       const status = await api.authStatus()
       setDemo(status.demo)
       setHosted(status.hosted)
+      setBranding(status.branding)
       setOutgoingEmail(status.outgoingEmail?.enabled)
       if (status.authenticated && status.user) {
         localStorage.setItem('opentodo.user', JSON.stringify(status.user))
@@ -145,9 +150,9 @@ export function App() {
   // A visitor who went to sign in from a project invite link (possibly through
   // the identity provider, which returns to /) comes back to the link.
   useEffect(() => {
-    if (phase.kind !== 'ready' || route.view === 'project-invite') return
+    if (phase.kind !== 'ready' || route.view === 'project-invite' || route.view === 'workspace-invite') return
     const token = takePendingInvite()
-    if (token) navigate({ view: 'project-invite', token }, { replace: true })
+    if (token) navigate(token.startsWith('otw_') ? { view: 'workspace-invite', token } : { view: 'project-invite', token }, { replace: true })
   }, [phase.kind, route.view])
 
   const logout = useCallback(async () => {
@@ -189,7 +194,7 @@ export function App() {
     if (route.view === 'public') return <PublicListScreen token={route.token} />
     if (phase.kind === 'loading') {
       // Cold start (task-list-presentation "Skeleton loading"): rows in the row's shape until the local database answers.
-      return <div className="mx-auto w-full max-w-3xl px-4 py-5 md:px-8"><Skeleton shape="row" count={8} label={t('Loading your tasks')} /></div>
+      return <div className="w-full max-w-[62rem] px-4 py-5 md:max-w-[64rem] md:px-8"><Skeleton shape="row" count={8} label={t('Loading your tasks')} /></div>
     }
     if (route.view === 'reset') {
       return (
@@ -223,6 +228,10 @@ export function App() {
         />
       )
     }
+    // Signed out, the sign-in screen shows first and the link's screen after it.
+    if (route.view === 'confirm-email' && phase.kind === 'ready') {
+      return <ConfirmEmailScreen token={route.token} onDone={() => void refresh()} />
+    }
     if (phase.kind === 'restricted' && route.view !== 'invite') {
       return <EnrolmentGate user={phase.user} onEnrolled={() => void refresh()} onLogout={() => void logout()} />
     }
@@ -241,6 +250,10 @@ export function App() {
           onLogout={() => void logout()}
         />
       )
+    }
+    if (route.view === 'workspace-invite') {
+      return <WorkspaceInviteScreen token={route.token} user={phase.kind === 'ready' ? phase.user : null}
+        status={phase.kind === 'anonymous' ? phase.status : null} onAuthenticated={() => void refresh()} />
     }
     if (route.view === 'project-invite') {
       // Project invite links (OpenSpec `project-invite-links`) work signed in
@@ -321,7 +334,12 @@ async function clearDeviceData() {
   await clearInbox().catch(() => undefined)
   forgetMemoryKeys()
   localStorage.removeItem('opentodo.user')
+  // The profile's last loaded values and picture version (settings-refresh D10).
+  localStorage.removeItem('opentodo.profile')
+  clearOwnAvatar()
   cacheMfa(null)
+  // The background noise volume is per device (focus-everywhere D6).
+  forgetNoiseVolume()
 }
 
 /** The sandbox of this browser was deleted; the local copy is already gone (OpenSpec `demo-sandboxes`). */

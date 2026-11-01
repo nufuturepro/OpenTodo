@@ -2,8 +2,9 @@
 // One component renders every object menu (views, labels, sections, projects) so
 // order, icons, disabled reasons and confirmations cannot drift apart. A picker item
 // swaps the items for a Combobox inside the same overlay; a confirm item closes the
-// menu and opens a confirmation dialog.
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+// menu and opens a confirmation dialog; a submenu item swaps the items for its own
+// (Priority, Date), so a long list of choices costs the menu one row.
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Icon, type IconName, Menu } from '../../ui'
 import { Tooltip, useWide, type CompactSpec } from '../../ui'
 import { MenuCloseContext, MenuGroup, MenuItem, MenuSeparator } from '../../ui'
@@ -21,6 +22,8 @@ interface ItemBase {
   /** Disabled items keep their place and say why (spec: "Disabled items say why"). */
   disabled?: boolean
   reason?: string
+  /** A one-line description under the label (a submenu's choices); a disabled item's reason wins. */
+  description?: string
   tone?: 'danger'
   /** Render as a compact glyph button in a `layout: 'row'` group (the priority digits). */
   compact?: CompactSpec
@@ -61,6 +64,9 @@ export type ActionItem =
   // 640 px up, and fills it under the back header on a phone (task-menu-refinement
   // "Date picker alongside the menu"); `close` closes the whole menu.
   | (ItemBase & { kind: 'panel'; panel: PanelSpec })
+  // A submenu swaps the items for its own in the same menu (still a menu: arrow keys,
+  // type-ahead, an item closes it); its first item and Escape go back.
+  | (ItemBase & { kind: 'submenu'; items: ActionItem[] })
 
 export interface PanelSpec {
   title: string
@@ -96,19 +102,25 @@ function NoClose({ children }: { children: ReactNode }) {
   return <MenuCloseContext.Provider value={() => {}}>{children}</MenuCloseContext.Provider>
 }
 
-function Items({ groups, onPicker, onStep, onConfirm, onPanel }: {
+/** Every item of the groups, a submenu's items in its place (the command palette, shortcuts). */
+export function flatItems(groups: ActionGroup[]): Exclude<ActionItem, { kind: 'submenu' }>[] {
+  return groups.flatMap((g) => g.items).flatMap((i) => (i.kind === 'submenu' ? flatItems([{ items: i.items }]) : [i]))
+}
+
+function Items({ groups, onPicker, onStep, onConfirm, onPanel, onSubmenu }: {
   groups: ActionGroup[]
   // `any`: a menu mixes pickers of different item types.
-  onPicker: (p: PickerSpec<any>) => void
+  onPicker: (id: string, p: PickerSpec<any>) => void
   onStep: (s: StepSpec) => void
   onConfirm: (c: ConfirmSpec) => void
   onPanel: (panel: PanelSpec, label: string) => void
+  onSubmenu: (id: string) => void
 }) {
   const close = useContext(MenuCloseContext)
   const renderItem = (item: ActionItem) => {
     const common = {
       label: item.label, icon: item.icon, shortcut: item.shortcut, disabled: item.disabled,
-      description: item.disabled ? item.reason : undefined, danger: item.tone === 'danger', compact: item.compact,
+      description: item.disabled ? item.reason : item.description, danger: item.tone === 'danger', compact: item.compact, 'data-action': item.id,
     }
     switch (item.kind) {
       case 'action':
@@ -116,7 +128,7 @@ function Items({ groups, onPicker, onStep, onConfirm, onPanel }: {
       case 'check':
         return <MenuItem key={item.id} {...common} checked={item.checked} onSelect={() => void item.onSelect()} />
       case 'picker':
-        return <NoClose key={item.id}><MenuItem {...common} label={`${item.label}…`} onSelect={() => onPicker(item.picker)} /></NoClose>
+        return <NoClose key={item.id}><MenuItem {...common} label={`${item.label}…`} onSelect={() => onPicker(item.id, item.picker)} /></NoClose>
       case 'confirm':
         return <NoClose key={item.id}><MenuItem {...common} label={`${item.label}…`} onSelect={() => { close?.(); onConfirm(item.confirm) }} /></NoClose>
       case 'step':
@@ -125,12 +137,16 @@ function Items({ groups, onPicker, onStep, onConfirm, onPanel }: {
         // Label as given (it carries its own ellipsis); NoClose because the
         // panel opens inside this overlay and Escape, not the item, leaves it.
         return <NoClose key={item.id}><MenuItem {...common} onSelect={() => onPanel(item.panel, item.label)} /></NoClose>
+      case 'submenu':
+        return <NoClose key={item.id}><MenuItem {...common} label={`${item.label}…`} onSelect={() => onSubmenu(item.id)} /></NoClose>
     }
   }
   return (
     <>
+      {/* Keyed by the group's first item, not its index: a group that appears once the menu's
+          data loads (Start tracking) must not remount the ones after it and drop the focus. */}
       {orderGroups(groups).map((g, gi) => (
-        <div key={gi}>
+        <div key={g.items[0].id}>
           {gi > 0 && <MenuSeparator />}
           <MenuGroup label={g.label}>
             {g.layout === 'row'
@@ -221,7 +237,7 @@ export function Confirmation({ spec, onClose }: { spec: ConfirmSpec; onClose: ()
  * Renders a menu from groups. `picker` (with `open`) starts directly in that
  * picker step, as the project menu's `m` shortcut does.
  */
-export function ActionMenu({ label, title, groups, header, trigger, triggerClassName, triggerProps, align = 'end', width = 'sm:w-64', open: openProp, onOpenChange, startPicker }: {
+export function ActionMenu({ label, title, groups, header, trigger, triggerClassName, triggerProps, align = 'end', width = 'sm:w-64', open: openProp, onOpenChange, startPicker, anchor }: {
   label: string
   /** Content above the first group (the project colour swatches). */
   header?: ReactNode
@@ -229,7 +245,7 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
   groups: ActionGroup[]
   trigger?: ReactNode
   triggerClassName?: string
-  /** Extra attributes on the trigger button (`aria-current`, the right-click pointer position). */
+  /** Extra attributes on the trigger button (the right-click menu's fixed position at the pointer). */
   triggerProps?: React.ComponentProps<typeof Menu>['triggerProps']
   align?: 'start' | 'end'
   width?: string
@@ -237,11 +253,13 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
   onOpenChange?: (open: boolean) => void
   /** Id of a picker item to open straight into (keyboard shortcut). */
   startPicker?: string | null
+  /** Places the menu at this element instead of its trigger. */
+  anchor?: RefObject<HTMLElement | null>
 }) {
   const [ownOpen, setOwnOpen] = useState(false)
   const open = openProp ?? ownOpen
   // `any`: a menu mixes pickers of different item types.
-  const [picker, setPicker] = useState<PickerSpec<any> | null>(null)
+  const [picker, setPicker] = useState<{ id: string; spec: PickerSpec<any> } | null>(null)
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null)
   const [step, setStep] = useState<StepSpec | null>(null)
   const [panel, setPanel] = useState<PanelSpec | null>(null)
@@ -267,10 +285,12 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
     setPicker(null)
     setStep(null)
     setPanel(null)
+    setSubmenu(null)
     panelLabel.current = null
     restoreFocus.current = false
     setOpen(false)
   }
+  const [submenu, setSubmenu] = useState<string | null>(null)
   const setOpen = (v: boolean) => {
     if (openProp === undefined) setOwnOpen(v)
     onOpenChange?.(v)
@@ -279,17 +299,34 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
   useEffect(() => {
     if (!open || !startPicker) return
     const item = groups.flatMap((g) => g.items).find((i) => i.kind === 'picker' && i.id === startPicker && !i.disabled)
-    if (item && item.kind === 'picker') setPicker(item.picker)
+    if (item && item.kind === 'picker') setPicker({ id: item.id, spec: item.picker })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the menu opens with a requested picker; groups is rebuilt every render
   }, [open, startPicker])
-  const current = picker
   const panelOpen = panel !== null
   const items = (
     <MenuCloseContext.Provider value={closeAll}>
       {header}{header && <MenuSeparator />}
-      <Items groups={groups} onPicker={setPicker} onStep={setStep} onConfirm={setConfirm} onPanel={openPanel} />
+      <Items groups={groups} onPicker={(id, spec) => setPicker({ id, spec })} onStep={setStep} onConfirm={setConfirm} onPanel={openPanel} onSubmenu={setSubmenu} />
     </MenuCloseContext.Provider>
   )
+  // The open picker follows the menu's groups, so marks read after it opened (the bulk
+  // labels' common set) and after each pick show; the spec it opened with is the fallback.
+  const live = picker ? groups.flatMap((g) => g.items).find((i) => i.kind === 'picker' && i.id === picker.id) : undefined
+  const current = live?.kind === 'picker' ? live.picker : picker?.spec ?? null
+  const sub = submenu ? groups.flatMap((g) => g.items).find((i) => i.kind === 'submenu' && i.id === submenu) : undefined
+  const subItems = sub?.kind === 'submenu' ? sub : null
+  // Focus follows the swap: into the submenu's first choice, and back onto its item when it closes.
+  const body = useRef<HTMLDivElement>(null)
+  const leftSub = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    const target = subItems
+      ? el.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)')[1]
+      : leftSub.current ? el.querySelector<HTMLElement>(`[data-action="${leftSub.current}"]`) : null
+    leftSub.current = subItems?.id ?? null
+    target?.focus({ preventScroll: true })
+  }, [subItems?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- only when a submenu opens or closes
   return (
     <>
       <Menu label={label} title={title} kind={current || step || panelOpen ? 'dialog' : 'menu'} align={align}
@@ -298,33 +335,37 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
         trigger={trigger ?? <Icon name="ellipsis" />}
         triggerClassName={triggerClassName ?? 'ui-btn ui-btn--ghost ui-btn--sm touch-target px-1.5 py-0.5 text-faint'}
         triggerProps={triggerProps}
-        open={open}
+        open={open} anchor={anchor}
         onOpenChange={(v) => {
-          // The first Escape (or outside tap) in a picker step or panel goes back to the items.
-          if (!v && (current || step || panel)) { setPicker(null); setStep(null); clearPanel(); return }
+          // The first Escape (or outside tap) in a picker step, a panel or a submenu goes back to the items.
+          if (!v && (current || step || panel || subItems)) { setPicker(null); setStep(null); clearPanel(); setSubmenu(null); return }
           setPicker(null)
           setStep(null)
           setPanel(null)
+          setSubmenu(null)
           setOpen(v)
         }}>
         {current
           ? <PickerStep picker={current} onBack={() => setPicker(null)} onDone={() => { setPicker(null); setOpen(false) }} onConfirm={setConfirm} />
           : step
             ? <StepFrame step={step} onBack={() => setStep(null)} onDone={() => { setStep(null); setOpen(false) }} />
-            : panel && !wide
-              ? <PanelFrame spec={panel} onBack={clearPanel} onClose={closeAll} />
-              : panel
-                ? (
-                  // The panel extends the menu's own overlay beside the items (D2).
-                  <div className="sm:flex" data-menu-extended>
-                    <div className={`${width} shrink-0`}>{items}</div>
-                    <div className="w-72 shrink-0 border-l border-default p-1 pl-2" data-menu-panel>
-                      <PanelHead title={panel.title} onBack={clearPanel} />
-                      {panel.render(closeAll)}
+            : subItems
+              ? <div ref={body}><NoClose><MenuItem label={subItems.label} icon="arrow-left" data-submenu-back onSelect={() => setSubmenu(null)} /></NoClose><MenuSeparator />
+                <Items groups={[{ items: subItems.items }]} onPicker={(id, spec) => setPicker({ id, spec })} onStep={setStep} onConfirm={setConfirm} onSubmenu={setSubmenu} onPanel={openPanel} /></div>
+              : panel && !wide
+                ? <PanelFrame spec={panel} onBack={clearPanel} onClose={closeAll} />
+                : panel
+                  ? (
+                    // The panel extends the menu's own overlay beside the items (D2).
+                    <div className="sm:flex" data-menu-extended>
+                      <div className={`${width} shrink-0`}>{items}</div>
+                      <div className="w-72 shrink-0 border-l border-default p-1 pl-2" data-menu-panel>
+                        <PanelHead title={panel.title} onBack={clearPanel} />
+                        {panel.render(closeAll)}
+                      </div>
                     </div>
-                  </div>
-                )
-                : items}
+                  )
+                  : <div ref={body}>{items}</div>}
       </Menu>
       {confirm && <Confirmation spec={confirm} onClose={() => setConfirm(null)} />}
     </>

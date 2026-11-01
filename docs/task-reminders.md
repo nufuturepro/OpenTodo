@@ -24,6 +24,8 @@ Open a task and select **+ Add reminder** under **Reminders**. Choose one of:
 
 Reminders are listed with their day, date and time in your format, for example `Tue 3 Nov, 09:00`. A task can have several reminders. Reminders relative to the due time move with it: change the due date and they follow, and on a repeating task they carry over to the next occurrence. If the task has a date but no time, "before" and "after" count from 09:00 that day.
 
+To add the same reminder to every task that gets a date, set a [default reminder](default-reminders.md).
+
 ## When a reminder goes off
 
 While OpenTodo is open, a reminder pops up in the corner of the screen with **Snooze 10 min**, **1 hour**, **Tomorrow 09:00** and **Dismiss**. This works without a connection and without any permission.
@@ -37,3 +39,4 @@ Snoozing or dismissing on one device applies to all of them.
 - For bills, use a day-of-month rule (`every 1st`) plus a **1 day before** reminder.
 - A reminder on a task without a time fires at 09:00 for "at due time". Give the task a time if you need it earlier.
 - Deleted tasks don't remind you. If you restore one, its reminders come back.
+- Alarms you add in a calendar app connected over [CalDAV](caldav.md#alarms-and-reminders) become reminders here, and your reminders appear there as alarms.

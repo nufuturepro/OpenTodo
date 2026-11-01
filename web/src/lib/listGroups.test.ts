@@ -2,7 +2,7 @@
 // web-component-structure): what TaskListView renders, tested without a DOM.
 import { describe, expect, it } from 'vitest'
 import { currentDateTime } from './dates'
-import { BLOCKED_OPEN_KEY, boardColumns, completedBySection, flatRow, listGroups, sectionBuckets, sectionOfRows, siblingPositions, tasksForView, type GroupInput } from './listGroups'
+import { BLOCKED_OPEN_KEY, DONE_OPEN_KEY, WAITING_OPEN_KEY, EARLIER_KEY, EARLIER_OPEN_KEY, earlierCollapsed, boardColumns, completedBySection, flatRow, listGroups, PLANNED_OPEN_KEY, plannedOrder, sectionBuckets, sectionOfRows, siblingPositions, tasksForView, type GroupInput } from './listGroups'
 import { buildTaskTree } from './subtasks'
 import type { Project, Section, Task } from './types'
 
@@ -51,19 +51,80 @@ describe('tasksForView', () => {
 })
 
 describe('listGroups', () => {
-  it('Today: overdue, the day, This Evening, then a Blocked group that is folded until opened', () => {
+  it('Today: Earlier, the day, This Evening, then a Blocked group that is folded until opened', () => {
     const late = task({ title: 'Late', due: { date: '2026-10-12' } })
     const day = task({ title: 'Day', due: { date: TODAY } })
     const eve = task({ title: 'Eve', due: { date: TODAY }, evening: true })
     const wait = task({ title: 'Wait', due: { date: TODAY } })
     const base = input({ view: 'today', tasks: [late, day, eve, wait], blocked: new Set([wait.id]) })
     const folded = listGroups(base)
-    expect(folded.map((g) => g.key)).toEqual(['overdue', 'today', 'evening', 'blocked'])
+    expect(folded.map((g) => g.key)).toEqual(['earlier', 'today', 'evening', 'blocked'])
+    expect(folded[0].heading).toBe('Earlier')
     expect(folded.map(titles)).toEqual([['Late'], ['Day'], ['Eve'], []])
     expect(folded[3]).toMatchObject({ folded: true, count: 1 })
     const open = listGroups({ ...base, collapsed: new Set([BLOCKED_OPEN_KEY]) })
     expect(open[3]).toMatchObject({ folded: false, count: 1 })
     expect(titles(open[3])).toEqual(['Wait'])
+  })
+
+  it('Today with day parts (day-parts D3): Today, Morning, Afternoon, This Evening; the time places a task without a part', () => {
+    const untimed = task({ title: 'Untimed', due: { date: TODAY } })
+    const habit = task({ title: 'Habit', due: { date: TODAY }, habit: true, recurrence: 'every day', day_part: 'morning' })
+    const two = task({ title: 'Two', due: { date: TODAY, time: '14:00' } })
+    const eve = task({ title: 'Eve', due: { date: TODAY }, evening: true })
+    const late = task({ title: 'Twenty', due: { date: TODAY, time: '20:00' }, day_part: 'morning' })
+    const night = task({ title: 'Night', due: { date: TODAY, time: '18:00' } })
+    const tasks = [untimed, habit, two, eve, late, night]
+    const on = listGroups(input({ view: 'today', tasks, dayParts: true }))
+    expect(on.map((g) => [g.key, g.heading, g.dropPart])).toEqual([
+      ['today', 'Today', 'none'], ['morning', 'Morning', 'morning'], ['afternoon', 'Afternoon', 'afternoon'], ['evening', 'This Evening', 'evening'],
+    ])
+    expect(on.map(titles)).toEqual([['Untimed'], ['Habit', 'Twenty'], ['Two'], ['Eve', 'Night']])
+    expect(on[1].rows[0].implied).toEqual({ date: TODAY, part: 'morning' })
+    // Off: exactly as before, the 14:00 task back in the day group, nothing to drop on.
+    const off = listGroups(input({ view: 'today', tasks }))
+    expect(off.map((g) => g.key)).toEqual(['today', 'evening'])
+    expect(off.map(titles)).toEqual([['Untimed', 'Habit', 'Two', 'Twenty', 'Night'], ['Eve']])
+    expect(off.every((g) => g.dropPart === undefined)).toBe(true)
+  })
+
+  it('Today with a limit (today-closed-list D1): waiting tasks leave the day groups for a folded group after Blocked, in fill order', () => {
+    const a = task({ title: 'A', due: { date: TODAY } })
+    const b = task({ title: 'B', due: { date: TODAY }, day_part: 'morning' })
+    const f = task({ title: 'F', due: { date: TODAY }, day_part: 'morning' })
+    const g = task({ title: 'G', due: { date: TODAY } })
+    const wait = task({ title: 'Wait', due: { date: TODAY } })
+    const base = input({ view: 'today', tasks: [a, b, f, g, wait], blocked: new Set([wait.id]), closedList: { limit: 2, waiting: [g, f] } })
+    const folded = listGroups(base)
+    expect(folded.map((x) => x.key)).toEqual(['today', 'blocked', 'waiting'])
+    expect(folded.map(titles)).toEqual([['A', 'B'], [], []])
+    expect(folded[2]).toMatchObject({ heading: 'Waiting for a slot', folded: true, count: 2, openKey: WAITING_OPEN_KEY })
+    const open = listGroups({ ...base, collapsed: new Set([WAITING_OPEN_KEY]) })
+    expect(titles(open[2])).toEqual(['G', 'F'])
+    expect(open[2].hint).toBe('Today holds 2. The next one comes in when you finish one.')
+    // With day parts on the slots keep their parts; the waiting ones still wait.
+    const parts = listGroups({ ...base, dayParts: true })
+    expect(parts.map((x) => x.key)).toEqual(['today', 'morning', 'blocked', 'waiting'])
+    expect(parts.map(titles)).toEqual([['A'], ['B'], [], []])
+  })
+
+  it('Today ends with a folded Done today group, newest first (today-closed-list D6)', () => {
+    const open = task({ title: 'Open', due: { date: TODAY } })
+    const done1 = task({ title: 'Done 1', completed_at: 5 })
+    const done2 = task({ title: 'Done 2', completed_at: 9 })
+    const base = input({ view: 'today', tasks: [open], doneToday: [done2, done1] })
+    const folded = listGroups(base)
+    expect(folded.map((x) => x.key)).toEqual(['today', 'done'])
+    expect(folded[1]).toMatchObject({ heading: 'Done today', folded: true, count: 2, openKey: DONE_OPEN_KEY, rows: [] })
+    expect(titles(listGroups({ ...base, collapsed: new Set([DONE_OPEN_KEY]) })[1])).toEqual(['Done 2', 'Done 1'])
+    // Hidden: no group; an empty group still shows its zero count.
+    expect(listGroups({ ...base, doneToday: undefined }).map((x) => x.key)).toEqual(['today'])
+    expect(listGroups({ ...base, doneToday: [] })[1]).toMatchObject({ key: 'done', count: 0 })
+  })
+
+  it('Today with day parts and only one part has no Today heading', () => {
+    const g = listGroups(input({ view: 'today', tasks: [task({ due: { date: TODAY }, day_part: 'afternoon' })], dayParts: true }))
+    expect(g.map((x) => [x.key, x.heading])).toEqual([['afternoon', 'Afternoon']])
   })
 
   it('a today without overdue or evening tasks has no heading', () => {
@@ -143,14 +204,14 @@ describe('implied metadata', () => {
   const implied = (g: { rows: { implied?: unknown }[] }) => g.rows.map((r) => r.implied ?? null)
   const tomorrow = '2026-10-15'
 
-  it('Today: the day and This Evening imply the date (and evening); Overdue and Blocked imply nothing', () => {
+  it('Today: the day and This Evening imply the date (and evening); Earlier and Blocked imply nothing', () => {
     const late = task({ due: { date: '2026-10-12' } })
     const day = task({ due: { date: TODAY, time: '10:00' } })
     const eve = task({ due: { date: TODAY }, evening: true })
     const wait = task({ due: { date: TODAY } })
     const g = listGroups(input({ view: 'today', tasks: [late, day, eve, wait], blocked: new Set([wait.id]), collapsed: new Set([BLOCKED_OPEN_KEY]) }))
     expect(g.map((x) => [x.key, implied(x)])).toEqual([
-      ['overdue', [null]],
+      ['earlier', [null]],
       ['today', [{ date: TODAY }]],
       ['evening', [{ date: TODAY, evening: true }]],
       ['blocked', [null]],
@@ -212,5 +273,62 @@ describe('row positions and section counts', () => {
     expect([...m.keys()]).toEqual(['s1'])
     expect(m.get('s1')).toEqual([done])
     expect(completedBySection([done], null, new Map()).size).toBe(0)
+  })
+})
+
+// Today's Earlier group starts folded above five tasks on a device that never
+// touched it (page-rhythm D5, task-list-presentation "Group headers").
+describe('Earlier default collapse', () => {
+  it('six tasks fold, five stay open, with no stored state', () => {
+    expect(earlierCollapsed(new Set(), 6)).toBe(true)
+    expect(earlierCollapsed(new Set(), 5)).toBe(false)
+    expect(earlierCollapsed(new Set(), 2)).toBe(false)
+  })
+  it('what this device chose wins over the default', () => {
+    expect(earlierCollapsed(new Set([EARLIER_OPEN_KEY]), 8)).toBe(false)
+    expect(earlierCollapsed(new Set([EARLIER_KEY]), 2)).toBe(true)
+  })
+  it('keeps its own key, so the old Overdue collapse state does not carry over', () => {
+    expect(EARLIER_KEY).toBe('today:earlier')
+    expect(earlierCollapsed(new Set(['today:overdue']), 2)).toBe(false)
+  })
+})
+
+describe('the Inbox planned group (inbox-planned-group D1)', () => {
+  const own = task({ title: 'Undated' })
+  const someday = task({ title: 'Someday', start: 'someday' })
+  const later = task({ title: 'Starts Friday', start: '2026-10-16' })
+  const soon = task({ title: 'Due Thursday', due: { date: '2026-10-15' } })
+  const planned = [someday, later, soon]
+  const tree = buildTaskTree([own])
+
+  it('is a folded group at the end with its count, and no rows while folded', () => {
+    const groups = listGroups(input({ view: 'inbox', tasks: [own], tree, planned }))
+    expect(groups.map((g) => g.key)).toEqual(['all', 'planned'])
+    expect(groups[1]).toMatchObject({ heading: 'Planned, no project', count: 3, folded: true, openKey: PLANNED_OPEN_KEY })
+    expect(groups[1].rows).toEqual([])
+  })
+
+  it('opened on this device, lists its tasks by do-on date, then start date, Someday last', () => {
+    const g = listGroups(input({ view: 'inbox', tasks: [own], tree, planned, collapsed: new Set([PLANNED_OPEN_KEY]) }))[1]
+    expect(g.folded).toBe(false)
+    expect(titles(g)).toEqual(['Due Thursday', 'Starts Friday', 'Someday'])
+  })
+
+  it('is absent with no planned tasks, and outside the Inbox', () => {
+    expect(listGroups(input({ view: 'inbox', tasks: [own], tree, planned: [] })).map((g) => g.key)).toEqual(['all'])
+    expect(listGroups(input({ view: 'project', tasks: [own], tree, planned })).map((g) => g.key)).toEqual(['all'])
+  })
+
+  it('plannedOrder breaks ties by creation', () => {
+    const a = task({ title: 'A', due: { date: '2026-10-15' }, created_at: 5 })
+    const b = task({ title: 'B', due: { date: '2026-10-15' }, created_at: 2 })
+    expect(plannedOrder([a, b]).map((x) => x.title)).toEqual(['B', 'A'])
+  })
+
+  it('Today\'s Blocked group keeps its own open key', () => {
+    const waiting = task({ title: 'Waiting', due: { date: TODAY } })
+    const g = listGroups(input({ view: 'today', tasks: [waiting], blocked: new Set([waiting.id]) })).find((x) => x.key === 'blocked')!
+    expect(g.openKey).toBe(BLOCKED_OPEN_KEY)
   })
 })

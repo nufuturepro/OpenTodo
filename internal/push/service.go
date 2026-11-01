@@ -16,17 +16,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pixari/opentodo/internal/e2ee"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/webhook"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
+	"github.com/OpenTodoApp/opentodo/internal/webhook"
 )
 
 // Defaults of the scheduler and the sender.
 const (
-	// TickInterval is how often the scheduler looks for due reminders (the spec
-	// requires at least once a minute).
-	TickInterval = 30 * time.Second
+	// RetryPause is how long the reminders job waits before another pass when
+	// reminders are still due after one (failed sends, the batch limit).
+	RetryPause = 30 * time.Second
 	// SendTimeout caps each request to a push service.
 	SendTimeout = 10 * time.Second
 	// MessageTTL is how long a push service keeps an undelivered message (seconds).
@@ -74,7 +75,24 @@ type Service struct {
 
 	keyMu sync.Mutex
 	keys  *Keys
+
+	// onDue receives every firing before the devices are pushed (OpenSpec
+	// notification-channels D1): delivery channels queue it once per firing.
+	onDue func(ctx context.Context, r DueReminder)
 }
+
+// DueReminder is a firing as the scheduler hands it to other consumers. Title
+// is empty when it may not leave the server (end-to-end encrypted).
+type DueReminder struct {
+	UserID, ID, TaskID string
+	FireAt             int64
+	Title              string
+}
+
+// SetReminderHook installs a consumer called for every eligible due reminder on
+// each pass, before the devices are pushed; it must be idempotent per firing,
+// because a reminder whose pushes are retried is handed over again.
+func (s *Service) SetReminderHook(f func(ctx context.Context, r DueReminder)) { s.onDue = f }
 
 // New wires a Service. Keys are created on first need, not here.
 func New(db *sql.DB, syncSvc *opsync.Service, dataDir string, o Options) *Service {
@@ -134,13 +152,8 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	for n > 0 && !utf8Start(s[n]) {
-		n--
-	}
-	return s[:n] + "…"
+	return textutil.Truncate(s, n) + "…"
 }
-
-func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
 // SendResult classifies one send.
 type SendResult int
@@ -365,7 +378,7 @@ func (s *Service) eligible(ctx context.Context, d *dueReminder, trashed map[stri
 		// brings the reminder back (OpenSpec `reminders`).
 		return false, false, nil
 	}
-	if !isNull(t["completed_at"]) {
+	if !opsync.IsNull(t["completed_at"]) {
 		return false, true, nil
 	}
 	inTrash, err := s.projectTrashed(ctx, d.UserID, jsonString(t["project_id"]), trashed)
@@ -446,8 +459,6 @@ func (s *Service) projectTrashed(ctx context.Context, userID, id string, cache m
 	return result, nil
 }
 
-func isNull(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
-
 func jsonString(raw json.RawMessage) string {
 	var v string
 	_ = json.Unmarshal(raw, &v)
@@ -512,6 +523,9 @@ func (s *Service) tickUser(ctx context.Context, now time.Time, userID string, du
 	start := time.Now()
 	recorded := 0
 	for _, d := range due {
+		if s.onDue != nil {
+			s.onDue(ctx, DueReminder(d))
+		}
 		attempted, transient, deferred := 0, 0, false
 		for _, sub := range subs {
 			if sub.Disabled(now) {
@@ -585,26 +599,4 @@ func (s *Service) recordReminderField(ctx context.Context, userID, reminderID, f
 		s.sync.NotifyApplied(res, opsync.ServerDevice)
 	}
 	return nil
-}
-
-// Run ticks until ctx is cancelled, starting with an immediate pass so
-// reminders that fell due while the server was down go out after startup.
-func (s *Service) Run(ctx context.Context) {
-	t := time.NewTicker(TickInterval)
-	defer t.Stop()
-	for {
-		if n, err := s.Tick(ctx); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			s.log.Error("reminder scheduler", "err", err)
-		} else if n > 0 {
-			s.log.Debug("reminders delivered", "count", n)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-	}
 }

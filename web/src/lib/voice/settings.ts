@@ -2,39 +2,42 @@
 // in this browser's localStorage, like the quick-add parsing settings: never an op,
 // never synced, so turning dictation on for a phone does not turn it on elsewhere.
 import { VOCABULARIES } from '../nlp/vocab'
+import { readJSON, writeJSON } from '../deviceStorage'
 
 export interface VoiceSettings {
   /** Off by default; switched on only after the privacy statement was confirmed. */
   enabled: boolean
   /** Recognition language override (a bundled quick-add language), or null to follow quick add. */
   lang: string | null
+  /**
+   * Who recognises speech (settings-refresh D7): this browser (default), or the
+   * server's speech service when the owner connected one. Each choice is
+   * confirmed after its own statement.
+   */
+  recognizer: Recognizer
 }
 
-export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: false, lang: null }
+export type Recognizer = 'browser' | 'server'
+
+export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { enabled: false, lang: null, recognizer: 'browser' }
 
 const KEY = 'opentodo.voice'
 const EVENT = 'opentodo:voice-settings'
 
 export function loadVoiceSettings(): VoiceSettings {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return { ...DEFAULT_VOICE_SETTINGS }
-    const v = JSON.parse(raw) as Partial<VoiceSettings>
+  return readJSON<VoiceSettings>(KEY, { ...DEFAULT_VOICE_SETTINGS }, (raw) => {
+    if (raw === null || typeof raw !== 'object') return null
+    const v = raw as Partial<VoiceSettings>
     return {
       enabled: v.enabled === true,
       lang: typeof v.lang === 'string' && v.lang in VOCABULARIES ? v.lang : null,
+      recognizer: v.recognizer === 'server' ? 'server' : 'browser',
     }
-  } catch {
-    return { ...DEFAULT_VOICE_SETTINGS }
-  }
+  })
 }
 
 export function saveVoiceSettings(s: VoiceSettings): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(s))
-  } catch {
-    // Per-device convenience only.
-  }
+  writeJSON(KEY, s) // per-device convenience only
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENT))
 }
 
@@ -55,7 +58,7 @@ export function onVoiceSettingsChange(fn: () => void): () => void {
 const DEFAULT_REGION: Record<string, string> = { en: 'en-US', de: 'de-DE', fr: 'fr-FR', it: 'it-IT', es: 'es-ES', pt: 'pt-BR' }
 
 /** Primary subtag of the recognition language: the override, else the first quick-add language. */
-export function recognitionLanguage(s: VoiceSettings, quickAddLanguages: readonly string[]): string {
+export function recognitionLanguage(s: Pick<VoiceSettings, 'lang'> & Partial<VoiceSettings>, quickAddLanguages: readonly string[]): string {
   return s.lang ?? quickAddLanguages[0] ?? 'en'
 }
 

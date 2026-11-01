@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -12,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/webauthn"
-	"github.com/pixari/opentodo/internal/webauthn/testauth"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
+	"github.com/OpenTodoApp/opentodo/internal/webauthn"
+	"github.com/OpenTodoApp/opentodo/internal/webauthn/testauth"
 )
 
 // mfaClock is the auth service's time source in these tests, so codes for
@@ -51,15 +49,13 @@ func newMFAEnv(t *testing.T) *mfaEnv {
 	t.Cleanup(func() { db.Close() })
 	cfg := config.Config{SessionTTL: 24 * time.Hour}
 	cfg.BaseURL, _ = url.Parse(testBase)
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	syncSvc := opsync.NewService(db)
-	authSvc := auth.NewService(db, cfg.SessionTTL, false)
+	set := testSet(t, cfg, db, services.Options{})
+	syncSvc, authSvc := set.Sync, set.Auth
 	clk := &mfaClock{t: time.Now().Truncate(30 * time.Second)}
 	authSvc.SetClock(clk.now)
-	h := New(cfg, authSvc, syncSvc, nil, log, "test")
+	h := New(set, nil)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	t.Cleanup(syncSvc.Notifier().CloseAll)
 	jar, _ := cookiejar.New(nil)
 	e := &mfaEnv{env: &env{t: t, srv: srv, client: &http.Client{Jar: jar}, db: db, handler: h, sync: syncSvc}, clock: clk}
 	resp, out := e.do("POST", "/api/v1/auth/register", map[string]string{"email": "owner@example.com", "name": "Owner", "password": "correct horse battery"})
@@ -616,6 +612,10 @@ func TestEnrolConfirmDisable(t *testing.T) {
 		t.Fatalf("wrong confirm = %d %v", resp.StatusCode, out)
 	}
 	m.clock.advance(auth.EnrollmentTTL + time.Second)
+	// The sign-in is as old as the enrolment; confirming needs a recent one
+	// (credential-freshness), and the pending secret stays expired after it.
+	resp, out = m.do("POST", "/api/v1/auth/reauth", map[string]string{"password": "correct horse battery"})
+	m.mustStatus(resp, 200, out)
 	resp, out = m.do("POST", "/api/v1/mfa/totp/confirm", map[string]string{"code": m.code(secret)})
 	if resp.StatusCode != 400 || errCode(out) != "mfa_code_invalid" {
 		t.Fatalf("stale confirm = %d %v", resp.StatusCode, out)

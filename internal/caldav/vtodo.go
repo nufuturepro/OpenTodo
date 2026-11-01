@@ -8,18 +8,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/recurrence"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // Errors returned by Decode besides ErrInvalid (unparseable data).
 var (
-	// ErrUnsupportedComponent: the object holds a VEVENT or VJOURNAL instead of a
-	// VTODO (CALDAV:supported-calendar-component).
-	ErrUnsupportedComponent = errors.New("only VTODO components are supported")
-	// ErrInvalidObject: no UID, several UIDs, or no VTODO at all
-	// (CALDAV:valid-calendar-object-resource).
+	// ErrUnsupportedComponent: the object holds a VJOURNAL or VFREEBUSY
+	// instead of a VTODO or a VEVENT (CALDAV:supported-calendar-component).
+	ErrUnsupportedComponent = errors.New("only VTODO and VEVENT components are supported")
+	// ErrInvalidObject: no UID, several UIDs, no VTODO or VEVENT at all, or
+	// both kinds in one object (CALDAV:valid-calendar-object-resource).
 	ErrInvalidObject = errors.New("invalid calendar object resource")
+	// ErrInvalidValue: a property the mapping consumes has a value outside
+	// what the task field accepts, e.g. an ESTIMATED-DURATION beyond one week
+	// (CALDAV:valid-calendar-data, 403).
+	ErrInvalidValue = errors.New("invalid calendar data value")
 )
 
 // Due mirrors the task due value: a floating date, a floating date and time, or
@@ -43,8 +47,14 @@ type Task struct {
 	Deadline    string // "YYYY-MM-DD" or "" (OpenSpec change deadlines)
 	Start       string // "someday", "YYYY-MM-DD" or "" (OpenSpec change someday-and-evening)
 	Evening     bool
-	Categories  []string
-	ParentUID   string
+	// DayPart is "morning" or "afternoon" (OpenSpec change day-parts), served
+	// as X-OPENTODO-DAY-PART; Evening stays X-OPENTODO-EVENING only.
+	DayPart string
+	// Energy is "deep", "medium" or "low" (OpenSpec change task-energy),
+	// served as X-OPENTODO-ENERGY; empty serves nothing.
+	Energy     string
+	Categories []string
+	ParentUID  string
 	// DependsOn are the UIDs of the task's blockers in the same calendar
 	// (OpenSpec change task-dependencies, design D10).
 	DependsOn   []string
@@ -53,7 +63,32 @@ type Task struct {
 	Recurrence  string // canonical rule or ""
 	Extra       string // ical_extra: unmapped content lines, unfolded, CRLF separated
 	Modified    int64  // greatest field timestamp: LAST-MODIFIED and DTSTAMP
+	// EstimateMinutes is served as ESTIMATED-DURATION when positive, and
+	// Reminders as VALARMs (OpenSpec change caldav-interop).
+	EstimateMinutes int
+	Reminders       []Reminder
 }
+
+// DateShape is the shape of an inbound VTODO's date properties (OpenSpec
+// change caldav-interop, "Inbound date shapes"); the caller decides what each
+// shape writes, from the task's current state.
+type DateShape int
+
+const (
+	// ShapeNone: neither DTSTART nor DUE, no duration.
+	ShapeNone DateShape = iota
+	// ShapeDueOnly: DUE without DTSTART.
+	ShapeDueOnly
+	// ShapeStartDueEqual: DTSTART and DUE that are the same value.
+	ShapeStartDueEqual
+	// ShapeStartDue: DTSTART and DUE that differ (the due date and the deadline).
+	ShapeStartDue
+	// ShapeStartDuration: DTSTART and a duration (ESTIMATED-DURATION or
+	// DURATION) without DUE: a scheduled time.
+	ShapeStartDuration
+	// ShapeStartAlone: DTSTART without DUE and without a duration (client data).
+	ShapeStartAlone
+)
 
 // Inbound is what a client's VTODO says about the mapped fields.
 type Inbound struct {
@@ -63,16 +98,37 @@ type Inbound struct {
 	Priority    int // app priority 1..4
 	Due         *Due
 	// Deadline is the date of DUE when the client sent a DTSTART that differs
-	// from it (design D6); then Due is the DTSTART. DueOnly reports a DUE
-	// without any DTSTART: the caller decides whether it is the due date or,
-	// on a task that has a deadline, the deadline.
+	// from it (design D6); then Due is the DTSTART. With ShapeStartDuration Due
+	// is the DTSTART. Shape tells the caller which row of the inbound date
+	// table applies (a DUE alone is the deadline on a task that has one).
 	Deadline string
-	DueOnly  bool
+	Shape    DateShape
+	// SentDue is the DUE as the client sent it, whatever the shape made of it
+	// (nil without DUE): the caller tells an echo of the served DUE from a
+	// deadline the client set (caldav-interop, "Echoed DUE").
+	SentDue *Due
+	// EstimateMinutes is ESTIMATED-DURATION in whole minutes (nil when the
+	// client did not send it); HasDuration reports ESTIMATED-DURATION or
+	// DURATION, which makes a DTSTART without DUE a scheduled time.
+	EstimateMinutes *int
+	HasDuration     bool
+	// Alarms are the VTODO's VALARMs; ServedAlarms is the X-OPENTODO-ALARMS
+	// count this server served and the client echoed (nil when absent).
+	Alarms       []Alarm
+	ServedAlarms *int
 	// Start and Evening come from X-OPENTODO-START and X-OPENTODO-EVENING
 	// (someday-and-evening D7); nil means the client did not send the property,
 	// which leaves the field alone.
-	Start       *string
-	Evening     *bool
+	Start   *string
+	Evening *bool
+	// DayPart comes from X-OPENTODO-DAY-PART (day-parts): "morning" or
+	// "afternoon"; nil when the client did not send a known value.
+	DayPart *string
+	// Energy comes from X-OPENTODO-ENERGY (task-energy): a known level, else
+	// nil. EnergySent is true when the property was there at all, so a VTODO
+	// without it can clear a served energy while an unknown value leaves it.
+	Energy      *string
+	EnergySent  bool
 	Completed   bool
 	CompletedAt *int64 // the COMPLETED time when the client sent one
 	Categories  []string
@@ -86,6 +142,11 @@ type Inbound struct {
 	RRULE string
 	Rule  string
 	Extra string
+	// CompletedOccurrences are the RECURRENCE-ID dates of the overrides the
+	// client sent completed (Thunderbird completes one occurrence of a
+	// repeating task that way); the caller completes the current occurrence
+	// when its due date is among them. Other overrides are not modelled.
+	CompletedOccurrences []string
 }
 
 // AppToICalPriority is the outbound priority table (design D3): 1→1, 2→5, 3→9,
@@ -172,9 +233,16 @@ func Encode(t Task) []byte {
 		}
 	} else if t.Due != nil {
 		todo.Props = append(todo.Props, dueProp("DUE", t.Due))
-		// A recurring VTODO is anchored at DTSTART; restate the due date unless
-		// the client keeps its own DTSTART in the preserved remainder.
-		if t.Recurrence != "" && !hasTopLevel(extra, "DTSTART") {
+		switch {
+		case t.Due.Time != nil:
+			// A due time is a scheduled moment: clients that schedule by DTSTART
+			// (Mitra, issue #248) only see it as such with DTSTART = DUE. The
+			// server's own start replaces any copy a client echoed into the remainder.
+			todo.Props = append(todo.Props, dueProp("DTSTART", t.Due))
+			extra = dropTopLevel(extra, "DTSTART")
+		case t.Recurrence != "" && !hasTopLevel(extra, "DTSTART"):
+			// A recurring VTODO is anchored at DTSTART; restate the due date unless
+			// the client keeps its own DTSTART in the preserved remainder.
 			todo.Props = append(todo.Props, dueProp("DTSTART", t.Due))
 		}
 	}
@@ -182,6 +250,16 @@ func Encode(t Task) []byte {
 		if r, err := recurrence.Parse(t.Recurrence); err == nil {
 			add("RRULE", r.RRULE())
 		}
+	}
+	if t.EstimateMinutes > 0 {
+		add("ESTIMATED-DURATION", DurationText(t.EstimateMinutes))
+	}
+	extra = dropTopLevel(extra, "ESTIMATED-DURATION", "X-OPENTODO-ALARMS")
+	// How many alarms the client was shown: an echo tells the server the client
+	// saw them, so a missing one was removed on purpose (design D3). Without
+	// alarms there is nothing to remove, so nothing is served.
+	if len(t.Reminders) > 0 {
+		add("X-OPENTODO-ALARMS", strconv.Itoa(len(t.Reminders)))
 	}
 	// iCalendar has no deferral or evening bucket: OpenTaskKit's own properties.
 	switch {
@@ -192,6 +270,11 @@ func Encode(t Task) []byte {
 	}
 	if t.Evening {
 		add("X-OPENTODO-EVENING", "TRUE")
+	} else if t.DayPart == "morning" || t.DayPart == "afternoon" {
+		add("X-OPENTODO-DAY-PART", strings.ToUpper(t.DayPart))
+	}
+	if t.Energy == "deep" || t.Energy == "medium" || t.Energy == "low" {
+		add("X-OPENTODO-ENERGY", strings.ToUpper(t.Energy))
 	}
 	if p := AppToICalPriority(t.Priority); p != 0 {
 		add("PRIORITY", strconv.Itoa(p))
@@ -223,6 +306,10 @@ func Encode(t Task) []byte {
 	todoLines := todo.Lines()
 	todoLines = todoLines[:len(todoLines)-1]
 	lines = append(lines, todoLines...)
+	for _, r := range t.Reminders {
+		alarm := alarmComponent(r, t.Title, t.Deadline != "").Lines()
+		lines = append(lines, alarm...)
+	}
 	lines = append(lines, extra...)
 	lines = append(lines, "END:VTODO", "END:VCALENDAR")
 	var b bytes.Buffer

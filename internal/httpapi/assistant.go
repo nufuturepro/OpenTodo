@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/assistant"
-	"github.com/pixari/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/assistant"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
 )
 
 // In-app assistant (OpenSpec change `in-app-assistant`): the owner's settings
@@ -46,14 +46,14 @@ func (s *Server) registerAssistantRoutes(mux *routes) {
 		s.assistantSetup(s.assistant)
 	}
 	mux.handle("GET /api/v1/settings/assistant", signedIn, s.handleGetAssistantSettings)
-	mux.handle("PUT /api/v1/settings/assistant", ownerOnly("manage the assistant settings").credential().demoDenied(), s.handlePutAssistantSettings)
-	mux.handle("POST /api/v1/settings/assistant/test", ownerOnly("manage the assistant settings").demoDenied(), s.handleTestAssistant)
-	mux.handle("GET /api/v1/me/assistant", signedIn.demoDenied(), s.handleGetMyAssistant)
-	mux.handle("PUT /api/v1/me/assistant", signedIn.fullTokens().demoDenied(), s.handlePutMyAssistant)
-	mux.handle("GET /api/v1/me/assistant/usage", signedIn.demoDenied(), s.handleMyAssistantUsage)
-	mux.handle("POST /api/v1/me/assistant/test", signedIn.sessionOnly().demoDenied(), s.handleTestMyAssistant)
-	mux.handle("POST /api/v1/assistant/turn", signedIn.sessionOnly().demoDenied(), s.handleAssistantTurn)
-	mux.handle("GET /api/v1/assistant/skills", signedIn.demoDenied(), s.handleAssistantSkills)
+	mux.handle("PUT /api/v1/settings/assistant", ownerOnly("manage the assistant settings").Credential().DemoDenied(), s.handlePutAssistantSettings)
+	mux.handle("POST /api/v1/settings/assistant/test", ownerOnly("manage the assistant settings").DemoDenied(), s.handleTestAssistant)
+	mux.handle("GET /api/v1/me/assistant", signedIn.DemoDenied(), s.handleGetMyAssistant)
+	mux.handle("PUT /api/v1/me/assistant", signedIn.FullTokens().DemoDenied(), s.handlePutMyAssistant)
+	mux.handle("GET /api/v1/me/assistant/usage", signedIn.DemoDenied(), s.handleMyAssistantUsage)
+	mux.handle("POST /api/v1/me/assistant/test", signedIn.SessionOnly().DemoDenied(), s.handleTestMyAssistant)
+	mux.handle("POST /api/v1/assistant/turn", signedIn.SessionOnly().DemoDenied(), s.handleAssistantTurn)
+	mux.handle("GET /api/v1/assistant/skills", signedIn.DemoDenied(), s.handleAssistantSkills)
 }
 
 // handleAssistantSkills lists the built-in skills (assistant-skills), or an
@@ -118,6 +118,8 @@ func (s *Server) ownerView(ctx context.Context) (map[string]any, error) {
 		"own_key_members":        ownKeyMembers,
 		"anthropic_models":       assistant.AnthropicModels,
 		"default_model":          assistant.DefaultAnthropicModel,
+		"device":                 set.Device,
+		"device_origins":         assistant.ProviderOrigins,
 	}, nil
 }
 
@@ -173,6 +175,7 @@ func (s *Server) handlePutAssistantSettings(w http.ResponseWriter, r *http.Reque
 		s.internal(w, err)
 		return
 	}
+	s.forgetCSP()
 	v, err := s.ownerView(r.Context())
 	if err != nil {
 		s.internal(w, err)
@@ -233,13 +236,19 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 		return nil, err
 	}
 	reason := ""
+	mode := "server"
 	switch {
 	case !set.Enabled:
 		reason = "disabled"
+	case encrypted && set.DeviceActive():
+		mode = "device"
 	case !set.Active():
 		reason = "no_provider"
 	case encrypted:
 		reason = "encryption_enabled"
+	}
+	if reason != "" {
+		mode = ""
 	}
 	p := set.Providers[set.DefaultProvider]
 	source := "server"
@@ -250,7 +259,7 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 	// member's own provider when it is in effect): the disclosure and the
 	// consent are about that provider (assistant-member-provider).
 	out := map[string]any{
-		"available": reason == "", "enabled": set.Active(), "reason": reason,
+		"available": reason == "", "enabled": set.Active() || mode == "device", "reason": reason, "mode": mode,
 		"provider": route.Provider, "provider_label": assistant.ProviderLabel(route.Provider), "model": route.Model,
 		"source": source, "own_key_in_use": route.Own,
 		"server_provider": set.DefaultProvider, "server_provider_label": assistant.ProviderLabel(set.DefaultProvider), "server_model": p.Model,
@@ -267,6 +276,9 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 	}
 	if consent != nil {
 		out["consent"] = consent
+	}
+	if encrypted {
+		out["device"] = deviceView(set, consent)
 	}
 	return out, nil
 }
@@ -297,6 +309,15 @@ func (s *Server) handlePutMyAssistant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := s.assistantSettings(ctx)
+	if strings.HasPrefix(in.Provider, assistant.DeviceConsentPrefix) {
+		// Consent for the on-device assistant (assistant-on-device D6).
+		if in.Consent == nil || in.OwnKey != nil || in.OwnProvider != nil || in.OwnModel != nil {
+			writeError(w, http.StatusBadRequest, "invalid_input", "a device provider takes consent only")
+			return
+		}
+		s.putDeviceConsent(w, r, set, strings.TrimPrefix(in.Provider, assistant.DeviceConsentPrefix), *in.Consent)
+		return
+	}
 	if in.Consent == nil && in.OwnKey == nil && in.OwnProvider == nil && in.OwnModel == nil {
 		writeError(w, http.StatusBadRequest, "invalid_input", "consent: true or false, own_key, own_provider or own_model is required")
 		return
@@ -510,16 +531,21 @@ type turnRequest struct {
 func (s *Server) handleAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	set := s.assistantSettings(ctx)
-	if !set.Active() {
+	if !set.Enabled {
 		writeError(w, http.StatusNotFound, "not_found", "the assistant is not enabled on this server")
 		return
 	}
 	u := userFrom(ctx)
+	// Never for an encrypted account, on-device mode or not (assistant-on-device).
 	if enc, err := s.keys().Enabled(ctx, u.ID); err != nil {
 		s.internal(w, err)
 		return
 	} else if enc {
 		writeError(w, http.StatusConflict, "encryption_enabled", "the assistant cannot read end-to-end encrypted tasks; your tasks never leave your devices unencrypted")
+		return
+	}
+	if !set.Active() {
+		writeError(w, http.StatusNotFound, "not_found", "the assistant is not enabled on this server")
 		return
 	}
 	// The member's own provider, model and key, or the owner's provider
@@ -551,9 +577,9 @@ func (s *Server) handleAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	// counts them (cap_member_keys).
 	capped := set.MonthlyTokenCap > 0 && (!route.Own || set.CapMemberKeys)
 	if capped && usage.Counted(set.CapMemberKeys) >= set.MonthlyTokenCap {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": map[string]any{"code": "assistant_quota",
-			"message":   fmt.Sprintf("you have used this month's assistant allowance of %d tokens; it resets on %s", set.MonthlyTokenCap, usage.ResetsAt),
-			"resets_at": usage.ResetsAt}})
+		writeErrorWith(w, http.StatusTooManyRequests, "assistant_quota",
+			fmt.Sprintf("you have used this month's assistant allowance of %d tokens; it resets on %s", set.MonthlyTokenCap, usage.ResetsAt),
+			map[string]any{"resets_at": usage.ResetsAt})
 		return
 	}
 	release, err := s.assistant.Acquire(u.ID)
@@ -594,7 +620,7 @@ func (s *Server) handleAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	start := time.Now()
 	res := s.assistant.Loop.Run(tctx, prov, assistant.TurnInput{
-		UserID: u.ID, UserName: u.Name, Zone: zone, Messages: in.Messages, View: in.View, Selected: in.Selected, Skill: skill, Workday: in.Workday,
+		UserID: u.ID, UserName: u.Name, Zone: zone, Messages: in.Messages, View: in.View, Selected: s.visibleToAssistants(ctx, u.ID, in.Selected), Skill: skill, Workday: in.Workday,
 	}, assistant.Events{
 		Text:   func(t string) { send("text", map[string]string{"text": t}) },
 		Status: func(t string) { send("status", map[string]string{"text": t}) },
@@ -646,7 +672,7 @@ func (s *Server) handleAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	if len(res.Changes) > 0 {
 		send("changeset", map[string]any{"items": res.Changes, "limit": assistant.MaxEntities})
 	}
-	done := map[string]any{"stop_reason": string(res.Stop), "server_time": time.Now().UTC().Format(time.RFC3339)}
+	done := map[string]any{"stop_reason": string(res.Stop), "server_time": s.now().UTC().Format(time.RFC3339)}
 	if res.Message != "" {
 		done["message"] = res.Message
 	}

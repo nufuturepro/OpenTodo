@@ -4,18 +4,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/digest"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/timetrack"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/digest"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/timetrack"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // Time entry routes (OpenSpec change `time-tracking`, design D7). All require
@@ -96,7 +95,7 @@ func (s *Server) loadTimeData(ctx context.Context, uid string, csv bool) (*timeD
 		return nil, err
 	}
 	for _, r := range projects {
-		p := timetrack.Project{ID: idOf(r["id"]), Name: idOf(r["name"])}
+		p := timetrack.Project{ID: idOf(r["id"]), Name: idOf(r["name"]), ParentID: idOf(r["parent_id"])}
 		if v := r["deleted_at"]; len(v) > 0 && string(v) != "null" {
 			d.trashed[p.ID] = true
 			p.DeletedAt = new(int64)
@@ -232,7 +231,7 @@ func (s *Server) listTimeEntries(w http.ResponseWriter, r *http.Request, tq time
 		s.internal(w, err)
 		return
 	}
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	if csv {
 		sel := timetrack.Select(d.entries, tq, d.liveTask)
 		tasks := make([]timetrack.Task, 0, len(d.tasks))
@@ -367,7 +366,7 @@ func (s *Server) handleCreateTimeEntry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "task not found")
 		return
 	}
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	ts := s.opTS()
 	id := ids.New()
 	// With an Idempotency-Key (ot add --natural) the id derives from the key, so
@@ -411,7 +410,7 @@ func (s *Server) handleCreateTimeEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStopTimeEntry(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := userFrom(ctx).ID
-	ops, keep, err := s.runningOps(ctx, uid, time.Now().UnixMilli(), s.opTS())
+	ops, keep, err := s.runningOps(ctx, uid, s.now().UnixMilli(), s.opTS())
 	if err != nil {
 		s.internal(w, err)
 		return
@@ -493,7 +492,7 @@ func (s *Server) handleDeleteTimeEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(s.now().UnixMilli(), 10))}
 	s.writeTimeEntry(w, r, id, fieldOps("time_entry", id, body, s.opTS()), http.StatusNoContent)
 }
 
@@ -501,26 +500,11 @@ func (s *Server) handleDeleteTimeEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) writeTimeEntry(w http.ResponseWriter, r *http.Request, id string, ops []opsync.Op, status int) {
 	ctx := r.Context()
 	uid := userFrom(ctx).ID
-	var res opsync.ApplyResult
-	var err error
 	if len(ops) > 0 { // nil: an idempotent replay answers with the stored entry
-		res, err = s.sync.ApplyStrict(ctx, uid, ops)
-	}
-	if err != nil {
-		var rej *opsync.RejectedError
-		switch {
-		case writeLimited(w, err):
-		case errors.Is(err, opsync.ErrInvalidOp):
-			writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
-		case errors.As(err, &rej):
-			writeError(w, http.StatusForbidden, "forbidden", "viewers cannot track time; only the person who tracked an entry can change it, and they, project admins and the owner can delete it")
-		default:
-			s.internal(w, err)
+		if _, ok := s.applyREST(w, ctx, uid, ops,
+			"viewers cannot track time; only the person who tracked an entry can change it, and they, project admins and the owner can delete it", nil); !ok {
+			return
 		}
-		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, serverDevice)
 	}
 	if status == http.StatusNoContent {
 		w.WriteHeader(status)
@@ -536,5 +520,5 @@ func (s *Server) writeTimeEntry(w http.ResponseWriter, r *http.Request, id strin
 	if t, err := s.sync.Get(ctx, uid, "task", e.TaskID); err == nil && t != nil {
 		d.tasks[e.TaskID] = timetrack.TaskFromRow(t)
 	}
-	writeJSON(w, status, d.out(e, time.Now().UnixMilli()))
+	writeJSON(w, status, d.out(e, s.now().UnixMilli()))
 }

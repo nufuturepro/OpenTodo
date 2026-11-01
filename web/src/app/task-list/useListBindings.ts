@@ -2,26 +2,30 @@
 // web-component-structure): the panel, the Vim layer's list state, "open this task"
 // signals, focus that follows the cursor and the rows' stable handlers. Everything
 // reads the latest render through refs, so each registration happens once.
+import { isFirstRow, revealRow } from './revealRow'
 import { type RefObject, useEffect, useMemo, useRef } from 'react'
 import type { ListColumn, ListRow } from '../../lib/listGroups'
 import type { Task } from '../../lib/types'
 import { act } from '../actionError'
 import { registerListState } from '../listActions'
-import { registerPanelHandlers, setPanelTaskId as setOpenId } from '../panel'
+import { panelTaskId, registerPanelHandlers, setPanelTaskId as setOpenId, taskSplitDocks } from '../panel'
+import { openTaskPage } from '../taskTrail'
 import type { useSelection } from '../selection'
 import { openTask, selectTask } from '../signals'
 import { isTypingTarget } from '../shortcuts'
-import type { RowActions } from './ListRow'
+import type { RowActions } from './TaskListRow'
 import type { ListRoute } from './useListModel'
 import type { ListUi } from './useListShortcuts'
 
 /**
- * The ids a row's actions menu acts on (task-row-context-menu): the ticked
- * selection when the row is one of it, else just the row. Shared by every trigger
- * — right-click, the keyboard's `.`, a touch hold's release.
+ * The ids a row's actions menu acts on (task-row-context-menu): the ticked selection
+ * when the row is one of it, else just the row — in list order, so the review step
+ * lists the tasks the same way whichever trigger opened the menu (a right-click, a
+ * touch hold's release). The keyboard's own menu is a different rule: `.` opens for
+ * the whole ticked selection wherever the cursor is (`list.actions`).
  */
-export function rowMenuIds(task: Task, ticked: ReadonlySet<string>): string[] {
-  return ticked.has(task.id) ? [...ticked] : [task.id]
+export function rowMenuIds(task: Task, ticked: ReadonlySet<string>, order: readonly string[]): string[] {
+  return ticked.has(task.id) ? order.filter((id) => ticked.has(id)) : [task.id]
 }
 
 /**
@@ -60,6 +64,8 @@ export interface BindingContext {
   columns: ListColumn[]
   board: boolean
   manual: boolean
+  /** A list with its own order (a label page, view-manual-order): Vim's moves step within the task's group. */
+  moveInView?: (id: string, step: -1 | 1) => Promise<boolean>
   selectedId: string | null
   setSelectedId: (id: string | null) => void
   openId: string | null
@@ -79,10 +85,10 @@ export interface BindingContext {
   projectReadOnly: boolean
   /** A click on a row's title edits it in place when it applies (inline-task-editing D1); true when it did. */
   startInline?: (id: string, e?: React.MouseEvent) => boolean
-  /** Opens the actions menu anchored at a pointer position (task-row-context-menu); stable. */
-  openContextMenu: (ids: string[], x: number, y: number) => void
-  /** Opens the row's actions menu for a task at a point: the right-click and a touch hold's release share this rule. */
-  openRowMenu: (task: Task, x: number, y: number) => void
+  /** The row whose details are shown (row-expand D4): one per list, closed when the list changes. */
+  setExpandedId: (update: (id: string | null) => string | null) => void
+  /** Opens the row's actions menu for a task at a point: the right-click and a touch hold's release share this rule (useRowMenu owns it for every list). */
+  openRowMenu: (task: Task, x: number, y: number, row?: Element | null) => void
   /** While a row drag is lifted the right-click is ignored (the drag wins, ux-feedback-2 D4). */
   draggingId: string | null
 }
@@ -103,12 +109,18 @@ export function useListBindings(c: BindingContext): RowActions {
     ui.setAddingTo(null)
     c.selection.clear()
     c.setSelectMode(false)
+    c.setExpandedId(() => null)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a route change resets the list; selection is a new object on every row change
   }, [route])
   useEffect(() => openTask.subscribe((id) => {
     openTask.take(id)
     setSelectedId(id)
     setOpenId(id)
+  }), [setSelectedId])
+  // Show on "Added to the bottom of …" from a section's add row (add-position D5): select the new row.
+  useEffect(() => selectTask.subscribe((id) => {
+    selectTask.take(id)
+    setSelectedId(id)
   }), [setSelectedId])
 
   // The prompt only makes sense while the parent is still open.
@@ -139,6 +151,8 @@ export function useListBindings(c: BindingContext): RowActions {
     open: setOpenId,
     readOnly: (task) => live.current.isReadOnly(task),
     manual: () => live.current.manual,
+    ownOrder: () => !!live.current.moveInView,
+    moveBy: (id, step) => live.current.moveInView?.(id, step) ?? Promise.resolve(false),
     focusQuickAdd: (after) => {
       const input = quickAddRef.current
       if (!input) return false
@@ -171,8 +185,9 @@ export function useListBindings(c: BindingContext): RowActions {
   const { listRoot } = c
   useEffect(() => {
     if (!selectedId) return
-    const el = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(selectedId)}"]`)
-    el?.scrollIntoView({ block: 'nearest' })
+    const el = document.querySelector<HTMLElement>(`li[data-task-id="${CSS.escape(selectedId)}"]`) ?? document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(selectedId)}"]`)
+    // Below the sticky header, and back to the very top on the first row (issue 514).
+    if (el) revealRow(el, { first: isFirstRow(el, listRoot.current) })
     const active = document.activeElement as HTMLElement | null
     const free = !active || active === document.body
       || (!!listRoot.current?.contains(active) && !!active.closest('li[data-task-id]') && !isTypingTarget(active))
@@ -187,6 +202,8 @@ export function useListBindings(c: BindingContext): RowActions {
     toggleCollapse: (id) => live.current.toggleCollapsed(id),
     open: (id, e) => {
       if (live.current.startInline?.(id, e)) return
+      // On the Inbox's split the task is already beside the list: Enter or Space on its row opens its page (inbox-split D1).
+      if (e?.detail === 0 && taskSplitDocks() && panelTaskId() === id) { openTaskPage(id); return }
       setSelectedId(id)
       setOpenId(id)
     },
@@ -204,6 +221,17 @@ export function useListBindings(c: BindingContext): RowActions {
       setSelectedId(task.id)
       live.current.setSelectMode(true)
       navigator.vibrate?.(10)
+
+    },
+    // The revealed More action (rows-v2 D7): the row menu for this row, as `.` opens it.
+    more: (id, from) => {
+      setSelectedId(id)
+      live.current.ui.openActions(null, from)
+    },
+    // Show details / the row's disclosure (row-expand D4): one row at a time, and the cursor goes with it.
+    expand: (id) => {
+      setSelectedId(id)
+      live.current.setExpandedId((cur) => (cur === id ? null : id))
     },
     context: (e, task) => {
       // Right-click: the row's actions menu at the pointer. A link, a field or the
@@ -214,7 +242,12 @@ export function useListBindings(c: BindingContext): RowActions {
       if (fromTouch(e)) return
       // A lifted drag wins: the drop completes on release.
       if (live.current.draggingId) return
-      live.current.openRowMenu(task, e.clientX, e.clientY)
+      live.current.openRowMenu(task, e.clientX, e.clientY, e.currentTarget instanceof Element ? e.currentTarget : null)
+    },
+    // A touch hold's release: the same rule at the finger's point, with no event to guard.
+    contextAt: (task, x, y, row) => {
+      if (live.current.draggingId) return
+      live.current.openRowMenu(task, x, y, row)
     },
   }), [setSelectedId])
 }

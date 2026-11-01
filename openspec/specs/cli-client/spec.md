@@ -6,7 +6,7 @@ Defines the first-party command-line client: how it is configured and authentica
 ## Requirements
 
 ### Requirement: Configuration file and profiles
-The client SHALL read a configuration file from the platform's user configuration directory containing one or more named profiles, each with a server URL, a token and an optional default output format. The profile SHALL be chosen with `--profile`, falling back to a `default` profile. `OPENTODO_URL` and `OPENTODO_TOKEN` SHALL override the selected profile. The file SHALL be created with owner-only permissions and the token SHALL never be printed by any command.
+The client SHALL read a configuration file from the platform's user configuration directory containing one or more named profiles, each with a server URL, a token, an optional default output format and an optional default workspace (a name or id). The profile SHALL be chosen with `--profile`, falling back to a `default` profile. `OPENTODO_URL` and `OPENTODO_TOKEN` SHALL override the selected profile, and `--workspace <name or id>` (or `OPENTODO_WORKSPACE`) SHALL override the profile's workspace for one command. Without any of them, commands act on the account's default workspace. The file SHALL be created with owner-only permissions and the token SHALL never be printed by any command.
 
 #### Scenario: Environment overrides the file
 - **WHEN** the config file names server A and `OPENTODO_URL` and `OPENTODO_TOKEN` point to server B
@@ -19,6 +19,14 @@ The client SHALL read a configuration file from the platform's user configuratio
 #### Scenario: Permissions
 - **WHEN** `ot login` writes the configuration file on a POSIX system
 - **THEN** the file mode is 0600 and the directory mode is 0700
+
+#### Scenario: Workspace for one command
+- **WHEN** the profile's workspace is "Personal" and the user runs `ot add "Call the client" --workspace Work`
+- **THEN** the task is created in Work's Inbox, and `ot list --workspace Work` lists it while `ot list` does not
+
+#### Scenario: Unknown workspace
+- **WHEN** `--workspace` names a workspace the account does not belong to
+- **THEN** the command exits with code 2 and a message listing the available workspaces (`ot workspaces` prints the same list, with `--json`)
 
 ### Requirement: Sign-in creates an API token
 `ot login <server-url>` SHALL prompt for email and password (never echoing the password), obtain a session, create an API token named `cli@<hostname>`, discard the session and store only the token in the selected profile. `ot auth set-token` SHALL store a token obtained elsewhere, `ot auth status` SHALL show the server, the signed-in account and the token name, and `ot auth logout` SHALL revoke the stored token on the server and remove it locally.
@@ -36,7 +44,7 @@ The client SHALL read a configuration file from the platform's user configuratio
 - **THEN** the command exits with code 3 and suggests `ot login`
 
 ### Requirement: List tasks
-`ot list` SHALL print open tasks sorted like the web views, with `--inbox`, `--today` (due today or earlier, overdue first), `--upcoming`, `--project <name-or-id>`, `--completed` and `--all` filters, plus `--limit`. Human output SHALL show an id prefix, priority, due date and time, project and title; dates SHALL be evaluated in the local time zone. Aliases `ot today`, `ot inbox` and `ot upcoming` SHALL exist.
+`ot list` SHALL print open tasks sorted like the web views, with `--inbox` (the Inbox tasks of OpenSpec `project-organization`: no project and not scheduled), `--today` (due today or earlier, overdue first), `--upcoming`, `--project <name-or-id>`, `--completed` and `--all` filters, plus `--limit`. Human output SHALL show an id prefix, priority, due date and time, project and title; dates SHALL be evaluated in the local time zone. Aliases `ot today`, `ot inbox` and `ot upcoming` SHALL exist.
 
 #### Scenario: Today view
 - **WHEN** the user runs `ot today` with one overdue and one task due today
@@ -46,12 +54,44 @@ The client SHALL read a configuration file from the platform's user configuratio
 - **WHEN** `--project` names no existing project
 - **THEN** the command exits with code 2 and lists the available project names
 
+#### Scenario: Inbox leaves out planned tasks
+- **WHEN** the user has two tasks without a project, one undated and one due Friday, and runs `ot inbox`
+- **THEN** only the undated task is printed
+
 ### Requirement: Add and edit tasks
-`ot add <title>` SHALL create a task with optional `--project`, `--due`, `--time`, `--priority 1..4`, repeatable `--label`, `--note`, `--repeat <rule>`, repeatable `--remind <phrase>` and `--origin-url <url>`, and print its id. `ot edit <ref>` SHALL change the same fields except `--remind`; `none` (or `--note ""`) clears one. `--due` SHALL accept `YYYY-MM-DD`, `today`, `tomorrow` and weekdays. `--repeat` SHALL send the canonical rule; `--remind` SHALL resolve a phrase like `30 min before` against the due date. `--origin-url` SHALL accept only an `http` or `https` URL, derive the provider and issue id for a recognised host on the client, and send the origin with the task; `ot list` and its siblings SHALL carry `origin` in `--json` output and print the origin's id or host as a column of the table when any listed task has one.
+`ot add <title>` SHALL create a task with optional `--project`, `--due`, `--time`, `--priority 1..4`, repeatable `--label`, `--note`, `--repeat <rule>`, repeatable `--remind <phrase>`, `--origin-url <url>`, `--deadline <date>`, `--start <date|someday>`, `--evening`, repeatable `--blocked-by <ref>` and `--location <where>`, and print its id. `ot edit <ref>` SHALL change the same fields except `--remind`; `none` (or `--note ""`, `--evening=false`) clears one, and `--blocked-by` on edit replaces the whole list. `--due`, `--deadline` and `--start` SHALL accept `YYYY-MM-DD`, `today`, `tomorrow` and weekdays, `--start` also `someday`; a value that is not one of these SHALL exit with code 2 before any request. `--blocked-by` SHALL take a task id or an unambiguous id prefix of a task the account can see and send the resolved ids; `--location` SHALL take the name or id of one of the account's saved locations (sent as a link to it with its current values), a `lat,lon` pair (sent as coordinates), or `none`, and an unknown name SHALL exit with code 1 naming it before the task is written. `--repeat` SHALL send the canonical rule; `--remind` SHALL resolve a phrase like `30 min before` against the due date. `--origin-url` SHALL accept only an `http` or `https` URL, derive the provider and issue id for a recognised host on the client, and send the origin with the task; `ot list` and its siblings SHALL carry `origin` in `--json` output and print the origin's id or host as a column of the table when any listed task has one.
 
 #### Scenario: Add with attributes
 - **WHEN** the user runs `ot add "Call the plumber" --project Home --due tomorrow --time 09:00 --priority 2`
 - **THEN** the created task has that title, project, tomorrow's date, time `09:00`, priority 2, and its id is printed
+
+#### Scenario: Add with a start and a deadline
+- **WHEN** the user runs `ot add "Quarterly report" --start monday --deadline 2026-11-06 --json`
+- **THEN** the created task has `start` set to next Monday's date, `deadline: "2026-11-06"`, no due date, and the JSON output carries both
+
+#### Scenario: Park in Someday from a script
+- **WHEN** the user runs `ot edit 8c2a --start someday`
+- **THEN** the task's `start` is `someday`, its due date is kept as stored, and the human output says it was parked
+
+#### Scenario: Evening and its clearing
+- **WHEN** the user runs `ot edit 8c2a --evening` and later `ot edit 8c2a --evening=false`
+- **THEN** the task's `evening` is true after the first command and false after the second, with no other field changed
+
+#### Scenario: Waiting for another task
+- **WHEN** the user runs `ot add "Install shelves" --project Home --blocked-by 91f0` and `91f0` is the prefix of exactly one open task in Home
+- **THEN** the created task's `blocked_by` holds that task's id and `ot list --blocked` lists it
+
+#### Scenario: Ambiguous blocker prefix
+- **WHEN** `--blocked-by 9` matches several tasks
+- **THEN** the command exits with code 1 listing the candidates and sends no write
+
+#### Scenario: Location by saved location
+- **WHEN** the user runs `ot edit 8c2a --location Gym` and Gym is one of the account's saved locations
+- **THEN** the task's location is written as a link to Gym with its current name, address and coordinates, and `ot edit 8c2a --location none` removes it
+
+#### Scenario: Location by coordinates
+- **WHEN** the user runs `ot add "Meet the plumber" --location 45.4642,9.1900`
+- **THEN** the created task's location holds those coordinates and no name or address
 
 #### Scenario: Add from an issue
 - **WHEN** the user runs `ot add "Fix the login timeout" --origin-url https://github.com/o/r/issues/7 --json`
@@ -71,6 +111,10 @@ The client SHALL read a configuration file from the platform's user configuratio
 
 #### Scenario: Invalid priority
 - **WHEN** `--priority 7` is given
+- **THEN** the command exits with code 2 before any request is sent
+
+#### Scenario: Invalid start word
+- **WHEN** `--start later` or `--deadline 2026-02-30` is given
 - **THEN** the command exits with code 2 before any request is sent
 
 #### Scenario: Server rejects the write
@@ -96,6 +140,10 @@ The client SHALL read a configuration file from the platform's user configuratio
 #### Scenario: Idempotent retry with reminders
 - **WHEN** the user runs `ot add "Flight" --due 2026-11-03 --time 06:00 --remind "1 day before" --idempotency-key trip-flight --json` twice
 - **THEN** both runs print the same task id and exactly one task and one reminder exist
+
+#### Scenario: Agent token writes planning fields
+- **WHEN** the stored token has scope `agent`, both assistant switches are on, and the user runs `ot edit 8c2a --start someday --deadline 2026-11-06`
+- **THEN** the write succeeds through the agent content routes, is attributed to the assistant in the task's history, and is recorded as `agent.write`
 
 ### Requirement: Complete, reopen and delete
 `ot done`, `ot reopen` and `ot rm` SHALL act on one or more `<ref>`s, each a full id or a prefix matching exactly one non-deleted task. With `--json` each task SHALL carry the additive fields `ref` and `status`. A task already in the requested state SHALL be reported as `unchanged` without a write. `ot rm` SHALL soft-delete, SHALL ask on a terminal unless `--yes`, and without a terminal or with `--json` SHALL refuse without `--yes` (exit 2). Writes converge like web edits.
@@ -155,7 +203,7 @@ Every command SHALL accept `--json` and then print only JSON on stdout, matching
 - **THEN** the output contains the client version and `output_version: 1`
 
 ### Requirement: Online-only client
-The client SHALL hold no local copy of tasks and SHALL make no changes when the server cannot be reached; it SHALL fail fast with exit code 4 and a message naming the server URL. Because every write goes through the REST API, which records operations in the log, changes made with the client converge on all devices under the same last-writer-wins rule as web edits, and a network failure never leaves a half-applied change.
+The client SHALL hold no local copy of tasks and SHALL make no changes when the server cannot be reached; it SHALL fail fast with exit code 4 and a message naming the server URL. The one exception SHALL be the vault commands (`ot vault`, OpenSpec `markdown-vault`): a vault folder holds the account's projects and tasks as files, and the vault's own `.opentodo/` state (its device id, cursor and last-synced values), and `ot vault status` reads them without the server; every other command still holds nothing locally. Because every write goes through the REST API or, for the vault, through the sync exchange, which both record operations in the log, changes made with the client converge on all devices under the same last-writer-wins rule as web edits, and a network failure never leaves a half-applied change.
 
 #### Scenario: Server down
 - **WHEN** the server does not answer within the timeout
@@ -164,6 +212,10 @@ The client SHALL hold no local copy of tasks and SHALL make no changes when the 
 #### Scenario: Concurrent edit converges
 - **WHEN** the client changes a task's priority while a phone changes its title offline, and the phone later syncs
 - **THEN** every device shows both the new priority and the new title
+
+#### Scenario: Only the vault keeps state
+- **WHEN** the user runs `ot list` and `ot vault status` on a machine with a vault
+- **THEN** `ot list` reads everything from the server and keeps nothing, and `ot vault status` reads only the vault folder and its `.opentodo/` state
 
 ### Requirement: Non-interactive by default
 Without a terminal on stdin and stdout, `ot` SHALL never prompt. Destructive commands (`rm`, `project rm`, `token revoke`, `auth logout`) SHALL require `--yes` there, or with `--json`, and otherwise refuse with exit 2 before any request. Refused commands change nothing on the server or on any device.
@@ -236,7 +288,7 @@ Each release SHALL ship `opentodo-agent-skill.zip` containing `SKILL.md`, and `o
 - **THEN** its assets include `opentodo-agent-skill.zip` next to the `ot-<os>-<arch>` binaries
 
 ### Requirement: Natural-language line in `ot add`
-`ot add --natural <line>` SHALL parse the line with the quick-add grammar (dates, times, ordinal weekdays, `#project`, `@label`, priority, estimate, recurrence, reminders) and create the task and its reminders from the result. Languages come from `--lang`, else the process locale, with English always active; numeric dates follow the first language and weeks start on Monday. For every line in the shared quick-add vectors the result SHALL equal the web parser's. Without `--natural` the title is taken verbatim.
+`ot add --natural <line>` SHALL parse the line with the quick-add grammar (dates, times, ordinal weekdays, `#project`, `@label`, priority, estimate, time spent, recurrence, reminders) and create the task, its reminders and, for a `<spent>/<estimate>` token, one closed time entry from the result. Languages come from `--lang`, else the process locale, with English always active; numeric dates follow the first language and weeks start on Monday. For every line in the shared quick-add vectors the result SHALL equal the web parser's. Without `--natural` the title is taken verbatim.
 
 #### Scenario: Line with a rule and a reminder
 - **WHEN** the user runs `ot add --natural "Water plants every Monday remind me at 8 #home"` on Friday 2026-10-09 with a project named Home
@@ -245,10 +297,6 @@ Each release SHALL ship `opentodo-agent-skill.zip` containing `SKILL.md`, and `o
 #### Scenario: German line
 - **WHEN** the user runs `ot add --natural --lang de "Zahnarzt nächsten Mittwoch um 15 Uhr erinnere mich 30 Minuten vorher"`
 - **THEN** the task is due next Wednesday at `15:00` with a relative reminder of −30 minutes and the title `Zahnarzt`
-
-#### Scenario: Ordinal weekday line
-- **WHEN** the user runs `ot add --natural "Board every 2nd Tuesday of the month at 10:00"` on Saturday 2026-10-10
-- **THEN** the created task has title `Board`, rule `every 2nd tuesday`, due `{date: "2026-10-13", time: "10:00"}`, and the task id is printed
 
 #### Scenario: Dry run shows every request
 - **WHEN** the user runs `ot add --natural "Flight 3 Nov at 06:00 remind me 1 day before" --dry-run --json`
@@ -266,6 +314,14 @@ Each release SHALL ship `opentodo-agent-skill.zip` containing `SKILL.md`, and `o
 - **WHEN** the stored token has scope `read` and the user runs `ot add --natural "Call mum remind me at 9"`
 - **THEN** no request is sent, the exit code is 5 and the error code is `insufficient_scope`
 
+#### Scenario: Spent and estimate from the line
+- **WHEN** the user runs `ot add --natural "Draft the offer 30m/2h" --dry-run --json`
+- **THEN** stdout lists a planned `POST /api/v1/tasks` with `estimate_minutes: 120` and a planned `POST /api/v1/time-entries` with the task's placeholder, a `startedAt` 30 minutes before `endedAt`, and nothing is created
+
+#### Scenario: Ordinal weekday line
+- **WHEN** the user runs `ot add --natural "Board every 2nd Tuesday of the month at 10:00"` on Saturday 2026-10-10
+- **THEN** the created task has title `Board`, rule `every 2nd tuesday`, due `{date: "2026-10-13", time: "10:00"}`, and the task id is printed
+
 ### Requirement: List by completion date
 `ot list` SHALL accept `--completed-after` and `--completed-before`, each a `YYYY-MM-DD` date (the start of that day in the local time zone), an RFC 3339 time or Unix milliseconds. With either, it SHALL list only completed tasks whose completion time falls in `[after, before)`, most recent first, combinable with `--project` and `--limit`. Like every command it needs a connection and the stored token, and it shows only what devices have synced.
 
@@ -276,3 +332,158 @@ Each release SHALL ship `opentodo-agent-skill.zip` containing `SKILL.md`, and `o
 #### Scenario: Invalid date
 - **WHEN** the user runs `ot list --completed-after lastweek`
 - **THEN** the command exits with code 2 and names the flag and the accepted forms
+
+### Requirement: Issue connection commands
+`ot issues list` SHALL print the signed-in account's issue connections (OpenSpec `issue-connections`) with id, name, provider, host, state, last poll and task count, never a token, as a table or with `--json`. `ot issues sync [<id>]` SHALL run one poll now for the named connection, or every enabled connection of the account, and print the counts of tasks created, completed, reopened and renamed. Both SHALL appear in `ot schema` and `ot help --json`.
+
+#### Scenario: List without secrets
+- **WHEN** the user runs `ot issues list --json`
+- **THEN** the output lists each connection with `token_set: true` and no token value
+
+#### Scenario: Sync one connection
+- **WHEN** the user runs `ot issues sync 7f3a`
+- **THEN** the poll runs, the command prints `created 3, completed 1, reopened 0, renamed 2` and exits 0
+
+#### Scenario: Help and schema list the commands
+- **WHEN** an agent runs `ot schema` without a profile
+- **THEN** the JSON lists `issues list` and `issues sync` with `writes: true` and `dry_run: true` on `sync`
+
+### Requirement: Issue sync is a write command
+`ot issues sync` SHALL support `--dry-run`, SHALL be refused in read-only mode and with a `read` or `agent` token before any poll runs, and SHALL exit non-zero with the server's message when the feature is off, the connection is stopped or the rate limit is reached.
+
+#### Scenario: Feature off
+- **WHEN** the owner has not enabled issue connections and the user runs `ot issues sync`
+- **THEN** the command exits non-zero with a message saying the owner has not enabled issue connections
+
+#### Scenario: Dry run
+- **WHEN** the user runs `ot issues sync 7f3a --dry-run`
+- **THEN** the request that would be sent is printed and no poll runs
+
+#### Scenario: Read-only mode
+- **WHEN** the user runs `ot issues sync` with `--read-only`
+- **THEN** the command exits with code 5 (`read_only`, as for every write command) before any request is sent
+
+### Requirement: Time commands
+`ot time start <ref> [--note]` SHALL start an entry (stopping the running one), `ot time stop` SHALL stop it, and `ot time log <ref> <duration> [--on <date>] [--note]` or `ot time log <ref> --from <time> --to <time>` SHALL add a closed entry. They SHALL respect `--dry-run`, `--read-only` and token scope like every write command, and `--json` SHALL print the documented `time_entry` schema.
+
+#### Scenario: Start then stop
+- **WHEN** the user runs `ot time start 8c2a` and, 25 minutes later, `ot time stop`
+- **THEN** the first prints the running entry's id and the task's title, the second prints the closed entry with `25m`, and both exit 0
+
+#### Scenario: Log past work
+- **WHEN** the user runs `ot time log 8c2a 1h30 --on yesterday --note "review"`
+- **THEN** one closed entry of 90 minutes ending at 17:00 local time yesterday (the placement every duration-only entry on a past day gets) with the note "review" is created, and its id is printed
+
+#### Scenario: Nothing running
+- **WHEN** the user runs `ot time stop` with no running entry
+- **THEN** the command exits with code 1 and prints the server's message that no entry is running
+
+#### Scenario: Read token
+- **WHEN** the stored token has scope `read` and the user runs `ot time start 8c2a`
+- **THEN** no request is sent, the exit code is 5 and the error code is `insufficient_scope`, while `ot time list` and `ot time export` succeed
+
+#### Scenario: Invalid duration
+- **WHEN** the user runs `ot time log 8c2a soon`
+- **THEN** the command exits with code 2 before any request, naming the accepted forms (`45m`, `1h30`, `90`)
+
+### Requirement: Time listing and export commands
+`ot time list [--task <ref>] [--from <date>] [--to <date>] [--running] [--limit n]` SHALL print entries with day, start, end, duration, task and project, newest first, and `ot time export [--from <date>] [--to <date>] [-o file]` SHALL download the server's CSV in the local time zone. Both are read commands that work with a `read` token; `--json` SHALL print an array of `time_entry` or the `export_file` schema.
+
+#### Scenario: List this week
+- **WHEN** the user runs `ot time list --from 2026-10-12 --to 2026-10-18`
+- **THEN** the entries that started in those local days are printed newest first with an id prefix, day, `09:00–09:25`, `25m`, task title and project
+
+#### Scenario: Running entry
+- **WHEN** the user runs `ot time list --running` while an entry runs
+- **THEN** exactly that entry is printed with an empty end and its elapsed minutes, and `--json` prints it with `endedAt: null`
+
+#### Scenario: Export to a file
+- **WHEN** the user runs `ot time export --from 2026-10-12 --to 2026-10-18 -o week.csv`
+- **THEN** `week.csv` holds the server's CSV for that range in the local time zone and `--json` reports the file and row count
+
+### Requirement: Planning fields in list output
+`ot list` and its siblings SHALL accept `--someday` (open tasks parked in Someday), `--anytime` (open tasks neither scheduled nor parked) and `--blocked` (open tasks waiting for an open task), evaluated on the client from the task fields with the same rules as the app's views, combinable with `--project` and `--limit`. The human table SHALL add a `BY` column with the deadline when any listed task has one, mark a deadline that has passed like an overdue date, and append `(someday)`, `starts <date>`, `evening` and `waiting` to the `DUE` cell when they apply; `--json` output SHALL carry `deadline`, `start`, `evening`, `blocked_by` and `location` on every task, and the `task` schema of `ot schema` SHALL describe them within output version 1.
+
+#### Scenario: Someday list
+- **WHEN** the user runs `ot list --someday`
+- **THEN** only open tasks with `start: "someday"` are printed, each marked `(someday)` in the table
+
+#### Scenario: Deadline column
+- **WHEN** one of the listed tasks has a deadline of 2026-11-06
+- **THEN** the table has a `BY` column showing `2026-11-06` on that row and blank on the others, and a deadline earlier than today is marked overdue
+
+#### Scenario: Schema describes the fields
+- **WHEN** an agent runs `ot schema --json` on a machine with no profile and no network
+- **THEN** the `task` schema lists `deadline`, `start`, `evening`, `blocked_by` and `location` with their types, and the `add` and `edit` commands list the new flags
+
+#### Scenario: Skill file names the flags
+- **WHEN** an agent runs `ot skill`
+- **THEN** the text tells it to use `--start`, `--deadline`, `--evening` and `--blocked-by` for planning instead of forcing a due date on every task, and names `--location`
+
+### Requirement: Shell completion
+`ot completion bash|zsh|fish` SHALL print a completion script for that shell. The script SHALL obtain candidates from the binary itself, so commands, subcommands, aliases, flags and enum values come from the same command table as `ot help` and `ot schema`. Values SHALL be completed where they are known: profile names from the configuration file; project, label and workspace names and open task ids (with their titles as descriptions) from the active profile's server within 2 seconds; `#project` and `@label` words in an `ot add` title. Completion SHALL never write to stderr or into the prompt: without a profile, a token or a reachable server it offers no values and still completes commands and flags. Names containing spaces or shell metacharacters SHALL be inserted correctly quoted. Encrypted values SHALL never be offered, and completion SHALL not store names on disk. Like every command it is an online client: values reflect only what devices have synced to the server.
+
+#### Scenario: Commands and flags come from the command table
+- **WHEN** a flag is added to a command's entry in the command table
+- **THEN** completion offers it after that command, and a test fails if any command, subcommand or flag of `ot schema` cannot be completed
+
+#### Scenario: Project names with spaces
+- **WHEN** the account has a project "Big Project" and the user types `ot add Buy milk --project Bi` and presses Tab in bash
+- **THEN** the word becomes `Big\ Project`, and zsh and fish insert it quoted as well
+
+#### Scenario: Offline completion stays quiet
+- **WHEN** the server cannot be reached and the user presses Tab after `ot list --project `
+- **THEN** no candidates and no error text appear within about 2 seconds, and `ot list --proj` still completes to `--project`
+
+#### Scenario: Scripts are valid
+- **WHEN** `ot completion bash`, `ot completion zsh` and `ot completion fish` are run
+- **THEN** each prints a script that its shell parses without error, and an unknown shell name exits 2
+
+### Requirement: Import command
+`ot import <file>` SHALL upload the file to the server's importer and SHALL be a write command: without `--dry-run` it starts an import job, waits until the job is no longer running and prints its counts (with `--json`, the job); with `--dry-run` it sends only the preview, which writes nothing, and prints the planned import request with the detected format, totals and notes (with `--json`, the dry-run document with the server's preview under `preview`). `--format`, `--existing`, `--duplicates` and `--time-zone` SHALL map to the import options of the same meaning. The target workspace SHALL be the one chosen by `--workspace`, `OPENTODO_WORKSPACE` or the profile's workspace, resolved by name or id like every command; without any choice no workspace option is sent, so the server's default applies (the default workspace, or an own export's own mapping). Like every command it needs the server; an unreachable server exits 4. Read-only mode and read or agent tokens SHALL refuse the import before the file is sent (exit 5), and a server refusal exits 1 with the server's error code.
+
+#### Scenario: Import into Work
+- **WHEN** a user runs `ot import todoist.zip --workspace Work`
+- **THEN** the job runs with Work as its workspace, the command prints how many items were created, skipped and failed, and exits 0 once the job is done
+
+#### Scenario: Preview only
+- **WHEN** a user runs `ot import tasks.csv --dry-run --json --workspace Work`
+- **THEN** stdout is the dry-run document with one planned `POST /api/v1/import` naming Work and the preview's totals, nothing is written, and the exit code is 0
+
+#### Scenario: Unknown workspace
+- **WHEN** `--workspace` names a workspace the account does not belong to
+- **THEN** the command exits 2 listing the available workspaces and sends no file
+
+#### Scenario: Agent token
+- **WHEN** the profile's token has the scope `agent`
+- **THEN** `ot import` exits 5 with `insufficient_scope` and nothing is sent
+
+#### Scenario: Missing file
+- **WHEN** the named file does not exist
+- **THEN** the command exits 2 naming the file
+
+### Requirement: Part of the day in the CLI
+`ot add` and `ot edit` SHALL accept `--part morning|afternoon|evening|none`, writing the part as OpenSpec `day-parts` pairs it; another value SHALL be a usage error that writes nothing. `ot show` and `--json` output SHALL carry `day_part`. Quick-add parsing in the CLI SHALL follow the user's Day parts preference.
+
+#### Scenario: Set Afternoon
+- **WHEN** the user runs `ot edit 8c2a --part afternoon` on an evening task
+- **THEN** the task's part is Afternoon and its evening flag is false
+
+#### Scenario: Invalid part
+- **WHEN** the user runs `ot add "Stretch" --part night`
+- **THEN** the command exits with a usage error and creates nothing
+
+### Requirement: Today limit and logged wins in the CLI
+While the user's Today limit is on, `ot today` SHALL print the tasks in the slots, then a "Waiting for a slot" heading with the waiting tasks in fill order (OpenSpec `today-closed-list`); `--all` SHALL print every task without the heading, and `--json` SHALL carry `waiting_for_slot` on each task. `ot add --done <title>` SHALL create the task already completed now by the user, in one request, refusing `--repeat` and `--remind` with a usage error.
+
+#### Scenario: Waiting section
+- **WHEN** the limit is 2 and Today has three tasks
+- **THEN** `ot today` prints two tasks, then "Waiting for a slot" and the third
+
+#### Scenario: Log a win from the terminal
+- **WHEN** the user runs `ot add --done "Fixed the printer"`
+- **THEN** the task is created completed, and `ot list --completed` shows it under today
+
+#### Scenario: Win that repeats
+- **WHEN** the user runs `ot add --done "Stretch" --repeat "every day"`
+- **THEN** the command exits with a usage error and creates nothing

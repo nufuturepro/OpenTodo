@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
 )
 
 // Resources (design D4): static URIs for the project list and the three
@@ -39,9 +39,18 @@ func resourceList() []resource {
 	tz := " Dates are evaluated in UTC; append ?tz=<IANA zone> to the URI for another time zone."
 	return []resource{
 		{URI: "opentodo://projects", Name: "projects", Title: "Projects", Description: "The user's active projects with open task counts.", MimeType: jsonMime},
+		{URI: "opentodo://workspaces", Name: "workspaces", Title: "Workspaces", Description: "The user's workspaces with their role, names as untrusted text.", MimeType: jsonMime},
 		{URI: "opentodo://views/inbox", Name: "inbox", Title: "Inbox", Description: "Open tasks without a project that are not scheduled (no do-on date, start date or Someday).", MimeType: jsonMime},
 		{URI: "opentodo://views/today", Name: "today", Title: "Today", Description: "Open tasks due today or overdue, overdue first." + tz, MimeType: jsonMime},
 		{URI: "opentodo://views/upcoming", Name: "upcoming", Title: "Upcoming", Description: "Open tasks due after today, soonest first." + tz, MimeType: jsonMime},
+		{URI: "opentodo://views/someday", Name: "someday", Title: "Someday", Description: "Open tasks parked in Someday.", MimeType: jsonMime},
+		{URI: "opentodo://views/anytime", Name: "anytime", Title: "Anytime", Description: "Open tasks with no do-on date, deadline or start date.", MimeType: jsonMime},
+		{URI: "opentodo://rules", Name: "rules", Title: "Automation rules",
+			Description: "The user's automation rules: trigger, condition and actions as ids and enumerations, names as untrusted text. Read-only: rules are edited in the app.", MimeType: jsonMime},
+		{URI: "opentodo://frames", Name: "frames", Title: "Calendar frames",
+			Description: "The user's calendar frames: recurring background windows on the Day and Week grid with weekdays, wall times and planning source, titles as untrusted text. Read-only: frames are edited in the app.", MimeType: jsonMime},
+		{URI: "opentodo://slots", Name: "slots", Title: "Calendar slots",
+			Description: "The user's calendar slots from yesterday on: blocks on the Day and Week grid that hold a checklist of small tasks, with date, wall time, length and the tasks in order, titles as untrusted text. Read-only: slots are edited in the app.", MimeType: jsonMime},
 		{URI: IssuesURI, Name: "issue-connections", Title: "Issue connections",
 			Description: "The user's GitHub and GitLab issue connections with their state and last run, never a token. Read from the stored state; no request is made to the provider.", MimeType: jsonMime},
 	}
@@ -92,13 +101,21 @@ func (s *Server) readResource(ctx context.Context, userID string, params json.Ra
 		if s.issues != nil {
 			payload, err = s.issues(ctx, userID)
 		}
+	case u.Host == "rules" && id == "":
+		payload, err = s.tools.RulesResource(ctx, userID)
+	case u.Host == "frames" && id == "":
+		payload, err = s.tools.FramesResource(ctx, userID)
+	case u.Host == "slots" && id == "":
+		payload, err = s.tools.SlotsResource(ctx, userID)
 	case u.Host == "projects" && id == "":
 		payload, err = s.tools.ProjectsResource(ctx, userID)
+	case u.Host == "workspaces" && id == "":
+		payload, err = s.tools.WorkspacesResource(ctx, userID)
 	case u.Host == "projects" && !strings.Contains(id, "/"):
 		payload, found, err = s.tools.ProjectResource(ctx, userID, id, loc)
 	case u.Host == "tasks" && id != "" && !strings.Contains(id, "/"):
 		payload, found, err = s.tools.TaskResource(ctx, userID, id, loc)
-	case u.Host == "views" && (id == "inbox" || id == "today" || id == "upcoming"):
+	case u.Host == "views" && (id == "inbox" || id == "today" || id == "upcoming" || id == "someday" || id == "anytime"):
 		payload, err = s.tools.ViewResource(ctx, userID, id, loc)
 	default:
 		return nil, notFound(p.URI)

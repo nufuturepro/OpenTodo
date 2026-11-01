@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/recurrence"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
 )
 
 // Server-side completion of recurring tasks (OpenSpec change recurring-tasks,
@@ -38,9 +38,28 @@ func decodeRecurringDue(raw json.RawMessage) *recurringDue {
 	return &d
 }
 
-func nullish(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
+// IsNull reports whether an op or field value is absent or JSON null.
+func IsNull(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
 
-func jsonOf(v any) json.RawMessage {
+// StringOf is a string op value, "" when absent, null or not a string.
+func StringOf(raw json.RawMessage) string {
+	var s string
+	if IsNull(raw) {
+		return ""
+	}
+	_ = json.Unmarshal(raw, &s)
+	return s
+}
+
+// NumberOf is a number op value, 0 when absent, null or not a number.
+func NumberOf(raw json.RawMessage) float64 {
+	var f float64
+	_ = json.Unmarshal(raw, &f)
+	return f
+}
+
+// JSONOf is v as an op value; v must be JSON-encodable.
+func JSONOf(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
 }
@@ -54,7 +73,7 @@ func jsonOf(v any) json.RawMessage {
 // today is the caller's calendar date (YYYY-MM-DD). It only reads.
 func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body map[string]json.RawMessage, existing Entity, today string) (recordID string, record map[string]json.RawMessage, ok bool, err error) {
 	completedAt, completing := body["completed_at"]
-	if !completing || nullish(completedAt) || !nullish(existing["completed_at"]) || existing.Deleted() {
+	if !completing || IsNull(completedAt) || !IsNull(existing["completed_at"]) || existing.Deleted() {
 		return "", nil, false, nil
 	}
 	// The rule in effect is the one this write sets, if any.
@@ -63,7 +82,7 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 		ruleRaw = r
 	}
 	var ruleText string
-	if nullish(ruleRaw) || json.Unmarshal(ruleRaw, &ruleText) != nil {
+	if IsNull(ruleRaw) || json.Unmarshal(ruleRaw, &ruleText) != nil {
 		return "", nil, false, nil
 	}
 	rule, perr := recurrence.Parse(ruleText)
@@ -89,7 +108,7 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 	}
 	done := 0
 	for _, t := range tasks {
-		if idValue(t["series_id"]) != id || nullish(t["completed_at"]) {
+		if idValue(t["series_id"]) != id || IsNull(t["completed_at"]) {
 			continue
 		}
 		// A habit's skipped record is not a completion and never counts
@@ -111,7 +130,7 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 	}
 	occurrenceDue := merged["due"]
 	if cur == nil {
-		occurrenceDue = jsonOf(recurringDue{Date: date})
+		occurrenceDue = JSONOf(recurringDue{Date: date})
 	}
 	record = map[string]json.RawMessage{
 		"due":          occurrenceDue,
@@ -119,12 +138,18 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 		"completed_at": completedAt,
 		"deleted_at":   json.RawMessage("null"),
 		"recurrence":   json.RawMessage("null"),
-		"series_id":    jsonOf(id),
+		"series_id":    JSONOf(id),
 	}
 	for _, f := range []string{"title", "description", "project_id", "parent_id", "priority", "labels", "position", "estimate_minutes"} {
 		if v, has := merged[f]; has {
 			record[f] = v
 		}
+	}
+	// The record's id is derived from the series id, so it always names its
+	// project: a record id someone created first elsewhere is then refused as a
+	// whole (entity-id-ownership), never filled with the series' fields.
+	if _, has := record["project_id"]; !has {
+		record["project_id"] = json.RawMessage("null")
 	}
 	// Custom field values (custom-fields): every `fields.<id>` the series holds,
 	// null included, so both sides write the same record.
@@ -135,21 +160,29 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 	}
 	// The record stays in the series' column (board-view); only sent when set, like the client.
 	if sid := idValue(merged["section_id"]); sid != "" {
-		record["section_id"] = jsonOf(sid)
+		record["section_id"] = JSONOf(sid)
 	}
 	// The record keeps the occurrence's deadline and the series' deadline moves
 	// by the same days as its due date (OpenSpec change deadlines, design D8).
 	deadline := idValue(merged["deadline"])
 	if deadline != "" {
-		record["deadline"] = jsonOf(deadline)
+		record["deadline"] = JSONOf(deadline)
 	}
 	// Start and evening likewise (OpenSpec change someday-and-evening, design D8).
 	start := idValue(merged["start"])
 	if start != "" {
-		record["start"] = jsonOf(start)
+		record["start"] = JSONOf(start)
 	}
 	if string(merged["evening"]) == "true" {
 		record["evening"] = json.RawMessage("true")
+	}
+	// And the part of the day (OpenSpec change day-parts, design D2).
+	if part := idValue(merged["day_part"]); part != "" {
+		record["day_part"] = JSONOf(part)
+	}
+	// And the energy (OpenSpec change task-energy), only when set.
+	if e := idValue(merged["energy"]); e != "" {
+		record["energy"] = JSONOf(e)
 	}
 	nd := recurringDue{Date: next}
 	if cur != nil {
@@ -161,12 +194,12 @@ func (s *Service) RecurringCompletion(ctx context.Context, uid, id string, body 
 		record["completed_by"] = by
 		delete(body, "completed_by")
 	}
-	body["due"] = jsonOf(nd)
+	body["due"] = JSONOf(nd)
 	if deadline != "" {
-		body["deadline"] = jsonOf(recurrence.ShiftDate(deadline, date, next))
+		body["deadline"] = JSONOf(recurrence.ShiftDate(deadline, date, next))
 	}
 	if start != "" && start != "someday" {
-		body["start"] = jsonOf(recurrence.ShiftDate(start, date, next))
+		body["start"] = JSONOf(recurrence.ShiftDate(start, date, next))
 	}
 	return OccurrenceID(id, date), record, true, nil
 }

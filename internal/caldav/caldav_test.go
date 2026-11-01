@@ -1,13 +1,14 @@
 package caldav
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/pixari/opentodo/internal/recurrence"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
 )
 
 func strp(s string) *string { return &s }
@@ -19,6 +20,22 @@ func toTask(in *Inbound) Task {
 		Categories: in.Categories, ParentUID: in.ParentUID, Recurrence: in.Rule, Extra: in.Extra, Modified: 1_760_000_000_000}
 	if in.CreatedAt != nil {
 		t.CreatedAt = *in.CreatedAt
+	}
+	if in.EstimateMinutes != nil {
+		t.EstimateMinutes = *in.EstimateMinutes
+	}
+	// What the caller does with alarms (caldav-interop D4): a mappable one
+	// becomes a reminder served back under its UID, any other is client data.
+	for _, a := range in.Alarms {
+		switch {
+		case a.Mappable && a.At != nil:
+			at, _ := instantOf(Prop{Value: dateValue(a.At.Date) + "T" + clockValue(*a.At.Time) + "Z"})
+			t.Reminders = append(t.Reminders, Reminder{ID: a.UID, Kind: "absolute", FireAt: at})
+		case a.Mappable && a.Offset != nil:
+			t.Reminders = append(t.Reminders, Reminder{ID: a.UID, Kind: "relative", Offset: *a.Offset})
+		default:
+			t.Extra = strings.TrimPrefix(t.Extra+"\r\n"+strings.Join(a.Lines, "\r\n"), "\r\n")
+		}
 	}
 	if in.Completed {
 		c := int64(1_760_000_000_000)
@@ -62,6 +79,28 @@ func TestICalRoundTripFixtures(t *testing.T) {
 			if recurrence.SameRRULE(first.RRULE, second.RRULE) {
 				second.RRULE = first.RRULE // written in our canonical spelling
 			}
+			// Mapped alarms come back as this server's VALARMs: same UID and
+			// trigger, in this server's spelling.
+			if len(first.Alarms) != len(second.Alarms) {
+				t.Fatalf("alarms: %d then %d\n%s", len(first.Alarms), len(second.Alarms), out)
+			}
+			for i := range first.Alarms {
+				a, b := first.Alarms[i], second.Alarms[i]
+				if a.Mappable && (a.UID != b.UID || !reflect.DeepEqual(a.At, b.At) || !reflect.DeepEqual(a.Offset, b.Offset)) {
+					t.Fatalf("alarm %d: %+v then %+v", i, a, b)
+				}
+			}
+			first.Alarms, second.Alarms, second.ServedAlarms = nil, nil, nil
+			// A timed DUE comes back with this server's DTSTART next to it (issue
+			// #248): the shape is how the dates were written, not what they mean.
+			if first.Shape == ShapeDueOnly && second.Shape == ShapeStartDueEqual && first.Due != nil && first.Due.Time != nil {
+				second.Shape = first.Shape
+			}
+			// An event (caldav-events-as-tasks) comes back as a VTODO whose DUE
+			// and DTSTART are its start: same dates, written as a task.
+			if strings.Contains(string(raw), "BEGIN:VEVENT") && first.Shape == ShapeStartDuration && second.Shape == ShapeStartDueEqual {
+				second.Shape, second.SentDue = first.Shape, first.SentDue
+			}
 			if !reflect.DeepEqual(first, second) {
 				t.Fatalf("round trip differs\nfirst:  %+v\nsecond: %+v\n%s", first, second, out)
 			}
@@ -91,8 +130,11 @@ func TestFixtureMappings(t *testing.T) {
 	if apple.Rule != "every week" {
 		t.Fatalf("apple rule %q", apple.Rule)
 	}
-	if !strings.Contains(apple.Extra, "BEGIN:VALARM") || !strings.Contains(apple.Extra, "X-APPLE-SORT-ORDER:731") {
-		t.Fatalf("apple extra lost the alarm: %q", apple.Extra)
+	// The absolute alarm is handed to the caller, which makes it a reminder
+	// (caldav-interop "Absolute alarm"); it is not client data any more.
+	if len(apple.Alarms) != 1 || !apple.Alarms[0].Mappable || apple.Alarms[0].At == nil || strings.Contains(apple.Extra, "BEGIN:VALARM") ||
+		!strings.Contains(apple.Extra, "X-APPLE-SORT-ORDER:731") {
+		t.Fatalf("apple alarm: %+v extra %q", apple.Alarms, apple.Extra)
 	}
 	if strings.Contains(apple.Extra, "DTSTART") || strings.Contains(apple.Extra, "RRULE") {
 		t.Fatalf("derived DTSTART/RRULE kept as extra: %q", apple.Extra)
@@ -179,15 +221,20 @@ func TestDueMapping(t *testing.T) {
 }
 
 func TestUnmappedPropertiesPreserved(t *testing.T) {
-	in, err := Decode(vtodo("SUMMARY:A", "X-CUSTOM;FOO=\"a:b\":value;with;semis", "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15M", "END:VALARM",
+	in, err := Decode(vtodo("SUMMARY:A", "X-CUSTOM;FOO=\"a:b\":value;with;semis", "BEGIN:VALARM", "ACTION:AUDIO", "TRIGGER:-PT15M", "REPEAT:3", "DURATION:PT5M", "END:VALARM",
 		"RRULE:FREQ=HOURLY", "RELATED-TO;RELTYPE=SIBLING:other"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`X-CUSTOM;FOO="a:b":value;with;semis`, "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM", "RRULE:FREQ=HOURLY", "RELATED-TO;RELTYPE=SIBLING:other"} {
+	for _, want := range []string{`X-CUSTOM;FOO="a:b":value;with;semis`, "RRULE:FREQ=HOURLY", "RELATED-TO;RELTYPE=SIBLING:other"} {
 		if !strings.Contains(in.Extra, want) {
 			t.Fatalf("extra lacks %q: %q", want, in.Extra)
 		}
+	}
+	// An alarm the reminder model cannot express is reported unmappable with
+	// its lines, which the caller keeps as client data.
+	if len(in.Alarms) != 1 || in.Alarms[0].Mappable || strings.Join(in.Alarms[0].Lines, "\r\n") != "BEGIN:VALARM\r\nACTION:AUDIO\r\nTRIGGER:-PT15M\r\nREPEAT:3\r\nDURATION:PT5M\r\nEND:VALARM" {
+		t.Fatalf("alarm: %+v", in.Alarms)
 	}
 	if in.Rule != "" || in.RRULE != "FREQ=HOURLY" {
 		t.Fatalf("hourly rule must stay unmapped: %+v", in)
@@ -196,7 +243,7 @@ func TestUnmappedPropertiesPreserved(t *testing.T) {
 	task := toTask(in)
 	task.Title = "B"
 	again, err := Decode(Encode(task))
-	if err != nil || again.Title != "B" || again.Extra != in.Extra {
+	if err != nil || again.Title != "B" || again.Extra != in.Extra || !reflect.DeepEqual(again.Alarms, in.Alarms) {
 		t.Fatalf("after edit: %+v %v", again, err)
 	}
 }
@@ -205,8 +252,18 @@ func TestDecodeRejects(t *testing.T) {
 	if _, err := Decode([]byte("not ical")); err == nil {
 		t.Fatal("garbage accepted")
 	}
-	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")); err != ErrUnsupportedComponent {
-		t.Fatalf("VEVENT: %v", err)
+	// A VEVENT becomes a task (caldav-events-as-tasks); journals and free/busy stay refused.
+	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VJOURNAL\r\nUID:j\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n")); err != ErrUnsupportedComponent {
+		t.Fatalf("VJOURNAL: %v", err)
+	}
+	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VFREEBUSY\r\nUID:f\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n")); err != ErrUnsupportedComponent {
+		t.Fatalf("VFREEBUSY: %v", err)
+	}
+	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:m\r\nEND:VTODO\r\nBEGIN:VEVENT\r\nUID:m\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")); !errors.Is(err, ErrInvalidObject) {
+		t.Fatalf("VTODO and VEVENT mixed: %v", err)
+	}
+	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")); !errors.Is(err, ErrInvalidObject) {
+		t.Fatalf("VEVENT without UID: %v", err)
 	}
 	if _, err := Decode([]byte("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nSUMMARY:x\r\nEND:VTODO\r\nEND:VCALENDAR\r\n")); err == nil {
 		t.Fatal("missing UID accepted")

@@ -14,27 +14,51 @@
 //   statistics, which must name or exclude what is in the Trash.
 // Snapshots are shared and read-only: sort a copy, never the array itself.
 import { useLiveQuery } from 'dexie-react-hooks'
-import { GRID_PREFS_META_KEY, normalizeGridPrefs, type GridPrefs } from './calendar'
+import { CALENDAR_COMPLETED_META_KEY, GRID_PREFS_META_KEY, normalizeGridPrefs, type GridPrefs } from './calendar'
 import { db, getMeta, setMeta, type AttachmentBlob } from './db'
 import { rememberFieldNames } from './fieldNames'
+import { applicableFieldsLookup } from './fieldTree'
 import { t } from './i18n'
 import { activeLabels } from './labels'
 import { derived, liveSnapshot } from './liveSnapshot'
 import { compareByPosition } from './ordering'
 import { REVIEW_ID } from './review'
 import { USER_PREFS_ID } from './userPrefs'
+import { ownIn, projectsIn, readWorkspaceState, type WorkspaceState } from './workspaces'
 import type {
-  AppNotification, Attachment, CalendarSubscription, IssueConnection, Comment, FieldDef, Label, Membership, Project, ProjectPrefs, Reminder, Review, Section, Task, UserPrefs, View,
+  AppNotification, Attachment, CalendarConnection, CalendarSubscription, WorkspaceGroup, WorkspaceMember, IssueConnection, Comment, FieldDef, Label, Membership, Project, ProjectPrefs, Reminder, Review, Section, Task, UserPrefs, View,
 } from './types'
 
 export type { AttachmentBlob }
 
 // ---- shared snapshots ----
 
-const projectRows = liveSnapshot('projects', () => db.projects.toArray())
-const labelRows = liveSnapshot('labels', () => db.labels.toArray())
+// Projects, labels and views are those of the device's current workspace
+// (OpenSpec change workspaces, design D5): the partition happens here, once,
+// so every list, count and picker built on these snapshots follows it.
+const projectRows = liveSnapshot('projects', async () => projectsIn(await readWorkspaceState(), await db.projects.toArray()))
+const labelRows = liveSnapshot('labels', async () => ownIn(await readWorkspaceState(), await db.labels.toArray()))
 const membershipRows = liveSnapshot('memberships', () => db.memberships.toArray())
-const viewRows = liveSnapshot('views', () => db.views.toArray())
+const viewRows = liveSnapshot('views', async () => ownIn(await readWorkspaceState(), await db.views.toArray()))
+// Every workspace's rows, for what crosses workspaces: the palette, the project
+// picker grouped by workspace, moving between workspaces.
+const everyProjectRow = liveSnapshot('projects of every workspace', () => db.projects.toArray())
+const everyLabelRow = liveSnapshot('labels of every workspace', () => db.labels.toArray())
+const workspaceState = liveSnapshot('workspaces', readWorkspaceState)
+const workspaceMemberRows = liveSnapshot('workspace members', () => db.workspaceMembers.toArray())
+const groupRows = liveSnapshot('groups', () => db.groups.toArray())
+const NO_WS_MEMBERS: WorkspaceMember[] = []
+const NO_GROUPS: WorkspaceGroup[] = []
+
+/** The cached members of every workspace of the account (workspaces D8). */
+export function useWorkspaceMembers(): WorkspaceMember[] {
+  return workspaceMemberRows.use() ?? NO_WS_MEMBERS
+}
+
+/** The cached groups of every workspace of the account. */
+export function useWorkspaceGroups(): WorkspaceGroup[] {
+  return groupRows.use() ?? NO_GROUPS
+}
 const prefsRow = liveSnapshot('user prefs', async () => (await db.userPrefs.get(USER_PREFS_ID)) ?? null)
 const reviewRow = liveSnapshot('review', async () => (await db.review.get(REVIEW_ID)) ?? null)
 const projectPrefRows = liveSnapshot('project prefs', () => db.prefs.toArray())
@@ -52,6 +76,26 @@ const activeOf = derived((all: Label[]) => activeLabels(all))
 const memberMapOf = derived((all: Membership[]) => new Map(all.map((m) => [m.projectId, m])))
 const reviewedAtOf = derived((all: ProjectPrefs[]) => new Map(all.filter((p) => p.reviewed_at > 0).map((p) => [p.id, p.reviewed_at])))
 const NO_STAMPS = new Map<string, number>()
+const reviewEveryOf = derived((all: ProjectPrefs[]) => new Map(all.filter((p) => !!p.review_every).map((p) => [p.id, p.review_every!])))
+const NO_INTERVALS = new Map<string, string>()
+
+const NO_WORKSPACES: WorkspaceState = { current: '', defaultId: '', list: [] }
+
+/** The device's workspaces and the current one (OpenSpec change workspaces). */
+export function useWorkspaceState(): WorkspaceState {
+  return workspaceState.use() ?? NO_WORKSPACES
+}
+
+/** Live projects of every workspace, in position order (the palette and grouped pickers). */
+export function useProjectsOfEveryWorkspace(): Project[] {
+  const all = everyProjectRow.use()
+  return all ? liveOf(all) : NO_PROJECTS
+}
+
+/** Every label row of every workspace (moving a project re-matches labels by name). */
+export function useLabelsOfEveryWorkspace(): Label[] {
+  return everyLabelRow.use() ?? NO_LABELS
+}
 
 /** Live projects in position order: not deleted, archived ones included (see the rule above). */
 export function useProjects(): Project[] {
@@ -96,6 +140,12 @@ export function useMembershipMap(): Map<string, Membership> {
   return all ? memberMapOf(all) : NO_MEMBER_MAP
 }
 
+/** The membership map, or undefined while the first read runs. */
+export function useMembershipMapOrLoading(): Map<string, Membership> | undefined {
+  const all = membershipRows.use()
+  return all ? memberMapOf(all) : undefined
+}
+
 /** One project's membership: null for a personal project, undefined while loading. */
 export function useMembership(projectId: string): Membership | null | undefined {
   const all = membershipRows.use()
@@ -112,6 +162,11 @@ export function useViewRowsLoaded(): View[] | undefined {
   return viewRows.use()
 }
 
+/** Whether projects, labels, saved views and preferences have been read once (the sidebar's groups wait for them). */
+export function useSidebarRowsLoaded(): boolean {
+  return [projectRows.use(), labelRows.use(), viewRows.use(), prefsRow.use()].every((rows) => rows !== undefined)
+}
+
 /** The synced user preferences row: undefined while loading, null when there is none yet. */
 export function useUserPrefsRow(): UserPrefs | null | undefined {
   return prefsRow.use()
@@ -121,6 +176,17 @@ export function useUserPrefsRow(): UserPrefs | null | undefined {
 export function useReviewedAt(): ReadonlyMap<string, number> {
   const rows = projectPrefRows.use()
   return rows ? reviewedAtOf(rows) : NO_STAMPS
+}
+
+/** Whether the personal project preferences have been read once (the walk's queue waits for them). */
+export function useProjectPrefsLoaded(): boolean {
+  return projectPrefRows.use() !== undefined
+}
+
+/** This user's stored review interval per project (project_prefs.review_every, project-review-cadence); empty while loading. */
+export function useReviewEvery(): ReadonlyMap<string, string> {
+  const rows = projectPrefRows.use()
+  return rows ? reviewEveryOf(rows) : NO_INTERVALS
 }
 
 /** The weekly review row: undefined while loading, null when there is none yet. */
@@ -145,6 +211,24 @@ export function useFieldDefs(): FieldDef[] {
   return all ? liveFieldsOf(all) : NO_FIELDS
 }
 
+type FieldLookup = (projectId: string | null | undefined) => FieldDef[]
+const fieldLookups = new WeakMap<Project[], WeakMap<FieldDef[], FieldLookup>>()
+
+/**
+ * The fields that apply to each project, inherited ones included (OpenSpec
+ * inherited-custom-fields): one shared, memoizing lookup per snapshot of projects
+ * and definitions, so every row of a list reuses the same chain walks.
+ */
+export function useApplicableFields(): FieldLookup {
+  const projects = useProjects()
+  const defs = useFieldDefs()
+  let byDefs = fieldLookups.get(projects)
+  if (!byDefs) fieldLookups.set(projects, (byDefs = new WeakMap()))
+  let lookup = byDefs.get(defs)
+  if (!lookup) byDefs.set(defs, (lookup = applicableFieldsLookup(projects, defs)))
+  return lookup
+}
+
 /** Every field definition row of one project, deleted ones too (liveFields narrows them). */
 export function useProjectFieldRows(projectId: string | null | undefined): FieldDef[] {
   return useLiveQuery(() => (projectId ? db.fields.where('project_id').equals(projectId).toArray() : NO_FIELDS), [projectId], NO_FIELDS)
@@ -167,7 +251,8 @@ export function useSubtasks(parentId: string): Task[] {
   return useLiveQuery(() => db.tasks.where('parent_id').equals(parentId).filter((tk) => !tk.deleted_at).sortBy('position'), [parentId], NO_TASK_ROWS)
 }
 
-const NO_TASK_ROWS: Task[] = []
+/** The empty list a task query returns while it is still reading (compare by identity). */
+export const NO_TASK_ROWS: Task[] = []
 
 /** Every task row of a project, deleted ones too. */
 export function useProjectTaskRows(projectId: string): Task[] {
@@ -183,6 +268,12 @@ export function useTaskRowsOfProjects(projectIds: readonly string[]): Task[] {
 /** The task rows with these ids that exist (deleted ones included), in the given order. */
 export function useTasksById(ids: readonly string[]): Task[] {
   return useLiveQuery(async () => (await db.tasks.bulkGet(ids as string[])).filter((tk): tk is Task => !!tk), [ids], NO_TASK_ROWS)
+}
+
+/** Like useTasksById, with whether the rows are the answer for these ids (a screen waits for it rather than jump). */
+export function useTasksByIdRead(ids: readonly string[]): { tasks: Task[]; read: boolean } {
+  const res = useLiveQuery(async () => ({ of: ids, rows: (await db.tasks.bulkGet(ids as string[])).filter((tk): tk is Task => !!tk) }), [ids])
+  return { tasks: res?.rows ?? NO_TASK_ROWS, read: res?.of === ids }
 }
 
 /** The occurrence records of a recurring task (series-id equals the task's id). */
@@ -347,8 +438,21 @@ export function useNotifications(limit = 50): AppNotification[] {
 }
 
 /** The calendar subscriptions cached with the last event refresh (for offline). */
-export function cachedCalendarSubscriptions(): Promise<CalendarSubscription[]> {
-  return db.calendarSubscriptions.toArray()
+export async function cachedCalendarSubscriptions(): Promise<CalendarSubscription[]> {
+  // Calendar sync's calendars come with the events but are not the user's subscriptions.
+  return (await db.calendarSubscriptions.toArray()).filter((s) => !s.managed)
+}
+
+const CALENDAR_CONNECTIONS_META_KEY = 'calendarConnections'
+
+/** The calendar sync connections of the last load (calendar-two-way): shown offline. Never a password: the server sends none. */
+export function cachedCalendarConnections(): Promise<CalendarConnection[]> {
+  return getMeta<CalendarConnection[]>(CALENDAR_CONNECTIONS_META_KEY, [])
+}
+
+/** Keeps the calendar sync connections of a load for the offline panel. */
+export function cacheCalendarConnections(list: CalendarConnection[]): Promise<void> {
+  return setMeta(CALENDAR_CONNECTIONS_META_KEY, list)
 }
 
 const ISSUE_CONNECTIONS_META_KEY = 'issueConnections'
@@ -388,6 +492,10 @@ export function useReferenceNames(parents: readonly string[]): Map<string, strin
 const NO_NAMES = new Map<string, string>()
 
 // ---- device-local settings (the meta table, never synced) ----
+
+export function setCalendarShowCompleted(show: boolean): Promise<void> {
+  return setMeta(CALENDAR_COMPLETED_META_KEY, show)
+}
 
 /** Saves the Day and Week view preferences of this device (time-blocking D7). */
 export function saveGridPrefs(prefs: GridPrefs): Promise<void> {

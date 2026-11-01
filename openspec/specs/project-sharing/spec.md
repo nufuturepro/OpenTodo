@@ -6,10 +6,10 @@ Lets a project owner share a project with other accounts on the same server, def
 ## Requirements
 
 ### Requirement: Project membership and roles
-A project SHALL have exactly one `owner` and any number of members with the role `viewer`, `editor` or `admin`. The owner and admins SHALL be able to add an existing account as a member by its exact email with a chosen role and to change a member's role. Membership SHALL be visible to every member of the project and SHALL be cached on each device so it is available offline; a device SHALL adopt the server's membership on every sync so all devices converge on the same member list.
+A project SHALL have exactly one `owner` and any number of members with the role `viewer`, `editor` or `admin`. A member's role SHALL come from a direct grant, from a grant to a group of the project's workspace they belong to, or from both, the highest role winning. The owner and admins SHALL be able to add an existing account as a member with a chosen role and to change a member's role, and to grant a group of the project's workspace a role. In a project of the account's default workspace an account is named by its exact email; in a project of a created workspace only members of that workspace may be added, named from the workspace's directory, and only its groups may be granted. Membership SHALL be visible to every member of the project, with the source of each member's role (direct, or the groups it comes from), and SHALL be cached on each device so it is available offline; a device SHALL adopt the server's membership on every sync so all devices converge on the same member list.
 
 #### Scenario: Share with an existing account
-- **WHEN** the owner adds `bob@example.com`, an existing account, as `editor`
+- **WHEN** the owner adds `bob@example.com`, an existing account, as `editor` to a project in their default workspace
 - **THEN** the project lists Bob as an editor, every member sees him in the member list after their next sync, and Bob's devices receive the project on their next sync
 
 #### Scenario: Unknown email
@@ -19,6 +19,14 @@ A project SHALL have exactly one `owner` and any number of members with the role
 #### Scenario: Role change while the member is offline
 - **WHEN** an admin changes Bob from `editor` to `viewer` while Bob's device is offline
 - **THEN** Bob's device keeps showing the project read-write until it syncs, and after the sync it shows the project read-only with the viewer role
+
+#### Scenario: Outside the workspace
+- **WHEN** the owner of a project in the created workspace "Work" adds an account that is not a member of Work
+- **THEN** the request is refused with 409 `not_in_workspace` and nobody is added
+
+#### Scenario: Role through a group
+- **WHEN** the group "Adults" is granted `editor` on "House" and Carol, a member of Adults, has no direct grant
+- **THEN** Carol is an editor of House, the member list shows her role as coming from Adults, and her devices receive the project on their next sync
 
 ### Requirement: Role permissions
 A `viewer` SHALL read the project and its tasks. An `editor` SHALL additionally create, edit, complete and delete tasks in the project, and edit the project's note (`description` and `notes_doc`). An `admin` SHALL additionally rename, recolour and archive the project and manage members other than the owner. Only the `owner` SHALL delete the project, transfer ownership and change or remove admins.
@@ -118,30 +126,54 @@ A task SHALL belong to the sharing scope of its project: members see it in a sha
 - **THEN** the project and its tasks are hidden on every member's devices after sync and the owner's Inbox lists copies of the three open tasks
 
 ### Requirement: Membership routes
-The API SHALL expose list, add, change-role, remove and transfer routes under `/api/v1/projects/{id}/members` and `/api/v1/projects/{id}/transfer`. All of them SHALL require a valid session or API token, SHALL apply the role rules above, and SHALL return the JSON error envelope on failure. Collection and export routes SHALL include the shared projects and tasks the caller is a member of, with the caller's role on each shared project.
+The API SHALL expose list, add, change-role, remove and transfer routes under `/api/v1/projects/{id}/members` and `/api/v1/projects/{id}/transfer`, the cancel route `DELETE /api/v1/projects/{id}/member-invitations/{invitationId}`, and group grant routes `POST /api/v1/projects/{id}/grants` (`{groupId, role}`), `PATCH` and `DELETE /api/v1/projects/{id}/grants/{groupId}`, which follow the same role rules as adding, changing and removing a member. All of them SHALL require a valid session or API token, SHALL apply the role rules above, and SHALL return the JSON error envelope on failure. The add route SHALL answer 201 with the membership for an immediate add and 202 `{pending: true}` for an invitation (see "Membership invitations for strangers"). The member list SHALL carry, for each member, their effective role and `via`: an empty list for a direct grant alone, otherwise the ids and names of the groups the role comes from, and SHALL list the project's group grants with their roles; for owners and admins it SHALL also carry `pending`, the open invitations with their address, role and expiry, and cancelling one SHALL need the same role. Collection and export routes SHALL include the shared projects and tasks the caller is a member of, with the caller's effective role on each shared project.
 
 #### Scenario: Anonymous request
-- **WHEN** a request without credentials reaches any membership route
+- **WHEN** a request without credentials reaches any membership, invitation or grant route
 - **THEN** the response is a 401 `unauthorized` error
 
 #### Scenario: Non-member lists members
 - **WHEN** an authenticated user who is not a member requests the member list of a project
 - **THEN** the response is a 404 `not_found` error that does not reveal the project's existence
 
+#### Scenario: Pending invitations only for managers
+- **WHEN** an owner and an editor of a project with one open invitation request the member list
+- **THEN** the owner's answer carries `pending` with the invited address and role, and the editor's answer carries no `pending`
+
+#### Scenario: Cancel an invitation
+- **WHEN** an admin cancels an open invitation, and an editor tries to cancel another
+- **THEN** the admin gets 204 and the invitation is gone, and the editor gets 403 `forbidden`
+
 #### Scenario: Export includes shared projects
 - **WHEN** a member requests the export
 - **THEN** the document includes the shared projects and their tasks, each shared project carrying the caller's role and the owner's id, alongside the caller's personal data
 
+#### Scenario: Grant a group
+- **WHEN** an admin posts `{"groupId":"<Adults>","role":"editor"}` to the project's grants route
+- **THEN** the response is 201, the member list shows every member of Adults with `via` naming the group, and a group of another workspace answers 404 `not_found`
+
+#### Scenario: Grant refused for the role
+- **WHEN** an editor posts to the grants route, or an admin grants `admin` to a group
+- **THEN** the editor gets 403 `forbidden`, the admin gets 403 `forbidden`, and no grant exists
+
 ### Requirement: Sharing in the client
-The client SHALL mark shared projects in the sidebar, show the member list and roles from the project header, offer a share dialog to the owner and admins, and render the project read-only for viewers, all from the locally cached membership so it behaves the same offline. Every sharing action SHALL be reachable with the keyboard.
+The client SHALL mark shared projects in the sidebar, show the member list and roles from the project header, offer a share dialog to the owner and admins, and render the project read-only for viewers, all from the locally cached membership so it behaves the same offline. The share dialog SHALL list open invitations under "Waiting for an answer" with Cancel, and SHALL say after an add that became an invitation that the person gets an invitation to accept if they have an account. An invitation SHALL show in the notification list with Accept and Decline while it is unread, and in Settings → Account → Invitations while it is open. Every sharing action SHALL be reachable with the keyboard.
 
 #### Scenario: Viewer opens a shared project offline
 - **WHEN** a viewer opens the app without a network and navigates to the shared project
 - **THEN** the tasks are listed, the quick-add input and edit controls are disabled with a read-only notice, and the member list still shows
 
 #### Scenario: Share dialog with the keyboard
-- **WHEN** the owner presses the share shortcut in a project view, types an email, picks a role and confirms
+- **WHEN** the owner presses the share shortcut in a project view, types the email of someone they already share a project with, picks a role and confirms
 - **THEN** the member is added without any mouse interaction and appears in the member list
+
+#### Scenario: Share with a stranger
+- **WHEN** the owner adds the email of someone they share nothing with
+- **THEN** the address appears under "Waiting for an answer" with its role and a Cancel button, and the dialog explains that an account with that address gets an invitation
+
+#### Scenario: Accept from the notifications
+- **WHEN** the invitee opens the notification list and chooses Accept on the invitation
+- **THEN** the project appears in their sidebar after the sync that follows, and the notification is read without Accept and Decline
 
 ### Requirement: Project invite link creation
 The project's owner or an admin SHALL create a single-use link through `POST /api/v1/projects/{id}/invites` with role `viewer` or `editor` (`admin` only for the owner), an optional email and an expiry of 1–720 hours (default 168). The secret SHALL be returned once and stored only as a hash. With `"send": true`, an email and outgoing email configured, the server SHALL also mail the link to that address. Links are server-side data, never ops: they never sync and need a connection.
@@ -288,7 +320,7 @@ A device that announces the `backfill_ack` feature SHALL receive each page of a 
 - **THEN** its next exchange, which echoes no marker, receives the same page again, and the replay completes with every operation of the project's history
 
 ### Requirement: Memberships in a fixed number of queries
-Listing a user's shared projects with their members, which every sync exchange does, SHALL take a fixed number of queries however many projects the user belongs to, and SHALL return the same projects and members in the same order (projects by id, members owner first, then by role and email). Membership is server-side data; nothing changes for offline devices, which receive the list on their next sync as before.
+Listing a user's shared projects with their members, which every sync exchange does, SHALL take a fixed number of queries however many projects, workspaces or groups the user belongs to, and SHALL return the same projects and members in the same order (projects by id, members owner first, then by role and email). Effective membership (direct grants combined with group grants) SHALL be materialised on the server whenever a grant, a group or a workspace membership changes, in the same transaction, so that reading it, checking an operation, waking devices and listing assignable members never evaluate groups at read time. Membership is server-side data; nothing changes for offline devices, which receive the list on their next sync as before.
 
 #### Scenario: Member of many projects
 - **WHEN** a user who belongs to 20 shared projects syncs
@@ -297,6 +329,10 @@ Listing a user's shared projects with their members, which every sync exchange d
 #### Scenario: Member of none
 - **WHEN** a user who belongs to no shared project syncs
 - **THEN** the membership list is empty
+
+#### Scenario: Group change is materialised once
+- **WHEN** Dan is added to a group that is on 30 projects
+- **THEN** his 30 effective memberships are written in that request's transaction, and his next sync reads them with the same two queries as any other member
 
 ### Requirement: Project id cannot be taken over
 Sharing a project for the first time (adding a member or accepting an invite link to an unshared project) SHALL be refused when another account's personal scope holds a project with the same id. The member routes answer 409 `project_id_conflict`; invite acceptance answers 404 `invitation_invalid`. Nothing is shared and no scope is created. Each account keeps its own project and writes it as before, offline included.
@@ -319,3 +355,92 @@ The first share SHALL move the attachments of the project's tasks into the proje
 #### Scenario: Project shared on an older version
 - **WHEN** the server starts on a database where a shared project's attachments are still in the owner's personal scope
 - **THEN** they move to the project's scope, attachments of personal tasks stay private, and a second start changes nothing
+
+### Requirement: Membership invitations for strangers
+Adding a member by email SHALL add an account at once only when the caller and that account already share a shared project or a created workspace. Otherwise `POST /api/v1/projects/{id}/members` SHALL answer `202 {pending: true}` the same way whether or not an account has that address, SHALL store a pending invitation that expires after 14 days (for an unknown address a placeholder that never notifies anyone), and SHALL notify an existing account in the app and, with outgoing email on, by an email sent after the answer that names the inviter and the role but not the project. At most 50 invitations SHALL be open per project (409 `limit_reached`), and each add by email SHALL count against the existing hourly add limit. Asking again for an open invitation SHALL update its role without a second notification; asking again after the person declined SHALL answer 202 and store nothing until the declined invitation would have expired.
+
+The invitee SHALL list, accept and decline their open invitations (`GET /api/v1/me/member-invitations`, `POST /api/v1/me/member-invitations/{id}/accept`, `POST /api/v1/me/member-invitations/{id}/decline`), each requiring a session or a `full` or `admin` token and refused on a demo instance. Accepting SHALL add the membership through the same path as an immediate add, with the inviter as the acting member, after checking that the inviter is active and may still grant the role on a live project; otherwise it SHALL answer 410 `invitation_stale` and drop the invitation. An id that is not one of the caller's open invitations SHALL answer 404 `not_found`. Answering or cancelling an invitation SHALL mark its notification read. Invitations are server state, never synced; answering needs a connection, and the project reaches the invitee's devices by the usual membership sync once accepted, converging like any membership change.
+
+#### Scenario: Stranger is asked
+- **WHEN** a project owner adds by email an account with which they share no project or workspace
+- **THEN** the answer is 202 `{pending: true}`, the account is not a member, and it sees an invitation in its notifications and in Settings with Accept and Decline
+
+#### Scenario: Unknown address
+- **WHEN** a project owner adds an address that has no account
+- **THEN** the answer is the same 202 `{pending: true}`, the pending list shows the address like any other invitation, and nobody is notified
+
+#### Scenario: Co-member added at once
+- **WHEN** a project owner adds by email an account that is already a member of another shared project of theirs
+- **THEN** the answer is 201 and the account is a member, as before
+
+#### Scenario: Accept
+- **WHEN** the invitee accepts while the inviter is still an owner or admin of the project
+- **THEN** the answer is 200, the invitee becomes a member with the invited role, and the project appears on their devices after the next sync
+
+#### Scenario: Decline
+- **WHEN** the invitee declines and the owner adds the same address again the next day
+- **THEN** the decline answers 204, nobody becomes a member, the repeated add answers 202 and no new invitation or notification is created
+
+#### Scenario: Stale invitation
+- **WHEN** the invitee accepts after the inviter lost the admin role
+- **THEN** the answer is 410 `invitation_stale` and no membership is created
+
+#### Scenario: Someone else's invitation
+- **WHEN** an account accepts or declines an invitation id that was sent to another account
+- **THEN** the answer is 404 `not_found` and nothing changes
+
+#### Scenario: Anonymous or read token
+- **WHEN** a request without credentials, or with a `read` or `agent` token, calls an invitation route
+- **THEN** the response is 401 `unauthorized` or 403 `insufficient_scope` and nothing changes
+
+#### Scenario: Demo instance
+- **WHEN** a demo visitor calls an invitation route
+- **THEN** the response is 403 `demo_restricted`
+
+### Requirement: An entity id names one entity on the server
+The ids of projects, tasks, sections, custom fields, comments, attachments, time entries and automation rules SHALL be unique on the server. An operation for an id that exists SHALL be applied in the scope where the entity lives, with the author's permission checked there. An operation for an id that exists only in a scope the author cannot see SHALL be refused with reason `forbidden`, like any write the author may not make: nothing is created, no server value is handed back, and the rest of the batch is applied. A batch whose `project_id` places a stored task, section or custom field in another scope SHALL have every operation for that entity refused with reason `scope_change`. Labels, saved views, reminders, places, reviews and preferences stay per account. These rules are checked when an operation is received, for every write path (sync, REST, CalDAV, import, AI agent tools, calendar and issue sync, email, automation rules), so offline devices converge: the refused operations are dropped from the outbox and the entity stays unchanged for everyone.
+
+Where data written by an earlier version holds one id in several scopes, the entity SHALL belong to the copy with the earliest operation among the scopes the reader can see, for reads and writes alike, and a write to a younger copy SHALL be refused when an older copy the author cannot see is in a scope that shares a member with it. Purging one copy SHALL not remove reminders that an account keeps on its own copy. Copies in scopes without a common member keep working for their owners.
+
+#### Scenario: Private task id reused in a shared project
+- **WHEN** bob, who shares a project with alice, learns the id of alice's private Inbox task and submits operations creating a task with that id in the shared project
+- **THEN** the operations are refused with reason `forbidden` and no server value, alice's task is unchanged, her later edits stay in her personal scope, bob's devices never receive it, and bob cannot purge it
+
+#### Scenario: Every kind of entity
+- **WHEN** bob submits a project, section, custom field, comment, attachment, time entry or automation rule whose id is one of alice's private entities
+- **THEN** each is refused with reason `forbidden` and alice's entity stays only in her personal scope
+
+#### Scenario: Labels stay per account
+- **WHEN** bob creates a label whose id is the id of one of alice's labels
+- **THEN** both accounts keep their own label
+
+#### Scenario: Derived id created first
+- **WHEN** bob creates a task in the shared project with the id alice's device will use for the next occurrence record of her private recurring task, and alice's device then submits that record in her Inbox
+- **THEN** every operation of the record is refused with reason `scope_change` and bob's task receives none of alice's fields
+
+#### Scenario: Copy left by an earlier version
+- **WHEN** the database holds alice's private task and a copy with the same id that bob created in their shared project before the upgrade
+- **THEN** alice is shown and edits her own task, her edits stay in her personal scope, bob's writes to the copy are refused, and a purge of bob's copy keeps alice's reminders
+
+#### Scenario: Two accounts imported the same file
+- **WHEN** two accounts that share no project hold the same task id from importing the same export before the upgrade
+- **THEN** each keeps editing their own copy
+
+### Requirement: Adding people by email is limited and recorded
+Adding a person to a project (`POST /api/v1/projects/{id}/members` with `email`) or to a workspace (`POST /api/v1/workspaces/{id}/members`) by email SHALL count toward a budget of 30 attempts per acting account per hour, shared by both routes and counted whether or not an account has that email, after the caller's right to add members was checked. Over the budget the server SHALL answer 429 `rate_limited` and look nothing up. Adding a member of a created workspace's directory by account id does not count. Every successful project add SHALL be recorded in the audit log as `project.member_added` with the actor, the added account as target, the project id and the role, never an email or a name. Membership is server state, not synced through the operation log; the share dialog needs a connection.
+
+#### Scenario: Probing for accounts
+- **WHEN** a project owner tries 30 unknown email addresses within an hour and then adds an existing account
+- **THEN** each unknown address answers 404 `user_not_found` and the last request answers 429 `rate_limited` without adding anyone
+
+#### Scenario: Another account's budget
+- **WHEN** one account has used up its budget and another account adds a member to its own project
+- **THEN** the other account's request succeeds
+
+#### Scenario: Recorded add
+- **WHEN** the owner adds an existing account as an editor
+- **THEN** the audit log has a `project.member_added` event with the owner as actor, the account as target and `project_role` `editor`
+
+#### Scenario: Limited token
+- **WHEN** a `read` or `agent` token tries to add a member
+- **THEN** the response is 403 `insufficient_scope`, as for any write those tokens may not make

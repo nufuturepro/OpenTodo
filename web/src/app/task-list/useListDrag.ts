@@ -9,8 +9,10 @@ import { moveTask } from '../../lib/move'
 import type { Section, Task } from '../../lib/types'
 import { flattenTree, type Tree } from '../../lib/tree'
 import { act } from '../actionError'
+import { withListTransition } from '../motion'
 import { dropTarget, sameDrop, zoneUnder, type DropAt } from '../listDrop'
 import { dropTasks } from '../taskDrop'
+import type { ViewPlacement } from '../../lib/viewOrder'
 
 /** What a drag session reads at drop time; the latest render's values. */
 export interface DragSource {
@@ -21,12 +23,21 @@ export interface DragSource {
   sectionMap: Map<string, Section>
   /** The bulk selection: a dragged row that is part of it carries every selected task to a sidebar target. */
   ticked?: ReadonlySet<string>
-  /** Touch: a hold on the row's grip selects it (bulk-actions on touch); the row body's hold opens the menu instead. */
+  /** Touch: a hold on the row's grip selects it (phone-v2 D8); the row body's hold opens the menu instead. */
   onHold?: (task: Task) => void
   /** Touch: the press's own hold ticked the row and the press became a drag — give that tick back (bulk-actions on touch). */
   onHoldUndo?: (task: Task) => void
   /** Opens the row's actions menu for a task at a point (task-row-context-menu): a touch hold's release. */
-  openRowMenu: (task: Task, x: number, y: number) => void
+  openRowMenu: (task: Task, x: number, y: number, row?: Element | null) => void
+  /**
+   * A list with its own order (a label page, view-manual-order D4): a drop among rows
+   * places the task before or after a row of the same group (`groupOf`), never inside
+   * it, and never writes a project position.
+   */
+  reorder?: (taskId: string, at: ViewPlacement) => void
+  groupOf?: ReadonlyMap<string, string>
+  /** A task the user may not change: it can still be ordered in its own list, never dropped on the sidebar. */
+  readOnly?: (task: Task) => boolean
 }
 
 /**
@@ -35,8 +46,10 @@ export interface DragSource {
  * onto a sidebar project, the Inbox or a label it moves or labels the task (and the
  * rest of the bulk selection with it). Escape or a drop elsewhere changes nothing.
  */
-export function useListDrag({ manual, source, moveToSection, onDropped, onDragStart }: {
+export function useListDrag({ manual, source, moveToSection, onDropped, onReorder, onDragStart }: {
   manual: boolean
+  /** A drop among rows while another order is shown: switch the list to manual order first (list-display-options D4). */
+  onReorder?: () => void
   source: DragSource
   /** Move a top-level task to a section ('' = none). */
   moveToSection: (task: Task, key: string) => void
@@ -48,6 +61,8 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onDragSt
   const [dropAt, setDropAt] = useState<DropAt | null>(null)
   // The row being dragged lifts (task-list-presentation "Drag feedback").
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // On a board, the column under the pointer and the card's height (surfaces-v2 D7).
+  const [placeholder, setPlaceholder] = useState<{ key: string; height: number } | null>(null)
   // The drag session outlives renders; it reads the latest rows through this ref.
   const dragState = useRef(source)
   dragState.current = source
@@ -55,11 +70,19 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onDragSt
   const startDrag = useCallback((e: React.PointerEvent, task: Task, grip = false) => {
     const st = dragState.current
     // The pressed row: the touch hold tints it while armed (feedback without a render).
-    // A grip press starts on its button, but the tint belongs to the row it sits in.
+    // A grip press starts on its button, but the tint and the board placeholder's
+    // height belong to the row it sits in.
     const host = e.currentTarget instanceof HTMLElement ? (e.currentTarget.closest('li') ?? e.currentTarget) : null
     const row = host
     const node = st.tree?.nodes.get(task.id)
     const own = new Set(node ? flattenTree([node]).map((n) => n.id) : [task.id])
+    const height = host?.offsetHeight ?? 0
+    let column: string | null = null
+    const showColumn = (key: string | null) => {
+      if (key === column) return
+      column = key
+      setPlaceholder(key === null ? null : { key, height })
+    }
     let current: DropAt | null = null
     const show = (d: DropAt | null) => {
       if (sameDrop(d, current)) return
@@ -76,9 +99,8 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onDragSt
       taskDrops: true,
       // Only the grip's hold selects (bulk-actions on touch); the row body's hold is the menu's.
       onHold: grip && hold ? () => hold(task) : undefined,
-      // A hold that then drags gives its tick back — only for a row this press ticked.
-      // Read at call time: the provider's selection closure only carries the hold's
-      // tick once that state has rendered, never at press time.
+      // A hold that then drags gives its tick back — only for a row this press found
+      // unticked (the provider's closure carries the hold's tick once it renders).
       onHoldUndo: grip && !wasTicked ? () => dragState.current.onHoldUndo?.(task) : undefined,
       onStart: () => {
         setDraggingId(task.id)
@@ -86,42 +108,51 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onDragSt
         onDragStart?.()
       },
       onHoldChange: (held) => row?.toggleAttribute('data-touch-hold', held),
-      onHoldRelease: grip ? undefined : (x, y) => dragState.current.openRowMenu(task, x, y),
+      onHoldRelease: grip ? undefined : (x, y) => dragState.current.openRowMenu(task, x, y, row),
       onMove: (target, _x, y) => {
         // Over a sidebar target the list shows no drop line (the target shows its ring).
-        const id = manual && target?.startsWith('task:') ? target.slice('task:'.length) : null
-        const zone = id && !own.has(id) ? zoneUnder('data-task-id', id, y, !dragState.current.board) : null
+        const now = dragState.current
+        let id = manual && target?.startsWith('task:') ? target.slice('task:'.length) : null
+        // An own order moves within the task's group only (view-manual-order D4).
+        if (id && now.groupOf && now.groupOf.get(id) !== now.groupOf.get(task.id)) id = null
+        const zone = id && !own.has(id) ? zoneUnder('data-task-id', id, y, !now.board && !now.reorder) : null
         show(id && zone ? { id, zone } : null)
+        // A drop on a column lands last in it, so the placeholder follows its last card.
+        showColumn(manual && dragState.current.board && target?.startsWith('section:') ? target.slice('section:'.length) : null)
       },
       onDrop: (target) => {
-        const { rows: rs, sectionOfRow: secs, board: b, ticked } = dragState.current
+        const { rows: rs, sectionOfRow: secs, board: b, ticked, reorder, readOnly } = dragState.current
         if (target.startsWith('drop:')) {
-          // Only a selection that predates the press travels: a tick the press's own
-          // hold created has already been given back and must not drag others along.
+          if (readOnly?.(task)) return
           const ids = wasTicked && ticked?.has(task.id) ? [...ticked] : [task.id]
-          act(dropTasks(target.slice('drop:'.length), ids))
+          act(withListTransition(ids.length, () => dropTasks(target.slice('drop:'.length), ids)))
           return
         }
         if (!manual) return
-        if (target.startsWith('task:')) {
+        if (target.startsWith('task:') && reorder) {
+          if (!current || current.zone === 'inside') return
+          reorder(task.id, current.zone === 'before' ? { before: current.id } : { after: current.id })
+        } else if (target.startsWith('task:')) {
           const r = current ? rs.find((x) => x.task.id === current?.id) : undefined
           if (!r || !current) return
           const entry = dropTarget({ id: r.task.id, parent: r.parent, expanded: !b && r.hasChildren && !r.collapsed }, current.zone)
           const section = entry.parent_id === null ? secs.get(r.task.id) : undefined
-          act(moveTask(task.id, { ...entry, ...(section !== undefined ? { section_id: section } : {}) }))
+          onReorder?.()
+          // The row travels to its new place and the others make room (motion-v2 D4).
+          act(withListTransition(1, () => moveTask(task.id, { ...entry, ...(section !== undefined ? { section_id: section } : {}) })))
         } else if (target.startsWith('section:')) {
           const key = target.slice('section:'.length)
           const row = rs.find((x) => x.task.id === task.id)
           if (row && row.parent === null) moveToSection(task, key)
-          else act(moveTask(task.id, { parent_id: null, section_id: key, at: 'bottom' }))
+          else act(withListTransition(1, () => moveTask(task.id, { parent_id: null, section_id: key, at: 'bottom' })))
         } else return
         onDropped(task.id)
       },
-      onEnd: () => { show(null); setDraggingId(null) },
+      onEnd: () => { show(null); showColumn(null); setDraggingId(null) },
     })
-  }, [manual, moveToSection, onDropped, onDragStart])
+  }, [manual, moveToSection, onDropped, onReorder, onDragStart])
 
   /** The section map of the latest render, for code that runs later (an `o` insertion). */
   const latestSectionMap = useCallback(() => dragState.current.sectionMap, [])
-  return { dropAt, draggingId, startDrag, latestSectionMap }
+  return { dropAt, draggingId, placeholder, startDrag, latestSectionMap }
 }

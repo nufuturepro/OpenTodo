@@ -1,12 +1,12 @@
 // Runtipi app (deploy/runtipi/), OpenSpec change platform-catalogs. Runtipi's official app store no
-// longer takes new apps, so OpenTodo has its own store, the repository pixari/opentodo-runtipi
+// longer takes new apps, so OpenTodo has its own store, the repository OpenTodoApp/opentodo-runtipi
 // (made from runtipi/example-appstore), whose content is deploy/runtipi/upstream/ file for file.
 // The app is apps/opentodo/: config.json, a native docker-compose.yml (x-runtipi schema 2) and
 // metadata/. Policy 'release': Runtipi offers an update when config.json changes, so the image
 // names the release (Renovate in the store repository bumps it, see deploy/runtipi/README.md).
 
 import { existsSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { checkShared, latestRelease, listFiles, readText, ROOT } from './common.mjs'
 import { parseYaml as parseSubset, YAML_COMPOSE } from './yaml.mjs'
 
@@ -150,7 +150,7 @@ export function checkUpstream(root = ROOT, compose = null) {
   const up = join(root, UPSTREAM)
   if (!existsSync(up)) return [`${UPSTREAM}/ is missing`]
   const want = [...STORE_FILES, ...APP_FILES.map((f) => `apps/${ID}/${f}`)].sort()
-  const have = listFiles(up).map((f) => relative(up, f)).filter((f) => !f.startsWith('node_modules/')).sort()
+  const have = listFiles(up).map((f) => relative(up, f).split(sep).join('/')).filter((f) => !f.startsWith('node_modules/')).sort()
   for (const f of want) if (!have.includes(f)) errors.push(`${UPSTREAM}/${f} is missing`)
   for (const f of have) if (!want.includes(f)) errors.push(`${UPSTREAM}/${f} is not part of the store`)
   for (const f of APP_FILES) {

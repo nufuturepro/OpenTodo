@@ -1,12 +1,15 @@
 // node --test scripts/deploy/truenas.test.mjs  (OpenSpec change platform-catalogs)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { configVariables, loadFacts, readText } from './common.mjs'
+import { configVariables, escapeRegExp, loadFacts, readText, releaseVersion } from './common.mjs'
 import { APP, check, checkApp, checkUpstream, FILES } from './truenas.mjs'
 import { parseYaml } from './yaml.mjs'
 
 const facts = loadFacts()
 const ctx = { facts, configVars: configVariables(), changelog: readText('CHANGELOG.md') }
+/** The latest release in CHANGELOG.md, which the pinned templates name. */
+const V = releaseVersion(ctx.changelog)
+const VR = escapeRegExp(V)
 const files = Object.fromEntries(FILES.map((f) => [f, readText(`${APP}/${f}`)]))
 const has = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}, got:\n${errors.join('\n')}`)
 /** The app with one file changed by `fn`; the replaced text must exist. */
@@ -16,6 +19,7 @@ const edit = (file, from, to) => {
 }
 const COMPOSE = 'templates/docker-compose.yaml'
 const TEST = 'templates/test_values/basic-values.yaml'
+const HOSTNET = 'templates/test_values/hostnet-values.yaml'
 
 test('truenas: the committed app passes', () => {
   assert.deepEqual(check(ctx), [])
@@ -23,18 +27,20 @@ test('truenas: the committed app passes', () => {
 })
 
 test('truenas: image policy release, app_version follows the tag', () => {
-  has(checkApp(edit('ix_values.yaml', 'tag: "0.9.0"', 'tag: "stable"'), ctx), /image must be ghcr\.io\/pixari\/opentodo:0\.9\.0/)
-  has(checkApp(edit('ix_values.yaml', 'tag: "0.9.0"', 'tag: "latest"'), ctx), /image must be ghcr\.io\/pixari\/opentodo:0\.9\.0/)
-  has(checkApp(edit('ix_values.yaml', 'tag: "0.9.0"', 'tag: "0.6.0"'), ctx), /app_version \(0\.9\.0\) must equal the image tag/)
-  has(checkApp(edit('ix_values.yaml', 'tag: "0.9.0"', 'tag: 0.6'), ctx), /must be a quoted string/)
-  has(checkApp(edit('ix_values.yaml', 'repository: ghcr.io/pixari/opentodo', 'repository: pixari/opentodo'), ctx), /image must be/)
+  has(checkApp(edit('ix_values.yaml', `tag: "${V}"`, 'tag: "stable"'), ctx), new RegExp(String.raw`image must be ghcr\.io\/opentodoapp\/opentodo:${VR}`))
+  has(checkApp(edit('ix_values.yaml', `tag: "${V}"`, 'tag: "latest"'), ctx), new RegExp(String.raw`image must be ghcr\.io\/opentodoapp\/opentodo:${VR}`))
+  has(checkApp(edit('ix_values.yaml', `tag: "${V}"`, 'tag: "0.6.0"'), ctx), new RegExp(String.raw`app_version \(${VR}\) must equal the image tag`))
+  has(checkApp(edit('ix_values.yaml', `tag: "${V}"`, 'tag: 0.6'), ctx), /must be a quoted string/)
+  has(checkApp(edit('ix_values.yaml', 'repository: ghcr.io/opentodoapp/opentodo', 'repository: opentodoapp/opentodo'), ctx), /image must be/)
 })
 
 test('truenas: port, listen address and data path', () => {
-  has(checkApp(edit(TEST, 'port_number: 8080', 'port_number: 3000'), ctx), /port must be 8080, got 3000/)
+  has(checkApp(edit(TEST, 'port_number: 30080', 'port_number: 80'), ctx), /basic-values\.yaml: network\.web_port\.port_number must be a port from 1024 to 65535, got 80/)
+  has(checkApp(edit(HOSTNET, 'host_network: true', 'host_network: false'), ctx), /hostnet-values\.yaml: network\.host_network must be true/)
+  has(checkApp(edit(HOSTNET, 'user: 568', 'user: 1000'), ctx), /hostnet-values\.yaml: run_as must be 568:568/)
   has(checkApp(edit(COMPOSE, '{% do c1.add_port(values.network.web_port) %}', '{% do c1.add_port(values.network.web_port, {"container_port": 8080}) %}'), ctx), /container_port/)
   has(checkApp(edit(COMPOSE, '":%d"|format(values.network.web_port.port_number)', '":8080"'), ctx), /OPENTODO_ADDR must be set to/)
-  has(checkApp(edit('questions.yaml', 'default: 30530', 'default: 8080'), ctx), /must default to 30530/)
+  has(checkApp(edit('questions.yaml', 'default: 30536', 'default: 30530'), ctx), /must default to 30536/)
   has(checkApp(edit(COMPOSE, 'add_storage("/data", values.storage.data)', 'add_storage("/config", values.storage.data)'), ctx), /mounted on \/data/)
   has(checkApp(edit(COMPOSE, 'add_env("OPENTODO_DATA_DIR", "/data")', 'add_env("OPENTODO_DATA_DIR", "/config")'), ctx), /OPENTODO_DATA_DIR must be set to "\/data"/)
 })
@@ -58,6 +64,7 @@ test('truenas: variables', () => {
   has(checkApp(edit('questions.yaml', 'default: ""\n            private: true', 'default: ""\n            required: true\n            private: true'), ctx), /OPENTODO_SETUP_TOKEN must not be required/)
   has(checkApp(edit('questions.yaml', 'default: ""\n            private: true', 'default: ""'), ctx), /must be private: true/)
   has(checkApp(edit(TEST, '  trusted_proxies: ""\n', ''), ctx), /basic-values\.yaml: opentodo\.trusted_proxies is missing/)
+  has(checkApp(edit(HOSTNET, '  trusted_proxies: private\n', ''), ctx), /hostnet-values\.yaml: opentodo\.trusted_proxies is missing/)
 })
 
 test('truenas: metadata and strict YAML', () => {
@@ -74,13 +81,14 @@ test('truenas: the truenas/apps copy', () => {
   assert.deepEqual(checkUpstream(files, files, list), [])
   has(checkUpstream(files, { ...files, 'app.yaml': files['app.yaml'].replace('1.0.0', '1.0.1') }, list), /upstream\/ix-dev\/community\/opentodo\/app\.yaml must be identical/)
   has(checkUpstream(files, files, [...list, 'templates/rendered/docker-compose.yaml']), /not part of the app here/)
+  has(checkUpstream(files, files, [...list, 'templates/library/base_v2_3_17/render.py']), /not part of the app here/)
 })
 
 test('truenas-yaml: the subset it reads, and what it refuses', () => {
   assert.deepEqual(parseYaml('a:\n  b: "x"\n  c: [1, "two", [three]]\nd:\n- e: 1\n  f: true\n- plain\ng: |\n  one\n  two\nh:\n  folded\n  text\n"null": {}\n'), {
     a: { b: 'x', c: [1, 'two', ['three']] }, d: [{ e: 1, f: true }, 'plain'], g: 'one\ntwo\n', h: 'folded text', null: {},
   })
-  assert.deepEqual(parseYaml("v: 0.9.0 # comment\nw: 'it''s'\nx: http://a/#b\n"), { v: '0.9.0', w: "it's", x: 'http://a/#b' })
+  assert.deepEqual(parseYaml("v: 0.14.2 # comment\nw: 'it''s'\nx: http://a/#b\n"), { v: '0.14.2', w: "it's", x: 'http://a/#b' })
   for (const bad of ['a: *x\n', 'a: {b: 1}\n', 'a:\n\tb: 1\n', 'a: 1\n  b: 2\n', 'a:\n  b: 1\n c: 2\n', 'a: "x\n', 'a: b: c\n']) {
     assert.throws(() => parseYaml(bad), undefined, JSON.stringify(bad))
   }

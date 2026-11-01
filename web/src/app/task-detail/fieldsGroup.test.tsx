@@ -9,7 +9,7 @@ import { db } from '../../lib/db'
 import { createField, setFieldValue } from '../../lib/fields'
 import { applyOps, createProject, createTask } from '../../lib/ops'
 import { click, key } from '../../ui/test-utils'
-import { open, settle, setupTaskDetailTests, waitFor } from './taskDetail.testkit'
+import { open, setupTaskDetailTests, waitFor } from './taskDetail.testkit'
 
 setupTaskDetailTests()
 
@@ -53,6 +53,24 @@ describe('Fields group', () => {
     await r3.unmount()
   })
 
+  it('a sub-project task shows its ancestors\' fields first and writes them under their ids (inherited-custom-fields)', async () => {
+    const scoring = await createProject({ name: 'Scoring' })
+    const topic = await createProject({ name: 'Topic', parent_id: scoring })
+    const detail = await createProject({ name: 'Detail', parent_id: topic })
+    const wsjf = await createField(scoring, { name: 'WSJF', type: 'number' })
+    const size = await createField(topic, { name: 'Size', type: 'number' })
+    const own = await createField(detail, { name: 'Note', type: 'text' })
+    const id = await createTask({ title: 'Pick', project_id: detail })
+    const r = await open(id)
+    await waitFor(() => group(r.container)?.querySelectorAll('[data-field-row]').length === 3, 'three fields')
+    expect([...group(r.container)!.querySelectorAll('[data-field-row]')].map((e) => e.getAttribute('data-field-row'))).toEqual([wsjf, size, own])
+    const input = fieldRow(r.container, wsjf).querySelector('input') as HTMLInputElement
+    await typeInto(input, '8')
+    await key(input, 'Enter')
+    await waitFor(async () => (await db.tasks.get(id))!.fields?.[wsjf] === 8, 'the inherited value written')
+    await r.unmount()
+  })
+
   it('Edit a number: 120 and Enter writes the number, shown with digit grouping', async () => {
     const { id, cost } = await kitchen()
     const r = await open(id)
@@ -61,7 +79,7 @@ describe('Fields group', () => {
     expect(input.getAttribute('inputmode')).toBe('decimal')
     await typeInto(input, '1234.5')
     await key(input, 'Enter')
-    await settle()
+    await waitFor(async () => (await db.tasks.get(id))!.fields?.[cost] === 1234.5, 'the value written')
     expect((await db.tasks.get(id))!.fields).toEqual({ [cost]: 1234.5 })
     await waitFor(() => input.value === new Intl.NumberFormat().format(1234.5))
     await r.unmount()
@@ -74,7 +92,7 @@ describe('Fields group', () => {
     const input = fieldRow(r.container, cost).querySelector('input') as HTMLInputElement
     await typeInto(input, 'abc')
     await key(input, 'Enter')
-    await settle()
+    await waitFor(() => input.getAttribute('aria-invalid') === 'true', 'the field marked invalid')
     expect(input.getAttribute('aria-invalid')).toBe('true')
     const err = fieldRow(r.container, cost).querySelector('[role="alert"]')
     expect(err?.textContent).toContain('number')
@@ -106,15 +124,15 @@ describe('Fields group', () => {
     const picker = fieldRow(r.container, status).querySelector('button[aria-haspopup]') as HTMLButtonElement
     picker.focus()
     await key(picker, 'ArrowDown', { altKey: true })
-    await settle()
+    await waitFor(() => picker.getAttribute('aria-expanded') === 'true', 'the picker open')
     expect(picker.getAttribute('aria-expanded')).toBe('true')
     const option = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes('Ordered'))!
     await click(option)
-    await settle()
+    await waitFor(async () => (await db.tasks.get(id))!.fields?.[status] === 'Ordered', 'the choice written')
     expect((await db.tasks.get(id))!.fields?.[status]).toBe('Ordered')
     const sw = fieldRow(r.container, paid).querySelector('[role="switch"]') as HTMLButtonElement
     await click(sw)
-    await settle()
+    await waitFor(async () => (await db.tasks.get(id))!.fields?.[paid] === true, 'the switch written')
     expect((await db.tasks.get(id))!.fields?.[paid]).toBe(true)
     await r.unmount()
   })
@@ -132,7 +150,7 @@ describe('Fields group', () => {
     expect(input.getAttribute('aria-describedby')).toContain(note!.id)
     await typeInto(input, '75')
     await key(input, 'Enter')
-    await settle()
+    await waitFor(async () => (await db.tasks.get(id))!.fields?.[cost] === 75, 'the value written')
     expect((await db.tasks.get(id))!.fields?.[cost]).toBe(75)
     await r.unmount()
   })

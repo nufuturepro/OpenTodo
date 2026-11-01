@@ -9,7 +9,7 @@ import { db } from '../lib/db'
 import { createField, setFieldValue } from '../lib/fields'
 import { createProject, createTask, resetDeviceId, updateTask } from '../lib/ops'
 import { loadListColumns, saveViewMode } from '../lib/sections'
-import { click, flush, render, mockFetch, noPublicLinks, spokenText, visibleText } from '../ui/test-utils'
+import { click, flush, render, mockFetch, noPublicLinks, spokenText, visibleText, minWidthPx, waitFor } from '../ui/test-utils'
 import { TaskListView } from './TaskListView'
 
 // The project header asks the server for its public links.
@@ -24,16 +24,12 @@ beforeEach(async () => {
   resetDeviceId()
   width = 1280
   window.matchMedia = ((q: string) => ({
-    matches: Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0) <= width, media: q, onchange: null,
+    matches: minWidthPx(q) <= width, media: q, onchange: null,
     addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
   })) as typeof window.matchMedia
 })
-afterEach(() => { window.matchMedia = original; document.body.innerHTML = '' })
+afterEach(() => { window.matchMedia = original })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 const badgesOf = (c: HTMLElement, taskId: string) =>
   [...c.querySelectorAll(`[data-task-id="${taskId}"] [data-field-badge]`)].map((e) => e.textContent)
@@ -84,7 +80,7 @@ describe('field badges', () => {
     await updateTask(id, { project_id: garden })
     const r = await render(<TaskListView route={{ view: 'project', id: garden }} />)
     await waitFor(() => !!r.container.querySelector(`[data-task-id="${id}"]`))
-    await flush(100)
+    await flush()
     expect(badgesOf(r.container, id)).toEqual([])
     expect((await db.tasks.get(id))!.fields?.[cost]).toBe(120)
     await r.unmount()

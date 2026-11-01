@@ -4,19 +4,12 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pixari/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
 )
 
 // In-app notifications (OpenSpec change `task-assignment`, design D4). Both
 // routes require authentication and only ever touch the caller's own rows: an id
 // that belongs to someone else answers the same 404 as an unknown one.
-
-// WithNotifications serves the caller's in-app notifications from inbox. Without
-// it, New creates an in-app sink on the sync service's database and registers it
-// with the sync service, so assignment notifications always work.
-func WithNotifications(inbox *notify.InApp) Option {
-	return func(s *Server) { s.inbox = inbox }
-}
 
 func (s *Server) registerNotificationRoutes(mux *routes) {
 	mux.handle("GET /api/v1/notifications", signedIn, s.handleListNotifications)

@@ -7,7 +7,7 @@
 // returns, so a template this checker does not understand fails instead of passing.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { checkShared, ROOT } from './common.mjs'
 import { parseYaml } from './yaml.mjs'
 
@@ -36,7 +36,7 @@ function listFiles(dir) {
     for (const e of readdirSync(d)) {
       const p = join(d, e)
       if (statSync(p).isDirectory()) walk(p)
-      else out.push(relative(dir, p))
+      else out.push(relative(dir, p).split(sep).join('/'))
     }
   }
   walk(dir)

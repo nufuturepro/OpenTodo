@@ -2,15 +2,14 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/e2ee"
-	"github.com/pixari/opentodo/internal/e2ee/crypt"
-	"github.com/pixari/opentodo/internal/timetrack"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee/crypt"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/timetrack"
 )
 
 // The decrypting bridge (OpenSpec change mcp-projects, design D5): `ot mcp
@@ -39,8 +38,8 @@ var contentArgs = map[string]struct {
 	fields []string
 	create bool
 }{
-	"create_tasks":    {list: "items", entity: "task", fields: []string{"title", "description"}, create: true},
-	"update_tasks":    {list: "updates", entity: "task", fields: []string{"title", "description"}},
+	"create_tasks":    {list: "items", entity: "task", fields: []string{"title", "description", "location"}, create: true},
+	"update_tasks":    {list: "updates", entity: "task", fields: []string{"title", "description", "location"}},
 	"create_project":  {entity: "project", fields: []string{"name"}, create: true},
 	"update_project":  {entity: "project", fields: []string{"name"}},
 	"create_label":    {entity: "label", fields: []string{"name"}, create: true},
@@ -55,14 +54,6 @@ type decrypter struct {
 	// version is the key version the stored key belongs to.
 	version int
 	rows    map[string]map[string]map[string]json.RawMessage // entity → id → row
-}
-
-func newUUID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	b[6] = b[6]&0x0f | 0x40
-	b[8] = b[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // before prepares one client message: a tools/call or resources/read first
@@ -189,7 +180,7 @@ func (d *decrypter) encryptCall(params map[string]any) error {
 			if !has {
 				continue
 			}
-			id = newUUID()
+			id = ids.New()
 			it["id"] = id
 		}
 		if id == "" {
@@ -197,6 +188,15 @@ func (d *decrypter) encryptCall(params map[string]any) error {
 		}
 		for _, f := range spec.fields {
 			s, ok := it[f].(string)
+			if obj, isObj := it[f].(map[string]any); isObj {
+				// An object value (a task's location) is sealed whole as its JSON,
+				// as the app does (task-locations D1).
+				raw, err := json.Marshal(obj)
+				if err != nil {
+					return err
+				}
+				s, ok = string(raw), true
+			}
 			if !ok {
 				continue
 			}
@@ -429,6 +429,9 @@ func (d *decrypter) fix(ctx context.Context, obj, u map[string]any, key string) 
 				}
 			}
 		}
+		if obj["encrypted"] == true && obj["location"] == nil {
+			d.openLocation(ctx, obj, u, id)
+		}
 	case u["body"] != nil: // a comment
 		all = d.replace(ctx, u, "body", "comment", id, "body") && all
 	case u["note"] != nil: // a time entry
@@ -460,5 +463,36 @@ func (d *decrypter) fix(ctx context.Context, obj, u map[string]any, key string) 
 		if _, ok := obj["encrypted"]; ok {
 			obj["encrypted"] = false
 		}
+	}
+}
+
+// openLocation puts an encrypted task's location back: coordinates and the
+// saved location id on the task, name and address in untrusted_text
+// (agent-planning-fields D8). Nothing changes when there is none.
+func (d *decrypter) openLocation(ctx context.Context, obj, u map[string]any, id string) {
+	pt, ok := d.open(ctx, "task", id, "location")
+	if !ok {
+		return
+	}
+	var l struct {
+		Name    string   `json:"name"`
+		Address string   `json:"address"`
+		Lat     *float64 `json:"lat"`
+		Lon     *float64 `json:"lon"`
+		PlaceID string   `json:"place_id"`
+	}
+	if json.Unmarshal([]byte(pt), &l) != nil {
+		return
+	}
+	loc := map[string]any{}
+	if l.Lat != nil && l.Lon != nil {
+		loc["lat"], loc["lon"] = *l.Lat, *l.Lon
+	}
+	if l.PlaceID != "" {
+		loc["place_id"] = l.PlaceID
+	}
+	obj["location"] = loc
+	if l.Name != "" || l.Address != "" {
+		u["location"] = map[string]any{"name": l.Name, "address": l.Address}
 	}
 }

@@ -4,7 +4,7 @@
 // The page keeps no copy of the task: it refreshes every 30 seconds while visible
 // and after each action, and only the guest's typed name is stored in the browser.
 import { type FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Markdown } from '../app/Markdown'
+import { MarkdownView as Markdown } from '../app/MarkdownView'
 import { formatDate, formatDueLong, formatInstant } from '../lib/dates'
 import { t } from '../lib/i18n'
 import { sha256 } from '../lib/ids'
@@ -15,6 +15,7 @@ import { Button } from '../ui/Button'
 import { Field, Input, Textarea } from '../ui/Field'
 import { Icon } from '../ui/Icon'
 import { Notice } from '../ui/patterns/Notice'
+import { readString, writeString } from '../lib/deviceStorage'
 
 const MapView = lazy(() => import('../app/locations/MapView'))
 
@@ -36,11 +37,11 @@ function nameKey(secret: string): string {
 }
 
 function storedName(secret: string): string {
-  try { return localStorage.getItem(nameKey(secret)) ?? '' } catch { return '' }
+  return readString(nameKey(secret)) ?? ''
 }
 
 function storeName(secret: string, name: string): void {
-  try { localStorage.setItem(nameKey(secret), name) } catch { /* storage refused: asked again next time */ }
+  writeString(nameKey(secret), name) // storage refused: asked again next time
 }
 
 export function TaskPageScreen({ secret, fragment }: { secret: string; fragment: string }) {

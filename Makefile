@@ -3,11 +3,15 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 CLI_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-EXT_ZIP := dist/opentodo-browser-extension.zip
+# The extension's two store packages (OpenSpec change extension-v2, design D7):
+# extension/build.mjs writes them from extension/manifest.src.json.
+EXT_ZIPS := dist/opentodo-browser-extension-chrome.zip dist/opentodo-browser-extension-firefox.zip
+# Pinned development tool, fetched by npx; never a dependency of the repository.
+WEB_EXT := web-ext@10.7.0
 SKILL_ZIP := dist/opentodo-agent-skill.zip
-EXT_FILES := manifest.json background.js share-url.js options.html options.js icons/icon-16.png icons/icon-48.png icons/icon-128.png _locales
+MCP_SKILL_ZIP := dist/opentodo-mcp-skill.zip
 
-.PHONY: site-bundle all web server cli cli-release cli-smoke skill extension build run dev test test-go test-web test-extension check lint staticcheck clean docker openspec-validate layout-check docs docs-check templates templates-check docs-screenshots screens docs-site-check coolify-check coolify-smoke deploy-check storybook ui-check ui-baselines ui-lint web-lint i18n-check repo-check fmt-check ci-checks e2e
+.PHONY: brand-icons site-bundle all web server cli cli-release cli-smoke skill extension android build run dev test test-go test-web test-extension check lint staticcheck gosec gosec-sarif clean docker openspec-validate layout-check ux-audit docs docs-check templates templates-check docs-screenshots screens docs-site-check coolify-check coolify-smoke deploy-check release-prepare storybook ui-check ui-baselines ui-lint web-lint i18n-check repo-check bundle-budget fmt-check ci-checks e2e
 
 all: build
 
@@ -36,19 +40,58 @@ cli-release:
 cli-smoke: server cli
 	./scripts/cli-smoke.sh
 
-## Zip the agent skill (skills/opentodo-cli/SKILL.md, also embedded in `ot skill`)
-## into dist/ for the release.
+## Zip the agent skills into dist/ for the release: the CLI skill
+## (skills/opentodo-cli/SKILL.md, also embedded in `ot skill`) and the MCP skill
+## (skills/opentodo-mcp/SKILL.md, also in the Claude Code plugin).
 skill:
-	@mkdir -p dist && rm -f $(SKILL_ZIP)
+	@mkdir -p dist && rm -f $(SKILL_ZIP) $(MCP_SKILL_ZIP)
 	cd skills && zip -q -X ../$(SKILL_ZIP) opentodo-cli/SKILL.md
+	cd skills && zip -q -X ../$(MCP_SKILL_ZIP) opentodo-mcp/SKILL.md
 	@echo "  $(SKILL_ZIP) ($$(wc -c < $(SKILL_ZIP)) bytes)"
+	@echo "  $(MCP_SKILL_ZIP) ($$(wc -c < $(MCP_SKILL_ZIP)) bytes)"
 
-## Test the browser extension and zip it into dist/ (not part of the container image).
+## Test the browser extension, build its Chrome and Firefox packages into dist/
+## (refusing host permissions, content scripts or a version missing from
+## extension/CHANGELOG.md) and lint the Firefox one with web-ext, which fails on
+## errors only. web-ext reads every manifest as Firefox's, so the Chrome package is
+## checked by extension/build.test.js instead. Not part of the container image.
 extension: test-extension
-	@node -e 'const m = require("./extension/manifest.json"); const opt = JSON.stringify(m.optional_host_permissions ?? []); if (m.host_permissions || m.content_scripts || (opt !== "[]" && opt !== JSON.stringify(["https://*/*", "http://*/*"]))) { console.error("extension/manifest.json must not declare host permissions or content scripts (only the optional http(s) access asked for the server origin)"); process.exit(1) }'
-	@mkdir -p dist && rm -f $(EXT_ZIP)
-	cd extension && zip -q -X -r ../$(EXT_ZIP) $(EXT_FILES)
-	@echo "  $(EXT_ZIP) ($$(wc -c < $(EXT_ZIP)) bytes)"
+	node extension/build.mjs
+	npx --yes $(WEB_EXT) lint --source-dir dist/extension-firefox --output text
+
+## The Android app (native-shells): unit tests, lint, the AndroidX-only dependency
+## check, translations, store metadata and a debug APK. Needs JDK 17+ and the
+## Android SDK (ANDROID_HOME); not part of `make check`. See mobile/README.md.
+android:
+	@command -v java >/dev/null 2>&1 || { echo "make android needs a JDK 17+ and the Android SDK (see mobile/README.md)"; exit 1; }
+	cd mobile/android && ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:checkDependencies :app:checkTranslations :app:checkStoreMetadata :app:assembleDebug :app:assembleDebugAndroidTest
+	@echo "  mobile/android/app/build/outputs/apk/debug/app-debug.apk ($$(wc -c < mobile/android/app/build/outputs/apk/debug/app-debug.apk) bytes)"
+
+## The iOS app (ios-shell): unit tests on a simulator, an unsigned device build,
+## the version and the no-third-party-dependency check. Needs Xcode 16 or newer
+## with an iOS simulator runtime; the project comes from `xcodegen generate` and
+## is committed, so xcodegen is only needed after editing project.yml. Not part of
+## `make check`. See docs/ios-app.md.
+## SIM=iPhone 16 overrides the simulator `make ios` uses; the first installed one otherwise.
+IOS_VERSION = $(patsubst v%,%,$(shell git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0-dev))
+IOS_BUILD = $(shell echo '$(IOS_VERSION)' | awk -F. '{printf "%d", $$1*10000+$$2*100+$$3}')
+ios:
+	@command -v xcodebuild >/dev/null 2>&1 || { echo "make ios needs Xcode 16 or newer (see docs/ios-app.md)"; exit 1; }
+	@sim=$${SIM:-$$(xcrun simctl list devices available 2>/dev/null | sed -n 's/^[[:space:]]*//; s/ (.*//; /^iPhone/p' | head -1)}; \
+	  test -n "$$sim" || { echo "make ios needs an iOS simulator runtime (Xcode > Settings > Components)"; exit 1; }; \
+	  echo "  simulator: $$sim"; \
+	  cd mobile/ios && xcodebuild -project OpenTodo.xcodeproj -scheme OpenTodo -configuration Debug \
+	    -derivedDataPath build -destination "platform=iOS Simulator,name=$$sim" \
+	    OPENTODO_VERSION=$(IOS_VERSION) CURRENT_PROJECT_VERSION=$(IOS_BUILD) test || exit 1
+	cd mobile/ios && xcodebuild -project OpenTodo.xcodeproj -scheme OpenTodo -configuration Release \
+	  -derivedDataPath build -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO \
+	  OPENTODO_VERSION=$(IOS_VERSION) CURRENT_PROJECT_VERSION=$(IOS_BUILD) build
+	@app=mobile/ios/build/Build/Products/Release-iphoneos/OpenTodo.app; \
+	  test -f "$$app/OpenTodo" || { echo "no app binary at $$app"; exit 1; }; \
+	  echo "  $$app ($$(du -sk $$app | cut -f1) KB), version $(IOS_VERSION) build $(IOS_BUILD)"; \
+	  third=$$(otool -L $$app/OpenTodo | tail -n +2 | grep -vE '/System/Library/|/usr/lib/|@rpath/libswift|@executable_path/Frameworks|/usr/lib/swift/' || true); \
+	  if [ -n "$$third" ]; then echo "third-party libraries:"; echo "$$third"; exit 1; fi; \
+	  echo "  no third-party libraries (native-shells D1)"
 
 build: web server
 
@@ -60,6 +103,16 @@ layout-check: build
 	@d=$$(mktemp -d); OPENTODO_DATA_DIR=$$d OPENTODO_ADDR=127.0.0.1:18080 ./bin/opentodo >$$d/server.log 2>&1 & pid=$$!; \
 	  for i in $$(seq 1 30); do curl -fsS 127.0.0.1:18080/healthz >/dev/null 2>&1 && break; sleep 0.3; done; \
 	  OPENTODO_URL=http://127.0.0.1:18080 node scripts/e2e-layout.mjs layout-report; s=$$?; kill $$pid; rm -rf $$d; exit $$s
+
+## Interface audit (ux-audit-three-widths): every screen of scripts/ux-audit/screens.json
+## at 360/768/1280 px, light and dark, English and German, against a throwaway server
+## on a free port; writes ux-audit-report/index.html and report.json. Needs Playwright
+## with Chromium. ONLY, WIDTHS, THEMES, LANGS, CONCURRENCY, OUT_DIR narrow it, TEXT_SIZE=20
+## (or 24) sets the browser's text size;
+## UX_AUDIT_STRICT=1 fails on budget, overflow and story-coverage findings.
+ux-audit: build
+	node scripts/ux-audit/tour.mjs
+	@echo "report: $${OUT_DIR:-ux-audit-report}/index.html"
 
 ## Design workbench (design-language): Storybook on http://localhost:6006.
 storybook:
@@ -76,6 +129,7 @@ PLAYWRIGHT_NODE_PATH ?= $(shell npm root -g)
 ui-check:
 	cd web && npm run build-storybook
 	node scripts/ui-check/a11y.mjs
+	node scripts/ui-check/motion.mjs
 	cd scripts/ui-check && NODE_PATH=$(PLAYWRIGHT_NODE_PATH) node $(PLAYWRIGHT_NODE_PATH)/@playwright/test/cli.js test -c playwright.config.ts
 
 ## Regenerate the visual baselines inside the pinned Playwright image, because font
@@ -107,10 +161,11 @@ test-go:
 	go test ./...
 
 test-web:
-	cd web && npm test
+	cd web && npm test && npm run test:perf
 
 test-extension:
-	node --test extension/share-url.test.js extension/locales.test.js
+	cd extension && npm test
+	node --test scripts/brand-icons.test.mjs
 
 lint:
 	go vet ./...
@@ -123,6 +178,20 @@ lint:
 STATICCHECK_VERSION := v0.8.2
 staticcheck:
 	GOTOOLCHAIN=$$(go env GOVERSION) go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
+
+## gosec, security static analysis of the Go code, pinned like staticcheck. Two rule
+## classes are left out as false positives for this code base (2026-10 audit): G101
+## (constants named like secrets, such as KeyClientSecret, that hold no credential)
+## and G304 (files opened from the operator's configuration and the data directory).
+## `make gosec` prints the rest; CI (.github/workflows/security.yml) runs gosec-sarif
+## and sends the findings to code scanning, where those on main are the baseline and a
+## pull request that adds one is flagged.
+GOSEC_VERSION := v2.29.0
+GOSEC := GOTOOLCHAIN=$$(go env GOVERSION) go run github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION) -exclude=G101,G304 -exclude-generated
+gosec:
+	$(GOSEC) -quiet ./...
+gosec-sarif:
+	$(GOSEC) -quiet -no-fail -fmt sarif -out gosec.sarif ./...
 
 ## The OpenSpec CLI at an exact version (CI runs it through this target; Dependabot does not
 ## see npx, so bump it by hand).
@@ -183,19 +252,37 @@ coolify-check:
 	node --test scripts/coolify-template-check.test.mjs scripts/site-bundle.test.mjs
 	node scripts/coolify-template-check.mjs
 
-## Also starts the template's image with Docker and probes it (pulls ghcr.io/pixari/opentodo).
+## Also starts the template's image with Docker and probes it (pulls ghcr.io/opentodoapp/opentodo).
 coolify-smoke:
 	node scripts/coolify-template-check.mjs --smoke
 
 ## Every platform template in deploy/ against deploy/deploy.json and its platform's rules
 ## (Coolify, Unraid); see deploy/README.md.
 deploy-check:
-	node --test scripts/coolify-template-check.test.mjs scripts/deploy/*.test.mjs scripts/site-bundle.test.mjs
+	node --test scripts/coolify-template-check.test.mjs scripts/deploy/*.test.mjs scripts/site-bundle.test.mjs scripts/release/*.test.mjs
+	node scripts/deploy/mirror.mjs --check
 	node scripts/deploy-check.mjs
 
-## CI path filter cases, the shared Go toolchain (go.mod, Dockerfile, CI) and compose defaults.
+## Every edit a release needs, for VERSION=x.y.z (RELEASING.md): the version in the templates,
+## docs, web/package.json and its lockfile, the changelog heading and the upstream/ copies.
+release-prepare:
+	@test -n "$(VERSION)" || { echo "usage: make release-prepare VERSION=x.y.z"; exit 2; }
+	node scripts/release/prepare.mjs $(VERSION)
+
+## CI path filter cases, the shared Go toolchain (go.mod, Dockerfile, CI) and compose defaults;
+## the Go/TypeScript contract index (docs/contracts.md);
+## the brand rasters rendered from the current brand.svg (sidebar-v2 D3).
 repo-check:
-	node --test scripts/repo-checks.test.mjs
+	node --test scripts/repo-checks.test.mjs scripts/brand-icons.test.mjs scripts/contracts.test.mjs scripts/bundle-budget.test.mjs
+
+## The web app's first load (entry chunk and its static imports, gzip) against web/bundle-budget.json;
+## expects `make web`. CI runs it in the Web build job.
+bundle-budget:
+	node scripts/bundle-budget.mjs
+
+## Every brand raster (app icons, favicon, extension icons) from web/src/ui/icons/brand.svg.
+brand-icons:
+	node scripts/brand-icons.mjs
 
 check: lint web-lint staticcheck test fmt-check ui-lint i18n-check docs-check templates-check openspec-validate deploy-check repo-check
 
@@ -211,19 +298,14 @@ fmt-check:
 ## decrypting MCP bridge) against a throwaway server on :18081 each. Expects `make build`
 ## (it builds bin/ot itself); needs Playwright with Chromium.
 e2e: cli
-	@for s in e2e-smoke e2e-views e2e-mcp-decrypt; do \
-	  d=$$(mktemp -d); OPENTODO_DATA_DIR=$$d OPENTODO_ADDR=127.0.0.1:18081 ./bin/opentodo >$$d/server.log 2>&1 & pid=$$!; \
-	  for i in $$(seq 1 30); do curl -fsS 127.0.0.1:18081/healthz >/dev/null 2>&1 && break; sleep 0.3; done; \
-	  echo "== $$s"; OPENTODO_URL=http://127.0.0.1:18081 node scripts/$$s.mjs; st=$$?; kill $$pid; wait $$pid 2>/dev/null; \
-	  if [ $$st -ne 0 ]; then cat $$d/server.log; rm -rf $$d; exit $$st; fi; rm -rf $$d; \
-	done
-	@echo "== e2e-network"; OPENTODO_BIN=./bin/opentodo node scripts/e2e-network.mjs
+	scripts/e2e.sh
 
 ## Design-system check (ui-primitives): stories for every shared component, no
 ## emoji or glyph icons in web/src/app.
 ui-lint:
-	node --test scripts/ui-check.test.mjs
+	node --test scripts/ui-check.test.mjs scripts/ux-audit/ux-audit.test.mjs
 	node scripts/ui-check.mjs
+	node scripts/ux-audit/stories.mjs
 
 ## React hooks lint (web-lint-and-test-hygiene): Rules of Hooks and effect
 ## dependencies as errors; every remaining suppression carries its reason.
@@ -232,8 +314,9 @@ web-lint:
 
 ## Translation catalogs (app-localization): every shipped catalog complete, no stale
 ## or malformed entries, placeholders as in the source; script tests included.
+## The iOS shell's String Catalog is checked the same way (ios-shell).
 i18n-check:
-	node --test scripts/i18n/extract.test.mjs scripts/i18n/untranslated.test.mjs scripts/i18n-check.test.mjs
+	node --test scripts/i18n/extract.test.mjs scripts/i18n/untranslated.test.mjs scripts/i18n-check.test.mjs scripts/i18n/shell.test.mjs
 	node scripts/i18n-check.mjs
 
 docker:

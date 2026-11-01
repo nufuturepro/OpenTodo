@@ -6,17 +6,17 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/mail"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/mail"
 )
 
 // Verified open sign-up (OpenSpec `outgoing-email` D4): the registration is
 // answered 202 and the account is created by the mailed link, on POST only
 // (mail scanners fetch links).
 func (s *Server) registerSignupRoutes(mux *routes) {
-	mux.handle("GET /api/v1/auth/verify/{token}", public("the holder of a sign-up link has no account yet").demoDenied(), s.handlePreviewSignup)
-	mux.handle("POST /api/v1/auth/verify/{token}", public("the holder of a sign-up link has no account yet").demoDenied(), s.handleCompleteSignup)
+	mux.handle("GET /api/v1/auth/verify/{token}", public("the holder of a sign-up link has no account yet").DemoDenied(), s.handlePreviewSignup)
+	mux.handle("POST /api/v1/auth/verify/{token}", public("the holder of a sign-up link has no account yet").DemoDenied(), s.handleCompleteSignup)
 }
 
 // registerWithVerification stores a pending sign-up and mails the link; an

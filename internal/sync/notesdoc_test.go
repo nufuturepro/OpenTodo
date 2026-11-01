@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixari/opentodo/internal/activity"
+	"github.com/OpenTodoApp/opentodo/internal/activity"
 )
 
 // docValue builds a kDoc envelope whose total length is exactly n characters.
@@ -122,7 +122,7 @@ func TestDocFieldsMatchActivityOpaque(t *testing.T) {
 			t.Fatalf("%s missing from activity.Opaque", k)
 		}
 		entity, field, _ := strings.Cut(k, ".")
-		if Schema[entity][field] != kDoc {
+		if Schema[entity][field].Kind != kDoc {
 			t.Fatalf("%s is not a kDoc field", k)
 		}
 	}

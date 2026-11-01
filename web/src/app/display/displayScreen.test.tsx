@@ -11,7 +11,7 @@ import { setDateTime, setDayStart } from '../../lib/dates'
 import { createProject, createTask, resetDeviceId } from '../../lib/ops'
 import { createSection } from '../../lib/sections'
 import { createView } from '../../lib/views'
-import { click, flush, key, render } from '../../ui/test-utils'
+import { click, flush, key, render, waitFor } from '../../ui/test-utils'
 import { DEFAULT_DISPLAY_OPTIONS, type DisplayOptions, type DisplayTarget } from './displayOptions'
 import { DisplayScreen, lastSyncedLabel } from './DisplayScreen'
 
@@ -29,15 +29,10 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
   document.documentElement.removeAttribute('data-contrast')
   document.documentElement.removeAttribute('data-motion')
 })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 function show(target: DisplayTarget, options: Partial<DisplayOptions> = {}) {
   return render(<DisplayScreen route={{ view: 'display', target, options: { ...DEFAULT_DISPLAY_OPTIONS, ...options } }} />)
@@ -70,7 +65,7 @@ describe('day start (day-boundary 2.6)', () => {
 })
 
 describe('display targets', () => {
-  it('Today: clock and date, Overdue, Today, Done today and three day columns, without the shell', async () => {
+  it('Today: clock and date, Earlier, Today, Done today and three day columns, without the shell', async () => {
     await createTask({ title: 'Pay rent', due: { date: '2026-10-12' } })
     await createTask({ title: 'Water plants', due: { date: '2026-10-14' } })
     const done = await createTask({ title: 'Buy milk', due: { date: '2026-10-14' } })
@@ -140,7 +135,11 @@ describe('display targets', () => {
     const r = await show({ kind: 'view', id: v })
     await waitFor(() => r.container.textContent!.includes('Later p1'))
     expect(r.container.querySelector('h1')!.textContent).toBe('Dated')
-    expect(headings(r.container)).toEqual(['Overdue', 'Today', 'Friday 16 Oct'])
+    expect(headings(r.container)).toEqual(['Earlier', 'Today', 'Friday 16 Oct'])
+    // Labels like the list's group headers (page-rhythm): muted, uppercase for the groups the display generates.
+    const earlier = r.container.querySelector('#display-group-overdue')!
+    expect(earlier.className).toContain('display-heading')
+    expect(earlier.hasAttribute('data-generated')).toBe(true)
     await r.unmount()
   })
 
@@ -156,7 +155,7 @@ describe('display targets', () => {
 })
 
 describe('clock, presentation and sync line', () => {
-  it('rolls over at midnight: the date changes, yesterday moves to Overdue, the columns shift', async () => {
+  it('rolls over at midnight: the date changes, yesterday moves to Earlier, the columns shift', async () => {
     vi.useRealTimers()
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     vi.setSystemTime(new Date(2026, 9, 14, 23, 59, 50))
@@ -250,6 +249,8 @@ describe('keyboard and toggling', () => {
     await key(document.body, 'j')
     await key(document.body, ' ')
     await key(document.body, 'Enter')
+    // Nothing shows a refused key: give a wrong write the time to land.
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- asserts the absence of a write
     await flush(50)
     expect((await db.tasks.toArray()).every((t) => t.completed_at === null)).toBe(true)
     await r.unmount()

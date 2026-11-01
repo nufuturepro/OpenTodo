@@ -19,7 +19,7 @@ import (
 	// ships no zoneinfo, so it is embedded (about 450 KB).
 	_ "time/tzdata"
 
-	"github.com/pixari/opentodo/internal/origin"
+	"github.com/OpenTodoApp/opentodo/internal/origin"
 )
 
 // Device is the op device id of every imported field.
@@ -44,6 +44,9 @@ const (
 	KindSection  = "section"
 	KindReminder = "reminder"
 	KindView     = "view"
+	// KindRule is an automation rule (OpenSpec change automation-rules),
+	// restored verbatim from an own export with its ids.
+	KindRule = "rule"
 	// KindUserPrefs is the date and time preferences row (OpenSpec change
 	// date-time-preferences): restored from an own export, never undone.
 	KindUserPrefs = "user_prefs"
@@ -113,12 +116,19 @@ type Row struct {
 	// Evening (OpenSpec change someday-and-evening).
 	Start   string
 	Evening bool
+	// Energy is "deep", "medium", "low" or "" (OpenSpec change task-energy):
+	// only the CSV column sets it; other apps' importers leave it empty.
+	Energy string
 	// Links are attachment references the file only gives as URLs; they become
 	// link attachments of the task (OpenSpec change attachments, design D12).
 	Links []Link
 	// AssignSelf assigns the task to the importing account (a Linear issue
 	// assigned to the importer's own email address).
 	AssignSelf bool
+	// Fields are typed values beyond the task model (Linear estimates, Asana
+	// custom columns, Trello custom fields); the planner writes them as custom
+	// field values of the task's project (more-importers D3).
+	Fields []FieldValue
 
 	// Origin is where the task came from (OpenSpec change task-origin): an issue
 	// for Linear, the source id for Todoist, Things and TickTick; nil otherwise.
@@ -157,6 +167,23 @@ func (r *Row) fail(format string, args ...any) {
 
 // Link is a link attachment read from a file.
 type Link struct{ Name, URL string }
+
+// Custom field value types a profile may produce (more-importers D3).
+const (
+	FieldNumber   = "number"
+	FieldText     = "text"
+	FieldChoice   = "choice"
+	FieldCheckbox = "checkbox"
+	FieldDate     = "date"
+)
+
+// FieldValue is one named, typed value read from a file: a float64 for a
+// number, a bool for a checkbox, a string otherwise ("YYYY-MM-DD" for a date).
+type FieldValue struct {
+	Name  string
+	Type  string
+	Value any
+}
 
 // addLink keeps an http(s) URL as a link attachment, or warns that the value
 // cannot be kept (a file the export only names, a local path).
@@ -200,6 +227,9 @@ type Parsed struct {
 	// Template is set for an own export that declares itself a template
 	// (OpenSpec change project-templates, design D7).
 	Template *TemplateInfo
+	// Workspaces are an own export's workspaces (OpenSpec change workspaces),
+	// mapped onto the importing account's by Service.mapWorkspaces.
+	Workspaces []ExportedWorkspace
 }
 
 // TemplateInfo is the optional `template` object of a template file.
@@ -227,9 +257,12 @@ type Profile interface {
 }
 
 // Profiles lists every format in detection order: the own export first, then each
-// JSON shape by its structural signature, then CSV.
-var Profiles = []Profile{opentodoProfile{}, thingsDBProfile{}, itemsProfile{}, listsProfile{}, genericProfile{},
-	todoistProfile{}, tickTickProfile{}, linearProfile{}, csvProfile{}}
+// named app's JSON shape by its structural signature (more-importers D2), then the
+// generic JSON shapes, then the named CSV exports and generic CSV.
+var Profiles = []Profile{opentodoProfile{}, thingsDBProfile{},
+	googleTasksProfile{}, trelloProfile{}, msTodoProfile{}, appleRemindersProfile{}, anydoProfile{},
+	itemsProfile{}, listsProfile{}, genericProfile{},
+	todoistProfile{}, tickTickProfile{}, linearProfile{}, asanaProfile{}, csvProfile{}}
 
 // formatAliases are format names that select a profile for a container: a
 // Todoist backup is a ZIP of todoist-csv files.
@@ -348,6 +381,11 @@ type Options struct {
 	Errors string `json:"errors,omitempty"`
 	// Existing applies to own-export rows whose id exists: "skip" (default) or "overwrite".
 	Existing string `json:"existing,omitempty"`
+	// Workspace is the id of the account's workspace that receives every
+	// created project, label, view and project-less task (OpenSpec change
+	// import-workspace). Empty: the default workspace, or an own export's own
+	// mapping.
+	Workspace string `json:"workspace,omitempty"`
 
 	loc *time.Location
 	// Set by the Service for one preview or job, never by the client:
@@ -355,7 +393,9 @@ type Options struct {
 	tempDir       string    // where an uploaded database is copied to be read
 	exportedAt    time.Time // reference date for dates written without a year
 	importerEmail string    // the importing account's email (Linear assignees)
+	importerName  string    // the importing account's display name (Trello members)
 	entryName     string    // archive entry being read
+	fileName      string    // the uploaded file's name (an Asana CSV names its project)
 	thingsWAL     []byte    // a Things database's WAL from the same archive
 	// ownFiles are the attachment files of an own ZIP export, by attachment id.
 	ownFiles map[string][]byte
@@ -405,7 +445,14 @@ func (o *Options) Normalize() error {
 		return err
 	}
 	o.TargetProject = strings.TrimSpace(o.TargetProject)
+	o.Workspace = strings.TrimSpace(o.Workspace)
 	return nil
+}
+
+// SetFileName records the uploaded file's name; a profile whose file is one
+// project (an Asana CSV) names the project after it.
+func (o *Options) SetFileName(name string) {
+	o.fileName = strings.TrimSpace(name)
 }
 
 // Location returns the normalised time zone (UTC before Normalize).

@@ -8,17 +8,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { commitFiles, formatBytes, isImage, planFiles, useAttachmentLimits } from '../lib/attachments'
 import { useAllLabels, useProjects } from '../lib/localData'
 import { useDemo } from '../lib/demo'
-import { createTask, planReminders, planTask } from '../lib/ops'
+import { createTask, planNewTasks, planReminders, planTask } from '../lib/ops'
+import { addTasksUndoable } from '../lib/pasteTasks'
+import { showBulkToast } from './bulk/toastStore'
 import { captureFiles, type CapturedFile, isEmptyShare, parseShare, proposedDescription, proposedOrigin, proposedTitle, titleFromFiles, type SharePayload } from '../lib/share'
 import { deleteInboxEntry, getInboxEntry, type SharedFile } from '../lib/shareInbox'
 import type { Task } from '../lib/types'
 import { IconButton } from '../ui'
 import { Icon } from '../ui'
+import { InstanceMark, useInstanceName } from './InstanceBrand'
 import { QuickAdd, type QuickAddInput } from './QuickAdd'
 import { navigate, type Route } from './router'
 import { useShortcutDispatcher, useShortcutScope } from './shortcuts'
 import { Kbd } from './shortcuts/Kbd'
 import { t } from '../lib/i18n'
+import { messageOf } from '../lib/errorText'
 
 /** How files come with this share: the hand-over store, the extension's message, or lost on the way. */
 export type ShareFiles = { inbox?: string | null; mode?: 'extension' | 'denied' | 'lost' | null }
@@ -75,6 +79,7 @@ function leave(to: Route) {
 }
 
 export function ShareCapture() {
+  const app = useInstanceName()
   const [files] = useState(() => pendingFiles)
   const [payload, setPayload] = useState<SharePayload>(() => pending ?? { title: '', text: '', url: null })
   // A share with files waits for the hand-over store before the form shows its text.
@@ -157,7 +162,36 @@ export function ShareCapture() {
       leave(project ? { view: 'project', id: project } : { view: 'inbox' })
     } catch (err) {
       setSaving(false)
-      setError(err instanceof Error ? err.message : String(err))
+      setError(messageOf(err))
+    }
+  }
+
+  /**
+   * A pasted list (paste-to-tasks D3): one task per line, each with the picked project
+   * (unless its line names one) and the share as its origin; the description and the
+   * files go with the first, as they would with a single task. One batch; a refused
+   * line leaves the offer open with the reason.
+   */
+  async function saveMany(inputs: QuickAddInput[]) {
+    if (saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      const picked = projectId || null
+      const origin = proposedOrigin(payload)
+      const tasks = inputs.map((input, i) => ({ ...input, project_id: input.project_id ?? picked, origin, ...(i === 0 ? { description: description.trim() } : {}) }))
+      if (attach.length) {
+        const { ids, changes } = await planNewTasks(tasks)
+        const asFiles = await Promise.all(attach.map(async (f) => new File([await f.blob.arrayBuffer()], f.name, { type: f.type })))
+        await commitFiles(await planFiles(ids[0], asFiles, { projectId: tasks[0].project_id }), changes)
+      } else {
+        const added = await addTasksUndoable(tasks)
+        showBulkToast(added.label, added.undoId)
+      }
+      leave(picked ? { view: 'project', id: picked } : { view: 'inbox' })
+    } catch (err) {
+      setSaving(false)
+      throw err
     }
   }
 
@@ -165,8 +199,8 @@ export function ShareCapture() {
     <div className="flex min-h-full justify-center bg-canvas p-4 sm:items-center">
       <div className="w-full max-w-lg rounded-card border border-default bg-surface p-5 shadow-1">
         <div className="mb-4 flex items-center gap-2">
-          <img src="/favicon.svg" alt="" className="h-6 w-6" />
-          <h1 className="text-body font-semibold">{t('Add to OpenTaskKit')}</h1>
+          <InstanceMark size={24} />
+          <h1 className="text-body font-semibold">{t('Add to {app}', { app })}</h1>
         </div>
         {ready && isEmptyShare(payload) && shared.length === 0 && files.mode !== 'extension' && (
           <p className="mb-3 text-body text-muted">{t('Nothing was shared. Type a task to add it anyway.')}</p>
@@ -183,6 +217,7 @@ export function ShareCapture() {
             projects={projects}
             labels={labels}
             onAdd={save}
+            onAddMany={saveMany}
           />
         </div>
         )}

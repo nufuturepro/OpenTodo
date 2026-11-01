@@ -6,17 +6,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/e2ee"
-	"github.com/pixari/opentodo/internal/inbox"
-	"github.com/pixari/opentodo/internal/origin"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/timetrack"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/daypart"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/inbox"
+	"github.com/OpenTodoApp/opentodo/internal/location"
+	"github.com/OpenTodoApp/opentodo/internal/origin"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/timetrack"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // snapshot is everything one tool call needs, read once through the
@@ -32,13 +35,52 @@ type snapshot struct {
 	shared   map[string]opsync.ProjectAccess
 	// sectionProject maps a section id onto its project id (write validation).
 	sectionProject map[string]string
-	labelList      []opsync.Entity
-	// fieldDefs maps a project id onto its live custom field definitions in
-	// position order (custom-fields).
-	fieldDefs map[string][]opsync.Entity
+	// sectionRows are the live section rows, for the flow of their tasks (project-flow-modes).
+	sectionRows []opsync.Entity
+	labelList   []opsync.Entity
+	// fieldDefs maps a project id onto the custom fields that apply to it, its
+	// ancestors' first (custom-fields, inherited-custom-fields); fieldsFor fills
+	// it on first use from allFieldDefs.
+	fieldDefs    map[string][]opsync.Entity
+	allFieldDefs []opsync.Entity
 	// tracked is every member's live tracked minutes per task, a running entry
 	// to the server time (time-tracking D11).
 	tracked map[string]int
+	// places are the user's live saved locations by id (task-locations), for
+	// writes that link a location by place_id and reads that show its current values.
+	places map[string]opsync.Entity
+	// keptAway holds the projects kept away from AI assistants (agent-planning-fields
+	// D9); they and everything in them are already dropped from the snapshot.
+	keptAway map[string]bool
+	// idx indexes tasks by id (built on first lookup, reset by apply).
+	idx map[string]opsync.Entity
+	// workspaces are the user's workspaces (OpenSpec change workspaces);
+	// part places projects and tasks in them (built on first use, reset by apply).
+	workspaces []opsync.Workspace
+	part       *opsync.Partition
+}
+
+// keptAway resolves which of the user's projects are kept away from AI
+// assistants, inherited ones included (nil without a store or a row).
+func (r *Registry) keptAway(ctx context.Context, projects []opsync.Entity) (map[string]bool, error) {
+	if r.exclusions == nil {
+		return nil, nil
+	}
+	own, err := r.exclusions.own(ctx)
+	if err != nil || len(own) == 0 {
+		return nil, err
+	}
+	parents := make(map[string]string, len(projects))
+	for _, p := range projects {
+		parents[rawStr(p, "id")] = rawStr(p, "parent_id")
+	}
+	out := map[string]bool{}
+	for id, st := range Resolve(own, parents) {
+		if st.KeptAway {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 
 func (r *Registry) load(ctx context.Context, userID string) (*snapshot, error) {
@@ -46,6 +88,18 @@ func (r *Registry) load(ctx context.Context, userID string) (*snapshot, error) {
 	var err error
 	if snap.projList, err = r.list(ctx, userID, "project", false); err != nil {
 		return nil, err
+	}
+	if snap.keptAway, err = r.keptAway(ctx, snap.projList); err != nil {
+		return nil, err
+	}
+	if len(snap.keptAway) > 0 {
+		live := snap.projList[:0]
+		for _, p := range snap.projList {
+			if !snap.keptAway[rawStr(p, "id")] {
+				live = append(live, p)
+			}
+		}
+		snap.projList = live
 	}
 	for _, p := range snap.projList {
 		snap.projects[str(p, "id")] = p
@@ -63,19 +117,37 @@ func (r *Registry) load(ctx context.Context, userID string) (*snapshot, error) {
 		return nil, err
 	}
 	for _, sec := range sections {
+		if snap.keptAway[rawStr(sec, "project_id")] {
+			continue
+		}
 		snap.sections[str(sec, "id")] = str(sec, "name")
 		snap.sectionProject[str(sec, "id")] = rawStr(sec, "project_id")
+		snap.sectionRows = append(snap.sectionRows, sec)
 	}
 	defs, err := r.list(ctx, userID, "field", false)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range defs {
-		pid := rawStr(d, "project_id")
-		snap.fieldDefs[pid] = append(snap.fieldDefs[pid], d)
+		if snap.keptAway[rawStr(d, "project_id")] {
+			continue
+		}
+		snap.allFieldDefs = append(snap.allFieldDefs, d)
 	}
 	if snap.tasks, err = r.list(ctx, userID, "task", false); err != nil {
 		return nil, err
+	}
+	hidden := map[string]bool{}
+	if len(snap.keptAway) > 0 {
+		live := snap.tasks[:0]
+		for _, t := range snap.tasks {
+			if snap.keptAway[rawStr(t, "project_id")] {
+				hidden[rawStr(t, "id")] = true
+				continue
+			}
+			live = append(live, t)
+		}
+		snap.tasks = live
 	}
 	entries, err := r.list(ctx, userID, "time_entry", false)
 	if err != nil {
@@ -83,9 +155,23 @@ func (r *Registry) load(ctx context.Context, userID string) (*snapshot, error) {
 	}
 	list := make([]timetrack.Entry, 0, len(entries))
 	for _, e := range entries {
+		if hidden[rawStr(e, "task_id")] {
+			continue
+		}
 		list = append(list, timetrack.FromRow(e))
 	}
+	places, err := r.list(ctx, userID, "place", false)
+	if err != nil {
+		return nil, err
+	}
+	snap.places = make(map[string]opsync.Entity, len(places))
+	for _, pl := range places {
+		snap.places[rawStr(pl, "id")] = pl
+	}
 	snap.tracked = timetrack.TotalsByTask(list, r.now().UnixMilli())
+	if err := r.loadWorkspaces(ctx, userID, snap); err != nil {
+		return nil, err
+	}
 	if snap.shared, err = r.sync.SharedProjects(ctx, userID); err != nil {
 		return nil, err
 	}
@@ -308,6 +394,22 @@ type taskText struct {
 	// (OpenSpec change task-origin, design D11); kind, provider and id are in
 	// taskOut.Origin.
 	Origin *originText `json:"origin,omitempty"`
+	// Location holds the name and address of the task's location
+	// (agent-planning-fields D4); its coordinates and place_id are in taskOut.Location.
+	Location *locationText `json:"location,omitempty"`
+}
+
+// locationText is the user-written part of a task's location.
+type locationText struct {
+	Name    string `json:"name,omitempty"`
+	Address string `json:"address,omitempty"`
+}
+
+// locationOut is the structural part of a task's location.
+type locationOut struct {
+	Lat     *float64 `json:"lat,omitempty"`
+	Lon     *float64 `json:"lon,omitempty"`
+	PlaceID string   `json:"place_id,omitempty"`
 }
 
 // originText is the user-written part of a task's origin.
@@ -361,6 +463,25 @@ type taskOut struct {
 	// TrackedMinutes is the task's live tracked time, every member's entries
 	// and a running one to the server time (OpenSpec change time-tracking).
 	TrackedMinutes int `json:"tracked_minutes"`
+	// Planning fields (OpenSpec change agent-planning-fields, design D4):
+	// deadline and start as stored (start may be "someday"), evening, the ids
+	// the task waits for and blocked, true while any of them is open. Location
+	// is null when unset or encrypted; its name and address are in untrusted_text.
+	Deadline *string `json:"deadline"`
+	Start    *string `json:"start"`
+	Evening  bool    `json:"evening"`
+	// DayPart is "morning", "afternoon" or null (OpenSpec change day-parts);
+	// Evening stays the evening flag.
+	DayPart *string `json:"day_part"`
+	// Energy is "deep", "medium", "low" or null (OpenSpec change task-energy).
+	Energy    *string      `json:"energy"`
+	BlockedBy []string     `json:"blocked_by"`
+	Blocked   bool         `json:"blocked"`
+	Location  *locationOut `json:"location"`
+	// WaitingForSlot is set by today_summary only (OpenSpec change
+	// today-closed-list): true when the user's Today limit keeps the task
+	// waiting for a slot.
+	WaitingForSlot *bool `json:"waiting_for_slot,omitempty"`
 }
 
 // render builds the assistant-facing view of a task, evaluating dates in loc
@@ -411,6 +532,20 @@ func (snap *snapshot) render(t opsync.Entity, loc *time.Location, today string, 
 			out.Untrusted.Origin = &originText{Title: o.Title, URL: o.URL}
 		}
 	}
+	out.Deadline, out.Start = strPtr(t, "deadline"), strPtr(t, "start")
+	out.Evening = boolean(t, "evening")
+	if part := daypart.OfRow(t); daypart.Stored(part) {
+		out.DayPart = &part
+	}
+	if e := str(t, "energy"); slices.Contains(opsync.EnergyLevels, e) {
+		out.Energy = &e
+	}
+	out.BlockedBy = stringList(t, "blocked_by")
+	if out.BlockedBy == nil {
+		out.BlockedBy = []string{}
+	}
+	out.Blocked = snap.blockedNow(t)
+	snap.renderLocation(t, &out)
 	if d := taskDue(t); d != nil {
 		o := &dueOut{due: *d}
 		date, clock := localDue(d, loc)
@@ -428,9 +563,26 @@ func (snap *snapshot) render(t opsync.Entity, loc *time.Location, today string, 
 // fieldOut is a custom field definition as assistants see it: its name is
 // user text, its options too.
 type fieldOut struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Untrusted fieldText `json:"untrusted_text"`
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	// InheritedFrom is the id of the project above that defines the field,
+	// when it is inherited (inherited-custom-fields); empty for the project's own.
+	InheritedFrom string    `json:"inherited_from,omitempty"`
+	Untrusted     fieldText `json:"untrusted_text"`
+}
+
+// fieldsFor lists the custom fields that apply to a project: the live
+// definitions of its ancestors, farthest first, then its own (none for Inbox).
+func (snap *snapshot) fieldsFor(pid string) []opsync.Entity {
+	if pid == "" {
+		return nil
+	}
+	if defs, ok := snap.fieldDefs[pid]; ok {
+		return defs
+	}
+	defs := opsync.ApplicableFields(pid, snap.projects, snap.allFieldDefs)
+	snap.fieldDefs[pid] = defs
+	return defs
 }
 
 type fieldText struct {
@@ -440,8 +592,11 @@ type fieldText struct {
 
 func (snap *snapshot) renderFields(pid string) []fieldOut {
 	out := []fieldOut{}
-	for _, d := range snap.fieldDefs[pid] {
+	for _, d := range snap.fieldsFor(pid) {
 		f := fieldOut{ID: str(d, "id"), Type: str(d, "type"), Untrusted: fieldText{Name: str(d, "name")}}
+		if owner := rawStr(d, "project_id"); owner != pid {
+			f.InheritedFrom = owner
+		}
 		if f.Type == "choice" {
 			if opts := rawStr(d, "options"); e2ee.IsCiphertext(opts) {
 				f.Untrusted.Options = []string{e2ee.Placeholder}
@@ -461,7 +616,7 @@ func (snap *snapshot) renderFields(pid string) []fieldOut {
 func (snap *snapshot) fieldValues(t opsync.Entity) (map[string]any, map[string]string) {
 	plain := map[string]any{}
 	var text map[string]string
-	for _, d := range snap.fieldDefs[rawStr(t, "project_id")] {
+	for _, d := range snap.fieldsFor(rawStr(t, "project_id")) {
 		id := str(d, "id")
 		raw, ok := t[opsync.FieldValuePrefix+id]
 		if !ok {
@@ -493,7 +648,7 @@ func (snap *snapshot) fieldValues(t opsync.Entity) (map[string]any, map[string]s
 // id-keyed map nor a value of several types.
 func (snap *snapshot) fieldPatch(prefix, pid string, raw json.RawMessage, encrypted bool) (map[string]json.RawMessage, error) {
 	defs := map[string]opsync.Entity{}
-	for _, d := range snap.fieldDefs[pid] {
+	for _, d := range snap.fieldsFor(pid) {
 		defs[str(d, "id")] = d
 	}
 	var values map[string]json.RawMessage
@@ -770,4 +925,38 @@ func (a args) date(name string) (string, error) {
 		return "", argErr(name + ": must be a date in YYYY-MM-DD form")
 	}
 	return v, nil
+}
+
+// renderLocation fills a task's location: an encrypted one marks the task
+// encrypted and shows nothing; one linked to a live saved location shows that
+// location's current values (task-locations D2).
+func (snap *snapshot) renderLocation(t opsync.Entity, out *taskOut) {
+	v, ok := t["location"]
+	if !ok || string(v) == "null" {
+		return
+	}
+	if e2ee.IsCiphertextJSON(v) {
+		out.Encrypted = true
+		return
+	}
+	l, err := location.Decode(v)
+	if err != nil {
+		return
+	}
+	if pl, ok := snap.places[l.PlaceID]; ok && l.PlaceID != "" {
+		if name := plainOrEmpty(pl, "name"); name != "" {
+			l.Name = name
+		}
+		if addr := plainOrEmpty(pl, "address"); addr != "" {
+			l.Address = addr
+		}
+		if g, err := location.DecodeGeo(pl["geo"]); err == nil {
+			lat, lon := g.Lat, g.Lon
+			l.Lat, l.Lon = &lat, &lon
+		}
+	}
+	out.Location = &locationOut{Lat: l.Lat, Lon: l.Lon, PlaceID: l.PlaceID}
+	if l.Name != "" || l.Address != "" {
+		out.Untrusted.Location = &locationText{Name: l.Name, Address: l.Address}
+	}
 }

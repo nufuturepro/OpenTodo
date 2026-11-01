@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Button } from '../ui'
-import { Badge } from '../ui'
+import { Button, StatusIndicator, toneForHue } from '../ui'
 import { ConfirmDialog } from '../ui'
 import { Notice } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
 import { Switch } from '../ui'
-import { api, ApiError } from '../lib/api'
+import { api } from '../lib/api'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 import type { EmailInbox } from '../lib/types'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { copyText } from '../lib/clipboard'
 
 // Settings → Email to task (OpenSpec change `email-to-task`): the account's
 // secret inbox address with copy and rotate, the on/off switch and the sender
@@ -44,11 +46,16 @@ export function EmailInboxView(p: EmailInboxViewProps) {
         !p.error && <Notice>{noticeCopy('email-inbox', 'offline')}</Notice>
       ) : !inbox.enabledByOperator ? (
         <Notice>{noticeCopy('email-inbox', 'operatorOff')}</Notice>
+      ) : inbox.address === null ? (
+        // No inbox yet: reading the settings never creates one, so the address
+        // appears once the person turns capture on (email-inbox-explicit).
+        <SettingRow {...rowCopy('email-inbox', 'create')}
+          control={<Switch checked={false} onChange={(on) => { if (!p.busy && on) p.onToggle(true) }} label={t('Create tasks from email sent to this address')} hideLabel />} />
       ) : (
         <>
           <SettingRow {...rowCopy('email-inbox', 'address')} status={
             <span className="flex flex-wrap items-center gap-2">
-              <Badge hue={inbox.enabled ? 'green' : 'slate'}>{inbox.enabled ? t('On') : t('Off')}</Badge>
+              <StatusIndicator tone={toneForHue(inbox.enabled ? 'green' : 'slate')}>{inbox.enabled ? t('On') : t('Off')}</StatusIndicator>
               <code id="email-inbox-address" className={'break-all rounded-chip bg-sunken px-1.5 py-0.5 text-meta' + (inbox.enabled ? '' : ' text-faint line-through')}>
                 {inbox.address}
               </code>
@@ -57,7 +64,7 @@ export function EmailInboxView(p: EmailInboxViewProps) {
             control={
               <>
                 <Button icon="copy" onClick={p.onCopy}>{t('Copy address')}</Button>
-                <Button icon="rotate-ccw" aria-disabled={p.busy} onClick={p.onRotate}>{t('New address…')}</Button>
+                <Button icon="rotate-ccw" aria-disabled={p.busy} onClick={p.onRotate}>{t('New address')}</Button>
               </>
             } />
           {p.copied && <Notice tone="success">{noticeCopy('email-inbox', 'copied')}</Notice>}
@@ -79,14 +86,14 @@ export function EmailInboxView(p: EmailInboxViewProps) {
   )
 }
 
-const message = (err: unknown) => (err instanceof ApiError ? err.message : t('Offline: email to task is managed on the server.'))
+const message = (err: unknown) => errorText(err, { capitalise: false, offline: t('Offline: email to task is managed on the server.') })
 
 export function EmailInboxPanel() {
   const [inbox, setInbox] = useState<EmailInbox | null>(null)
   const [draft, setDraft] = useState('')
   const [copied, setCopied] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const action = useAction({ describe: message })
+  const { busy, error, setError } = action
 
   function show(next: EmailInbox) {
     setInbox(next)
@@ -95,20 +102,10 @@ export function EmailInboxPanel() {
 
   useEffect(() => {
     api.emailInbox().then(show, (err) => setError(message(err)))
-  }, [])
+  }, [setError])
 
-  async function run(fn: () => Promise<void>) {
-    if (busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      await fn()
-    } catch (err) {
-      setError(message(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  // A second click while an action runs is ignored.
+  const run = (fn: () => Promise<void>) => (busy ? Promise.resolve(undefined) : action.run(fn))
 
   const [confirmRotate, setConfirmRotate] = useState(false)
   return (
@@ -116,7 +113,7 @@ export function EmailInboxPanel() {
       <EmailInboxView inbox={inbox} draft={draft} copied={copied} error={error} busy={busy} onDraftChange={setDraft}
         onCopy={() => {
           if (!inbox?.address) return
-          navigator.clipboard?.writeText(inbox.address).then(() => setCopied(true),
+          copyText(inbox.address).then(() => setCopied(true),
             () => setError(t('Could not access the clipboard; select the address and copy it manually.')))
         }}
         onRotate={() => { if (!busy) setConfirmRotate(true) }}

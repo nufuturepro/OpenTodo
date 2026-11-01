@@ -1,9 +1,8 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo } from 'react'
-import { useTask } from '../lib/localData'
+import { useTask, useMembershipMap } from '../lib/localData'
 import { updateTask } from '../lib/ops'
-import { assigneeOptions, memberName, membershipMap } from '../lib/sharing'
-import { Avatar } from '../ui'
+import { assigneeOptions, memberName } from '../lib/sharing'
+import { PersonAvatar } from './PersonAvatar'
 import { Tooltip } from '../ui'
 import { Combobox, ComboboxPanel } from '../ui'
 import { Icon } from '../ui'
@@ -16,7 +15,7 @@ export function AssigneeChip({ id, name, me }: { id: string; name: string; me?: 
   return (
     <Tooltip label={t('Assigned to {name}', { name })}>
       <span className="inline-flex items-center gap-1 text-muted" data-assignee>
-        <Avatar id={id} name={name} size="xs" />
+        <PersonAvatar id={id} name={name} size="xs" />
         <span className="max-w-24 truncate">{me ? t('You') : name}</span>
       </span>
     </Tooltip>
@@ -37,7 +36,7 @@ export function AssigneePicker({ taskId, userId, onClose, inline = false }: {
   inline?: boolean
 }) {
   const task = useTask(taskId)
-  const memberships = useLiveQuery(() => membershipMap(), [], new Map())
+  const memberships = useMembershipMap()
 
   const lang = useLanguageVersion()
   const people = useMemo<Person[]>(() => [
@@ -61,7 +60,7 @@ export function AssigneePicker({ taskId, userId, onClose, inline = false }: {
     selected: [current ?? NONE],
     rankContext: `assignee:${task.project_id ?? 'personal'}`,
     emptyText: t('No member matches.'),
-    renderLeading: (p: Person) => (p.id === NONE ? <span className="flex h-6 w-6 items-center justify-center text-faint"><Icon name="circle" /></span> : <Avatar id={p.id} name={p.name} size="sm" />),
+    renderLeading: (p: Person) => (p.id === NONE ? <span className="flex h-6 w-6 items-center justify-center text-faint"><Icon name="circle" /></span> : <PersonAvatar id={p.id} name={p.name} size="sm" />),
     onPick: async (p: Person) => {
       const id = p.id === NONE ? null : p.id
       if (id !== current) await updateTask(task.id, { assignee_id: id })

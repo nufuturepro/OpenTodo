@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { cacheIssueConnections } from '../lib/localData'
 import type { IssueConnection } from '../lib/types'
-import { click, flush, key, render } from '../ui/test-utils'
+import { click, key, render, waitFor } from '../ui/test-utils'
 import { draftBody, draftOf } from './IssueEditor'
 import { filterText, IssuesPanel, stateLine } from './IssuesPanel'
 
@@ -39,10 +39,6 @@ function serve(r: Record<string, unknown>) {
   }))
 }
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 const buttons = (root: ParentNode = document) => [...root.querySelectorAll('button')]
 const byText = (text: string, root: ParentNode = document) => buttons(root).find((b) => b.textContent === text)
@@ -58,7 +54,6 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  document.body.innerHTML = ''
 })
 
 describe('issues panel', () => {
@@ -74,7 +69,7 @@ describe('issues panel', () => {
     expect(lines[2]).toContain('Inbox · 3 repositories · label bug')
     expect(byText('Sync now', card)).toBeDefined()
     await click(card.querySelector('button[aria-label="Actions for Work"]')!)
-    await flush(20)
+    await waitFor(() => document.querySelectorAll('[role="menuitem"]').length === 4, 'the actions menu')
     const items = [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent)
     expect(items).toEqual(['Test token', 'Edit', 'Disable', 'Delete'])
     await r.unmount()
@@ -108,7 +103,7 @@ describe('issues panel', () => {
     const r = await render(<IssuesPanel isOwner />)
     await waitFor(() => r.container.querySelector('[data-issue-connection="c1"]') !== null)
     await click(r.container.querySelector('button[aria-label="Actions for Work"]')!)
-    await flush(20)
+    await waitFor(() => document.querySelectorAll('[role="menuitem"]').length > 0, 'the actions menu')
     await click([...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent === 'Delete')!)
     await waitFor(() => document.querySelector('[role="alertdialog"]') !== null)
     expect(document.body.textContent).toContain('The token is removed from the server')
@@ -144,7 +139,7 @@ describe('issues panel', () => {
     const r = await render(<IssuesPanel isOwner />)
     await waitFor(() => r.container.querySelector('[data-issue-connection="c1"]') !== null)
     await click(r.container.querySelector('button[aria-label="Actions for Work"]')!)
-    await flush(20)
+    await waitFor(() => document.querySelectorAll('[role="menuitem"]').length > 0, 'the actions menu')
     await click([...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent === 'Edit')!)
     await waitFor(() => document.querySelector('[data-testid="issue-editor"]') !== null)
     const token = document.querySelector<HTMLInputElement>('input[aria-label="Replace token"]')!
@@ -178,6 +173,29 @@ describe('issues panel', () => {
     await waitFor(() => document.querySelector('[data-testid="issue-editor"]')!.textContent!.includes('the address must be an https URL'))
     const host = document.querySelector('input[aria-label="Host"]')!
     expect(host.getAttribute('aria-invalid')).toBe('true')
+    await r.unmount()
+  })
+
+  it('Short form by default: three steps, GitHub on github.com, More options closed, Test and Save in the sticky bar (settings-refresh D9)', async () => {
+    serve({ 'GET /api/v1/settings/issues': { enabled: true }, 'GET /api/v1/issues/connections': { connections: [] } })
+    const r = await render(<IssuesPanel isOwner />)
+    await waitFor(() => byText('Connect issues', r.container) !== undefined)
+    await click(byText('Connect issues', r.container)!)
+    await waitFor(() => document.querySelector('[data-testid="issue-editor"]') !== null)
+    const editor = document.querySelector('[data-testid="issue-editor"]')!
+    expect([...editor.querySelectorAll('[data-issue-step] h3')].map((h) => h.textContent)).toEqual(['1Where', '2Access', '3Which issues and where they go'])
+    expect(editor.querySelector('[data-issue-provider="github"]')!.getAttribute('aria-checked')).toBe('true')
+    const host = editor.querySelector<HTMLInputElement>('input[aria-label="Host"]')!
+    expect(host.value).toBe('https://github.com')
+    expect(host.readOnly).toBe(true)
+    expect(editor.querySelector<HTMLDetailsElement>('[data-issue-more]')!.open).toBe(false)
+    const bar = editor.querySelector('[data-issue-actions]')!
+    expect(bar.className).toContain('sticky')
+    expect(buttons(bar).map((b) => b.textContent)).toEqual(['Cancel', 'Test', 'Connect'])
+    // GitLab makes the host editable.
+    await click(editor.querySelector('[data-issue-provider="gitlab"]')!)
+    expect(editor.querySelector<HTMLInputElement>('input[aria-label="Host"]')!.readOnly).toBe(false)
+    expect(editor.querySelector<HTMLInputElement>('input[aria-label="Host"]')!.value).toBe('https://gitlab.com')
     await r.unmount()
   })
 

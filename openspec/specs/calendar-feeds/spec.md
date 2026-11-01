@@ -188,19 +188,27 @@ A device SHALL keep the occurrences and subscriptions it last fetched in local s
 - **THEN** its cached events and subscriptions are deleted with the rest of the local data
 
 ### Requirement: Events drawn in Day and Week
-The Day and Week views SHALL draw each timed occurrence as a block in its subscription's colour between its start and end in the viewer's zone, and each all-day or multi-day occurrence as a chip in an all-day strip above the day's unscheduled lane, on each day it covers. A block SHALL show the summary and, on hover or focus, the time, location and calendar name. A free (transparent) occurrence SHALL be drawn as an outline only.
+The Day and Week views SHALL draw each timed occurrence as a block between its start and end in the viewer's zone, and each all-day or multi-day occurrence as a chip in an all-day strip above the day's unscheduled lane, on each day it covers. An event block SHALL be told apart from a task block by its shape and texture, never by colour alone: it SHALL use the sunken surface as its fill, a hatched 3 px edge on its leading side, the muted text tone for its summary, and its calendar's colour only as a small dot before the summary, while task blocks use a solid edge and a hue fill. A block SHALL show the summary and, on hover or focus, the time, location and calendar name. A free (transparent) occurrence SHALL be drawn as a dashed outline only. The all-day strip SHALL show at most three chips per day; a day with more SHALL show the first three and a "+N" control that expands that day's strip on this device, remembered per device and never synced.
 
 #### Scenario: Meeting next to a task
 - **WHEN** a "Team sync" event runs 10:00 to 11:00 and a task block sits at 10:30
-- **THEN** both are drawn side by side with the overlap marker, the event in its calendar's colour
+- **THEN** both are drawn side by side with the overlap marker, the event on the sunken fill with a hatched edge and its calendar's dot, the task with its project's hue fill and solid edge
+
+#### Scenario: Told apart without colour
+- **WHEN** a task of a green project and an event of a green calendar sit side by side
+- **THEN** a viewer who cannot see the colour still tells them apart by the hatched edge and the dot of the event against the solid edge and fill of the task
 
 #### Scenario: All-day event
 - **WHEN** a subscription holds a two-day all-day "Offsite" event
 - **THEN** an "Offsite" chip appears in the all-day strip of both days and nothing is added to the grid or the planned total
 
+#### Scenario: Crowded all-day strip
+- **WHEN** a day holds five all-day events
+- **THEN** its strip shows three chips and "+2", activating it shows all five on this device until collapsed, and the other days' strips are unchanged
+
 #### Scenario: Free events
 - **WHEN** an occurrence is marked transparent (free) in its source
-- **THEN** its block is drawn with an outline only, so a free slot still reads as free
+- **THEN** its block is drawn as a dashed outline only, so a free slot still reads as free
 
 #### Scenario: Event across midnight
 - **WHEN** an event runs from 22:00 to 02:00 the next day
@@ -333,3 +341,37 @@ A rule without `COUNT` SHALL be expanded from the window's start, producing the 
 #### Scenario: Calendar that repeats too much
 - **WHEN** a feed's rules would expand to more work than the budget allows
 - **THEN** the fetch succeeds with the occurrences found so far and the status warns that some events are left out
+
+### Requirement: Events of connected calendars
+Calendars a user connected through calendar sync SHALL be stored as managed subscriptions: their events SHALL be served by `GET /api/v1/calendar-feeds/events` and drawn like subscription events, while the subscription routes, limits and fetcher SHALL never list, count, fetch or change them. The events route SHALL answer while calendar feeds or calendar sync is on; with calendar feeds off it SHALL serve only managed subscriptions. Deleting the connection SHALL delete its managed subscriptions and their events.
+
+#### Scenario: Calendar feeds off, calendar sync on
+- **WHEN** calendar feeds are off, calendar sync is on and a user shows a connected calendar
+- **THEN** `GET /api/v1/calendar-feeds/events` answers with that calendar's events and `GET /api/v1/calendar-feeds/subscriptions` still answers 404
+
+#### Scenario: Not counted
+- **WHEN** a user with 10 subscriptions shows two connected calendars
+- **THEN** the subscription list still shows 10 and the limit is unchanged
+
+#### Scenario: Unauthenticated
+- **WHEN** the events route is requested without credentials
+- **THEN** the response is a 401 `unauthorized` error
+
+### Requirement: Browser-compatible User-Agent fallback
+Subscription fetches SHALL identify as `OpenTodo/<version>` in the User-Agent header. When a feed answers 400, 403 or 406 to that, the server SHALL send the same request once more with a fixed browser-compatible User-Agent, and the second answer SHALL be the outcome of the fetch. No other status and no transport error SHALL be retried, and a fetch SHALL never send more than two requests for this reason. When the retry succeeds, the server SHALL remember it for that subscription and send the browser-compatible User-Agent first on later fetches, until the subscription's address changes. This state is kept on the server with the subscription, never synced and never returned by the API; devices are unaffected, online or offline, and there is nothing to converge.
+
+#### Scenario: Exchange on-premises refuses the OpenTodo User-Agent
+- **WHEN** a feed answers 400 to `OpenTodo/<version>` and 200 to the browser-compatible User-Agent
+- **THEN** the first fetch succeeds after one retry, and the next fetch sends the browser-compatible User-Agent directly
+
+#### Scenario: A feed that refuses everything
+- **WHEN** a feed answers 400 to every request
+- **THEN** the fetch sends exactly two requests and fails with `http_400`, and nothing is remembered
+
+#### Scenario: Not found is not retried
+- **WHEN** a feed answers 404
+- **THEN** the fetch sends one request and fails with `http_404`
+
+#### Scenario: A new address starts over
+- **WHEN** a subscription that uses the browser-compatible User-Agent gets a new address
+- **THEN** its next fetch identifies as `OpenTodo/<version>` first

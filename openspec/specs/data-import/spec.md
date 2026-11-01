@@ -6,7 +6,7 @@ Defines how data enters OpenTodo from files: the accepted formats and their fiel
 ## Requirements
 
 ### Requirement: Accepted import formats
-The server SHALL import the app's own JSON export (`opentodo-export` version 1 and later), CSV with the documented column mapping, JSON exports of other task managers through named importer profiles, and the export files of named apps (`todoist-csv`, `todoist-backup`, `ticktick-csv`, `linear-csv`, `things-db`), all documented in `docs/import.md`. The format SHALL be detected from the file content and the detected format SHALL be shown and overridable before anything is written.
+The server SHALL import the app's own JSON export (`opentodo-export` version 1 and later), CSV with the documented column mapping, JSON exports of other task managers through named importer profiles, and the export files of named apps (`todoist-csv`, `todoist-backup`, `ticktick-csv`, `linear-csv`, `things-db`, `google-tasks-json`, `trello-json`, `asana-csv`, `microsoft-todo-json`, `apple-reminders-json`, `anydo-json`), all documented in `docs/import.md`. The format SHALL be detected from the file content and the detected format SHALL be shown and overridable before anything is written. A named format SHALL be detected only on a signature distinctive of that app's file, never on a product name alone, so that no file of one format is read as another and the generic JSON and CSV profiles keep every file they accepted before.
 
 #### Scenario: Own export is detected
 - **WHEN** a file whose top-level document carries `"format":"opentodo-export"` is uploaded for preview
@@ -22,7 +22,15 @@ The server SHALL import the app's own JSON export (`opentodo-export` version 1 a
 
 #### Scenario: A named app's export is detected
 - **WHEN** a Todoist project CSV export is uploaded for preview without choosing a format
-- **THEN** the preview reports the format `todoist-csv`, and a TickTick backup, a Linear CSV and a Things database are likewise reported as `ticktick-csv`, `linear-csv` and `things-db`
+- **THEN** the preview reports the format `todoist-csv`, and the user can still choose another format before importing
+
+#### Scenario: Six more apps are detected
+- **WHEN** a Google Takeout `Tasks.json`, a Trello board JSON, an Asana project CSV, a Microsoft To Do Graph JSON, an Apple Reminders Shortcut JSON or an Any.do data-request JSON is uploaded for preview without choosing a format
+- **THEN** the preview reports `google-tasks-json`, `trello-json`, `asana-csv`, `microsoft-todo-json`, `apple-reminders-json` or `anydo-json` respectively, and the format menu of the import screen lists each of them with the app's name
+
+#### Scenario: Existing fixtures keep their format
+- **WHEN** every fixture kept with the tests, including the generic JSON and CSV ones, is detected after the six formats are added
+- **THEN** each is reported in the format it was reported in before, and the detection test names any fixture whose format changed
 
 ### Requirement: Field mapping
 Imported rows SHALL map onto the existing entities: projects by case-insensitive name (reusing a live match), subtasks to `parent_id`, labels to `labels`, priority to 1–4 (default 4), due dates to floating `{date, time?}`, completion to `completed_at`, creation to `created_at`, `http(s)` attachment references to link attachments, and recurrence, reminders and sections as below. Parts the model cannot hold SHALL be dropped with a per-row warning, never silently.
@@ -130,7 +138,7 @@ Settings SHALL offer an Import section with a file picker, the detected format a
 - **THEN** the screen explains that import needs a connection, the file picker is disabled, and the previously loaded job list is still visible
 
 ### Requirement: Own export completeness
-Importing an own export SHALL also recreate its sections, reminders, saved views and attachments with their original ids, store recurrence canonical and carry every other schema field. File attachments SHALL come with their bytes from the ZIP export, within the account's limits, and be counted in a note for the JSON export alone. Comments SHALL NOT be imported; the preview notes their count. Another account as assignee SHALL be dropped with a warning. Writes are ops.
+Importing an own export SHALL also recreate its sections, reminders, saved views, attachments and time entries with their original ids, store recurrence canonical and carry every other schema field, and SHALL place every project, label, view and task in a workspace: an exported workspace the importing account owns (matched by id, then by name ignoring case) keeps its items; any other exported workspace is created for the importing account when it was the exporter's own and the account has room under its workspace limit, and otherwise its items go to the importing account's default workspace with a note naming the workspace. Members and groups are never imported; the preview notes their count. Time entries whose `user_id` is not the importing account SHALL be dropped with a warning that counts them, like another account as assignee; a running entry SHALL be imported as it is. File attachments SHALL come with their bytes from the ZIP export, within the account's limits, and be counted in a note for the JSON export alone. A file whose id already names a file stored on the server SHALL be linked only when the importing account itself sees that attachment, uploaded, with the same size and digest, and the stored bytes match; otherwise the row SHALL be refused with an error on its row, and the stored file and every other account's attachment stay unchanged. Comments SHALL NOT be imported; the preview notes their count. Another account as assignee SHALL be dropped with a warning. Writes are ops.
 
 #### Scenario: Round trip keeps sections, series and reminders
 - **WHEN** an export holding sections, a recurring task with occurrence records and future reminders is imported into an empty account
@@ -144,6 +152,10 @@ Importing an own export SHALL also recreate its sections, reminders, saved views
 - **WHEN** the import finishes while a device of the account is offline and the device later syncs
 - **THEN** it receives the sections, reminders and recurring tasks as ordinary operations and converges under last-writer-wins
 
+#### Scenario: An attachment id of another account
+- **WHEN** a ZIP export is imported whose file attachment has the id of an uploaded file in another account's private task
+- **THEN** that row is refused with an error stating another file with this id is stored on this server, the importing account sees no attachment with that id, and the other account's file is unchanged
+
 #### Scenario: ZIP export restores files
 - **WHEN** a ZIP export holding 5 attachment files is imported into an empty account
 - **THEN** the 5 attachments exist with their original ids, names and bytes, are uploaded (devices can open them after sync), and a file over the per-file limit or beyond the quota is reported on its row and skipped
@@ -151,6 +163,18 @@ Importing an own export SHALL also recreate its sections, reminders, saved views
 #### Scenario: JSON export alone
 - **WHEN** the JSON export of an account with 5 file attachments and 2 link attachments is imported
 - **THEN** the 2 link attachments are recreated, the preview notes that 5 files need the ZIP export, and no file attachment is written
+
+#### Scenario: Round trip keeps time entries
+- **WHEN** an export holding 40 time entries of the exporting account (one deleted) and 3 entries another member wrote on a shared task is imported into an empty account
+- **THEN** a fresh export lists the 40 entries with their ids, times, notes and deletion state under the importing account's `user_id`, the preview counts them as "time entries" and warns that 3 entries of another account were dropped, and the row chips read the same tracked totals once a device syncs
+
+#### Scenario: Workspaces restored
+- **WHEN** an export with the workspaces "Personal" (default) and "Work" (owned by the exporter, with two members) is imported into a fresh account
+- **THEN** the default workspace's items go to the importing account's default workspace, a "Work" workspace is created with the account as its only member, Work's projects, labels and views carry its new id, and the preview notes that 2 members are not imported
+
+#### Scenario: Workspace the account cannot create
+- **WHEN** the export holds a workspace the exporter was only a member of, or the importing account already owns 20 workspaces
+- **THEN** that workspace's items are imported into the default workspace and the preview notes the workspace by name
 
 ### Requirement: Own export restores custom fields
 Importing an own export SHALL recreate its custom field definitions with their original ids and deletion state and restore every task's `fields` values, values of deleted or foreign definitions included (OpenSpec `custom-fields`). The preview SHALL count the live definitions it creates as "fields". Devices SHALL receive the definitions and values as ordinary operations.
@@ -369,7 +393,7 @@ A Linear CSV export SHALL put each issue in its Linear project, or in a project 
 - **THEN** the imported project has those three sections, each holding its issues, and switching the project to the board shows them as columns
 
 ### Requirement: Linear attributes
-A Linear issue SHALL be completed when it was completed or canceled, with canceled ones labelled `canceled`. Its priority (urgent, high, medium, low, none) SHALL map to p1, p2, p3, p4, p4. Labels, the due date and the Markdown description SHALL be kept, the description starting with the issue identifier, and the identifier SHALL also become the task's origin `{kind: "issue", provider: "linear", id: <identifier>}` without a URL, since the export carries none. An issue assigned to the importing user's email address SHALL stay assigned to them. Estimates, cycles, milestones, relations and other assignees SHALL be dropped with a warning.
+A Linear issue SHALL be completed when it was completed or canceled, with canceled ones labelled `canceled`. Its priority (urgent, high, medium, low, none) SHALL map to p1, p2, p3, p4, p4. Labels, the due date and the Markdown description SHALL be kept, the description starting with the issue identifier, and the identifier SHALL also become the task's origin `{kind: "issue", provider: "linear", id: <identifier>}` without a URL, since the export carries none. An issue assigned to the importing user's email address SHALL stay assigned to them. An estimate SHALL become the value of a number field named "Estimate" on the issue's project, created by the import when the project has no number field of that name (see "Imported custom fields"). Cycles, milestones, relations other than "Blocked by", and other assignees SHALL be dropped with a warning.
 
 #### Scenario: Canceled issue
 - **WHEN** an issue's status is canceled
@@ -379,8 +403,16 @@ A Linear issue SHALL be completed when it was completed or canceled, with cancel
 - **WHEN** issue `ENG-123` is imported
 - **THEN** its description starts with `ENG-123` and its origin is `{kind: "issue", provider: "linear", id: "ENG-123"}`, shown as a chip reading "ENG-123" without a link
 
+#### Scenario: Estimate becomes a field value
+- **WHEN** a Linear CSV has issues with `Estimate` 3 and 5 in project "Launch", which has no field named "Estimate"
+- **THEN** the preview counts one field definition to create, the import creates a number field "Estimate" on "Launch" and the two tasks carry the values 3 and 5, with no estimate warning
+
+#### Scenario: Estimate field already exists
+- **WHEN** the project the issues go to already has a number field named "Estimate"
+- **THEN** no definition is created and the values are written to the existing field
+
 ### Requirement: Things database
-The server SHALL accept the `main.sqlite` file of a Things 3 database, alone or inside a ZIP of the `Things Database.thingsdatabase` folder, and `docs/import.md` SHALL explain how to copy it with Things closed. The file SHALL be opened read-only, only Things' known tables SHALL be read, it SHALL be deleted after the preview or import, and a file that is not a Things database of a supported schema version SHALL be refused with a 400 error naming the reason.
+The server SHALL accept the `main.sqlite` file of a Things 3 database, alone or inside a ZIP of the `Things Database.thingsdatabase` folder, and `docs/import.md` SHALL explain how to copy it with Things closed. The file SHALL be opened read-only, only Things' known tables SHALL be read, it SHALL be deleted after the preview or import, and a file that is not a Things database of a supported schema version SHALL be refused with a 400 error naming the reason. Because the file is untrusted input, the server SHALL NOT run expressions stored in it: a file whose Things tables are virtual tables or have generated columns SHALL be refused with a 400 error before any row is read, a value longer than 1 MB SHALL end the read with a 400 error, and reading SHALL stop after 30 seconds. In every refusal nothing is written.
 
 #### Scenario: Copy of the database
 - **WHEN** the user uploads `main.sqlite` copied from Things with the app closed
@@ -389,6 +421,14 @@ The server SHALL accept the `main.sqlite` file of a Things 3 database, alone or 
 #### Scenario: Some other SQLite file
 - **WHEN** the user uploads a SQLite file without Things' tables
 - **THEN** the preview is refused with a 400 error stating it is not a Things database, and nothing is written
+
+#### Scenario: A table that computes its values
+- **WHEN** the user uploads a SQLite file with Things' tables in which `TMTag` has a generated column
+- **THEN** the preview is refused with a 400 error stating it is not a Things database because `TMTag` has generated columns, the column's expression never runs, and nothing is written
+
+#### Scenario: An oversized value
+- **WHEN** the user uploads a Things database in which one to-do's notes are longer than 1 MB
+- **THEN** the preview is refused with a 400 error, and nothing is written
 
 ### Requirement: Things structure
 A Things database SHALL map areas to parent projects, projects to projects, headings to sections, to-dos to tasks, checklist items to subtasks, tags to labels and notes to the description. Trashed items SHALL be skipped.
@@ -405,14 +445,18 @@ A Things to-do's start ("when") date SHALL become its due date, repeating to-dos
 - **THEN** the task's deadline is 2026-11-30, its description has no "Deadline:" line and the row has no deadline warning
 
 ### Requirement: Named formats are verified against real exports
-Each named app format SHALL be tested against at least one export file produced by that app from a real account, stripped of personal data and kept with the tests. A change to a format's detection or mapping SHALL keep every such file importing with the same rows, warnings and errors unless the change states the difference.
+Each named app format SHALL be tested against at least one export file produced by that app from a real account, stripped of personal data and kept with the tests. For an app that has no export of its own (Microsoft To Do, Apple Reminders, Any.do), the file SHALL be one produced from a real account by the exact script, Shortcut or data request the switch guide describes, and `docs/import.md` SHALL say so next to the format. A change to a format's detection or mapping SHALL keep every such file importing with the same rows, warnings and errors unless the change states the difference.
 
 #### Scenario: Regression on a real file
 - **WHEN** a contributor changes the Todoist mapping so that a fixture's subtask becomes a top-level task
 - **THEN** the importer tests fail and name the fixture and the row
 
+#### Scenario: Scripted export is pinned like a built-in one
+- **WHEN** a contributor changes how `microsoft-todo-json` reads `dueDateTime`
+- **THEN** the golden preview of the sanitised file produced by the guide's script fails until the golden is updated with the stated difference
+
 ### Requirement: Imported origins
-A task imported from a Todoist, Things or TickTick export SHALL carry the origin `{kind: "import", provider: <profile name>, id: <source id>}`, the same source id the importer records for duplicate detection, without a URL. A task from a generic CSV or JSON file SHALL carry none. An own export SHALL carry each task's `origin` and the import of an own export SHALL restore it unchanged, so the round trip is equivalent. Origins are written in the import's operations, like every other field.
+A task imported from a Todoist, Things, TickTick, Google Tasks, Trello, Asana, Microsoft To Do, Apple Reminders or Any.do export SHALL carry the origin `{kind: "import", provider: <profile name>, id: <source id>}`, the same source id the importer records for duplicate detection, without a URL, the provider being the profile's short name (`todoist`, `things`, `ticktick`, `google-tasks`, `trello`, `asana`, `microsoft-todo`, `apple-reminders`, `anydo`). A Trello card SHALL carry its `shortUrl` as the origin's URL, since the export provides one. A task from a generic CSV or JSON file SHALL carry none. An own export SHALL carry each task's `origin` and the import of an own export SHALL restore it unchanged, so the round trip is equivalent. Origins are written in the import's operations, like every other field.
 
 #### Scenario: TickTick task keeps its id
 - **WHEN** a TickTick row with `taskId` `6f1a…` is imported
@@ -421,6 +465,14 @@ A task imported from a Todoist, Things or TickTick export SHALL carry the origin
 #### Scenario: Things item keeps its uuid
 - **WHEN** a Things to-do with uuid `A1B2…` is imported
 - **THEN** the task's origin is `{kind: "import", provider: "things", id: "A1B2…"}`
+
+#### Scenario: Trello card keeps its link
+- **WHEN** a Trello card with id `5f3a…` and `shortUrl` `https://trello.com/c/AbCd1234` is imported
+- **THEN** the task's origin is `{kind: "import", provider: "trello", id: "5f3a…", url: "https://trello.com/c/AbCd1234"}` and the origin chip opens the card
+
+#### Scenario: Google task keeps its id
+- **WHEN** a Google Tasks item with `id` `MTIz…` is imported twice
+- **THEN** the first import gives it the origin `{kind: "import", provider: "google-tasks", id: "MTIz…"}` and the second preview reports it as `skip` with reason `already_imported`
 
 #### Scenario: Round trip keeps origins
 - **WHEN** an export holding a task captured from a page, a task from email and an imported issue is imported into an empty account
@@ -433,3 +485,247 @@ A task imported from a Todoist, Things or TickTick export SHALL carry the origin
 #### Scenario: Offline device receives origins
 - **WHEN** the import finishes while a device is offline and the device later syncs
 - **THEN** the imported tasks arrive with their origins as ordinary operations and the chips show on that device
+
+### Requirement: Imported custom fields
+A named format whose rows carry typed values beyond the task model (Linear estimates, Asana custom field columns, Trello custom field items) SHALL import them as custom field values of the task's project: for each named value the import SHALL reuse the project's live field definition of that name and type when it exists, or create one (number for numbers, text for text, choice for a single-select value with the options the file shows, checkbox for booleans, date for a date) as part of the same job, so that undoing the import removes the definitions it created and nothing else. A value whose type does not match an existing definition of that name SHALL be dropped with a row warning naming the field. The preview SHALL count the definitions to create under `fields`. A project at its limit of definitions SHALL get no new definition and the row a warning. Tasks that end in the Inbox or in an existing project of another member SHALL receive no field values (a warning names them), since fields belong to a project. Definitions and values are written as operations in the import, applied on the server and reaching every device by sync, like every other imported entity.
+
+#### Scenario: Asana number column
+- **WHEN** an Asana CSV has a column "Effort" with the values 2 and 3.5 on two tasks of project "Website"
+- **THEN** the import creates a number field "Effort" on "Website" and writes 2 and 3.5 to the two tasks, and the preview counted one definition
+
+#### Scenario: Single-select column becomes a choice
+- **WHEN** an Asana CSV column "Stage" holds the values `Draft`, `Review` and `Draft`
+- **THEN** the import creates a choice field "Stage" with the options `Draft` and `Review` in first-seen order and writes each task's value
+
+#### Scenario: Existing field of another type
+- **WHEN** project "Website" already has a text field "Effort" and the file carries numbers under "Effort"
+- **THEN** no definition is created, the values are dropped, and each row warns that "Effort" exists with another type
+
+#### Scenario: Definition limit reached
+- **WHEN** the target project already has 30 live field definitions and the file carries a new column
+- **THEN** the rows warn that the field cannot be created, the tasks are still imported without that value, and no definition is written
+
+#### Scenario: Undo removes created definitions
+- **WHEN** an import that created two field definitions is undone
+- **THEN** the definitions and the tasks are removed as one undo, and a definition that existed before the import is untouched
+
+### Requirement: Google Tasks structure
+A Google Takeout `Tasks.json` SHALL be recognised by its top-level `items` array of lists each holding `kind` `tasks#taskList` and an `items` array of `tasks#task` objects. Each list SHALL become a project (a list titled "My Tasks" or `@default` SHALL go to the target project, Inbox by default), and an item whose `parent` names another item SHALL become that item's subtask. Items with `deleted` or `hidden` set and a completed status older than the export SHALL still be imported as completed tasks, so a history of done tasks is kept; items with `deleted` true SHALL be skipped with a note counting them.
+
+#### Scenario: Lists and subtasks
+- **WHEN** `Tasks.json` has a list "Groceries" with an item "Fruit" and an item "Apples" whose `parent` is "Fruit"
+- **THEN** the project "Groceries" is created with "Fruit" as a task and "Apples" as its subtask
+
+#### Scenario: Default list
+- **WHEN** a list is titled "My Tasks" and the user chose no target project
+- **THEN** its items go to the Inbox and the preview notes it
+
+### Requirement: Google Tasks attributes and dates
+A Google Tasks item SHALL keep its `title`, its `notes` as the description, its `status` (`completed` with `completed` as the completion time), and its `due` as a floating due date without a time (Google Tasks stores dates at midnight UTC; the date part SHALL be used as written, never shifted by the import's time zone). A `links` entry SHALL become a link attachment. Google Tasks has no priority, labels or recurrence in the file, so none are produced and nothing is warned.
+
+#### Scenario: Due date is not shifted
+- **WHEN** an item has `due` `2026-11-03T00:00:00.000Z` and the import's time zone is `America/Los_Angeles`
+- **THEN** the task is due on 2026-11-03 without a time
+
+#### Scenario: Completed item
+- **WHEN** an item has `status` `completed` and `completed` `2026-10-01T09:12:00.000Z`
+- **THEN** the task is imported completed at that instant
+
+#### Scenario: Malformed item
+- **WHEN** an item has no `title` or its `due` is not a timestamp
+- **THEN** the row without a title is an error naming the list and position, a bad `due` is a warning and the task is imported without a due date, and with `skip_rows` the rest of the file is still imported
+
+### Requirement: Trello structure
+A Trello board JSON export SHALL be recognised by its top-level `id`, `name`, `lists`, `cards` and `checklists` keys. The board SHALL become one project, each open list a section in the board's order (so the project opens as a board on the importing device), each card a task in its list's section, each checklist item a subtask (checked items completed), and the board's labels labels. Cards and lists that are `closed` (archived) SHALL be imported completed and placed in their section; a `closed` list's cards SHALL keep the list as their section. A ZIP of several board exports SHALL be imported as one job.
+
+#### Scenario: Lists become board columns
+- **WHEN** a board "Renovation" has lists "To do", "Doing" and "Done" with cards in each
+- **THEN** the project "Renovation" has those three sections in that order, each with its cards, and opens as a board on the importing device
+
+#### Scenario: Checklist becomes subtasks
+- **WHEN** a card has a checklist "Steps" with two items, one `complete`
+- **THEN** the task has two subtasks, one completed
+
+#### Scenario: Archived card
+- **WHEN** a card is `closed`
+- **THEN** it is imported completed, in its list's section, and the preview counts it as completed
+
+### Requirement: Trello attributes and dates
+A Trello card SHALL keep its `name` as the title, its `desc` as the description, its labels (by name; a label with a colour and no name SHALL be named after the colour), its `due` as a floating due date with a time converted from UTC to the import's time zone, `dueComplete` as completed, `start` as the start date, and `dateLastActivity` ignored. Comment actions (`commentCard`) in the export SHALL be appended to the description under a "Comments" heading with their author's name and date, because their authors cannot be kept. Attachments with a URL SHALL become link attachments; uploaded files SHALL be dropped with a warning. Members SHALL be dropped with a warning unless the card's member is the importing user's full name or username, in which case the task stays assigned to them. Custom field items with a number, text, checkbox or list value SHALL become custom field values ("Imported custom fields"). The card's `shortUrl` SHALL be the origin's URL.
+
+#### Scenario: Due with a time
+- **WHEN** a card has `due` `2026-11-05T17:00:00.000Z` and the import's time zone is `Europe/Rome`
+- **THEN** the task is due 2026-11-05 at 18:00
+
+#### Scenario: Comments kept as text
+- **WHEN** a card has two `commentCard` actions
+- **THEN** the description ends with a "Comments" heading and one line per comment with the author's name and date, and the row warns once that comment authors cannot be kept
+
+#### Scenario: File attachment dropped
+- **WHEN** a card has an attachment that is an uploaded file and another that is a link
+- **THEN** the link becomes a link attachment and the file is dropped with a warning naming it
+
+### Requirement: Asana structure
+An Asana project CSV export SHALL be recognised by a header containing `Task ID`, `Created At`, `Completed At`, `Last Modified`, `Name`, `Section/Column`, `Assignee`, `Due Date` and `Parent task`. The file's rows SHALL go to one project named after the file (an archive entry's name without its extension) or the target project, `Section/Column` SHALL become sections in first-seen order (and the project opens as a board on the importing device when the file names a column for every task), and a row whose `Parent task` names another row's `Name` SHALL become that row's subtask. The optional `Projects` column SHALL be shown as a note and not create projects, since one file is one project.
+
+#### Scenario: Sections and subtasks
+- **WHEN** a CSV has rows in "Backlog" and "In progress", one row with `Parent task` "Write brief"
+- **THEN** the project has the two sections and the row is a subtask of "Write brief"
+
+#### Scenario: Parent not in the file
+- **WHEN** a row's `Parent task` names no row of the file
+- **THEN** the task is imported at the top level with a warning naming the parent
+
+### Requirement: Asana attributes and dates
+An Asana row SHALL keep `Name` as the title, `Notes` as the description, `Tags` as labels, `Due Date` as a floating due date (a `Due Time` or a time in the value in the import's time zone when present), `Start Date` as the start date, `Completed At` as completed at that instant, `Created At` as the creation time, and `Priority` (High, Medium, Low) as p1, p2, p3 when the column exists as Asana's built-in field. `Assignee` SHALL be kept only when it is the importing user's email address, otherwise dropped with a warning. Every other column not in the documented list SHALL be treated as a custom field column ("Imported custom fields"): numeric values as a number field, `Yes`/`No` as a checkbox, dates as a date field, at most ten distinct text values across the file as a choice field, otherwise a text field. `Blocked By (Dependencies)` SHALL become dependencies on rows of the same file. Rows with an `Assignee Email` or `Collaborators` column SHALL drop those with a warning.
+
+#### Scenario: Custom column becomes a field
+- **WHEN** a CSV has a column "Budget" with numeric values
+- **THEN** a number field "Budget" is created on the project and each task carries its value
+
+#### Scenario: Dependencies in the file
+- **WHEN** a row's `Blocked By (Dependencies)` names "Order paint" and that row exists in the file
+- **THEN** the task waits for the "Order paint" task
+
+#### Scenario: Unreadable date
+- **WHEN** a row's `Due Date` is `soon`
+- **THEN** the task is imported without a due date and the row warns quoting the value
+
+### Requirement: Microsoft To Do structure
+Microsoft To Do has no export of its own. The `microsoft-todo-json` format SHALL read a JSON document holding the Microsoft Graph To Do shape, as written by the script in the switch guide: an array (or a `value` array) of `todoTaskList` objects, each with `displayName`, `wellknownListName` and a `tasks` array of `todoTask` objects (`id`, `title`, `body`, `importance`, `status`, `dueDateTime`, `startDateTime`, `completedDateTime`, `createdDateTime`, `reminderDateTime`, `recurrence`, `categories`, `checklistItems`, `linkedResources`). It SHALL be recognised by the presence of `wellknownListName` or of a task with `importance` and `dueDateTime`. Each list SHALL become a project (the `defaultList` SHALL go to the target project, Inbox by default; the `flaggedEmails` list SHALL become a project "Flagged emails"), each task a task, each checklist item a subtask. The guide SHALL also say that the Outlook data export's tasks file is read when it holds the same objects.
+
+#### Scenario: Lists and checklist items
+- **WHEN** the file has a list "Home" with a task "Fix tap" holding two `checklistItems`, one `isChecked`
+- **THEN** the project "Home" has the task with two subtasks, one completed
+
+#### Scenario: Default list
+- **WHEN** a list has `wellknownListName` `defaultList`
+- **THEN** its tasks go to the target project (Inbox by default) and the preview notes it
+
+#### Scenario: Not a To Do file
+- **WHEN** a JSON array of objects has neither `wellknownListName` nor tasks with `importance`
+- **THEN** it is not detected as `microsoft-todo-json` and the generic JSON profiles decide as before
+
+### Requirement: Microsoft To Do attributes and dates
+A To Do task SHALL keep its `title`, its `body.content` as the description (HTML converted to plain text), `importance` `high` as p1, `normal` as p4 and `low` as p4, `status` `completed` with `completedDateTime` as the completion, `categories` as labels, a `linkedResources` entry with a `webUrl` as a link attachment (and, when it is the only one, as the task's origin URL), and `dueDateTime` as a floating due date: Graph writes due dates as midnight in the `timeZone` the object names, so the date part SHALL be taken in that zone and no time set; a `reminderDateTime` SHALL become an absolute reminder at that instant in its named zone. `recurrence` (`pattern` and `range`) SHALL become a rule where the grammar expresses it (daily, weekly on days, monthly on a day, yearly) and otherwise a warning. `startDateTime` SHALL become the start date. Attachments other than links SHALL be dropped with a warning.
+
+#### Scenario: Due date in a named zone
+- **WHEN** a task has `dueDateTime` `{dateTime: "2026-11-03T00:00:00.0000000", timeZone: "Pacific Standard Time"}`
+- **THEN** the task is due on 2026-11-03 without a time, whatever the import's time zone
+
+#### Scenario: Weekly recurrence
+- **WHEN** a task's `recurrence.pattern` is `{type: "weekly", interval: 1, daysOfWeek: ["monday", "wednesday"]}`
+- **THEN** the task gets the rule `every monday, wednesday`
+
+#### Scenario: Reminder kept
+- **WHEN** a task has `reminderDateTime` `{dateTime: "2026-11-03T09:00:00.0000000", timeZone: "W. Europe Standard Time"}` and `isReminderOn` true
+- **THEN** the task has an absolute reminder at 09:00 Central European Time on that day
+
+### Requirement: Apple Reminders file
+Apple Reminders has no export of its own. The `apple-reminders-json` format SHALL read the JSON the switch guide's Shortcut writes: an array of objects with `list`, `title`, `notes`, `dueDate`, `isCompleted`, `completionDate`, `creationDate`, `priority`, `flagged`, `tags`, `url`, `identifier`, `parent` and `subtasks` (an array of the same shape), recognised by the presence of `identifier` and `isCompleted` on every object. Each distinct `list` SHALL become a project ("Reminders", the default list, SHALL go to the target project), each object a task, `subtasks` and `parent` references subtasks. The switch guide SHALL say first that a CalDAV connection to the server moves the same data without a file, and present the Shortcut for people who want a one-time copy.
+
+#### Scenario: Lists and subtasks
+- **WHEN** the file has reminders in lists "Groceries" and "Work", one with two `subtasks`
+- **THEN** two projects are created and the reminder has two subtasks
+
+#### Scenario: Partial Shortcut output
+- **WHEN** an object lacks `identifier` or `isCompleted`
+- **THEN** the file is not detected as `apple-reminders-json`, and when the format is chosen by hand the row is an error naming the missing key
+
+### Requirement: Apple Reminders attributes and dates
+A reminder SHALL keep its `title`, `notes` as the description, `priority` (Apple's 1 high, 5 medium, 9 low, 0 none) as p1, p2, p3, p4, `flagged` as the label `flagged`, `tags` as labels, `url` as a link attachment, `isCompleted` with `completionDate` as the completion, `creationDate` as the creation time, and `dueDate` as a floating due date with its time when the Shortcut wrote one (an all-day reminder has no time). Dates are written by Shortcuts in the device's zone as ISO 8601 with an offset and SHALL be converted to the import's time zone. Repeat rules and location or message triggers are not in the Shortcut output and SHALL be named in the guide as not carried.
+
+#### Scenario: Priority mapping
+- **WHEN** a reminder has `priority` 1
+- **THEN** the task is p1
+
+#### Scenario: Timed reminder
+- **WHEN** a reminder has `dueDate` `2026-11-03T17:30:00+01:00` and the import's time zone is `Europe/Rome`
+- **THEN** the task is due 2026-11-03 at 17:30
+
+### Requirement: Any.do file
+Any.do has no export of its own. The `anydo-json` format SHALL read the JSON of Any.do's account data request (Settings → Privacy → Request my data), recognised by top-level `categories` and `tasks` arrays whose tasks carry `categoryId`, `globalTaskId` (or `id`) and `status`. Each category SHALL become a project (the category marked `isDefault` SHALL go to the target project), each task a task, a task whose `parentGlobalTaskId` names another a subtask. `docs/import.md` SHALL state that this file was verified on the fixture obtained through that request and that Any.do may change it without notice.
+
+#### Scenario: Categories and subtasks
+- **WHEN** the file has categories "Personal" and "Work" and a task whose `parentGlobalTaskId` names another task
+- **THEN** two projects are created and the task is a subtask of the named one
+
+#### Scenario: Not an Any.do file
+- **WHEN** a JSON document has `tasks` but no `categories` array or no `categoryId` on its tasks
+- **THEN** it is not detected as `anydo-json` and the generic JSON profiles decide as before
+
+### Requirement: Any.do attributes and dates
+An Any.do task SHALL keep its `title`, its `note` as the description, `priority` `High` as p1 and `Normal` as p4, `status` `CHECKED` or `DONE` as completed (`DELETED` skipped with a count), `dueDate` (Unix milliseconds) as a floating due date in the import's time zone, with its time unless it falls on midnight, `repeatingMethod` (`TASK_REPEAT_DAY`, `_WEEK`, `_MONTH`, `_YEAR`) as a rule, `tags` as labels, `alert` as an absolute reminder, and `creationDate` as the creation time. Shared-list members, attachments and the "moment" plan SHALL be dropped with a warning when present.
+
+#### Scenario: Due at midnight is a date
+- **WHEN** a task's `dueDate` is midnight of 2026-11-03 in the import's time zone
+- **THEN** the task is due 2026-11-03 without a time
+
+#### Scenario: Weekly repeat
+- **WHEN** a task has `repeatingMethod` `TASK_REPEAT_WEEK`
+- **THEN** the task gets the rule `every week` from its due date
+
+### Requirement: Import into a chosen workspace
+The import options SHALL accept `workspace`, the id of one of the importing account's workspaces, on the preview and on the job. Every project, label and saved view an import creates, and every task it creates without a project, SHALL carry that workspace as its `workspace_id` (no field for the default workspace); tasks in a project follow their project. Existing projects and labels SHALL be reused by name, and open tasks matched as possible duplicates, only within that workspace. Without the option an import SHALL target the default workspace, except an own export, which keeps the per-workspace mapping of "Own export completeness"; with the option an own export SHALL put every item into the chosen workspace and SHALL create no workspace. An id that is not one of the account's workspaces SHALL be refused with 400 `invalid_input` before anything is read or written, without revealing whether the workspace exists; a target project that is not in the chosen workspace SHALL be refused the same way. The imported items are ordinary operations: they reach other devices on their next sync, converge by last-writer-wins, and undo of the job removes them wherever they are. Import needs a connection; offline, the screen disables the choice with the rest of the form.
+
+#### Scenario: Work tasks into Work
+- **WHEN** a user with the workspaces "Personal" (default) and "Work" imports a Todoist backup with 12 projects and 40 Inbox tasks, choosing Work
+- **THEN** the 12 projects, their labels and the 40 Inbox tasks are in Work on every device after sync, Personal is unchanged, and the preview said "12 new projects into Work"
+
+#### Scenario: Name matching stays in the workspace
+- **WHEN** Personal has a project "Errands" and a file with a project "Errands" is imported into Work
+- **THEN** a new "Errands" project is created in Work and Personal's project receives no task
+
+#### Scenario: Own export into one workspace
+- **WHEN** an own export with the workspaces "Personal" and "Family" is imported into an account, choosing Work
+- **THEN** every imported project, label, view and project-less task is in Work, no "Family" workspace is created, and the preview notes that everything goes into Work
+
+#### Scenario: Own export as in the export
+- **WHEN** the same export is imported without the workspace option
+- **THEN** its workspaces are mapped and created as "Own export completeness" describes
+
+#### Scenario: Unknown or foreign workspace
+- **WHEN** the options name a workspace id that does not exist, or one of another account the user is not a member of
+- **THEN** the response is 400 `invalid_input` naming `workspace`, no job is created, and the message is the same in both cases
+
+#### Scenario: Target project in another workspace
+- **WHEN** the options choose Work and name a target project that is in Personal
+- **THEN** the response is 400 `invalid_input` naming `targetProject` and no job is created
+
+#### Scenario: Undo an import into Work
+- **WHEN** the user undoes a finished job that imported 5 projects into Work
+- **THEN** the 5 projects and their tasks carry `deleted_at` and disappear from Work on every device after sync
+
+#### Scenario: Unauthenticated preview with a workspace
+- **WHEN** a preview naming a workspace is sent without a session or bearer token
+- **THEN** the response is 401 `unauthorized` and the file is not read
+
+### Requirement: Workspace choice on the Import screen
+When the account has more than one workspace, the Import screen SHALL offer a Workspace choice next to the other options, listing every workspace and defaulting to the workspace currently open on the device; for an own export it SHALL also offer "As in the export", first and as the default. The target-project picker SHALL list the projects of the chosen workspace, and the preview SHALL name the chosen workspace ("3 new projects into Work", or "Everything goes into Work"). With one workspace the choice SHALL be hidden and no option sent. The choice is reachable with the keyboard like the other options and disabled offline.
+
+#### Scenario: Default is the open workspace
+- **WHEN** the device is in "Work" and the user opens Import and picks a CSV file
+- **THEN** the Workspace choice shows Work and the preview reads "… into Work"
+
+#### Scenario: One workspace
+- **WHEN** the account has only its default workspace
+- **THEN** the screen shows no Workspace choice and the request carries no workspace option
+
+#### Scenario: Offline
+- **WHEN** the device is offline
+- **THEN** the Workspace choice is disabled with the rest of the form
+
+### Requirement: Rows without ids get content ids
+A row of a JSON file that carries no id of its own SHALL get a source id derived from its content (its title, description, project or list, section and parent) and its order among equal rows in the file, never from its position alone, so a different file is never reported as `already_imported` because of an earlier import, and the same file imported again still is.
+
+#### Scenario: A second file without ids
+- **WHEN** a user imports a JSON array of tasks without ids, then previews another JSON file without ids with other tasks
+- **THEN** every task of the second file is reported as `create`, none as `already_imported`
+
+#### Scenario: The same file again
+- **WHEN** the user previews the first file again
+- **THEN** every row is reported as `skip` with reason `already_imported`
+
+#### Scenario: Lists without ids
+- **WHEN** a user imports `{"lists": [{"title": "Work", …}]}` without ids, then a file whose list "Personal" has no id
+- **THEN** "Personal" becomes its own project, and its tasks are not put into "Work"

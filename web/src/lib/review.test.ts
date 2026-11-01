@@ -7,8 +7,10 @@ import { db, useDatabase } from './db'
 import { applyOps, createTask, resetDeviceId, updateTask } from './ops'
 import { compute, periodFor } from './stats'
 import { undoBatch } from './undo'
-import { applyCarryOver, areasOf, carryOverLabel, closeDay, dailyDue, dayClosed, daySummary, planCarryOver, yesterdaysNote, type CarryDecision, type CarryTask, finishDailyCheck, finishReview, firstUnfinished, focusTasks, markProjectReviewed, monthlyDue, reviewAgo, reviewDue, reviewSteps, toggleFocus, walkProjects, type ReviewInput } from './review'
+import { applyCarryOver, areasOf, carryOverLabel, carryOverOf, closeDay, closedDayOf, reopenDay, dailyDue, dayClosed, daySummary, planCarryOver, yesterdaysNote, type CarryDecision, type CarryTask, finishDailyCheck, finishReview, firstUnfinished, focusTasks, markProjectReviewed, monthlyDue, reviewAgo, reviewDue, reviewSteps, toggleFocus, walkProjects, pausedCount, type ReviewInput } from './review'
+import { reviewDate, reviewEveryOf, reviewIsDue } from './reviewCadence'
 import type { Membership, Project, Task } from './types'
+import { nextMillisecond } from '../test/clock'
 
 let n = 0
 beforeEach(() => {
@@ -80,18 +82,67 @@ describe('review steps', () => {
     expect(steps([{ ...a, completed_at: 5 }, { ...b, due: { date: '2026-10-20' } }], [project('p')]).done.back).toBe(true)
   })
 
-  it('Projects: the walk holds every project the user can edit, never reviewed first; done once each was reviewed this week and has a next action', () => {
+  it('Projects: the walk holds every project the user can edit and that is due, never reviewed first; done once none is due and each has a next action', () => {
     const member = (projectId: string, role: Membership['role']): Membership => ({ projectId, role, ownerId: 'ana', members: [] })
     const projects = [project('garage', 'Garage', { position: 1 }), project('taxes', 'Taxes', { position: 2 }), project('v', 'Viewed'), project('e', 'Edited', { position: 3 }), project('old', 'old', { archived: true })]
     const tasks = [task('g1', { project_id: 'garage', completed_at: 5 }), task('t1', { project_id: 'taxes' }), task('e1', { project_id: 'e' })]
     const s = steps(tasks, projects, [member('v', 'viewer'), member('e', 'editor')], [['taxes', NOW - DAY]])
-    expect(s.walk.map((w) => [w.project.name, w.needsNext, w.canArchive])).toEqual([['Garage', true, true], ['Edited', false, false], ['Taxes', false, true]])
-    expect(s.walk[2].nextAction?.id).toBe('t1')
+    expect(s.walk.map((w) => [w.project.name, w.needsNext, w.canArchive])).toEqual([['Garage', true, true], ['Edited', false, false]])
+    // Reviewed yesterday under the weekly default: not due, one action away.
+    expect(s.notDue.map((w) => [w.project.name, w.every, w.due])).toEqual([['Taxes', 'week', false]])
+    expect(s.notDue[0].nextAction?.id).toBe('t1')
     expect([s.left.projects, s.done.projects]).toEqual([2, false])
     const all = steps([...tasks, task('g2', { project_id: 'garage' })], projects, [member('v', 'viewer'), member('e', 'editor')], [['taxes', NOW - DAY], ['garage', NOW], ['e', NOW - 2 * DAY]])
     expect(all.done.projects).toBe(true)
     // A stamp older than a week counts as not reviewed.
     expect(steps(tasks, projects, [], [['garage', NOW - 9 * DAY]]).walk.map((w) => w.project.id)).toEqual(['v', 'taxes', 'e', 'garage'])
+  })
+
+  it('the due rule: never reviewed, weekly by default, 2 weeks, months clamped, paused never (weekly-review "Review interval per project")', () => {
+    const at = (iso: string, h = 12) => new Date(`${iso}T${String(h).padStart(2, '0')}:00:00`).getTime()
+    expect(reviewIsDue(0, 'week', '2026-01-01', 0)).toBe(true)
+    expect(reviewIsDue(0, 'paused', '2026-01-01', 0)).toBe(false)
+    expect(reviewIsDue(at('2026-10-07'), 'paused', '2027-10-07', 0)).toBe(false)
+    expect(reviewDate(at('2026-10-07'), reviewEveryOf(''), 0)).toBe('2026-10-14')
+    expect(reviewDate(at('2026-10-07'), reviewEveryOf('days:10'), 0)).toBe('2026-10-14')
+    expect(reviewDate(at('2026-10-07'), '2weeks', 0)).toBe('2026-10-21')
+    expect(reviewDate(at('2026-10-07'), 'quarter', 0)).toBe('2027-01-07')
+    // 31 January plus one month is the last day of February.
+    expect(reviewDate(at('2026-01-31'), 'month', 0)).toBe('2026-02-28')
+    expect(reviewIsDue(at('2026-01-31'), 'month', '2026-02-27', 0)).toBe(false)
+    expect(reviewIsDue(at('2026-01-31'), 'month', '2026-02-28', 0)).toBe(true)
+    // A review finished late on Sunday evening (01:00 Monday, before a 04:00 day start) is Sunday's: due again next Sunday.
+    expect(reviewDate(at('2026-10-19', 1), 'week', 4 * 60)).toBe('2026-10-25')
+    expect(reviewIsDue(at('2026-10-19', 1), 'week', '2026-10-25', 4 * 60)).toBe(true)
+    expect(reviewIsDue(at('2026-10-19', 1), 'week', '2026-10-24', 4 * 60)).toBe(false)
+  })
+
+  it('only due projects are walked; the rest are counted, paused apart (scenario "Only due projects")', () => {
+    const names = ['Car', 'Old ideas', ...Array.from({ length: 10 }, (_, i) => `P${i}`)]
+    const projects = names.map((n, i) => project(n.toLowerCase().replace(' ', '-'), n, { position: i }))
+    const stamps: [string, number][] = [['car', NOW - 30 * DAY], ['old-ideas', NOW - 400 * DAY], ...projects.slice(2).map((p): [string, number] => [p.id, NOW - 8 * DAY])]
+    const every = new Map([['car', 'quarter'], ['old-ideas', 'paused']])
+    const s = reviewSteps({ ...inputOf([], projects, [], stamps), reviewEvery: every })
+    expect(s.walk.length).toBe(10)
+    expect(s.notDue.map((w) => w.project.name)).toEqual(['Old ideas', 'Car'])
+    expect(pausedCount(s.notDue)).toBe(1)
+  })
+
+  it('Projects step with a monthly project: done when only a not-due project is left', () => {
+    const projects = [project('car', 'Car'), project('home', 'Home')]
+    const tasks = [task('c1', { project_id: 'car' }), task('h1', { project_id: 'home' })]
+    const s = reviewSteps({ ...inputOf(tasks, projects, [], [['car', NOW - 12 * DAY], ['home', NOW - DAY]]), reviewEvery: new Map([['car', 'month']]) })
+    expect(s.walk).toEqual([])
+    expect(s.done.projects).toBe(true)
+    // A paused project without a next action does not hold the step open; a weekly one does.
+    const paused = reviewSteps({ ...inputOf([], [project('car', 'Car')], [], [['car', NOW - DAY]]), reviewEvery: new Map([['car', 'paused']]) })
+    expect(paused.done.projects).toBe(true)
+    expect(reviewSteps(inputOf([], [project('car', 'Car')], [], [['car', NOW - DAY]])).done.projects).toBe(false)
+  })
+
+  it('maintenance projects are walked but never flagged', () => {
+    const s = steps([task('g1', { project_id: 'garden', created_at: NOW - 60 * DAY, start: 'someday' })], [project('garden', 'Garden', { status: 'maintenance' })])
+    expect(s.walk.map((w) => [w.project.name, w.maintenance, w.needsNext, w.stalled])).toEqual([['Garden', true, false, false]])
   })
 
   it('Waiting lists what is delegated or blocked, Someday what is parked, oldest first', () => {
@@ -175,6 +226,12 @@ describe('rhythms (open-loops-method D5)', () => {
     const areas = areasOf(inputOf([task('g', { project_id: 'garden', created_at: NOW - DAY })], projects))
     expect(areas.map((a) => [a.project.name, a.children.length, a.attention.map((w) => w.project.name)])).toEqual([['Home', 2, ['Garage']]])
   })
+
+  it('Areas: a top-level project whose flow is Area is listed without sub-projects (project-flow-modes)', () => {
+    const projects = [project('home', 'Home'), project('garage', 'Garage', { parent_id: 'home' }), project('money', 'Finances', { flow_mode: 'area', position: 2 }), project('work', 'Work', { position: 3 })]
+    const areas = areasOf(inputOf([], projects))
+    expect(areas.map((a) => [a.project.name, a.children.length])).toEqual([['Home', 1], ['Finances', 0]])
+  })
 })
 
 describe('Close the day (close-the-day 2.1–2.4)', () => {
@@ -183,15 +240,26 @@ describe('Close the day (close-the-day 2.1–2.4)', () => {
     ({ tasks, projects, memberships: new Map(memberships.map((m) => [m.projectId, m])), me: 'me', today: TODAY })
 
   it('dayClosed: closed today vs yesterday vs never; the logical day counts', () => {
-    expect(dayClosed(at(14, 18, 42), TODAY)).toBe(true)
-    expect(dayClosed(at(13, 21), TODAY)).toBe(false)
-    expect(dayClosed(0, TODAY)).toBe(false)
+    expect(dayClosed({ closed_at: at(14, 18, 42) }, TODAY)).toBe(true)
+    expect(dayClosed({ closed_at: at(13, 21) }, TODAY)).toBe(false)
+    expect(dayClosed({ closed_at: 0 }, TODAY)).toBe(false)
     expect(dayClosed(undefined, TODAY)).toBe(false)
     setDayStart(240)
     try {
       // 01:30 on the 15th before a 04:00 day start still closes the 14th.
-      expect(dayClosed(at(15, 1, 30), TODAY)).toBe(true)
+      expect(dayClosed({ closed_at: at(15, 1, 30) }, TODAY)).toBe(true)
     } finally { setDayStart(0) }
+  })
+
+  it('closedDayOf (close-the-day-v2 D1): the stored day wins over the stamp; without it, the logical day of the stamp', () => {
+    // Opened at 23:59 on the 14th, closed at 00:02 on the 15th: the 14th is closed, not the 15th.
+    const late = { closed_at: at(15, 0, 2), closed_day: TODAY }
+    expect([closedDayOf(late), dayClosed(late, TODAY), dayClosed(late, '2026-10-15')]).toEqual([TODAY, true, false])
+    expect(yesterdaysNote({ ...late, tomorrow_note: 'Start with the invoice' }, '2026-10-15')).toBe('Start with the invoice')
+    // A close written before the field existed, and one whose field is not a date.
+    expect(closedDayOf({ closed_at: at(15, 0, 2), closed_day: '' })).toBe('2026-10-15')
+    expect(closedDayOf({ closed_at: at(15, 0, 2), closed_day: 'soon' })).toBe('2026-10-15')
+    expect(closedDayOf({ closed_at: 0, closed_day: TODAY })).toBeNull()
   })
 
   it('yesterdaysNote: shown only for an earlier day, empty is null, a close today hides it', () => {
@@ -203,12 +271,12 @@ describe('Close the day (close-the-day 2.1–2.4)', () => {
     expect(yesterdaysNote(null, TODAY)).toBeNull()
   })
 
-  it('closeDay writes both fields as one op pair, trimmed, through the outbox', async () => {
-    await closeDay('  Start with the invoice  ', 7000)
+  it('closeDay writes the time, the day and the trimmed note as one op triple through the outbox', async () => {
+    await closeDay('  Start with the invoice  ', TODAY, 7000)
     const row = await db.review.get('me')
-    expect([row?.closed_at, row?.tomorrow_note]).toEqual([7000, 'Start with the invoice'])
+    expect([row?.closed_at, row?.closed_day, row?.tomorrow_note]).toEqual([7000, TODAY, 'Start with the invoice'])
     const queued = (await db.outbox.toArray()).map(({ field, value }) => [field, value]).sort()
-    expect(queued).toEqual([['closed_at', 7000], ['tomorrow_note', 'Start with the invoice']])
+    expect(queued).toEqual([['closed_at', 7000], ['closed_day', TODAY], ['tomorrow_note', 'Start with the invoice']])
   })
 
   it('Two closes offline: each field by its own latest write', async () => {
@@ -293,10 +361,43 @@ describe('Close the day (close-the-day 2.1–2.4)', () => {
     const { entry, label, count } = await applyCarryOver(new Map(), carry(rows), TODAY)
     expect([label, count, (await db.assistantUndo.count()) - before]).toEqual(['3 tasks rescheduled', 3, 1])
     expect(((await db.tasks.bulkGet(ids)) as Task[]).map((x) => x.due?.date)).toEqual(['2026-10-15', '2026-10-15', '2026-10-15'])
-    await new Promise((r) => setTimeout(r, 2))
+    await nextMillisecond()
     await updateTask(ids[1], { due: { date: '2026-10-20' } })
     const result = await undoBatch(entry!.id)
     expect(result.skipped).toEqual(['Two'])
     expect(((await db.tasks.bulkGet(ids)) as Task[]).map((x) => x.due)).toEqual([{ date: TODAY }, { date: '2026-10-20' }, { date: TODAY, time: '09:00' }])
+  })
+
+  it('Done already (close-the-day-v2 D3): a task completes and a weekly series rolls, in the same batch as the rest', async () => {
+    const plain = await createTask({ title: 'Plain', due: { date: TODAY } })
+    const weekly = await createTask({ title: 'Weekly', due: { date: TODAY }, recurrence: 'every wednesday' })
+    const moved = await createTask({ title: 'Moved', due: { date: TODAY } })
+    const rows = (await db.tasks.bulkGet([plain, weekly, moved])) as Task[]
+    const decisions = new Map<string, CarryDecision>([[plain, { kind: 'done' }], [weekly, { kind: 'done' }]])
+    const before = await db.assistantUndo.count()
+    const { entry, label } = await applyCarryOver(decisions, carry(rows), TODAY, rows)
+    expect([label, (await db.assistantUndo.count()) - before]).toEqual(['3 tasks carried over', 1])
+    expect((await db.tasks.get(plain))!.completed_at).not.toBeNull()
+    expect(await db.tasks.get(weekly)).toMatchObject({ completed_at: null, due: { date: '2026-10-21' } })
+    expect((await db.tasks.get(moved))!.due).toEqual({ date: '2026-10-15' })
+    await undoBatch(entry!.id)
+    expect([(await db.tasks.get(plain))!.completed_at, (await db.tasks.get(weekly))!.due, (await db.tasks.get(moved))!.due]).toEqual([null, { date: TODAY }, { date: TODAY }])
+  })
+
+  it('Two batches in one evening: the record joins them, and Reopen puts both back', async () => {
+    const a = await createTask({ title: 'A', due: { date: TODAY } })
+    const b = await createTask({ title: 'B', due: { date: TODAY } })
+    await applyCarryOver(new Map<string, CarryDecision>([[b, { kind: 'keep' }]]), carry((await db.tasks.bulkGet([a, b])) as Task[]), TODAY)
+    await applyCarryOver(new Map<string, CarryDecision>([[b, { kind: 'day', date: '2026-10-16' }]]), carry([(await db.tasks.get(b)) as Task]), TODAY)
+    const record = carryOverOf(await db.review.get('me'))
+    expect(record?.items.map((it) => [it.id, it.field, it.before, it.after])).toEqual([
+      [a, 'due', { date: TODAY }, { date: '2026-10-15' }],
+      [b, 'due', { date: TODAY }, { date: '2026-10-16' }],
+    ])
+    await closeDay('', TODAY, at(14, 21))
+    const r = await reopenDay(TODAY)
+    expect(r.restored).toBe(2)
+    expect([(await db.tasks.get(a))!.due, (await db.tasks.get(b))!.due]).toEqual([{ date: TODAY }, { date: TODAY }])
+    expect(await db.review.get('me')).toMatchObject({ closed_at: 0, closed_day: '' })
   })
 })

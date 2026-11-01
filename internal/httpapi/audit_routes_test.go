@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
 )
 
 // member registers a member through an invitation and returns their client and id.
@@ -340,7 +340,15 @@ func TestUserExportExcludesAudit(t *testing.T) {
 			// time_entries and the exporting account's userId (time-tracking).
 			"time_entries", "userId",
 			// saved locations (task-locations).
-			"places":
+			"places",
+			// automation rules (automation-rules).
+			"rules",
+			// calendar frames (calendar-frames).
+			"frames",
+			// calendar slots (calendar-slots).
+			"slots",
+			// the caller's workspaces (workspaces).
+			"workspaces":
 		default:
 			t.Fatalf("user export has unexpected key %q", k)
 		}

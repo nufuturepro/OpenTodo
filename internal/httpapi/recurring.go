@@ -3,23 +3,15 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"time"
 
-	"github.com/pixari/opentodo/internal/recurrence"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/daypart"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // REST behaviour of recurring tasks (OpenSpec change recurring-tasks, design D5).
 // The completion rule itself lives in internal/sync (RecurringCompletion) so the
 // REST API, CalDAV and the AI assistant tools share it.
-
-type due struct {
-	Date string  `json:"date"`
-	Time *string `json:"time,omitempty"`
-	// TZ makes the due zoned (OpenSpec change absolute-datetimes): the wall time
-	// in that IANA zone. Kept as the series rolls forward.
-	TZ *string `json:"tz,omitempty"`
-}
 
 func occurrenceID(seriesID, date string) string { return opsync.OccurrenceID(seriesID, date) }
 
@@ -40,18 +32,19 @@ func canonicalizeRecurrence(body map[string]json.RawMessage) {
 	}
 }
 
-func decodeDue(raw json.RawMessage) *due {
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil
+// pairDayPart completes a task body that sets Morning or Afternoon without the
+// evening flag with evening false, the pairing of OpenSpec change day-parts
+// (design D2), so the part is the one written. A body that names both is kept
+// as sent; an invalid value is left for op validation to reject.
+func pairDayPart(body map[string]json.RawMessage) {
+	if _, has := body["evening"]; has {
+		return
 	}
-	var d due
-	if json.Unmarshal(raw, &d) != nil || d.Date == "" {
-		return nil
+	var part string
+	if raw, ok := body["day_part"]; ok && json.Unmarshal(raw, &part) == nil && daypart.Stored(part) {
+		body["evening"] = json.RawMessage("false")
 	}
-	return &d
 }
-
-func isNullish(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) == "null" }
 
 // recurringCompletion turns a PATCH that completes an open recurring task into
 // "record the occurrence and move the series" (see sync.RecurringCompletion,
@@ -59,11 +52,3 @@ func isNullish(raw json.RawMessage) bool { return len(raw) == 0 || string(raw) =
 func (s *Server) recurringCompletion(ctx context.Context, uid, id string, body map[string]json.RawMessage, existing opsync.Entity, today string) (recordID string, record map[string]json.RawMessage, ok bool, err error) {
 	return s.sync.RecurringCompletion(ctx, uid, id, body, existing, today)
 }
-
-func mustJSON(v any) json.RawMessage {
-	b, _ := json.Marshal(v)
-	return b
-}
-
-// localToday is the server's local calendar date, the "today" of REST completions.
-func localToday(now time.Time) string { return now.Local().Format("2006-01-02") }

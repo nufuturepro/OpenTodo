@@ -12,24 +12,29 @@ import { setCurrentUserId } from '../lib/sharing'
 import { createLabel } from '../lib/labels'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
 import type { User } from '../lib/types'
-import { render, waitFor } from '../ui/test-utils'
+import { render, waitFor, minWidthPx } from '../ui/test-utils'
 import { resetPanel } from './panel'
 import { navigate } from './router'
 import { Shell } from './Shell'
 import { TaskListView } from './TaskListView'
+// The limits, shared with the interface audit tour (scripts/ux-audit, ux-audit-three-widths D2).
+import budget from './budget.json'
 
 const user = { id: 'u1', email: 'a@example.com', name: 'Ada', role: 'owner', created_at: 0 } as unknown as User
 
 /** At most the sidebar, the content column and the panel scroll vertically. */
-export const MAX_SCROLLERS = 3
+export const MAX_SCROLLERS = budget.MAX_SCROLLERS
 /** Above the first task of a list: the header and the quick add, nothing else. */
-export const MAX_CHROME_ROWS = 2
+export const MAX_CHROME_ROWS = budget.MAX_CHROME_ROWS
 /** The project page keeps its header, layout toggle and quick add until task 4.4 moves the toggle into the header. */
-const PROJECT_CHROME_ALLOWANCE = 3
-/** An empty task's panel: the breadcrumb, Do on, Priority and Add, never a form of empty rows. */
-export const MAX_EMPTY_TASK_ITEMS = 7
-/** A Calm row in Today: at most four metadata items at full contrast; the counts are quiet (calm-rows D10). */
-export const MAX_CALM_ROW_ITEMS = 4
+const PROJECT_CHROME_ALLOWANCE = budget.PROJECT_CHROME_ALLOWANCE
+/** An empty task: at most seven facts with a value; the unset ones are quiet actions, never a form of empty fields. */
+export const MAX_EMPTY_TASK_ITEMS = budget.MAX_EMPTY_TASK_ITEMS
+/** The task page's facts column (task-full-page D1): at most four named groups of at most six rows. */
+export const MAX_FACT_GROUPS = budget.MAX_FACT_GROUPS
+export const MAX_FACTS_PER_GROUP = budget.MAX_FACTS_PER_GROUP
+/** A row in Today: at most five items in its metadata line; the time column and the quiet trailing group are counted apart (rows-v2 D10). */
+export const MAX_ROW_META_ITEMS = budget.MAX_ROW_META_ITEMS
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -47,7 +52,6 @@ afterEach(() => {
   vi.unstubAllGlobals()
   resetPanel()
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
 })
 
 /** Elements that scroll vertically on their own, outside designated regions and overlays. */
@@ -87,7 +91,7 @@ describe('scroll regions', () => {
       await waitFor(() => r.container.querySelectorAll('[data-task-id]').length > 0)
       const row = r.container.querySelector<HTMLElement>('[data-task-id] button.min-w-0')!
       row.click()
-      await waitFor(() => !!document.querySelector('aside[data-detail-for]'))
+      await waitFor(() => !!document.querySelector('[data-detail-for]'))
       const found = scrollers(document.body)
       expect(found.length, `${route.view}: ${found.map((e) => e.className).join(' | ')}`).toBeLessThanOrEqual(MAX_SCROLLERS)
     }
@@ -205,20 +209,25 @@ describe('chrome above the first task', () => {
 })
 
 describe('visible properties', () => {
-  it('an empty task shows at most seven items in the panel', async () => {
-    await createTask({ title: 'Blank' })
-    navigate({ view: 'inbox' })
+  it('an empty task page shows at most seven facts with a value, in at most four groups of at most six rows', async () => {
+    // A project's list: the Inbox keeps its task beside the list from 1024 px instead (inbox-split).
+    const pid = await createProject({ name: 'Home' })
+    await createTask({ title: 'Blank', project_id: pid })
+    navigate({ view: 'project', id: pid })
     const r = await render(<Shell user={user} onLogout={() => {}} />)
     await waitFor(() => r.container.textContent!.includes('Blank'))
     r.container.querySelector<HTMLElement>('[data-task-id] button.min-w-0')!.click()
-    await waitFor(() => !!document.querySelector('aside[data-detail-for] [data-facets]'))
-    // Facet lines plus the Add control (task-panel-facets D6).
-    const items = document.querySelectorAll('aside[data-detail-for] [data-facet], aside[data-detail-for] button[aria-label="Add a property"]')
-    expect(items.length).toBeLessThanOrEqual(MAX_EMPTY_TASK_ITEMS)
+    await waitFor(() => !!document.querySelector('[data-task-page] [data-facts]'))
+    const groups = [...document.querySelectorAll('[data-task-page] [data-fact-group]')]
+    expect(groups.length).toBeLessThanOrEqual(MAX_FACT_GROUPS)
+    for (const g of groups) expect(g.querySelectorAll('[data-fact]').length, g.getAttribute('data-fact-group')!).toBeLessThanOrEqual(MAX_FACTS_PER_GROUP)
+    // Facts with a value; the unset ones read as quiet actions ("Set a deadline").
+    const valued = [...document.querySelectorAll('[data-task-page] [data-fact] [data-part]')].filter((el) => !el.classList.contains('text-faint'))
+    expect(valued.length, valued.map((e) => e.textContent).join(' | ')).toBeLessThanOrEqual(MAX_EMPTY_TASK_ITEMS)
     await r.unmount()
   })
 
-  it('a busy Calm row in Today shows at most four full-contrast metadata items, with the counts in a quiet group', async () => {
+  it('a busy row in Today shows at most five property items, its time in the column, the project in its cell and the counts beside the title', async () => {
     const project = await createProject({ name: 'Home' })
     const labels = [await createLabel({ name: 'errand' }), await createLabel({ name: 'call' }), await createLabel({ name: 'home' })]
     const id = await createTask({ title: 'Busy', project_id: project, due: { date: '2026-10-14', time: '10:00' }, estimate_minutes: 30, labels })
@@ -229,13 +238,15 @@ describe('visible properties', () => {
     const r = await render(<TaskListView route={{ view: 'today' }} />)
     await waitFor(() => !!r.container.querySelector(`[data-task-id="${id}"] [data-row-counts] [data-comments]`), 'the busy row with its counts')
     const row = r.container.querySelector(`[data-task-id="${id}"]`)!
-    const items = [...row.querySelector('[data-row-meta]')!.children]
-    expect(items.length, items.map((e) => e.outerHTML.slice(0, 60)).join(' | ')).toBeLessThanOrEqual(MAX_CALM_ROW_ITEMS)
-    expect(row.querySelector('[data-row-counts] [data-progress]')).toBeTruthy()
+    const items = [...row.querySelectorAll('[data-row-meta] :is([data-row-item], [data-row-labels])')]
+    expect(items.length, items.map((e) => e.outerHTML.slice(0, 60)).join(' | ')).toBeLessThanOrEqual(MAX_ROW_META_ITEMS)
+    expect(row.querySelector('[data-row-time]')!.textContent).toBe('10:00')
+    expect(row.querySelector('[data-row-cell="project"] [data-project]')!.textContent).toBe('Home')
+    expect(row.querySelector('[data-row-head] [data-row-counts] [data-progress]')).toBeTruthy()
     await r.unmount()
   })
 
-  it('an origin keeps a busy Calm row inside the budget: the chip is quiet, outside the metadata line (task-origin)', async () => {
+  it('an origin keeps a busy row inside the budget: the chip is quiet, outside the metadata line (task-origin)', async () => {
     const project = await createProject({ name: 'Home' })
     const labels = [await createLabel({ name: 'errand' }), await createLabel({ name: 'call' })]
     const id = await createTask({ title: 'Captured', project_id: project, due: { date: '2026-10-14', time: '10:00' }, estimate_minutes: 30, labels,
@@ -243,9 +254,87 @@ describe('visible properties', () => {
     const r = await render(<TaskListView route={{ view: 'today' }} />)
     await waitFor(() => !!r.container.querySelector(`[data-task-id="${id}"] [data-origin]`), 'the row with its origin chip')
     const row = r.container.querySelector(`[data-task-id="${id}"]`)!
-    expect(row.querySelectorAll('[data-row-meta] > *').length).toBeLessThanOrEqual(MAX_CALM_ROW_ITEMS)
+    expect(row.querySelectorAll('[data-row-meta] :is([data-row-item], [data-row-labels])').length).toBeLessThanOrEqual(MAX_ROW_META_ITEMS)
     expect(row.querySelector('[data-row-meta] [data-origin]')).toBeNull()
     expect(row.querySelector('[data-row-trailing] [data-origin] .text-faint')).toBeTruthy()
+    await r.unmount()
+  })
+
+  it('focus not obscured: the content scroller keeps room for a toast and the selection bar (rows-v2 D7)', async () => {
+    const r = await render(<Shell user={user} onLogout={() => {}} />)
+    const content = r.container.querySelector('#content')!
+    expect(content.className).toContain('scroll-pb-(--list-scroll-pad)')
+    const css = (await import('../index.css?raw')).default
+    expect(css).toMatch(/--list-scroll-pad:\s*8rem/)
+    await r.unmount()
+  })
+})
+
+// The phone (phone-v2 D1, D2, D10): the bar and the quick add, two rows, and the add button never covers a row.
+describe('on a phone (390 px)', () => {
+  const original = window.matchMedia
+  beforeEach(() => {
+    window.matchMedia = ((q: string) => ({
+      matches: minWidthPx(q) <= 390 && !/pointer:\s*fine/.test(q), media: q, onchange: null,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
+    })) as typeof window.matchMedia
+  })
+  afterEach(() => { window.matchMedia = original })
+
+  it('Today, the Inbox and a project show nothing between the bar and the quick add', async () => {
+    const { project } = await seed()
+    for (const route of [{ view: 'inbox' } as const, { view: 'today' } as const, { view: 'project', id: project } as const]) {
+      const r = await render(<TaskListView route={route} />)
+      await waitFor(() => r.container.querySelectorAll('[data-task-id]').length > 0)
+      // Today's head (title, date, briefing) is its header, in the page on a phone (precision-phone D1).
+      const rows = chromeRows(r.container).filter((e) => !e.matches('[data-page-head="day"]'))
+      if (route.view === 'today') expect(r.container.querySelector('[data-list-page] > [data-page-head="day"] h1')?.textContent).toBe('Today')
+      expect(rows.map((e) => e.outerHTML.slice(0, 120)), route.view).toEqual([rows[0].outerHTML.slice(0, 120)])
+      expect(rows[0].querySelector('[role="combobox"]'), route.view).toBeTruthy()
+      await r.unmount()
+    }
+  })
+
+  it('the bar holds Process the Inbox; its overflow lists Select tasks, and Today\'s lists Display mode', async () => {
+    await seed()
+    navigate({ view: 'inbox' })
+    const r = await render(<Shell user={user} onLogout={() => {}} />)
+    await waitFor(() => !!document.querySelector('[data-phone-bar] [data-triage-start]'))
+    expect(document.querySelector('[data-list-page] [data-triage-start]')).toBeNull()
+    const more = () => document.querySelector<HTMLButtonElement>('[data-phone-bar] [data-inbox-menu], [data-phone-bar] button[aria-label="More actions"]')
+    await waitFor(() => !!more())
+    more()!.click()
+    await waitFor(() => !!document.querySelector('[data-phone-item="select"]'))
+    await r.unmount()
+    navigate({ view: 'today' })
+    const today = await render(<Shell user={user} onLogout={() => {}} />)
+    await waitFor(() => !!more())
+    more()!.click()
+    await waitFor(() => !!document.querySelector('[data-phone-item="display"]'))
+    await today.unmount()
+  })
+
+  it('the Inbox\'s planned tasks without a project are a folded group at the end of the list, not the bar\'s subtitle (inbox-planned-group)', async () => {
+    await seed()
+    navigate({ view: 'inbox' })
+    const r = await render(<Shell user={user} onLogout={() => {}} />)
+    await waitFor(() => !!document.querySelector('[data-group="planned"] [data-group-count]'))
+    expect(document.querySelector('[data-group="planned"] [data-group-count]')!.textContent).toContain('8')
+    expect(document.querySelector('[data-phone-subtitle] [data-planned-line]')).toBeNull()
+    expect(document.querySelector('[data-planned-line]')).toBeNull()
+    await r.unmount()
+  })
+
+  it('the content scroller reserves the add button\'s footprint below the last row', async () => {
+    navigate({ view: 'inbox' })
+    const r = await render(<Shell user={user} onLogout={() => {}} />)
+    const content = r.container.querySelector('#content')!
+    expect(content.getAttribute('data-add-room')).toBe('true')
+    expect(content.className).toContain('max-md:pb-(--add-room)')
+    const css = (await import('../index.css?raw')).default
+    expect(css).toMatch(/--add-room:\s*4\.75rem/)
+    // The toast sits above the tab bar (3.5 rem) and the add button's room (4.25 rem), never on a row's last line.
+    expect(document.documentElement.style.getPropertyValue('--toast-lift')).toBe('7.75rem')
     await r.unmount()
   })
 })

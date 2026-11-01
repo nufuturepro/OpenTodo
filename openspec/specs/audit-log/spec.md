@@ -85,11 +85,15 @@ Every signed-in user SHALL be able to read their own sign-in, sign-out, credenti
 - **THEN** the response is a 401 `unauthorized` error
 
 ### Requirement: Retention and pruning
-The owner SHALL set retention through `GET`/`PUT /api/v1/settings/audit` between 7 and 3650 days, default 90, and SHALL toggle address logging there. The server SHALL prune events older than the retention at least hourly and at startup. Retention is server configuration, not synced.
+The owner SHALL set retention through `GET`/`PUT /api/v1/settings/audit` between 7 and 3650 days, default 90, and SHALL toggle address logging there. The server SHALL prune events at startup and, while it runs, within a minute of the oldest event passing the retention; after the owner shortens the retention, the events it no longer covers SHALL be pruned within a minute. Retention is server configuration, not synced.
 
 #### Scenario: Shorter retention prunes
 - **WHEN** the owner lowers retention to 30 days while events older than that exist
-- **THEN** those events are gone within the next pruning run and the audit setting change itself is recorded
+- **THEN** those events are gone within a minute and the audit setting change itself is recorded
+
+#### Scenario: Event passes the retention
+- **WHEN** the oldest event in the log becomes older than the retention while the server runs
+- **THEN** it is pruned within a minute, without waiting for an hourly pass
 
 #### Scenario: Invalid retention or wrong role
 - **WHEN** retention is set to 3 days, or a member writes the settings
@@ -118,7 +122,7 @@ There SHALL be no API to modify or delete individual events; pruning by retentio
 - **THEN** either both the token and its event exist or neither does
 
 ### Requirement: Audit surfaces in Settings
-Settings SHALL show the owner an Audit log panel with filters, a paginated table, the export action and the retention and address-logging settings, and SHALL show every user a Recent activity panel. Both SHALL be keyboard reachable, SHALL show an offline notice instead of stale data when the network is unavailable, and SHALL keep nothing in browser storage.
+Settings SHALL show the owner an Audit log card and every user a Recent activity card. The Audit log card SHALL show its events as a compact list, newest first, one line per event: an icon for the kind, the event in words ("Signed in", "Token created", "Sign-in failed"), the account, the time (relative today, then the date), and the client in muted text; details open in place when the line is activated. Its filters (event, account, outcome, period) SHALL sit in one row from 768 px and behind a "Filters" disclosure below it, with the active filters named as removable chips, and Export SHALL be an action in the card header that downloads with the current filters. The retention and address-logging settings SHALL be their own "Audit settings" card under it. The Recent activity card SHALL group events by day ("Today", "Yesterday", then the date), one line each (what, the browser and system, the time), SHALL fold repeated sign-ins from the same browser on the same day into one line with a count, SHALL show at most ten lines with "Show all" for the rest of the 90 days, and SHALL name a failed or unusual event in the warning tone. Both SHALL be keyboard reachable, SHALL show an offline notice instead of stale data when the network is unavailable, and SHALL keep nothing in browser storage.
 
 #### Scenario: Owner filters and exports
 - **WHEN** the owner filters by `login.failed` in the last day and chooses export
@@ -127,6 +131,14 @@ Settings SHALL show the owner an Audit log panel with filters, a paginated table
 #### Scenario: Offline panel
 - **WHEN** either panel is opened without a network connection
 - **THEN** it shows that the log needs a connection and displays no events
+
+#### Scenario: Compact recent activity
+- **WHEN** a user signed in four times today from the same Chrome on Linux and created a token yesterday
+- **THEN** Recent activity shows "Today: Signed in ×4 · Chrome on Linux" and "Yesterday: Token created", each on one line
+
+#### Scenario: Filters on a phone
+- **WHEN** the owner opens the Audit log at 390 px and filters by "Sign-in failed"
+- **THEN** the filters sit behind "Filters", the active filter shows as a chip that removes it, and the list shows only failed sign-ins
 
 ### Requirement: Project invite link events
 The server SHALL record `project_invite.created`, `project_invite.revoked` and `project_invite.accepted` with the acting account, the link id, the project id, the role and the bound email, in the transaction of the change. The secret and the project name SHALL never be recorded.
@@ -168,3 +180,89 @@ The server SHALL record `public_link.created` and `public_link.revoked` with the
 #### Scenario: Tick is not an event
 - **WHEN** a guest completes ten tasks through the link
 - **THEN** no audit event is recorded for them
+
+### Requirement: Issue connection events
+The server SHALL record `issue_connection.created`, `issue_connection.updated` and `issue_connection.deleted` with the acting account and the connection id and provider in the details, in the transaction of the change, and SHALL list them in the user's own activity. An update SHALL name the setting that changed and never a value. Tokens, hosts, filters, issue titles and bodies SHALL never be recorded. Polls and the tasks they write SHALL NOT be audited.
+
+#### Scenario: Connection created
+- **WHEN** a user creates an issue connection
+- **THEN** the log contains `issue_connection.created` with the user as actor, the connection id and `github` or `gitlab` in its details, and no host or token
+
+#### Scenario: Token replaced
+- **WHEN** a user replaces a connection's token
+- **THEN** the log contains `issue_connection.updated` with `setting: token` and no value, and the user sees it in `GET /api/v1/me/activity`
+
+#### Scenario: Settings named
+- **WHEN** a user changes a connection's host, filter, project, label mapping, interval, name or enabled flag
+- **THEN** one `issue_connection.updated` event names each changed setting (`host`, `filter`, `project`, `labels`, `interval`, `name`, `enabled`) without its value
+
+#### Scenario: Polls are not events
+- **WHEN** a poll creates, completes or renames tasks
+- **THEN** no audit event is recorded
+
+### Requirement: Device relay events
+The server SHALL record `relay.enabled` and `relay.disabled` with the acting account, the device id and the device's label, in the transaction of the change; `relay.disabled` SHALL also name the reason (`user`, `locked`, `signed_out`, `encryption_off`). Relayed calls SHALL NOT be recorded as relay events; relayed writes are recorded as `agent.write` like every assistant write, with counts only. No relayed value, tool argument or result SHALL ever appear in the log.
+
+#### Scenario: Turned on
+- **WHEN** a user opts in their laptop to answer AI connectors
+- **THEN** the log contains `relay.enabled` with the user as actor and the laptop's device id and label
+
+#### Scenario: Ended by locking
+- **WHEN** the user locks that laptop
+- **THEN** the log contains `relay.disabled` with reason `locked`
+
+#### Scenario: Relayed write
+- **WHEN** an assistant creates two tasks through the relay
+- **THEN** the log contains one `agent.write` with a count of 2 and no title
+
+### Requirement: Project assistant access events
+The server SHALL record `project.agent_access` whenever a project's "Keep away from AI assistants" switch changes, in the transaction of the change, with the acting account as actor, the project id and the values before and after (`allowed` or `kept_away`) in its details. The project's name and content SHALL never be recorded. Reads refused because of the switch SHALL NOT be recorded; a refused assistant write stays an `agent.write` failure as today.
+
+#### Scenario: Switch turned on
+- **WHEN** Alice, admin of the shared project "Client X", switches on "Keep away from AI assistants"
+- **THEN** the log contains `project.agent_access` with Alice as actor, the project id, `from: allowed` and `to: kept_away`, and no project name
+
+#### Scenario: No event without a change
+- **WHEN** the switch is set to the value it already has
+- **THEN** no event is recorded
+
+#### Scenario: Refused read is not an event
+- **WHEN** an assistant calls `get_task` on a task of a project kept away from assistants
+- **THEN** the result is `not_found` and nothing is added to the audit log
+
+### Requirement: Profile events
+Changing one's name, requesting and confirming an email change, and setting or removing a profile picture SHALL be recorded as `account.name_changed`, `account.email_change_requested`, `account.email_changed` and `account.avatar_changed`, naming the account and the device's client, never the old or new name, email or picture. They SHALL appear in the user's Recent activity and the owner's audit log like other account events.
+
+#### Scenario: Email change recorded
+- **WHEN** a user confirms a new email address
+- **THEN** the audit log holds `account.email_change_requested` and `account.email_changed` for that account, and neither event contains either address
+
+### Requirement: Calendar connection events
+The server SHALL record `calendar_connection.created`, `calendar_connection.updated` and `calendar_connection.deleted` with the acting account and the connection id and provider (`caldav` or `google`) in the details, and SHALL list them in the user's own activity. An update SHALL name the setting that changed (`password`, `calendars`, `name`, `enabled`, `options`, `reconnected`) and never a value. Server addresses, usernames, passwords, tokens, calendar names and event content SHALL never be recorded. Sync cycles and the task changes they make SHALL NOT be audited.
+
+#### Scenario: Connection created
+- **WHEN** a user connects a calendar account
+- **THEN** the log contains `calendar_connection.created` with the user as actor, the connection id and the provider, and no address, username or password
+
+#### Scenario: Password replaced
+- **WHEN** a user enters a new app password for a connection
+- **THEN** the log contains `calendar_connection.updated` with `setting: password` and no value
+
+#### Scenario: Cycles are not events
+- **WHEN** a sync cycle moves tasks
+- **THEN** no audit event is recorded
+
+### Requirement: Membership invitation events
+The server SHALL record `member_invitation.created` when an add by email becomes an invitation, `member_invitation.accepted` and `member_invitation.declined` when the invitee answers, and `member_invitation.cancelled` when an owner or admin cancels one, each with the invitation id, the project or workspace id and the role, the acting account as actor and the other account as target when there is one. An invitation for an address without an account SHALL be recorded without a target. An accepted invitation SHALL also be recorded as `project.member_added` or `workspace.member_added` with the inviter as actor. The invited address, the project name and the workspace name SHALL never be recorded.
+
+#### Scenario: Invitation created
+- **WHEN** Alice adds the address of Dan, with whom she shares nothing, to a project
+- **THEN** the log contains `member_invitation.created` with Alice as actor, Dan as target, and the invitation id, project id and role in its details, and no address or name
+
+#### Scenario: Invitation accepted
+- **WHEN** Dan accepts Alice's invitation
+- **THEN** the log contains `member_invitation.accepted` with Dan as actor and Alice as target, and `project.member_added` with Alice as actor and Dan as target
+
+#### Scenario: Unknown address
+- **WHEN** Alice adds an address without an account
+- **THEN** the log contains `member_invitation.created` with Alice as actor and no target

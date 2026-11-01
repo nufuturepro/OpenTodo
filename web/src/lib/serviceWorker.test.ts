@@ -1,16 +1,22 @@
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // The built service worker and manifest (OpenSpec change attachments, tasks 9.1
-// and 9.2). Skipped when the web app has not been built yet (`npm run build`).
-const built = import.meta.glob<string>(['../../../internal/web/dist/sw.js', '../../../internal/web/dist/manifest.webmanifest'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-})
-const sw = Object.entries(built).find(([p]) => p.endsWith('sw.js'))?.[1]
-const manifest = Object.entries(built).find(([p]) => p.endsWith('manifest.webmanifest'))?.[1]
+// and 9.2). Skipped when the web app has not been built yet (`npm run build`),
+// except with REQUIRE_BUILT=1: CI runs these after its build step and a missing
+// build must fail there, not skip. Read from disk at run time: an import.meta.glob
+// is cached with the transformed file, so a run before the build would hide it.
+const dist = path.resolve(process.cwd(), '../internal/web/dist')
+const read = (name: string) => (existsSync(path.join(dist, name)) ? readFileSync(path.join(dist, name), 'utf8') : undefined)
+const sw = read('sw.js')
+const manifest = read('manifest.webmanifest')
 
 describe('built service worker', () => {
+  it.runIf(process.env.REQUIRE_BUILT === '1')('the build exists (REQUIRE_BUILT=1)', () => {
+    expect(sw, 'internal/web/dist/sw.js: run npm run build first').toBeTruthy()
+    expect(manifest, 'internal/web/dist/manifest.webmanifest: run npm run build first').toBeTruthy()
+  })
   it.skipIf(!sw)('precaches the build, keeps the deny list and push, and handles the share POST', () => {
     expect(sw).toMatch(/"revision":"[0-9a-f]+"/)
     expect(sw).not.toContain('self.__WB_MANIFEST')
@@ -30,5 +36,13 @@ describe('built manifest', () => {
     expect(m.share_target).toMatchObject({ action: '/share', method: 'POST', enctype: 'multipart/form-data' })
     expect(m.share_target.params.files[0].name).toBe('files')
     expect(m.share_target.params.files[0].accept).toContain('image/*')
+  })
+  // sidebar-v2 D3: the brand icons, with the maskable one filling its square, and
+  // every icon in the precache so an installed app updates its mark offline too.
+  it.skipIf(!manifest || !sw)('lists the five brand icons and precaches them', () => {
+    const m = JSON.parse(manifest!) as { icons: { src: string; purpose?: string }[] }
+    expect(m.icons.map((i) => i.src)).toEqual(['/pwa-192.png', '/pwa-512.png', '/pwa-maskable-512.png', '/apple-touch-icon.png', '/favicon.svg'])
+    expect(m.icons.find((i) => i.purpose === 'maskable')?.src).toBe('/pwa-maskable-512.png')
+    for (const i of m.icons) expect(sw).toContain(`"url":"${i.src.slice(1)}"`)
   })
 })

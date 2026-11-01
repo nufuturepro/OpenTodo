@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react'
 import { api, ApiError } from './api'
 import { getMeta, setMeta } from './db'
+import { resettable } from './moduleState'
 
 /** GET /api/v1/me/assistant: what this account may do; never a key. */
 export interface AssistantStatus {
@@ -43,6 +44,22 @@ export interface AssistantStatus {
   anthropic_models?: string[]
   /** Turns on members' own keys count toward the monthly limit. */
   cap_member_keys?: boolean
+  // assistant-on-device (absent on older servers):
+  /** `device` when this encrypted account runs the assistant on its own device. */
+  mode?: 'server' | 'device' | ''
+  /** For an encrypted account: what the owner allows devices to call, and the device consent. */
+  device?: DeviceAllowance | null
+}
+
+/** What the owner allows an encrypted account's devices (assistant-on-device D2, D6). */
+export interface DeviceAllowance {
+  available: boolean
+  providers: string[]
+  origins: string[]
+  /** The provider the person consented to for the device, or "". */
+  consented_provider: string
+  anthropic_models: string[]
+  default_model: string
 }
 
 export interface OwnProviderView {
@@ -168,3 +185,4 @@ export function resetAssistantStatus(): void {
   prefill = null
   emit()
 }
+resettable('assistantStatus', resetAssistantStatus)

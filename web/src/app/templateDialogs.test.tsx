@@ -7,7 +7,7 @@ import { db, useDatabase } from '../lib/db'
 import { setDateTime } from '../lib/dates'
 import { createProject, createSubtask, createTask, resetDeviceId } from '../lib/ops'
 import { createSection } from '../lib/sections'
-import { click, flush, key, render, mockFetch, noPublicLinks } from '../ui/test-utils'
+import { click, flush, key, render, mockFetch, noPublicLinks, waitFor } from '../ui/test-utils'
 import { ProjectHeader } from './ProjectHeader'
 import { TaskListView } from './TaskListView'
 import { TemplateDialog } from './TemplateDialogs'
@@ -30,13 +30,8 @@ afterEach(async () => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean | Promise<boolean>, ms = 2000) {
-  for (let t = 0; t < ms && !(await ok()); t += 20) await flush(20)
-  expect(await ok()).toBe(true)
-}
 const button = (name: string | RegExp) => [...document.querySelectorAll<HTMLElement>('button, [role="menuitem"]')].find((b) => (typeof name === 'string' ? b.textContent?.trim() === name : name.test(b.textContent ?? '')))
 
 async function openMenu() {
@@ -259,6 +254,7 @@ describe('Shift+D', () => {
     const before = await db.outbox.count()
     await key(document.body, 'j')
     await key(document.body, 'D', { shiftKey: true })
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- a refused key writes nothing, so there is no signal to wait for; give a wrong write time to land
     await flush(100)
     expect(await db.outbox.count()).toBe(before)
     expect(await db.tasks.count()).toBe(1)

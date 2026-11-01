@@ -59,6 +59,58 @@
           "description": "http(s) URL the task comes from, sent as its origin; GitHub, GitLab, Jira and Linear issue links give the provider and issue id, derived locally (edit: none clears)"
         },
         {
+          "name": "deadline",
+          "type": "string",
+          "description": "the day it must be finished by: YYYY-MM-DD, today, tomorrow or a weekday (edit: none clears)"
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "description": "someday parks the task; a date (YYYY-MM-DD, today, tomorrow or a weekday) defers it; the due date is kept (edit: none clears)"
+        },
+        {
+          "name": "evening",
+          "type": "bool",
+          "description": "put the task in This Evening (edit: --evening=false takes it out)"
+        },
+        {
+          "name": "part",
+          "type": "string",
+          "enum": [
+            "morning",
+            "afternoon",
+            "evening",
+            "none"
+          ],
+          "description": "the part of the day; sets This Evening too (evening) or clears it"
+        },
+        {
+          "name": "energy",
+          "type": "string",
+          "enum": [
+            "deep",
+            "medium",
+            "low",
+            "none"
+          ],
+          "description": "the energy the task asks for (edit: none clears)"
+        },
+        {
+          "name": "blocked-by",
+          "type": "string_list",
+          "description": "a task this one waits for: id or unique id prefix, repeatable (edit replaces the list; none clears)"
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "description": "a saved location's name or id, or lat,lon (edit: none clears)"
+        },
+        {
+          "name": "no-default-reminder",
+          "type": "bool",
+          "description": "add no default reminder when the task gets a due date (--remind also leaves it out)"
+        },
+        {
           "name": "remind",
           "type": "string_list",
           "description": "reminder without the reminder word: \"30 min before\", \"at 9\", \"tomorrow at 9\" (repeatable)"
@@ -72,6 +124,11 @@
           "name": "lang",
           "type": "string",
           "description": "languages for --natural and --remind, e.g. de,en (default: the locale; English always)"
+        },
+        {
+          "name": "done",
+          "type": "bool",
+          "description": "log a win: create the task already completed now (refuses --repeat and --remind)"
         },
         {
           "name": "idempotency-key",
@@ -137,6 +194,26 @@
       "idempotency_key": false,
       "output_schema": {
         "$ref": "#/schemas/auth_status"
+      }
+    },
+    {
+      "name": "completion",
+      "summary": "print the completion script for bash, zsh or fish (works offline)",
+      "args": [
+        {
+          "name": "shell",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "description": "the completion script",
+        "type": "string"
       }
     },
     {
@@ -229,6 +306,58 @@
           "name": "origin-url",
           "type": "string",
           "description": "http(s) URL the task comes from, sent as its origin; GitHub, GitLab, Jira and Linear issue links give the provider and issue id, derived locally (edit: none clears)"
+        },
+        {
+          "name": "deadline",
+          "type": "string",
+          "description": "the day it must be finished by: YYYY-MM-DD, today, tomorrow or a weekday (edit: none clears)"
+        },
+        {
+          "name": "start",
+          "type": "string",
+          "description": "someday parks the task; a date (YYYY-MM-DD, today, tomorrow or a weekday) defers it; the due date is kept (edit: none clears)"
+        },
+        {
+          "name": "evening",
+          "type": "bool",
+          "description": "put the task in This Evening (edit: --evening=false takes it out)"
+        },
+        {
+          "name": "part",
+          "type": "string",
+          "enum": [
+            "morning",
+            "afternoon",
+            "evening",
+            "none"
+          ],
+          "description": "the part of the day; sets This Evening too (evening) or clears it"
+        },
+        {
+          "name": "energy",
+          "type": "string",
+          "enum": [
+            "deep",
+            "medium",
+            "low",
+            "none"
+          ],
+          "description": "the energy the task asks for (edit: none clears)"
+        },
+        {
+          "name": "blocked-by",
+          "type": "string_list",
+          "description": "a task this one waits for: id or unique id prefix, repeatable (edit replaces the list; none clears)"
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "description": "a saved location's name or id, or lat,lon (edit: none clears)"
+        },
+        {
+          "name": "no-default-reminder",
+          "type": "bool",
+          "description": "add no default reminder when the task gets a due date (--remind also leaves it out)"
         }
       ],
       "writes": true,
@@ -318,6 +447,105 @@
       }
     },
     {
+      "name": "frames add",
+      "aliases": [
+        "frames create"
+      ],
+      "summary": "create a calendar frame and print its id",
+      "args": [
+        {
+          "name": "title",
+          "required": true,
+          "repeatable": true
+        }
+      ],
+      "flags": [
+        {
+          "name": "days",
+          "type": "string",
+          "default": "weekdays",
+          "description": "days it repeats on: mon-fri, mon,wed,fri, weekdays, weekend, daily or ISO digits 1 (Monday) to 7 (Sunday)"
+        },
+        {
+          "name": "from",
+          "type": "string",
+          "default": "09:00",
+          "description": "start time HH:MM"
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "default": "10:00",
+          "description": "end time HH:MM, after --from"
+        },
+        {
+          "name": "color",
+          "type": "string",
+          "description": "colour as #rrggbb (default: slate)"
+        },
+        {
+          "name": "source",
+          "type": "string",
+          "description": "planning source: project:<id>, label:<id> or view:<id>"
+        }
+      ],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/frame"
+      }
+    },
+    {
+      "name": "frames list",
+      "aliases": [
+        "frames ls"
+      ],
+      "summary": "list the account's calendar frames (recurring background windows on the Day and Week grid)",
+      "args": [],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "items": {
+          "$ref": "#/schemas/frame"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "frames rm",
+      "aliases": [
+        "frames delete"
+      ],
+      "summary": "delete a calendar frame",
+      "args": [
+        {
+          "name": "ref",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "yes",
+          "short": "y",
+          "type": "bool",
+          "description": "confirm a destructive command (required off a terminal and with --json)"
+        }
+      ],
+      "writes": true,
+      "destructive": true,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/frame"
+      }
+    },
+    {
       "name": "help",
       "summary": "show help for a command (--json: same as `ot schema`)",
       "args": [
@@ -335,6 +563,54 @@
       "output_schema": {
         "description": "with --json: the `ot schema` document",
         "type": "object"
+      }
+    },
+    {
+      "name": "import",
+      "summary": "import a file into the account (an OpenTaskKit export, CSV or another app's export) and wait for the job; --dry-run prints the server's preview; --workspace picks the target workspace",
+      "args": [
+        {
+          "name": "file",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "description": "force a format instead of detecting it (the names `ot import` errors list, such as csv, opentodo or todoist-backup)"
+        },
+        {
+          "name": "existing",
+          "type": "string",
+          "enum": [
+            "skip",
+            "overwrite"
+          ],
+          "description": "own export: keep or overwrite items that already exist (default skip)"
+        },
+        {
+          "name": "duplicates",
+          "type": "string",
+          "enum": [
+            "skip",
+            "import"
+          ],
+          "description": "possible duplicates of open tasks: skip them or import them anyway (default skip)"
+        },
+        {
+          "name": "time-zone",
+          "type": "string",
+          "description": "IANA time zone for date-times with a zone (default: this machine's)"
+        }
+      ],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/import_job"
       }
     },
     {
@@ -434,6 +710,26 @@
           "name": "project",
           "type": "string",
           "description": "tasks of one project (name or id)"
+        },
+        {
+          "name": "someday",
+          "type": "bool",
+          "description": "open tasks parked in Someday (combines with --project)"
+        },
+        {
+          "name": "anytime",
+          "type": "bool",
+          "description": "open tasks with no due date, deadline or start (combines with --project)"
+        },
+        {
+          "name": "blocked",
+          "type": "bool",
+          "description": "open tasks waiting for an open task (combines with --project)"
+        },
+        {
+          "name": "available",
+          "type": "bool",
+          "description": "open tasks that can be done now: not blocked, not waiting for an earlier step, neither in Someday nor starting later (combines with --project)"
         },
         {
           "name": "completed-after",
@@ -596,6 +892,25 @@
       }
     },
     {
+      "name": "project move",
+      "summary": "move a project to the workspace named by --workspace (only its owner)",
+      "args": [
+        {
+          "name": "ref",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/project"
+      }
+    },
+    {
       "name": "project rename",
       "summary": "rename a project",
       "args": [
@@ -714,6 +1029,85 @@
       }
     },
     {
+      "name": "rules disable",
+      "summary": "turn an automation rule off",
+      "args": [
+        {
+          "name": "id",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/rule"
+      }
+    },
+    {
+      "name": "rules enable",
+      "summary": "turn an automation rule on (clears a pause for running too often)",
+      "args": [
+        {
+          "name": "id",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/rule"
+      }
+    },
+    {
+      "name": "rules list",
+      "aliases": [
+        "rules ls"
+      ],
+      "summary": "list the account's automation rules (built in the app)",
+      "args": [],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "items": {
+          "$ref": "#/schemas/rule"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "rules runs",
+      "summary": "print an automation rule's run log, newest first",
+      "args": [
+        {
+          "name": "id",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "items": {
+          "$ref": "#/schemas/rule_run"
+        },
+        "type": "array"
+      }
+    },
+    {
       "name": "schema",
       "summary": "print every command, flag, exit code and output schema as JSON (works offline)",
       "args": [],
@@ -738,6 +1132,135 @@
       "idempotency_key": false,
       "output_schema": {
         "$ref": "#/schemas/skill"
+      }
+    },
+    {
+      "name": "slots add",
+      "aliases": [
+        "slots create"
+      ],
+      "summary": "create a calendar slot and print its id",
+      "args": [
+        {
+          "name": "title",
+          "required": true,
+          "repeatable": true
+        }
+      ],
+      "flags": [
+        {
+          "name": "date",
+          "type": "string",
+          "default": "today",
+          "description": "the day: YYYY-MM-DD, today, tomorrow or a weekday name"
+        },
+        {
+          "name": "at",
+          "type": "string",
+          "default": "09:00",
+          "description": "start time HH:MM"
+        },
+        {
+          "name": "for",
+          "type": "string",
+          "default": "30m",
+          "description": "length, 15m to 8h in 15-minute steps"
+        },
+        {
+          "name": "color",
+          "type": "string",
+          "description": "colour as #rrggbb (default: slate)"
+        }
+      ],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/slot"
+      }
+    },
+    {
+      "name": "slots list",
+      "aliases": [
+        "slots ls"
+      ],
+      "summary": "list the account's calendar slots (blocks on the Day and Week grid that hold small tasks)",
+      "args": [],
+      "flags": [
+        {
+          "name": "from",
+          "type": "string",
+          "description": "first day: YYYY-MM-DD, today, tomorrow or a weekday name"
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "description": "last day"
+        }
+      ],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "items": {
+          "$ref": "#/schemas/slot"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "slots put",
+      "summary": "add tasks to a calendar slot and date them to its day, as one batch",
+      "args": [
+        {
+          "name": "slot",
+          "required": true,
+          "repeatable": false
+        },
+        {
+          "name": "task",
+          "required": true,
+          "repeatable": true
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/slot"
+      }
+    },
+    {
+      "name": "slots rm",
+      "aliases": [
+        "slots delete"
+      ],
+      "summary": "delete a calendar slot (its tasks stay on its day without a time)",
+      "args": [
+        {
+          "name": "ref",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "yes",
+          "short": "y",
+          "type": "bool",
+          "description": "confirm a destructive command (required off a terminal and with --json)"
+        }
+      ],
+      "writes": true,
+      "destructive": true,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/slot"
       }
     },
     {
@@ -908,9 +1431,14 @@
     },
     {
       "name": "today",
-      "summary": "alias for `ot list --today`",
+      "summary": "alias for `ot list --today`; with a Today limit, the tasks waiting for a slot follow under their own heading",
       "args": [],
       "flags": [
+        {
+          "name": "all",
+          "type": "bool",
+          "description": "with a Today limit: every task in one list, without the waiting heading"
+        },
         {
           "name": "limit",
           "type": "int",
@@ -1034,6 +1562,124 @@
       }
     },
     {
+      "name": "vault init",
+      "summary": "make a folder a Markdown vault of the account (a sync device with its state in <dir>/.opentodo/) and write every project file",
+      "args": [
+        {
+          "name": "dir",
+          "required": true,
+          "repeatable": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "adopt",
+          "type": "bool",
+          "description": "accept a folder that already holds .md files; they become projects on the first sync"
+        }
+      ],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/vault_report"
+      }
+    },
+    {
+      "name": "vault status",
+      "summary": "list the vault files changed since the last sync and the conflict files, without the server",
+      "args": [
+        {
+          "name": "dir",
+          "required": false,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/vault_status"
+      }
+    },
+    {
+      "name": "vault sync",
+      "summary": "two-way sync of a vault folder (default .): pull, merge, push the file edits, write the files; --read-only pushes nothing",
+      "args": [
+        {
+          "name": "dir",
+          "required": false,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/vault_report"
+      }
+    },
+    {
+      "name": "vault tasknotes",
+      "summary": "link a folder of Obsidian TaskNotes task notes to the vault in --vault (default .): each task note becomes one task, synced by the next vault sync; --off unlinks it",
+      "args": [
+        {
+          "name": "folder",
+          "required": false,
+          "repeatable": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "vault",
+          "type": "string",
+          "default": ".",
+          "description": "the vault folder"
+        },
+        {
+          "name": "off",
+          "type": "bool",
+          "description": "unlink the TaskNotes folder; the notes keep their ids and their tasks stay in the account"
+        },
+        {
+          "name": "inside",
+          "type": "bool",
+          "description": "accept a folder inside the vault folder (every machine syncing the vault then needs this ot)"
+        }
+      ],
+      "writes": true,
+      "destructive": false,
+      "dry_run": true,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/vault_tasknotes"
+      }
+    },
+    {
+      "name": "vault watch",
+      "summary": "keep a vault in sync until interrupted: the server's live channel and a two-second file poll",
+      "args": [
+        {
+          "name": "dir",
+          "required": false,
+          "repeatable": false
+        }
+      ],
+      "flags": [],
+      "writes": true,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "$ref": "#/schemas/vault_report"
+      }
+    },
+    {
       "name": "version",
       "summary": "print the client version",
       "args": [],
@@ -1044,6 +1690,22 @@
       "idempotency_key": false,
       "output_schema": {
         "$ref": "#/schemas/version"
+      }
+    },
+    {
+      "name": "workspaces",
+      "summary": "list your workspaces (the current one marked)",
+      "args": [],
+      "flags": [],
+      "writes": false,
+      "destructive": false,
+      "dry_run": false,
+      "idempotency_key": false,
+      "output_schema": {
+        "items": {
+          "$ref": "#/schemas/workspace"
+        },
+        "type": "array"
       }
     }
   ],
@@ -1143,6 +1805,11 @@
       "meaning": "the server refused a value"
     },
     {
+      "code": "import_failed",
+      "exit": 1,
+      "meaning": "an import job ended failed; its counts say how far it got and undo in the app removes what it wrote"
+    },
+    {
       "code": "not_found",
       "exit": 1,
       "meaning": "no such entity"
@@ -1233,6 +1900,11 @@
       "name": "read-only",
       "type": "bool",
       "description": "refuse every write command before any request (also OPENTODO_READ_ONLY=1)"
+    },
+    {
+      "name": "workspace",
+      "type": "string",
+      "description": "workspace name or id the command acts on (also OPENTODO_WORKSPACE and the profile's workspace; default: the account's default workspace)"
     }
   ],
   "notes": [
@@ -1459,6 +2131,10 @@
             "type": "string"
           },
           "description": "changes to the local config file that would be made"
+        },
+        "preview": {
+          "type": "object",
+          "description": "ot import: the server's import preview (format, totals, notes, rows); nothing was written"
         }
       }
     },
@@ -1551,6 +2227,165 @@
         },
         "exportedAt": {
           "type": "string"
+        }
+      }
+    },
+    "frame": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "frame",
+      "description": "A calendar frame exactly as the REST API returns it (OpenSpec calendar-frames). The title is ciphertext for an encrypted account (encrypted: true).",
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "weekdays",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "weekdays": {
+          "type": "string",
+          "description": "ISO weekdays, a sorted comma list such as \"1,2,3,4,5\""
+        },
+        "start": {
+          "type": "string",
+          "description": "HH:MM"
+        },
+        "end": {
+          "type": "string",
+          "description": "HH:MM"
+        },
+        "color": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "description": "\"\", project:<id>, label:<id> or view:<id>"
+        },
+        "from_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "until_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "position": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "encrypted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "import_job": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "import_job",
+      "description": "ot import --json: the finished import job as the server reports it (GET /api/v1/import/jobs/{id}). With --dry-run the dry_run document is printed instead, with the server's preview.",
+      "type": "object",
+      "required": [
+        "id",
+        "format",
+        "status",
+        "options",
+        "totals",
+        "errors"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "done",
+            "failed",
+            "undone"
+          ]
+        },
+        "options": {
+          "type": "object",
+          "description": "the options the job ran with; workspace is the target workspace's id when one was chosen"
+        },
+        "totals": {
+          "type": "object",
+          "required": [
+            "rows",
+            "create",
+            "update",
+            "skip",
+            "error"
+          ],
+          "properties": {
+            "rows": {
+              "type": "integer"
+            },
+            "create": {
+              "type": "integer"
+            },
+            "update": {
+              "type": "integer"
+            },
+            "skip": {
+              "type": "integer"
+            },
+            "error": {
+              "type": "integer"
+            },
+            "newProjects": {
+              "type": "integer"
+            },
+            "newLabels": {
+              "type": "integer"
+            }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "row": {
+                "type": "integer"
+              },
+              "sourceId": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "message": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "finishedAt": {
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       }
     },
@@ -1830,6 +2665,127 @@
         }
       }
     },
+    "rule": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "rule",
+      "description": "An automation rule exactly as the REST API returns it (OpenSpec automation-rules). The name is ciphertext for an encrypted account.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "trigger",
+        "actions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "trigger": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            }
+          }
+        },
+        "condition": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "actions": {
+          "type": "object"
+        },
+        "position": {
+          "type": "number"
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "deleted_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "rule_run": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "rule_run",
+      "description": "One run of an automation rule, from GET /api/v1/rules/{id}/runs (OpenSpec automation-rules). Task titles are never stored: resolve task ids yourself.",
+      "type": "object",
+      "required": [
+        "id",
+        "rule_id",
+        "occurrence",
+        "at",
+        "outcome",
+        "changes",
+        "depth"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "occurrence": {
+          "type": "string",
+          "description": "the run's idempotency key"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "outcome": {
+          "enum": [
+            "pending",
+            "applied",
+            "already_matched",
+            "skipped",
+            "stopped",
+            "failed",
+            "partial"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "depth": {
+          "type": "integer"
+        }
+      }
+    },
     "skill": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "skill",
@@ -1846,6 +2802,58 @@
         "content": {
           "type": "string",
           "description": "the SKILL.md text"
+        }
+      }
+    },
+    "slot": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "slot",
+      "description": "A calendar slot exactly as the REST API returns it (OpenSpec calendar-slots). The title is ciphertext for an encrypted account (encrypted: true); an empty title reads as \"Slot\".",
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "date",
+        "start",
+        "minutes",
+        "task_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "YYYY-MM-DD"
+        },
+        "start": {
+          "type": "string",
+          "description": "HH:MM"
+        },
+        "minutes": {
+          "type": "integer"
+        },
+        "task_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "ordered task ids, at most 20"
+        },
+        "color": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "encrypted": {
+          "type": "boolean"
         }
       }
     },
@@ -1980,6 +2988,86 @@
             "string",
             "null"
           ]
+        },
+        "deadline": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "YYYY-MM-DD: the day the task must be finished by, separate from due"
+        },
+        "start": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "\"someday\" (parked) or YYYY-MM-DD (deferred until that day)"
+        },
+        "evening": {
+          "type": "boolean",
+          "description": "in This Evening"
+        },
+        "day_part": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "morning",
+            "afternoon",
+            null
+          ],
+          "description": "the part of the day: morning or afternoon; evening is the evening flag"
+        },
+        "energy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "deep",
+            "medium",
+            "low",
+            null
+          ],
+          "description": "the energy the task asks for; null for none"
+        },
+        "waiting_for_slot": {
+          "type": "boolean",
+          "description": "ot today with a Today limit only: true when the limit keeps the task waiting for a slot"
+        },
+        "blocked_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "ids of the tasks this one waits for"
+        },
+        "location": {
+          "type": [
+            "object",
+            "string",
+            "null"
+          ],
+          "description": "where the task happens; a string only for an end-to-end encrypted account (ciphertext). name and address are user-written",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "address": {
+              "type": "string"
+            },
+            "lat": {
+              "type": "number"
+            },
+            "lon": {
+              "type": "number"
+            },
+            "place_id": {
+              "type": "string",
+              "description": "the saved location it links to"
+            }
+          }
         },
         "origin": {
           "type": [
@@ -2163,6 +3251,184 @@
         }
       }
     },
+    "vault_report": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "vault_report",
+      "description": "What one vault sync did (OpenSpec markdown-vault): counts, one event per output line, warnings, the cursor it ended on; a dry run adds the planned ops and files.",
+      "type": "object",
+      "required": [
+        "written",
+        "created",
+        "updated",
+        "trashed",
+        "conflicts",
+        "warnings",
+        "cursor",
+        "events"
+      ],
+      "properties": {
+        "written": {
+          "type": "integer",
+          "description": "project files and task notes written"
+        },
+        "created": {
+          "type": "integer",
+          "description": "tasks created from new lines and new task notes"
+        },
+        "updated": {
+          "type": "integer",
+          "description": "tasks changed, completed or reopened from the files"
+        },
+        "trashed": {
+          "type": "integer",
+          "description": "tasks trashed because their line was removed"
+        },
+        "conflicts": {
+          "type": "integer"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cursor": {
+          "type": "integer"
+        },
+        "projects": {
+          "type": "integer"
+        },
+        "tasks": {
+          "type": "integer"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "text"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "written",
+                  "restored",
+                  "removed",
+                  "created",
+                  "updated",
+                  "completed",
+                  "reopened",
+                  "trashed",
+                  "conflict",
+                  "project",
+                  "section",
+                  "label",
+                  "notes",
+                  "moved",
+                  "archived",
+                  "unarchived",
+                  "time"
+                ]
+              },
+              "file": {
+                "type": "string"
+              },
+              "task": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "planned": {
+          "type": "array",
+          "description": "dry run: the ops that would be sent",
+          "items": {
+            "type": "object"
+          }
+        },
+        "files": {
+          "type": "array",
+          "description": "dry run: the files that would be written",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "vault_status": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "vault_status",
+      "description": "A vault read without the server: files changed or missing since the last sync, and the conflict files.",
+      "type": "object",
+      "required": [
+        "device",
+        "profile",
+        "server",
+        "cursor",
+        "changed",
+        "missing",
+        "conflicts"
+      ],
+      "properties": {
+        "device": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "integer"
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "vault_tasknotes": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "vault_tasknotes",
+      "description": "The TaskNotes folder linked to a vault (OpenSpec vault-tasknotes): the folder as stored, relative to the vault folder when below it, else absolute; linked is false after --off.",
+      "type": "object",
+      "required": [
+        "vault",
+        "folder",
+        "linked"
+      ],
+      "properties": {
+        "vault": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "linked": {
+          "type": "boolean"
+        }
+      }
+    },
     "version": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "version",
@@ -2177,6 +3443,83 @@
         },
         "output_version": {
           "type": "integer"
+        }
+      }
+    },
+    "workspace": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "workspace",
+      "description": "A workspace exactly as GET /api/v1/workspaces returns it: the caller's role, and members by name only.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "role",
+        "default"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "admin",
+            "member"
+          ]
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "members": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     }

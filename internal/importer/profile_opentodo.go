@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	opsync "github.com/pixari/opentodo/internal/sync"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // opentodoProfile reads the app's own export (`GET /api/v1/export`). Records are
@@ -40,7 +40,10 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 		Fields    []map[string]json.RawMessage `json:"fields"`
 		Reminders []map[string]json.RawMessage `json:"reminders"`
 		Views     []map[string]json.RawMessage `json:"views"`
-		Comments  []json.RawMessage            `json:"comments"`
+		// Rules are automation rules (automation-rules); ids of labels,
+		// projects, sections and webhooks are kept as exported.
+		Rules    []map[string]json.RawMessage `json:"rules"`
+		Comments []json.RawMessage            `json:"comments"`
 		// Attachments are file and link metadata (OpenSpec attachments, design D12).
 		Attachments []map[string]json.RawMessage `json:"attachments"`
 		// TimeEntries are the entries the exporting account could read
@@ -62,6 +65,9 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 		ProjectPrefs []map[string]json.RawMessage `json:"project_prefs"`
 		// Template marks a template file (project-templates D1); import is unchanged.
 		Template *TemplateInfo `json:"template"`
+		// Workspaces of the exporting account (OpenSpec change workspaces);
+		// members and groups in it are never imported.
+		Workspaces []ExportedWorkspace `json:"workspaces"`
 	}
 	if err := json.NewDecoder(r).Decode(&doc); err != nil {
 		return nil, &FileError{fmt.Sprintf("not a readable OpenTaskKit export: %v", err)}
@@ -72,7 +78,7 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 	if doc.Version < 1 {
 		return nil, &FileError{fmt.Sprintf("unsupported export version %d", doc.Version)}
 	}
-	out := &Parsed{Version: doc.Version, Template: doc.Template}
+	out := &Parsed{Version: doc.Version, Template: doc.Template, Workspaces: doc.Workspaces}
 	if doc.Template != nil {
 		out.Notes = append(out.Notes, "This file is a template. Importing it creates it once, with its own ids and dates; to start a fresh copy with dates moved to a start day, use From a template in the sidebar.")
 	}
@@ -124,6 +130,7 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 	add(KindTask, "title", doc.Tasks)
 	add(KindReminder, "", doc.Reminders)
 	add(KindView, "name", doc.Views)
+	add(KindRule, "name", doc.Rules)
 	add(KindUserPrefs, "", doc.UserPrefs)
 	add(KindReview, "", doc.Review)
 	add(KindProjectPrefs, "", doc.ProjectPrefs)
@@ -192,7 +199,7 @@ func plural(n int, one, many string) string {
 func countFileAttachments(list []map[string]json.RawMessage) int {
 	n := 0
 	for _, a := range list {
-		if isNull(a["url"]) && isNull(a["deleted_at"]) {
+		if opsync.IsNull(a["url"]) && opsync.IsNull(a["deleted_at"]) {
 			n++
 		}
 	}

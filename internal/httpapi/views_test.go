@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -147,6 +148,10 @@ func TestViewsRejectInvalidOption(t *testing.T) {
 		{map[string]any{"name": "x"}, "view.query is required"},
 		{map[string]any{"name": "x", "query": " "}, "view.query must not be empty"},
 		{map[string]any{"name": "x", "query": "@work p1"}, `view.query: Expected "&" or "|" before "p1" at position 7`},
+		{map[string]any{"name": "x", "query": "workspace: & p1"}, `view.query: Expected a workspace name after "workspace:" at position 1`},
+		// filter-limits: a body of millions of "(" used to overflow the parser's stack and end the process.
+		{map[string]any{"name": "x", "query": strings.Repeat("(", 3_000_000)}, "view.query: Query is too long: 3000000 characters, at most 4096"},
+		{map[string]any{"name": "x", "query": strings.Repeat("(", 4000)}, `view.query: Too deeply nested at position 65`},
 		{map[string]any{"name": "x", "query": "p1", "colour": "red"}, "unknown field"},
 		{map[string]any{"name": "x", "query": "p1", "pinned": "yes"}, "must be a boolean"},
 		{map[string]any{"name": "x", "query": "p1", "panels": []string{list}}, "only allowed on dashboards"},
@@ -175,9 +180,12 @@ func TestViewsRejectInvalidOption(t *testing.T) {
 		msg  string
 	}{
 		{list, map[string]any{"group_by": "colour"}, "view.group_by must be one of"},
+		{list, map[string]any{"layout": "grid"}, "view.layout must be one of"},
+		{list, map[string]any{"hidden_props": []string{"estimate", "colour"}}, "view.hidden_props"},
 		{list, map[string]any{"kind": "dashboard"}, "cannot be changed"},
 		{list, map[string]any{"name": ""}, "must not be empty"},
 		{list, map[string]any{"query": "p5"}, "Priority must be p1, p2, p3 or p4"},
+		{list, map[string]any{"query": strings.Repeat("!", 3_000_000)}, "Query is too long"},
 		{dash, map[string]any{"panels": []string{dash}}, "cannot contain itself"},
 		{dash, map[string]any{"kind": "list"}, "cannot be changed"},
 	}
@@ -196,6 +204,53 @@ func TestViewsRejectInvalidOption(t *testing.T) {
 	// Restating the current kind and a valid panel list are fine.
 	resp, out = e.do("PATCH", "/api/v1/views/"+dash, map[string]any{"kind": "dashboard", "panels": []string{list}})
 	e.mustStatus(resp, 200, out)
+}
+
+func TestViewDisplayOptions(t *testing.T) {
+	// The display options of views-and-display: absent on create, written by a patch.
+	e := registeredEnv(t)
+	resp, out := e.do("POST", "/api/v1/views", map[string]any{"name": "Waiting", "query": "@waiting"})
+	e.mustStatus(resp, 201, out)
+	id := out["id"].(string)
+	for _, f := range []string{"layout", "show_completed", "hidden_props"} {
+		if _, has := out[f]; has {
+			t.Errorf("create response carries %s: %v", f, out)
+		}
+	}
+	resp, out = e.do("PATCH", "/api/v1/views/"+id, map[string]any{"layout": "board", "show_completed": true, "hidden_props": []string{"estimate", "project"}})
+	e.mustStatus(resp, 200, out)
+	if out["layout"] != "board" || out["show_completed"] != true || fmt.Sprint(out["hidden_props"]) != "[estimate project]" {
+		t.Fatalf("patched view = %v", out)
+	}
+}
+
+func TestViewAndLabelManualOrder(t *testing.T) {
+	// view-manual-order: the page's own order is replaced whole on PATCH and bounded by the op schema.
+	e := registeredEnv(t)
+	resp, out := e.do("POST", "/api/v1/views", map[string]any{"name": "Waiting", "query": "@waiting"})
+	e.mustStatus(resp, 201, out)
+	view := out["id"].(string)
+	resp, out = e.do("PATCH", "/api/v1/views/"+view, map[string]any{"manual_order": []string{"t2", "t1"}})
+	e.mustStatus(resp, 200, out)
+	if fmt.Sprint(out["manual_order"]) != "[t2 t1]" {
+		t.Fatalf("patched view = %v", out)
+	}
+	resp, out = e.do("POST", "/api/v1/labels", map[string]any{"name": "errand"})
+	e.mustStatus(resp, 201, out)
+	label := out["id"].(string)
+	resp, out = e.do("PATCH", "/api/v1/labels/"+label, map[string]any{"manual_order": []string{"t1"}})
+	e.mustStatus(resp, 200, out)
+	if fmt.Sprint(out["manual_order"]) != "[t1]" {
+		t.Fatalf("patched label = %v", out)
+	}
+	tooMany := make([]string, 501)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("t%d", i)
+	}
+	resp, out = e.do("PATCH", "/api/v1/labels/"+label, map[string]any{"manual_order": tooMany})
+	e.mustStatus(resp, 400, out)
+	resp, out = e.do("PATCH", "/api/v1/views/"+view, map[string]any{"manual_order": []string{"t1", "t1"}})
+	e.mustStatus(resp, 400, out)
 }
 
 func TestViewsSyncAcceptsUnknownOptionValues(t *testing.T) {
@@ -365,5 +420,71 @@ func TestViewsAcceptEisenhowerQueries(t *testing.T) {
 	} {
 		resp, out := e.do("POST", "/api/v1/views", map[string]any{"name": c.name, "query": c.query, "kind": "list", "on_drop": c.rule})
 		e.mustStatus(resp, 201, out)
+	}
+}
+
+// A saved view may name a workspace (OpenSpec change group-mentions, D6).
+func TestViewsAcceptWorkspaceTerm(t *testing.T) {
+	e := registeredEnv(t)
+	resp, out := e.do("POST", "/api/v1/views", map[string]any{"name": "Both", "query": `(workspace: Home | workspace: "Side projects") & due = this week`})
+	e.mustStatus(resp, 201, out)
+}
+
+// TestViewIcon covers the REST side of a view's icon (OpenSpec change sidebar-polish,
+// custom-views "View icon"): null by default, a catalogue name through a bearer
+// token, null to clear it, the invalid values, authentication and the export.
+func TestViewIcon(t *testing.T) {
+	e := registeredEnv(t)
+	resp, out := e.do("POST", "/api/v1/views", map[string]any{"name": "Waiting", "query": "@waiting"})
+	e.mustStatus(resp, 201, out)
+	id := out["id"].(string)
+	resp, out = e.do("POST", "/api/v1/tokens", map[string]any{"name": "script"})
+	e.mustStatus(resp, 201, out)
+	bearer := []string{"Authorization", "Bearer " + out["secret"].(string)}
+	script := newClientFor(e)
+	resp, out = script.do("PATCH", "/api/v1/views/"+id, map[string]any{"icon": "hourglass"}, bearer...)
+	script.mustStatus(resp, 200, out)
+	if out["icon"] != "hourglass" {
+		t.Fatalf("patched icon = %v", out["icon"])
+	}
+	for _, bad := range []any{"not-an-icon", 42, ""} {
+		resp, out = e.do("PATCH", "/api/v1/views/"+id, map[string]any{"icon": bad})
+		e.mustStatus(resp, 400, out)
+		if errCode(out) != "invalid_input" || !strings.Contains(errMessage(out), "view.icon") {
+			t.Fatalf("icon %v: error = %v", bad, out)
+		}
+	}
+	resp, out = e.do("POST", "/api/v1/views", map[string]any{"name": "Bad", "query": "p1", "icon": "not-an-icon"})
+	e.mustStatus(resp, 400, out)
+	resp, out = newClientFor(e).do("PATCH", "/api/v1/views/"+id, map[string]any{"icon": "briefcase"})
+	e.mustStatus(resp, 401, out)
+	if errCode(out) != "unauthorized" {
+		t.Fatalf("unauthenticated: %v", out)
+	}
+	resp, out = e.do("GET", "/api/v1/views/"+id, nil)
+	e.mustStatus(resp, 200, out)
+	if out["icon"] != "hourglass" {
+		t.Fatalf("rejected writes changed the icon: %v", out["icon"])
+	}
+	resp, out = e.do("POST", "/api/v1/views", map[string]any{"name": "Plain", "query": "p1"})
+	e.mustStatus(resp, 201, out)
+	resp, out = e.do("GET", "/api/v1/export", nil)
+	e.mustStatus(resp, 200, out)
+	icons := map[string]any{}
+	for _, v := range out["views"].([]any) {
+		m := v.(map[string]any)
+		icon, has := m["icon"]
+		if !has {
+			t.Fatalf("exported view without icon: %v", m)
+		}
+		icons[m["name"].(string)] = icon
+	}
+	if icons["Waiting"] != "hourglass" || icons["Plain"] != nil {
+		t.Fatalf("exported icons = %v", icons)
+	}
+	resp, out = e.do("PATCH", "/api/v1/views/"+id, map[string]any{"icon": nil})
+	e.mustStatus(resp, 200, out)
+	if out["icon"] != nil {
+		t.Fatalf("cleared icon = %v", out["icon"])
 	}
 }

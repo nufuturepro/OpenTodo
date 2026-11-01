@@ -1,43 +1,36 @@
 // Per-device quick-add preferences. Stored only in this browser's localStorage and
 // never synced (natural-language-capture: "Per-device parsing toggle").
 import { activeLanguages, VOCABULARIES, type DayMonthOrder } from './vocab'
+import { readJSON, writeJSON } from '../deviceStorage'
 
 export interface QuickAddSettings {
   /** Parse natural language in quick add. */
   enabled: boolean
   /** Explicit language list, or null to follow the browser's preferred languages. */
   languages: string[] | null
-  /** Numeric date order; 'auto' follows the first active language. */
-  dayMonthOrder: 'auto' | DayMonthOrder
 }
 
-export const DEFAULT_QUICK_ADD_SETTINGS: QuickAddSettings = { enabled: true, languages: null, dayMonthOrder: 'auto' }
+export const DEFAULT_QUICK_ADD_SETTINGS: QuickAddSettings = { enabled: true, languages: null }
 
 const KEY = 'opentodo.quickadd'
 const EVENT = 'opentodo:quickadd-settings'
 
 export function loadQuickAddSettings(): QuickAddSettings {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return { ...DEFAULT_QUICK_ADD_SETTINGS }
-    const v = JSON.parse(raw) as Partial<QuickAddSettings>
-    return {
-      enabled: typeof v.enabled === 'boolean' ? v.enabled : true,
-      languages: Array.isArray(v.languages) ? v.languages.filter((l): l is string => typeof l === 'string' && l in VOCABULARIES) : null,
-      dayMonthOrder: v.dayMonthOrder === 'DM' || v.dayMonthOrder === 'MD' ? v.dayMonthOrder : 'auto',
-    }
-  } catch {
-    // Private mode or blocked storage: parsing still works with the defaults.
-    return { ...DEFAULT_QUICK_ADD_SETTINGS }
+  // Private mode, blocked storage or an unreadable value: parsing still works with the defaults.
+  const v = readJSON<(Partial<QuickAddSettings> & { dayMonthOrder?: unknown }) | null>(KEY, null, (x) => (x !== null && typeof x === 'object' ? x : null))
+  if (!v) return { ...DEFAULT_QUICK_ADD_SETTINGS }
+  const s: QuickAddSettings = {
+    enabled: typeof v.enabled === 'boolean' ? v.enabled : true,
+    languages: Array.isArray(v.languages) ? v.languages.filter((l): l is string => typeof l === 'string' && l in VOCABULARIES) : null,
   }
+  // The device-level numeric order of earlier versions is ignored and dropped
+  // from the key (settings-refresh D6): numeric dates follow the date format.
+  if ('dayMonthOrder' in v) writeJSON(KEY, s)
+  return s
 }
 
 export function saveQuickAddSettings(s: QuickAddSettings): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(s))
-  } catch {
-    // Per-device convenience only.
-  }
+  writeJSON(KEY, s) // per-device convenience only
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENT))
 }
 
@@ -64,25 +57,25 @@ export function resolveLanguages(s: QuickAddSettings, browser: readonly string[]
   return activeLanguages(language && language !== 'system' ? [language, ...browser] : browser)
 }
 
-/** Where the numeric date order came from, for the quick-add settings panel. */
-export type DayMonthOrderSource = 'device' | 'date-format' | 'language'
+/** What decided the numeric date order. */
+export type DayMonthOrderSource = 'date-format' | 'language'
 
 /**
- * Numeric date order and what decided it (date-time-preferences D6): the
- * explicit per-device setting, else the user's date format when it is day-month
- * or month-day, else the language rule (design D2 of natural-language-capture).
+ * Numeric date order and what decided it (settings-refresh D6; natural-language-
+ * capture "Numeric dates follow the date format"): the user's date format when it
+ * is day-month or month-day, else the language rule (design D2 of
+ * natural-language-capture) for iso and system.
  */
 export function dayMonthOrderSource(
   s: QuickAddSettings, browser: readonly string[], prefs?: { date_format?: string } | null,
 ): { order: DayMonthOrder; source: DayMonthOrderSource } {
-  if (s.dayMonthOrder !== 'auto') return { order: s.dayMonthOrder, source: 'device' }
   if (prefs?.date_format === 'day-month') return { order: 'DM', source: 'date-format' }
   if (prefs?.date_format === 'month-day') return { order: 'MD', source: 'date-format' }
   return { order: languageDayMonthOrder(s, browser), source: 'language' }
 }
 
 /**
- * Numeric date order: explicit setting, else the date format preference, else M/D
+ * Numeric date order: the date format preference, else M/D
  * only when the first preference is US-style English ("en", "en-US"), D/M for
  * every other bundled language and for English outside the US (design D2).
  */

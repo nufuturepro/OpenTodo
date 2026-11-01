@@ -6,7 +6,7 @@ Defines sections as ordered containers inside a project, the task-to-section ref
 ## Requirements
 
 ### Requirement: Section entity
-A section SHALL have a name, the id of the project it belongs to, a sort position, creation time and optional deletion time. Sections SHALL be created, edited and deleted as operations in the log, applied locally first so they work offline, and SHALL converge under per-field last-writer-wins like tasks and projects. A section's project reference SHALL not change after creation.
+A section SHALL have a name, the id of the project it belongs to, a sort position, creation time and optional deletion time. It MAY also carry a colour from the palette and an icon from the icon catalogue (`design-system` "Icon catalogue"), both empty for a new section. Sections SHALL be created, edited and deleted as operations in the log, applied locally first so they work offline, and SHALL converge under per-field last-writer-wins like tasks and projects. A section's project reference SHALL not change after creation. A client that does not know the colour or icon fields SHALL ignore them and keep showing the section as before.
 
 #### Scenario: Create a section offline
 - **WHEN** the device is offline and the user adds a section "Doing" to a project
@@ -15,6 +15,14 @@ A section SHALL have a name, the id of the project it belongs to, a sort positio
 #### Scenario: Concurrent rename
 - **WHEN** two devices rename the same section offline and both sync
 - **THEN** every device shows the name written with the greater timestamp
+
+#### Scenario: Colour and rename at the same time
+- **WHEN** one device renames "Doing" to "In progress" while another, offline, gives "Doing" the blue colour, and both sync
+- **THEN** every device shows a blue section named "In progress"
+
+#### Scenario: Older client
+- **WHEN** a client released before section colours reads a section with a colour and an icon
+- **THEN** it shows the section with its name only and writes nothing to those fields
 
 ### Requirement: Task section reference
 A task SHALL have an optional `section_id` naming a section of its project; it SHALL default to none and SHALL be stored and synced as an additive task field. Changing a task's project SHALL clear its section. A task whose section is deleted, belongs to a different project than the task, or has not yet been received SHALL be shown as having no section without any data being written.
@@ -58,7 +66,7 @@ A section with no open tasks SHALL show its header only, with "n completed" and 
 - **THEN** its tasks are hidden on that device and the section stays expanded on the user's other devices
 
 ### Requirement: Board view
-Every project SHALL offer a board view with one column per section ordered by section position, preceded by a "No section" column only when it has open tasks, each listing the section's open tasks as cards ordered by position with a per-column count and quick-add. The board SHALL be one of three project layouts (list, board, timeline per `project-timeline`), chosen with the view toggle or by cycling with `v`, remembered per project per device and not synced.
+Every project SHALL offer a board view with one column per section ordered by section position, preceded by a "No section" column only when it has open tasks, each listing the section's open tasks as cards ordered by position with a per-column count and quick-add. Each column SHALL be drawn as one surface: a sunken band with the card radius that holds the column header and its cards and runs the full height of the board whatever the number of cards, so a column reads as a container on the page and not as cards floating on the canvas. The column header SHALL show, inside the surface, the section's icon or colour dot when it has one (OpenSpec `sections-and-boards` "Section colour and icon"), the title, the open-task count in the muted tone with tabular figures, and the column menu; on a board of filters it SHALL also show the rule mark in the muted tone (OpenSpec `custom-views`). In an editable project every column SHALL end its cards with an "Add a task" affordance inside the surface, and the row of columns SHALL end with an "Add a section" column: a dashed outline of the board's height with a plus icon that turns into the section name field. A card SHALL use the raised surface at the first elevation and lift to the second elevation on hover or focus; it SHALL show the title on at most two lines and then one property row: the date with a calendar icon in its due tone, the estimate with a clock icon and the subtask progress with a check icon first, then the task's other facts and its label chips, and the assignee at the row's end. The board SHALL be one of three project layouts (list, board, timeline per `project-timeline`), chosen with the view toggle or by cycling with `v`, remembered per project per device and not synced.
 
 #### Scenario: Switch to board
 - **WHEN** the user presses the view toggle or `v` in a project
@@ -82,7 +90,23 @@ Every project SHALL offer a board view with one column per section ordered by se
 
 #### Scenario: Card content
 - **WHEN** a task with a date, three labels, an estimate and two comments is shown as a card
-- **THEN** the card shows the title, the date, up to three chips and a footer with the comment count, and nothing else
+- **THEN** the card shows the title, then one property row with the date and its calendar icon, the estimate and its clock icon, up to three chips and the comment count, and nothing else
+
+#### Scenario: Assignee at the end of the card
+- **WHEN** a task of a shared project with a date and an assignee is shown as a card
+- **THEN** the assignee's avatar ends the card's property row, after the date
+
+#### Scenario: Column surface
+- **WHEN** a board with the columns "Backlog" (3 open tasks) and "Doing" (0 open tasks) is shown in light and in dark
+- **THEN** each column is one sunken band with the card radius holding its header and cards, both bands reach the bottom of the board, "Backlog 3" has the count in the muted tone, and each column shows its "Add a task" affordance inside the surface after its cards
+
+#### Scenario: Add a section from the board
+- **WHEN** the user activates "Add a section" at the end of an editable board, types "Garden" and presses Enter
+- **THEN** a "Garden" column appears before the "Add a section" column, and a read-only board shows no "Add a section" column
+
+#### Scenario: Card lifts on hover
+- **WHEN** the pointer rests on a card, or a card receives focus
+- **THEN** the card is drawn at the second elevation, and returns to the first when the pointer leaves
 
 ### Requirement: Field badges on cards
 Board cards SHALL show the task's non-empty custom field values as compact badges in definition order (OpenSpec `custom-fields`), at most three, with a count for the rest whose accessible name lists them.
@@ -114,11 +138,15 @@ The board SHALL be the content column's own scroller: columns fill the available
 - **THEN** the column snaps into place at 88 % of the screen width, the page bar shows that column's name and the second pager dot is current
 
 ### Requirement: Move tasks between sections
-The user SHALL be able to move a task to another section by dragging it onto a column or heading, by pressing Shift+Left or Shift+Right on the selected task in the board, and by choosing a section in the task detail panel. A move SHALL set the task's section and place it last in the target column, SHALL apply locally at once and work offline, and SHALL converge so two devices moving the same task resolve to the newer move.
+The user SHALL be able to move a task to another section by dragging it onto a column or heading, by pressing Shift+Left or Shift+Right on the selected task in the board, and by choosing a section in the task detail panel. While a card is dragged over a column, that column SHALL show a dashed placeholder of the dragged card's height, with an edge that meets 3:1 against the column surface, at the end of the column where the card will land, and the dragged card's origin SHALL stay visible at reduced opacity until the drop. A move SHALL set the task's section and place it last in the target column, SHALL apply locally at once and work offline, and SHALL converge so two devices moving the same task resolve to the newer move.
 
 #### Scenario: Drag between columns
 - **WHEN** the user drags a task from "Backlog" and drops it on "Doing"
 - **THEN** the task appears at the bottom of "Doing" immediately and other devices show the same after sync
+
+#### Scenario: Placeholder while dragging
+- **WHEN** the user drags a two-line card from "Backlog" over "Doing"
+- **THEN** "Doing" shows a dashed placeholder of that card's height at its end, "Backlog" still shows the card at reduced opacity, and releasing outside any column removes the placeholder and writes nothing
 
 #### Scenario: Keyboard move
 - **WHEN** a task in "Backlog" is selected on the board and the user presses Shift+Right
@@ -144,11 +172,19 @@ Sections SHALL be renamable, reorderable among the sections of their project, an
 - **THEN** a dialog says the two open tasks move to "No section", and Cancel leaves the section and its tasks untouched
 
 ### Requirement: Sections API
-The API SHALL expose a `sections` collection under `/api/v1/sections` with list, get, create, patch and delete, following the collection conventions: authentication required, soft delete, write-through to the operation log, unknown fields rejected. Create SHALL require a name and an existing, non-deleted `project_id`. Tasks SHALL accept `section_id` in create and patch.
+The API SHALL expose a `sections` collection under `/api/v1/sections` with list, get, create, patch and delete, following the collection conventions: authentication required, soft delete, write-through to the operation log, unknown fields rejected. Create SHALL require a name and an existing, non-deleted `project_id`. Create and patch SHALL accept an optional `color` (a `#rrggbb` hex string, or null to clear it) and an optional `icon` (a catalogue name, or null to clear it), and list and get SHALL return both, null when unset. Tasks SHALL accept `section_id` in create and patch.
 
 #### Scenario: Create a section via the API
 - **WHEN** a script POSTs `{"name":"Doing","project_id":"<project>"}` to `/api/v1/sections` with a bearer token
-- **THEN** the response is 201 with the section including `id`, `position` and `created_at`, and devices receive it on their next sync
+- **THEN** the response is 201 with the section including `id`, `position`, `created_at`, and `color` and `icon` both null, and devices receive it on their next sync
+
+#### Scenario: Style a section via the API
+- **WHEN** a script PATCHes `{"color":"#3b82f6","icon":"hourglass"}` to a section with a bearer token
+- **THEN** the response is 200 with both values, and devices show the section blue with the hourglass after sync
+
+#### Scenario: Unknown icon or malformed colour
+- **WHEN** a create or patch body has `icon` set to a name that is not in the catalogue, or `color` that is not `#rrggbb`
+- **THEN** the response is 400 with code `invalid_input` naming the field, and nothing is written
 
 #### Scenario: Unauthenticated request
 - **WHEN** a request without credentials lists or creates sections
@@ -164,3 +200,52 @@ The JSON export SHALL include every section of the user, including soft-deleted 
 #### Scenario: Export after creating sections
 - **WHEN** the user downloads the export after creating two sections and deleting one
 - **THEN** the document contains both sections, one with `deleted_at` set, and keeps `"format":"opentodo-export"` and `"version":1`
+
+### Requirement: Section colour and icon
+The section menu, in the list heading and on the board column, SHALL offer "Colour" with the project palette and "No colour", and "Icon" with the searchable icon picker and "No icon". A section's icon SHALL be shown immediately before its title, in the list heading and the board column header, drawn in the section's colour when it has one and in the heading's text colour otherwise. A section's colour without an icon SHALL be shown as a small dot of that colour before the title. A section with neither SHALL look as it does today. Colour and icon SHALL never replace the title or the open-task count, and SHALL add no row of chrome. The "No section" group SHALL never carry a colour or an icon. Editing works offline and converges like any section edit; viewers of a shared project see the style but cannot change it.
+
+#### Scenario: Style a section offline
+- **WHEN** the device is offline and the user picks the hourglass icon and the amber colour for "Waiting" from its heading menu
+- **THEN** the heading shows an amber hourglass before "Waiting" at once, the board column shows the same, and other devices show it after sync
+
+#### Scenario: Colour without icon
+- **WHEN** a section has the green colour and no icon
+- **THEN** its heading and column header show a small green dot before the title
+
+#### Scenario: Default look
+- **WHEN** the user creates a new section "Backlog"
+- **THEN** its heading shows the title and count only, as before this change
+
+#### Scenario: Keyboard
+- **WHEN** a keyboard user opens the heading menu of "Doing", chooses "Icon", types "rocket" and presses Enter
+- **THEN** the rocket icon is set and focus returns to the heading menu's trigger
+
+#### Scenario: Viewer of a shared project
+- **WHEN** a viewer opens the heading menu of a section in a shared project
+- **THEN** the menu offers no Colour or Icon item, and the section's style is shown as the owner set it
+
+### Requirement: Board surfaces in the workbench
+The workbench SHALL show the board's column surface in these states, each in light and dark at 375 and 1280 px under the accessibility and visual-regression gates: a board with a filled, a styled (icon and colour) and an empty column; a card at rest and a card hovered; a drag in progress with the placeholder in the target column and the origin card at reduced opacity; and a board of filters with a rule mark in a header.
+
+#### Scenario: Drag state has a baseline
+- **WHEN** a change alters the placeholder's edge or height
+- **THEN** the "drag in progress" story's visual check fails with a diff image
+
+#### Scenario: Placeholder contrast
+- **WHEN** the accessibility gate runs the "drag in progress" story
+- **THEN** the placeholder's edge measures at least 3:1 against the column surface in both themes
+
+### Requirement: Colour by on boards
+Boards (a project's Board layout and board views) SHALL offer Colour by with Project (default), Label and Priority, in a board view's display panel and in a project board's overflow menu, stored once per device for every board and never synced. With Label or Priority, each card SHALL show a 3 px leading edge in the hue chosen as for calendar blocks (first coloured label in the user's label order, or the priority hue; the neutral hue otherwise); with Project, cards SHALL look as before. The edge SHALL meet 3:1 against the card in light and dark, and the card's accessible text SHALL be unchanged.
+
+#### Scenario: Cards by label
+- **WHEN** the user chooses Colour by Label on a board and a card carries the label "urgent" (red)
+- **THEN** the card has a red leading edge, and a card without labels has the neutral edge
+
+#### Scenario: Project unchanged
+- **WHEN** Colour by is Project
+- **THEN** every board renders exactly as before
+
+#### Scenario: Remembered on the device
+- **WHEN** the user colours a board view by priority and opens a project's board after a reload
+- **THEN** the project board is coloured by priority too, and other devices are unaffected

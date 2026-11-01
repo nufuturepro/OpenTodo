@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/pixari/opentodo/internal/issues"
+	"github.com/OpenTodoApp/opentodo/internal/issues"
 )
 
 // Issue connections over HTTP (OpenSpec change issue-import, tasks 4.1–4.6).
@@ -208,7 +208,8 @@ func TestIssueConnectionLifecycle(t *testing.T) {
 func dataDirOf(e *env) string {
 	var file string
 	_ = e.db.QueryRow(`SELECT file FROM pragma_database_list WHERE name = 'main'`).Scan(&file)
-	return file[:strings.LastIndex(file, "/")]
+	// Windows temp paths use backslashes; LastIndex would return -1 and slice panic.
+	return file[:strings.LastIndexAny(file, "/\\")]
 }
 
 // issuesResource reads opentodo://integrations/issues through /mcp with a read token.

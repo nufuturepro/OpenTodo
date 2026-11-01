@@ -2,12 +2,13 @@
 // by "No section", each listing its open top-level tasks by position. A pure
 // rendering of the same local query as the list (design D5); the parent view owns
 // selection and keyboard handling. Columns are drop targets for lib/dnd.
-import { useWide } from '../ui'
+import { Button, useWide } from '../ui'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { Label, Project, Section, Task } from '../lib/types'
 import { AddSection, SectionHeader, SectionQuickAdd } from './Sections'
 import { t } from '../lib/i18n'
+import { isGhost } from './motion'
 
 export interface BoardColumn {
   /** Section id, or '' for "No section". */
@@ -19,7 +20,7 @@ export interface BoardColumn {
 /** The drop target key of a section ('' = "No section"); shared with the list headings. */
 export const sectionTarget = (key: string) => `section:${key}`
 
-export function BoardView({ project, columns, editable, addingTo, setAddingTo, projects, labels, renderCard, onCurrentColumn }: {
+export function BoardView({ project, columns, editable, addingTo, setAddingTo, projects, labels, renderCard, onCurrentColumn, placeholder = null }: {
   project: Project
   columns: BoardColumn[]
   editable: boolean
@@ -31,6 +32,8 @@ export function BoardView({ project, columns, editable, addingTo, setAddingTo, p
   renderCard: (task: Task) => ReactNode
   /** Below 640 px: the name of the column in view, for the page bar (sections-and-boards "Board on a phone"). */
   onCurrentColumn?: (name: string | null) => void
+  /** While a card is dragged over a column: that column and the card's height (surfaces-v2 D7). */
+  placeholder?: { key: string; height: number } | null
 }) {
   const sections = columns.filter((c) => c.section)
   const names = columns.map((col) => (col.section ? col.section.name || t('Untitled section') : t('No section')))
@@ -67,30 +70,41 @@ export function BoardView({ project, columns, editable, addingTo, setAddingTo, p
         ))}
       </div>
     )}
-    <div ref={scroller} onScroll={wide ? undefined : onScroll} className="-mx-4 flex snap-x snap-mandatory items-start gap-3 overflow-x-auto px-4 pb-6 md:mx-0 md:snap-none md:px-0" data-board data-scroll-x>
+    {/* Columns stretch to the board's height, so every band runs to the bottom (precision-boards-timeline D1). */}
+    <div ref={scroller} onScroll={wide ? undefined : onScroll} className="-mx-4 flex snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-4 pb-6 md:mx-0 md:snap-none md:px-0" data-board data-scroll-x>
       {columns.map((col) => {
         const idx = sections.findIndex((c) => c.key === col.key)
         const name = col.section ? col.section.name || t('Untitled section') : t('No section')
+        // A departing card (motion-v2 D2) is still shown but no longer counted.
+        const open = col.cards.reduce((n, c) => n + (isGhost(c) ? 0 : 1), 0)
         return (
           <section
             key={col.key || 'none'}
             data-drop-target={sectionTarget(col.key)}
             data-column={col.key}
-            aria-label={t('{name}, {n, plural, one {# open task} other {# open tasks}}', { name, n: col.cards.length })}
-            className="flex max-h-[calc(100dvh-14rem)] w-[88vw] shrink-0 snap-start flex-col rounded-card bg-canvas p-1.5 dark:border dark:border-default dark:bg-sunken data-drop-active:ring-2 data-drop-active:ring-accent sm:w-72 sm:max-w-72"
+            aria-label={t('{name}, {n, plural, one {# open task} other {# open tasks}}', { name, n: open })}
+            className="ui-column flex h-[calc(100dvh-14rem)] w-[88vw] shrink-0 snap-start flex-col sm:w-72 sm:max-w-72"
           >
             <SectionHeader
               section={col.section}
-              count={col.cards.length}
+              count={open}
               layout="board"
               editable={editable}
               first={idx <= 0}
               last={idx === sections.length - 1}
               onAdd={() => setAddingTo(col.key)}
             />
-            <ul className="min-h-8 space-y-1.5 overflow-y-auto px-0.5 pb-1">
+            {/* Cards lift on hover and focus; the dragged one fades while its placeholder shows where it lands. */}
+            <ul className="ui-cards--lift min-h-0 space-y-1.5 overflow-y-auto px-0.5 pb-1">
               {col.cards.map((tk) => renderCard(tk))}
+              {placeholder?.key === col.key && <li aria-hidden data-drop-placeholder className="ui-drop-placeholder" style={{ height: placeholder.height }} />}
             </ul>
+            {/* "Add a task" ends every column's cards (D2); the header's plus opens the same field. */}
+            {editable && addingTo !== col.key && (
+              <Button variant="ghost" size="sm" icon="plus" className="w-full justify-start text-muted" data-column-add={col.key} onClick={() => setAddingTo(col.key)}>
+                {t('Add a task')}
+              </Button>
+            )}
             {addingTo === col.key && editable && (
               <SectionQuickAdd project={project} sectionId={col.key || null} sectionName={name} projects={projects} labels={labels} onClose={() => setAddingTo(null)} />
             )}

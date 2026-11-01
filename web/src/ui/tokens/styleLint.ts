@@ -5,7 +5,7 @@
 // functions, shared by the test and the seed script.
 
 const VARIANT = '(?:[\\w-]+:)*'
-/** Raw type sizes: the token scale is text-hint, text-meta, text-body, text-h3, text-h2, text-h1. */
+/** Raw type sizes: the token scale is text-hint, text-meta, text-body, text-h3, text-h2, text-h1, text-display. */
 const RAW_SIZE = new RegExp(`(?<![\\w-])${VARIANT}text-(?:xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|\\[\\d+(?:\\.\\d+)?(?:px|rem|em)\\])(?![\\w-])`, 'g')
 /** Raw radii: the tokens are rounded-chip, rounded-control and rounded-card (plus full and none). */
 const RAW_RADIUS = new RegExp(`(?<![\\w-])${VARIANT}rounded(?:-(?:t|b|l|r|tl|tr|bl|br|s|e|ss|se|es|ee))?(?:-(?:xs|sm|md|lg|xl|2xl|3xl))?(?!-(?:full|none|chip|control|card))(?![\\w-])`, 'g')
@@ -71,8 +71,87 @@ export function nativeTitles(path: string, source: string): Finding[] {
     // Still inside the tag? Arrow functions and `{…}` expressions are not the tag's end.
     const tagText = before.slice(open).replace(/=>/g, '').replace(/\{[^{}]*\}/g, '').replace(/\{[^{}]*\}/g, '')
     if (tagText.includes('>')) continue
-    if (/^[a-z]/.test(tag[1])) out.push({ path, line: line + 1, text: `<${tag[1]} title=` })
+    // HTML tags, and Button and IconButton, which pass `title` through to their <button> (ux-audit-three-widths F1).
+    if (/^[a-z]/.test(tag[1]) || tag[1] === 'Button' || tag[1] === 'IconButton') out.push({ path, line: line + 1, text: `<${tag[1]} title=` })
   }
+  return out
+}
+
+/**
+ * Hand-made card surfaces in a settings panel (OpenSpec change surfaces-v2, settings
+ * "Card tiers"): a file that renders `SettingsSection` gets its card or flat section
+ * from that component's `tier`, so a className holding both `rounded-card` and a
+ * `shadow-<n>` there is a card the tiers cannot see. Lines marked
+ * `surface-lint-allow` are a deliberate standalone card (a gate shown instead of the page).
+ */
+export function handMadeSurfaces(path: string, source: string): Finding[] {
+  if (!/\bSettingsSection\b/.test(source)) return []
+  const out: Finding[] = []
+  source.split('\n').forEach((line, i) => {
+    if (line.includes('surface-lint-allow')) return
+    for (const value of classTokens(line)) {
+      const tokens = value.split(/\s+/)
+      if (tokens.includes('rounded-card') && tokens.some((tk) => /^(?:[\w-]+:)*shadow-[123]$/.test(tk))) out.push({ path, line: i + 1, text: value.trim() })
+    }
+  })
+  return out
+}
+
+/**
+ * The moment duration on a hover, focus or menu transition (OpenSpec change tokens-v2,
+ * design-system "Reduced motion", "Moment used for a hover"): the 400 ms moment is
+ * kept for the completion sequence, list reflow and overlay entrances. A className
+ * holding `duration-(--duration-moment)` with a `hover:` or `focus` variant fails, and
+ * so does any use of the moment in a menu or tooltip file.
+ */
+export function momentOnHover(path: string, source: string): Finding[] {
+  const menuFile = /(?:^|\/)(?:Menu|Tooltip|ActionMenu)\.tsx$|\/menus\//.test(path)
+  const out: Finding[] = []
+  source.split('\n').forEach((line, i) => {
+    for (const value of classTokens(line)) {
+      const tokens = value.split(/\s+/)
+      if (!tokens.some((tk) => /^(?:[\w-]+:)*duration-\(--duration-moment\)$/.test(tk))) continue
+      if (menuFile || tokens.some((tk) => /^(?:[\w-]+:)*(?:hover|focus|focus-visible|focus-within|group-hover):/.test(tk))) out.push({ path, line: i + 1, text: value.trim() })
+    }
+  })
+  return out
+}
+
+/**
+ * A focus ring cancelled by `outline-none` (ux-fixes-phone): in Tailwind 4 `outline-none`
+ * sets `--tw-outline-style: none`, which `focus-visible:outline-2` then reads, so the
+ * ring never shows. The class list needs `focus-visible:outline-solid` (or no
+ * `outline-none`).
+ */
+export function cancelledRings(path: string, source: string): Finding[] {
+  const out: Finding[] = []
+  source.split('\n').forEach((line, i) => {
+    for (const value of classTokens(line)) {
+      const tokens = value.split(/\s+/)
+      if (!tokens.some((tk) => /^(?:[\w-]+:)*outline-none$/.test(tk))) continue
+      const ring = tokens.some((tk) => /^(?:[\w-]+:)*focus(?:-visible|-within)?:outline-\d/.test(tk))
+      const style = tokens.some((tk) => /^(?:[\w-]+:)*focus(?:-visible|-within)?:outline-(?:solid|dashed|dotted|double)$/.test(tk))
+      if (ring && !style) out.push({ path, line: i + 1, text: value.trim() })
+    }
+  })
+  return out
+}
+
+/**
+ * The arrow on something clickable (row-and-cursor D2, design-system "Pointer on clickable
+ * elements"): the base layer gives every clickable element the hand, so `cursor-default`
+ * or `cursor-auto` takes it away again. Allowed with `cursor-lint-allow` and a reason on
+ * the same line or the line above (a JSX attribute list has no room for a comment).
+ */
+export function cursorDefault(path: string, source: string): Finding[] {
+  const out: Finding[] = []
+  const lines = source.split('\n')
+  lines.forEach((line, i) => {
+    if (line.includes('cursor-lint-allow') || (i > 0 && lines[i - 1].includes('cursor-lint-allow'))) return
+    for (const value of classTokens(line)) {
+      if (value.split(/\s+/).some((tk) => /^(?:[\w-]+:)*cursor-(?:default|auto)$/.test(tk))) out.push({ path, line: i + 1, text: value.trim() })
+    }
+  })
   return out
 }
 

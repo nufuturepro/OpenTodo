@@ -9,8 +9,8 @@
    element, so a [data-theme] subtree switches too. Text tokens meet WCAG AA on every
    surface they are allowed on (see pairs.ts). */
 /* Interface typeface (design-system "Bundled typeface without network access"):
-   Inter 4.1, weight axis only, Latin subset (docs/design-system.md has the subset
-   command). Served from the app's own origin, hashed by Vite, precached by the
+   Inter 4.1 with its weight and optical-size axes (tokens-v2 D7: 84 KB), Latin subset
+   (docs/design-system.md has the subset command). Served from the app's own origin, hashed by Vite, precached by the
    service worker. A unique family name keeps a locally installed Inter from being
    used instead; swap shows the system font until it loads. */
 @font-face {
@@ -41,6 +41,13 @@
   --color-canvas: var(--ot-canvas);
   --color-surface: var(--ot-surface);
   --color-raised: var(--ot-raised);
+  /* Precision surfaces (precision-tokens D1): popovers, hover, the selected nav item and row. */
+  --color-pop: var(--ot-pop);
+  --color-hover: var(--ot-hover);
+  --color-selected: var(--ot-selected);
+  --color-selected-row: var(--ot-selected-row);
+  /* The sidebar column (sidebar-v2 D8): the canvas with a trace of the accent. */
+  --color-sidebar: var(--ot-sidebar);
   --color-sunken: var(--ot-sunken);
   --color-accent: var(--ot-accent);
   --color-accent-hover: var(--ot-accent-hover);
@@ -91,250 +98,328 @@
   --color-hue-soft: var(--hue-soft);
   --text-color-hue: var(--hue-text);
   --border-color-default: var(--ot-border);
+  /* The softer divider (tokens-v2 D6): a hairline between groups; `border-default` is a container edge. */
+  --border-color-soft: var(--ot-border-soft);
   --border-color-input: var(--ot-border-input);
-  --text-hint: 0.6875rem; --text-hint--line-height: 0.875rem;
-  --text-meta: 0.8125rem; --text-meta--line-height: 1.125rem;
-  --text-body: 0.9375rem; --text-body--line-height: 1.375rem;
-  --text-h3: 1.0625rem; --text-h3--line-height: 1.5rem;
-  --text-h2: 1.25rem; --text-h2--line-height: 1.75rem;
-  --text-h1: 1.5rem; --text-h1--line-height: 2rem;
+  --border-color-strong: var(--ot-line-strong);
+  /* Precision type (precision-tokens D2): the list and control step is one token,
+     --ot-text-list (13 px); set it to 0.875rem for 14 px. Prose (notes, help, the
+     briefing) keeps 15 px through --text-prose. */
+  --text-hint: 0.71875rem; --text-hint--line-height: 1rem; --text-hint--font-weight: 500;
+  --text-meta: 0.78125rem; --text-meta--line-height: 1.125rem;
+  --text-body: var(--ot-text-list); --text-body--line-height: 1.25rem;
+  --text-prose: 0.9375rem; --text-prose--line-height: 1.5rem;
+  /* Headings and the display step (tokens-v2 D7): weight 600, tighter tracking as the size grows. */
+  --text-h3: 0.875rem; --text-h3--line-height: 1.25rem; --text-h3--font-weight: 600;
+  --text-h2: 1.25rem; --text-h2--line-height: 1.75rem; --text-h2--font-weight: 600; --text-h2--letter-spacing: -0.01em;
+  --text-h1: 1.375rem; --text-h1--line-height: 1.75rem; --text-h1--font-weight: 600; --text-h1--letter-spacing: -0.015em;
+  --text-display: 1.75rem; --text-display--line-height: 2.125rem; --text-display--font-weight: 650; --text-display--letter-spacing: -0.025em;
+  /* Precision radii (precision-tokens D3): row 6, control 7, card 8, the inset surface 10, popover 12. */
   --radius-chip: 6px;
-  --radius-control: 10px;
-  --radius-card: 14px;
-  --shadow-1: 0 1px 2px rgb(15 23 42 / 0.06);
+  --radius-control: 7px;
+  --radius-card: 8px;
+  --radius-surface: 10px;
+  --radius-popover: 12px;
+  /* Lists and cards are flat (precision-tokens D4); only overlays keep a shadow. */
+  --shadow-1: 0 0 #0000;
   --shadow-2: 0 4px 12px rgb(15 23 42 / 0.10);
   --shadow-3: 0 12px 32px rgb(15 23 42 / 0.16);
   --ease-calm: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The spring (tokens-v2 D9, motion-v2 D1): an ease-out quint that settles without
+     overshoot, for the completion sequence, list reflow and overlay entrances. */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root, [data-theme="light"] {
-  --ot-canvas: #f8fafc;
-  --ot-coffee: #ffdd00;
-  --ot-on-coffee: #0d0c22;
-  --ot-surface: #ffffff;
-  --ot-raised: #ffffff;
-  --ot-sunken: #f1f5f9;
-  --ot-text-strong: #020617;
-  --ot-text: #0f172a;
-  --ot-muted: #526075;
-  --ot-faint: #5f6e82;
-  --ot-border: #e2e8f0;
-  --ot-border-input: #7c8aa0;
-  --ot-accent: #047857;
-  --ot-accent-hover: #065f46;
-  --ot-on-accent: #ffffff;
-  --ot-accent-text: #047857;
-  --ot-accent-soft: #ecfdf5;
-  --ot-accent-soft-text: #065f46;
+  --ot-canvas: oklch(0.9542 0.0034 247.86);
+  --ot-coffee: oklch(0.9 0.19 100);
+  --ot-on-coffee: oklch(0.1701 0.0447 282.6);
+  --ot-surface: oklch(1 0 0);
+  --ot-raised: oklch(0.9757 0 0);
+  --ot-sunken: oklch(0.9632 0.0034 247.86);
+  /* The tone scale (tokens-v2 D6): to make text quieter, step down one tone. */
+  --ot-text-strong: oklch(0.2126 0.0067 258.37);
+  /* Precision (precision-tokens D1): popovers, hover, the selected nav item and row, the strong hairline. */
+  --ot-pop: oklch(1 0 0);
+  --ot-hover: oklch(0.9787 0 0);
+  --ot-selected: oklch(0.9333 0.0046 258.33);
+  --ot-selected-row: oklch(0.9632 0.0034 247.86);
+  --ot-line-strong: oklch(0.878 0.0064 255.48);
+  --ot-text: oklch(0.2126 0.0067 258.37);
+  --ot-muted: oklch(0.491 0.0142 259.82);
+  --ot-faint: oklch(0.5145 0.0133 252.19);
+  /* Edges: a container, a softer divider, a control. */
+  --ot-border: oklch(0.905 0.0046 258.33);
+  --ot-border-soft: oklch(0.915 0.0046 258.33);
+  --ot-border-input: oklch(0.62 0.03 262);
+  /* Accent (tokens-v2 D4): derived from the theme's three values, emerald by default. */
+  --ot-accent: var(--ot-al-accent, oklch(0.5081 0.1049 165.61));
+  --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+  --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+  --ot-accent-text: var(--ot-accent);
+  --ot-accent-soft: color-mix(in oklab, var(--ot-accent) var(--ot-mix-accent-soft-light), var(--ot-surface));
+  --ot-sidebar: var(--ot-canvas);
+  --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-soft-text-light), oklch(0 0 0));
   --ot-chart-base: var(--ot-accent);
-  --ot-focus: #059669;
-  --ot-p1: #dc2626;
-  --ot-p2: #ea580c;
-  --ot-p3: #2563eb;
-  --ot-p4: #64748b;
-  --ot-p1-soft: #fef2f2;
-  --ot-p2-soft: #fff7ed;
-  --ot-p3-soft: #eff6ff;
-  --ot-p4-soft: #f8fafc;
-  --ot-success: #047857;
-  --ot-success-soft: #ecfdf5;
-  --ot-success-soft-text: #065f46;
-  --ot-warning: #b45309;
-  --ot-warning-soft: #fffbeb;
-  --ot-warning-soft-text: #92400e;
-  --ot-danger: #dc2626;
-  --ot-danger-soft: #fef2f2;
-  --ot-danger-soft-text: #991b1b;
-  --ot-info: #0369a1;
-  --ot-info-soft: #f0f9ff;
-  --ot-info-soft-text: #075985;
-  --ot-scrim: rgb(2 6 23 / 0.35);
-  --ot-highlight: #fde68a;
-  --ot-highlight-text: #0f172a;
-  --ot-hue-red-solid: #dc2626; --ot-hue-red-soft: #fee2e2; --ot-hue-red-text: #991b1b;
-  --ot-hue-orange-solid: #ea580c; --ot-hue-orange-soft: #ffedd5; --ot-hue-orange-text: #9a3412;
-  --ot-hue-yellow-solid: #d97706; --ot-hue-yellow-soft: #fef3c7; --ot-hue-yellow-text: #92400e;
-  --ot-hue-lime-solid: #4d7c0f; --ot-hue-lime-soft: #ecfccb; --ot-hue-lime-text: #3f6212;
-  --ot-hue-green-solid: #16a34a; --ot-hue-green-soft: #dcfce7; --ot-hue-green-text: #166534;
-  --ot-hue-teal-solid: #0d9488; --ot-hue-teal-soft: #ccfbf1; --ot-hue-teal-text: #115e59;
-  --ot-hue-cyan-solid: #0891b2; --ot-hue-cyan-soft: #cffafe; --ot-hue-cyan-text: #155e75;
-  --ot-hue-blue-solid: #2563eb; --ot-hue-blue-soft: #dbeafe; --ot-hue-blue-text: #1e40af;
-  --ot-hue-indigo-solid: #4f46e5; --ot-hue-indigo-soft: #e0e7ff; --ot-hue-indigo-text: #3730a3;
-  --ot-hue-violet-solid: #7c3aed; --ot-hue-violet-soft: #ede9fe; --ot-hue-violet-text: #5b21b6;
-  --ot-hue-pink-solid: #db2777; --ot-hue-pink-soft: #fce7f3; --ot-hue-pink-text: #9d174d;
-  --ot-hue-slate-solid: #64748b; --ot-hue-slate-soft: #f1f5f9; --ot-hue-slate-text: #334155;
+  --ot-focus: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-focus-light), oklch(1 0 0));
+  --ot-p1: oklch(0.5771 0.2152 27.33);
+  --ot-p2: oklch(0.6461 0.1943 41.12);
+  --ot-p3: oklch(0.5461 0.2152 262.88);
+  --ot-p4: oklch(0.5544 0.0407 257.42);
+  --ot-p1-soft: oklch(0.9705 0.0129 17.38);
+  --ot-p2-soft: oklch(0.9796 0.0158 73.68);
+  --ot-p3-soft: oklch(0.9705 0.0142 254.6);
+  --ot-p4-soft: oklch(0.9842 0.0034 247.86);
+  --ot-success: oklch(0.5081 0.1049 165.61);
+  --ot-success-soft: oklch(0.9793 0.0207 166.11);
+  --ot-success-soft-text: oklch(0.4318 0.0865 166.91);
+  --ot-warning: oklch(0.4921 0.1095 66.01);
+  --ot-warning-soft: oklch(0.9869 0.0214 95.28);
+  --ot-warning-soft-text: oklch(0.4732 0.1247 46.2);
+  --ot-danger: oklch(0.5283 0.1796 27.4);
+  --ot-danger-soft: oklch(0.9705 0.0129 17.38);
+  --ot-danger-soft-text: oklch(0.4437 0.1613 26.9);
+  --ot-info: oklch(0.5071 0.162 260.46);
+  --ot-info-soft: oklch(0.9771 0.0125 236.62);
+  --ot-info-soft-text: oklch(0.4434 0.1 240.79);
+  --ot-scrim: oklch(0.1288 0.0406 264.7 / 0.35);
+  --ot-highlight: oklch(0.9243 0.1151 95.75);
+  --ot-highlight-text: oklch(0.2077 0.0398 265.75);
+  /* Palette (tokens-v2 D5): one solid per hue; the soft step is mixed into the surface, the text step toward black. */
+  --ot-hue-red-solid: oklch(0.5771 0.2152 27.33); --ot-hue-red-soft: color-mix(in oklab, var(--ot-hue-red-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-red-text: color-mix(in oklch, var(--ot-hue-red-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-orange-solid: oklch(0.6461 0.1943 41.12); --ot-hue-orange-soft: color-mix(in oklab, var(--ot-hue-orange-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-orange-text: color-mix(in oklch, var(--ot-hue-orange-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-yellow-solid: oklch(0.645 0.1574 58.32); --ot-hue-yellow-soft: color-mix(in oklab, var(--ot-hue-yellow-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-yellow-text: color-mix(in oklch, var(--ot-hue-yellow-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-lime-solid: oklch(0.5322 0.1405 131.59); --ot-hue-lime-soft: color-mix(in oklab, var(--ot-hue-lime-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-lime-text: color-mix(in oklch, var(--ot-hue-lime-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-green-solid: oklch(0.61 0.1699 149.21); --ot-hue-green-soft: color-mix(in oklab, var(--ot-hue-green-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-green-text: color-mix(in oklch, var(--ot-hue-green-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-teal-solid: oklch(0.6002 0.1038 184.7); --ot-hue-teal-soft: color-mix(in oklab, var(--ot-hue-teal-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-teal-text: color-mix(in oklch, var(--ot-hue-teal-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-cyan-solid: oklch(0.6089 0.1109 221.72); --ot-hue-cyan-soft: color-mix(in oklab, var(--ot-hue-cyan-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-cyan-text: color-mix(in oklch, var(--ot-hue-cyan-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-blue-solid: oklch(0.5461 0.2152 262.88); --ot-hue-blue-soft: color-mix(in oklab, var(--ot-hue-blue-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-blue-text: color-mix(in oklch, var(--ot-hue-blue-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-indigo-solid: oklch(0.5106 0.2301 276.97); --ot-hue-indigo-soft: color-mix(in oklab, var(--ot-hue-indigo-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-indigo-text: color-mix(in oklch, var(--ot-hue-indigo-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-violet-solid: oklch(0.5413 0.2466 293.01); --ot-hue-violet-soft: color-mix(in oklab, var(--ot-hue-violet-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-violet-text: color-mix(in oklch, var(--ot-hue-violet-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-pink-solid: oklch(0.5916 0.218 0.58); --ot-hue-pink-soft: color-mix(in oklab, var(--ot-hue-pink-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-pink-text: color-mix(in oklch, var(--ot-hue-pink-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
+  --ot-hue-slate-solid: oklch(0.5544 0.0407 257.42); --ot-hue-slate-soft: color-mix(in oklab, var(--ot-hue-slate-solid) var(--ot-mix-hue-soft-light), var(--ot-surface)); --ot-hue-slate-text: color-mix(in oklch, var(--ot-hue-slate-solid) var(--ot-mix-hue-text-light), oklch(0 0 0));
 }
 :root {
   --duration-ui: 120ms;
   --duration-emphasis: 250ms;
-  --size-row: 44px;
+  /* The moment (tokens-v2 D9, motion-v2 D1): the one longer duration, for the completion
+     sequence, list reflow and overlay entrances. Nothing lasts longer. */
+  --duration-moment: 400ms;
+  --size-row: 36px;
+  --ot-text-list: 0.8125rem;
+  /* Derivation ratios (tokens-v2 D4, D5): every accent and hue step is one of these
+     mixes, so a theme or a hue is declared once. The contrast check reads them back.
+     Soft steps mix into the surface in OKLab (a tinted dark surface would turn the
+     hue in OKLCH); steps toward black or white mix in OKLCH, which keeps the hue. */
+  --ot-mix-accent-hover: 86%;
+  --ot-mix-accent-soft-light: 10%;
+  --ot-mix-accent-soft-text-light: 80%;
+  --ot-mix-accent-focus-light: 85%;
+  --ot-mix-accent-soft-dark: 14%;
+  --ot-mix-accent-soft-text-dark: 80%;
+  --ot-mix-hue-soft-light: 14%;
+  --ot-mix-hue-text-light: 68%;
+  --ot-mix-hue-soft-dark: 22%;
+  --ot-mix-hue-text-dark: 78%;
 }
 @media (pointer: coarse) {
-  :root { --size-row: 48px; }
+  :root { --size-row: 44px; }
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ot-canvas: #020617;
-    --ot-coffee: #ffdd00;
-    --ot-on-coffee: #0d0c22;
-    --ot-surface: #0f172a;
-    --ot-raised: #1e293b;
-    --ot-sunken: #020617;
-    --ot-text-strong: #ffffff;
-    --ot-text: #f1f5f9;
-    --ot-muted: #94a3b8;
-    --ot-faint: #8695aa;
-    --ot-border: #334155;
-    --ot-border-input: #64748b;
-    --ot-accent: #047857;
-    --ot-accent-hover: #065f46;
-    --ot-on-accent: #ffffff;
-    --ot-accent-text: #34d399;
-    --ot-accent-soft: #022c22;
-    --ot-accent-soft-text: #6ee7b7;
+    --ot-canvas: oklch(0.1635 0.0045 264.44);
+    --ot-coffee: oklch(0.9 0.19 100);
+    --ot-on-coffee: oklch(0.1701 0.0447 282.6);
+    --ot-surface: oklch(0.1959 0.0062 271.09);
+    --ot-raised: oklch(0.2184 0.0079 274.56);
+    --ot-sunken: oklch(0.1824 0.0063 271.05);
+    --ot-text-strong: oklch(0.9459 0.0029 264.54);
+    /* Precision (precision-tokens D1): popovers, hover, the selected nav item and row, the strong hairline. */
+    --ot-pop: oklch(0.2271 0.0079 274.58);
+    --ot-hover: oklch(0.2141 0.008 274.55);
+    --ot-selected: oklch(0.2728 0.0097 268.32);
+    --ot-selected-row: oklch(0.2389 0.0082 264.41);
+    --ot-line-strong: oklch(0.3122 0.0099 260.71);
+    --ot-text: oklch(0.9459 0.0029 264.54);
+    --ot-muted: oklch(0.7273 0.0111 261.78);
+    --ot-faint: oklch(0.66 0.0147 262.36);
+    --ot-border: oklch(0.2641 0.008 264.43);
+    --ot-border-soft: oklch(0.255 0.0082 264.41);
+    --ot-border-input: oklch(0.6 0.02 262);
+    /* Accent (tokens-v2 D4): buttons keep the light accent (or the theme's dark override); text, focus and soft steps use the bright accent. */
+    --ot-accent: var(--ot-ad-accent, var(--ot-al-accent, oklch(0.5081 0.1049 165.61)));
+    --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+    --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+    --ot-accent-text: var(--ot-ad-accent-text, oklch(0.7729 0.1535 163.22));
+    --ot-accent-soft: color-mix(in oklab, var(--ot-accent-text) var(--ot-mix-accent-soft-dark), var(--ot-surface));
+    --ot-sidebar: var(--ot-canvas);
+    --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent-text) var(--ot-mix-accent-soft-text-dark), oklch(1 0 0));
     --ot-chart-base: var(--ot-accent-text);
-    --ot-focus: #34d399;
-    --ot-p1: #f87171;
-    --ot-p2: #fb923c;
-    --ot-p3: #60a5fa;
-    --ot-p4: #64748b;
-    --ot-p1-soft: rgb(69 10 10 / 0.4);
-    --ot-p2-soft: rgb(67 20 7 / 0.4);
-    --ot-p3-soft: rgb(23 37 84 / 0.4);
-    --ot-p4-soft: rgb(30 41 59 / 0.4);
-    --ot-success: #34d399;
-    --ot-success-soft: #022c22;
-    --ot-success-soft-text: #6ee7b7;
-    --ot-warning: #fbbf24;
-    --ot-warning-soft: #451a03;
-    --ot-warning-soft-text: #fcd34d;
-    --ot-danger: #f87171;
-    --ot-danger-soft: #450a0a;
-    --ot-danger-soft-text: #fca5a5;
-    --ot-info: #38bdf8;
-    --ot-info-soft: #082f49;
-    --ot-info-soft-text: #7dd3fc;
-    --ot-scrim: rgb(0 0 0 / 0.55);
-    --ot-highlight: #854d0e;
-    --ot-highlight-text: #fef3c7;
-    --ot-hue-red-solid: #f87171; --ot-hue-red-soft: #450a0a; --ot-hue-red-text: #fca5a5;
-    --ot-hue-orange-solid: #fb923c; --ot-hue-orange-soft: #431407; --ot-hue-orange-text: #fdba74;
-    --ot-hue-yellow-solid: #fbbf24; --ot-hue-yellow-soft: #451a03; --ot-hue-yellow-text: #fcd34d;
-    --ot-hue-lime-solid: #a3e635; --ot-hue-lime-soft: #1a2e05; --ot-hue-lime-text: #bef264;
-    --ot-hue-green-solid: #4ade80; --ot-hue-green-soft: #052e16; --ot-hue-green-text: #86efac;
-    --ot-hue-teal-solid: #2dd4bf; --ot-hue-teal-soft: #042f2e; --ot-hue-teal-text: #5eead4;
-    --ot-hue-cyan-solid: #22d3ee; --ot-hue-cyan-soft: #083344; --ot-hue-cyan-text: #67e8f9;
-    --ot-hue-blue-solid: #60a5fa; --ot-hue-blue-soft: #172554; --ot-hue-blue-text: #93c5fd;
-    --ot-hue-indigo-solid: #818cf8; --ot-hue-indigo-soft: #1e1b4b; --ot-hue-indigo-text: #a5b4fc;
-    --ot-hue-violet-solid: #a78bfa; --ot-hue-violet-soft: #2e1065; --ot-hue-violet-text: #c4b5fd;
-    --ot-hue-pink-solid: #f472b6; --ot-hue-pink-soft: #500724; --ot-hue-pink-text: #f9a8d4;
-    --ot-hue-slate-solid: #94a3b8; --ot-hue-slate-soft: #1e293b; --ot-hue-slate-text: #cbd5e1;
+    --ot-focus: var(--ot-accent-text);
+    --ot-p1: oklch(0.7106 0.1661 22.22);
+    --ot-p2: oklch(0.7576 0.159 55.93);
+    --ot-p3: oklch(0.7137 0.1434 254.62);
+    --ot-p4: oklch(0.5544 0.0407 257.42);
+    --ot-p1-soft: oklch(0.2575 0.0886 26.04 / 0.4);
+    --ot-p2-soft: oklch(0.2659 0.0762 36.26 / 0.4);
+    --ot-p3-soft: oklch(0.2823 0.0874 267.94 / 0.4);
+    --ot-p4-soft: oklch(0.2795 0.0368 260.03 / 0.4);
+    --ot-success: oklch(0.7729 0.1535 163.22);
+    --ot-success-soft: oklch(0.2621 0.0487 172.55);
+    --ot-success-soft-text: oklch(0.8452 0.1299 164.98);
+    --ot-warning: oklch(0.7665 0.1303 73.04);
+    --ot-warning-soft: oklch(0.2791 0.0742 45.64);
+    --ot-warning-soft-text: oklch(0.879 0.1534 91.61);
+    --ot-danger: oklch(0.6986 0.1576 23.81);
+    --ot-danger-soft: oklch(0.2575 0.0886 26.04);
+    --ot-danger-soft-text: oklch(0.8077 0.1035 19.57);
+    --ot-info: oklch(0.6988 0.133 259.53);
+    --ot-info-soft: oklch(0.2935 0.0632 243.16);
+    --ot-info-soft-text: oklch(0.8276 0.1013 230.32);
+    --ot-scrim: oklch(0 0 0 / 0.55);
+    --ot-highlight: oklch(0.4762 0.1034 61.91);
+    --ot-highlight-text: oklch(0.9619 0.058 95.62);
+    /* Palette (tokens-v2 D5): one solid per hue; the soft step is mixed into the canvas, the text step toward white. */
+    --ot-hue-red-solid: oklch(0.7106 0.1661 22.22); --ot-hue-red-soft: color-mix(in oklab, var(--ot-hue-red-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-red-text: color-mix(in oklch, var(--ot-hue-red-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-orange-solid: oklch(0.7576 0.159 55.93); --ot-hue-orange-soft: color-mix(in oklab, var(--ot-hue-orange-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-orange-text: color-mix(in oklch, var(--ot-hue-orange-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-yellow-solid: oklch(0.8369 0.1644 84.43); --ot-hue-yellow-soft: color-mix(in oklab, var(--ot-hue-yellow-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-yellow-text: color-mix(in oklch, var(--ot-hue-yellow-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-lime-solid: oklch(0.8493 0.2073 128.85); --ot-hue-lime-soft: color-mix(in oklab, var(--ot-hue-lime-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-lime-text: color-mix(in oklch, var(--ot-hue-lime-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-green-solid: oklch(0.8003 0.1821 151.71); --ot-hue-green-soft: color-mix(in oklab, var(--ot-hue-green-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-green-text: color-mix(in oklch, var(--ot-hue-green-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-teal-solid: oklch(0.7845 0.1325 181.91); --ot-hue-teal-soft: color-mix(in oklab, var(--ot-hue-teal-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-teal-text: color-mix(in oklch, var(--ot-hue-teal-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-cyan-solid: oklch(0.7971 0.1339 211.53); --ot-hue-cyan-soft: color-mix(in oklab, var(--ot-hue-cyan-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-cyan-text: color-mix(in oklch, var(--ot-hue-cyan-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-blue-solid: oklch(0.7137 0.1434 254.62); --ot-hue-blue-soft: color-mix(in oklab, var(--ot-hue-blue-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-blue-text: color-mix(in oklch, var(--ot-hue-blue-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-indigo-solid: oklch(0.6801 0.1583 276.93); --ot-hue-indigo-soft: color-mix(in oklab, var(--ot-hue-indigo-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-indigo-text: color-mix(in oklch, var(--ot-hue-indigo-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-violet-solid: oklch(0.709 0.1592 293.54); --ot-hue-violet-soft: color-mix(in oklab, var(--ot-hue-violet-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-violet-text: color-mix(in oklch, var(--ot-hue-violet-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-pink-solid: oklch(0.7253 0.1752 349.76); --ot-hue-pink-soft: color-mix(in oklab, var(--ot-hue-pink-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-pink-text: color-mix(in oklch, var(--ot-hue-pink-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+    --ot-hue-slate-solid: oklch(0.7107 0.0351 256.79); --ot-hue-slate-soft: color-mix(in oklab, var(--ot-hue-slate-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-slate-text: color-mix(in oklch, var(--ot-hue-slate-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
   }
 }
 :root[data-theme="dark"], [data-theme="dark"] {
-  --ot-canvas: #020617;
-  --ot-coffee: #ffdd00;
-  --ot-on-coffee: #0d0c22;
-  --ot-surface: #0f172a;
-  --ot-raised: #1e293b;
-  --ot-sunken: #020617;
-  --ot-text-strong: #ffffff;
-  --ot-text: #f1f5f9;
-  --ot-muted: #94a3b8;
-  --ot-faint: #8695aa;
-  --ot-border: #334155;
-  --ot-border-input: #64748b;
-  --ot-accent: #047857;
-  --ot-accent-hover: #065f46;
-  --ot-on-accent: #ffffff;
-  --ot-accent-text: #34d399;
-  --ot-accent-soft: #022c22;
-  --ot-accent-soft-text: #6ee7b7;
+  --ot-canvas: oklch(0.1635 0.0045 264.44);
+  --ot-coffee: oklch(0.9 0.19 100);
+  --ot-on-coffee: oklch(0.1701 0.0447 282.6);
+  --ot-surface: oklch(0.1959 0.0062 271.09);
+  --ot-raised: oklch(0.2184 0.0079 274.56);
+  --ot-sunken: oklch(0.1824 0.0063 271.05);
+  --ot-text-strong: oklch(0.9459 0.0029 264.54);
+  /* Precision (precision-tokens D1): popovers, hover, the selected nav item and row, the strong hairline. */
+  --ot-pop: oklch(0.2271 0.0079 274.58);
+  --ot-hover: oklch(0.2141 0.008 274.55);
+  --ot-selected: oklch(0.2728 0.0097 268.32);
+  --ot-selected-row: oklch(0.2389 0.0082 264.41);
+  --ot-line-strong: oklch(0.3122 0.0099 260.71);
+  --ot-text: oklch(0.9459 0.0029 264.54);
+  --ot-muted: oklch(0.7273 0.0111 261.78);
+  --ot-faint: oklch(0.66 0.0147 262.36);
+  --ot-border: oklch(0.2641 0.008 264.43);
+  --ot-border-soft: oklch(0.255 0.0082 264.41);
+  --ot-border-input: oklch(0.6 0.02 262);
+  /* Accent (tokens-v2 D4): buttons keep the light accent (or the theme's dark override); text, focus and soft steps use the bright accent. */
+  --ot-accent: var(--ot-ad-accent, var(--ot-al-accent, oklch(0.5081 0.1049 165.61)));
+  --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+  --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+  --ot-accent-text: var(--ot-ad-accent-text, oklch(0.7729 0.1535 163.22));
+  --ot-accent-soft: color-mix(in oklab, var(--ot-accent-text) var(--ot-mix-accent-soft-dark), var(--ot-surface));
+  --ot-sidebar: var(--ot-canvas);
+  --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent-text) var(--ot-mix-accent-soft-text-dark), oklch(1 0 0));
   --ot-chart-base: var(--ot-accent-text);
-  --ot-focus: #34d399;
-  --ot-p1: #f87171;
-  --ot-p2: #fb923c;
-  --ot-p3: #60a5fa;
-  --ot-p4: #64748b;
-  --ot-p1-soft: rgb(69 10 10 / 0.4);
-  --ot-p2-soft: rgb(67 20 7 / 0.4);
-  --ot-p3-soft: rgb(23 37 84 / 0.4);
-  --ot-p4-soft: rgb(30 41 59 / 0.4);
-  --ot-success: #34d399;
-  --ot-success-soft: #022c22;
-  --ot-success-soft-text: #6ee7b7;
-  --ot-warning: #fbbf24;
-  --ot-warning-soft: #451a03;
-  --ot-warning-soft-text: #fcd34d;
-  --ot-danger: #f87171;
-  --ot-danger-soft: #450a0a;
-  --ot-danger-soft-text: #fca5a5;
-  --ot-info: #38bdf8;
-  --ot-info-soft: #082f49;
-  --ot-info-soft-text: #7dd3fc;
-  --ot-scrim: rgb(0 0 0 / 0.55);
-  --ot-highlight: #854d0e;
-  --ot-highlight-text: #fef3c7;
-  --ot-hue-red-solid: #f87171; --ot-hue-red-soft: #450a0a; --ot-hue-red-text: #fca5a5;
-  --ot-hue-orange-solid: #fb923c; --ot-hue-orange-soft: #431407; --ot-hue-orange-text: #fdba74;
-  --ot-hue-yellow-solid: #fbbf24; --ot-hue-yellow-soft: #451a03; --ot-hue-yellow-text: #fcd34d;
-  --ot-hue-lime-solid: #a3e635; --ot-hue-lime-soft: #1a2e05; --ot-hue-lime-text: #bef264;
-  --ot-hue-green-solid: #4ade80; --ot-hue-green-soft: #052e16; --ot-hue-green-text: #86efac;
-  --ot-hue-teal-solid: #2dd4bf; --ot-hue-teal-soft: #042f2e; --ot-hue-teal-text: #5eead4;
-  --ot-hue-cyan-solid: #22d3ee; --ot-hue-cyan-soft: #083344; --ot-hue-cyan-text: #67e8f9;
-  --ot-hue-blue-solid: #60a5fa; --ot-hue-blue-soft: #172554; --ot-hue-blue-text: #93c5fd;
-  --ot-hue-indigo-solid: #818cf8; --ot-hue-indigo-soft: #1e1b4b; --ot-hue-indigo-text: #a5b4fc;
-  --ot-hue-violet-solid: #a78bfa; --ot-hue-violet-soft: #2e1065; --ot-hue-violet-text: #c4b5fd;
-  --ot-hue-pink-solid: #f472b6; --ot-hue-pink-soft: #500724; --ot-hue-pink-text: #f9a8d4;
-  --ot-hue-slate-solid: #94a3b8; --ot-hue-slate-soft: #1e293b; --ot-hue-slate-text: #cbd5e1;
+  --ot-focus: var(--ot-accent-text);
+  --ot-p1: oklch(0.7106 0.1661 22.22);
+  --ot-p2: oklch(0.7576 0.159 55.93);
+  --ot-p3: oklch(0.7137 0.1434 254.62);
+  --ot-p4: oklch(0.5544 0.0407 257.42);
+  --ot-p1-soft: oklch(0.2575 0.0886 26.04 / 0.4);
+  --ot-p2-soft: oklch(0.2659 0.0762 36.26 / 0.4);
+  --ot-p3-soft: oklch(0.2823 0.0874 267.94 / 0.4);
+  --ot-p4-soft: oklch(0.2795 0.0368 260.03 / 0.4);
+  --ot-success: oklch(0.7729 0.1535 163.22);
+  --ot-success-soft: oklch(0.2621 0.0487 172.55);
+  --ot-success-soft-text: oklch(0.8452 0.1299 164.98);
+  --ot-warning: oklch(0.7665 0.1303 73.04);
+  --ot-warning-soft: oklch(0.2791 0.0742 45.64);
+  --ot-warning-soft-text: oklch(0.879 0.1534 91.61);
+  --ot-danger: oklch(0.6986 0.1576 23.81);
+  --ot-danger-soft: oklch(0.2575 0.0886 26.04);
+  --ot-danger-soft-text: oklch(0.8077 0.1035 19.57);
+  --ot-info: oklch(0.6988 0.133 259.53);
+  --ot-info-soft: oklch(0.2935 0.0632 243.16);
+  --ot-info-soft-text: oklch(0.8276 0.1013 230.32);
+  --ot-scrim: oklch(0 0 0 / 0.55);
+  --ot-highlight: oklch(0.4762 0.1034 61.91);
+  --ot-highlight-text: oklch(0.9619 0.058 95.62);
+  /* Palette (tokens-v2 D5): one solid per hue; the soft step is mixed into the canvas, the text step toward white. */
+  --ot-hue-red-solid: oklch(0.7106 0.1661 22.22); --ot-hue-red-soft: color-mix(in oklab, var(--ot-hue-red-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-red-text: color-mix(in oklch, var(--ot-hue-red-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-orange-solid: oklch(0.7576 0.159 55.93); --ot-hue-orange-soft: color-mix(in oklab, var(--ot-hue-orange-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-orange-text: color-mix(in oklch, var(--ot-hue-orange-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-yellow-solid: oklch(0.8369 0.1644 84.43); --ot-hue-yellow-soft: color-mix(in oklab, var(--ot-hue-yellow-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-yellow-text: color-mix(in oklch, var(--ot-hue-yellow-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-lime-solid: oklch(0.8493 0.2073 128.85); --ot-hue-lime-soft: color-mix(in oklab, var(--ot-hue-lime-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-lime-text: color-mix(in oklch, var(--ot-hue-lime-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-green-solid: oklch(0.8003 0.1821 151.71); --ot-hue-green-soft: color-mix(in oklab, var(--ot-hue-green-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-green-text: color-mix(in oklch, var(--ot-hue-green-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-teal-solid: oklch(0.7845 0.1325 181.91); --ot-hue-teal-soft: color-mix(in oklab, var(--ot-hue-teal-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-teal-text: color-mix(in oklch, var(--ot-hue-teal-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-cyan-solid: oklch(0.7971 0.1339 211.53); --ot-hue-cyan-soft: color-mix(in oklab, var(--ot-hue-cyan-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-cyan-text: color-mix(in oklch, var(--ot-hue-cyan-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-blue-solid: oklch(0.7137 0.1434 254.62); --ot-hue-blue-soft: color-mix(in oklab, var(--ot-hue-blue-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-blue-text: color-mix(in oklch, var(--ot-hue-blue-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-indigo-solid: oklch(0.6801 0.1583 276.93); --ot-hue-indigo-soft: color-mix(in oklab, var(--ot-hue-indigo-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-indigo-text: color-mix(in oklch, var(--ot-hue-indigo-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-violet-solid: oklch(0.709 0.1592 293.54); --ot-hue-violet-soft: color-mix(in oklab, var(--ot-hue-violet-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-violet-text: color-mix(in oklch, var(--ot-hue-violet-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-pink-solid: oklch(0.7253 0.1752 349.76); --ot-hue-pink-soft: color-mix(in oklab, var(--ot-hue-pink-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-pink-text: color-mix(in oklch, var(--ot-hue-pink-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
+  --ot-hue-slate-solid: oklch(0.7107 0.0351 256.79); --ot-hue-slate-soft: color-mix(in oklab, var(--ot-hue-slate-solid) var(--ot-mix-hue-soft-dark), var(--ot-canvas)); --ot-hue-slate-text: color-mix(in oklch, var(--ot-hue-slate-solid) var(--ot-mix-hue-text-dark), oklch(1 0 0));
 }
 
-/* Accents (OpenSpec change theming, design D3, D4): raw values per accent for
-   light (--ot-al-*) and dark (--ot-ad-*), then the public accent tokens mapped from
-   them on any [data-accent] element: the document root for the user's theme, or a
-   subtree such as a theme tile. Without data-accent the blocks above apply, which
-   is emerald. Every accent is listed, emerald too, so a nested tile is never
-   overridden by the page's accent. A light container inside a dark page keeps the
-   light mapping. The :root variants match the specificity of the mode blocks above
-   (:root[data-theme="dark"], :root:not(...)) and come later, so they win on <html>.
-   Values pass contrast.test.ts in both modes. */
-[data-accent="emerald"] { --ot-al-accent: #047857; --ot-al-accent-hover: #065f46; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #047857; --ot-al-accent-soft: #ecfdf5; --ot-al-accent-soft-text: #065f46; --ot-al-focus: #059669; --ot-ad-accent: #047857; --ot-ad-accent-hover: #065f46; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #34d399; --ot-ad-accent-soft: #022c22; --ot-ad-accent-soft-text: #6ee7b7; --ot-ad-focus: #34d399; }
-[data-accent="blue"] { --ot-al-accent: #1d4ed8; --ot-al-accent-hover: #1e40af; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #1d4ed8; --ot-al-accent-soft: #eff6ff; --ot-al-accent-soft-text: #1e40af; --ot-al-focus: #2563eb; --ot-ad-accent: #1d4ed8; --ot-ad-accent-hover: #1e40af; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #60a5fa; --ot-ad-accent-soft: #172554; --ot-ad-accent-soft-text: #93c5fd; --ot-ad-focus: #60a5fa; }
-[data-accent="indigo"] { --ot-al-accent: #4338ca; --ot-al-accent-hover: #3730a3; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #4338ca; --ot-al-accent-soft: #eef2ff; --ot-al-accent-soft-text: #3730a3; --ot-al-focus: #4f46e5; --ot-ad-accent: #4338ca; --ot-ad-accent-hover: #3730a3; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #818cf8; --ot-ad-accent-soft: #1e1b4b; --ot-ad-accent-soft-text: #a5b4fc; --ot-ad-focus: #818cf8; }
-[data-accent="violet"] { --ot-al-accent: #6d28d9; --ot-al-accent-hover: #5b21b6; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #6d28d9; --ot-al-accent-soft: #f5f3ff; --ot-al-accent-soft-text: #5b21b6; --ot-al-focus: #7c3aed; --ot-ad-accent: #6d28d9; --ot-ad-accent-hover: #5b21b6; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #a78bfa; --ot-ad-accent-soft: #2e1065; --ot-ad-accent-soft-text: #c4b5fd; --ot-ad-focus: #a78bfa; }
-[data-accent="rose"] { --ot-al-accent: #be123c; --ot-al-accent-hover: #9f1239; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #be123c; --ot-al-accent-soft: #fff1f2; --ot-al-accent-soft-text: #9f1239; --ot-al-focus: #e11d48; --ot-ad-accent: #be123c; --ot-ad-accent-hover: #9f1239; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #fb7185; --ot-ad-accent-soft: #4c0519; --ot-ad-accent-soft-text: #fda4af; --ot-ad-focus: #fb7185; }
-[data-accent="orange"] { --ot-al-accent: #c2410c; --ot-al-accent-hover: #9a3412; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #c2410c; --ot-al-accent-soft: #fff7ed; --ot-al-accent-soft-text: #9a3412; --ot-al-focus: #ea580c; --ot-ad-accent: #c2410c; --ot-ad-accent-hover: #9a3412; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #fb923c; --ot-ad-accent-soft: #431407; --ot-ad-accent-soft-text: #fdba74; --ot-ad-focus: #fb923c; }
-[data-accent="teal"] { --ot-al-accent: #0f766e; --ot-al-accent-hover: #115e59; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #0f766e; --ot-al-accent-soft: #f0fdfa; --ot-al-accent-soft-text: #115e59; --ot-al-focus: #0d9488; --ot-ad-accent: #0f766e; --ot-ad-accent-hover: #115e59; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #2dd4bf; --ot-ad-accent-soft: #042f2e; --ot-ad-accent-soft-text: #5eead4; --ot-ad-focus: #2dd4bf; }
-[data-accent="graphite"] { --ot-al-accent: #334155; --ot-al-accent-hover: #1e293b; --ot-al-on-accent: #ffffff; --ot-al-accent-text: #334155; --ot-al-accent-soft: #f1f5f9; --ot-al-accent-soft-text: #1e293b; --ot-al-focus: #475569; --ot-ad-accent: #475569; --ot-ad-accent-hover: #334155; --ot-ad-on-accent: #ffffff; --ot-ad-accent-text: #cbd5e1; --ot-ad-accent-soft: #1e293b; --ot-ad-accent-soft-text: #e2e8f0; --ot-ad-focus: #94a3b8; }
+/* A browser without OKLCH or color-mix (tokens-v2, risks) gets the six surface and
+   text tokens as plain sRGB so the app stays readable, though not themed. Outside the
+   token blocks the token lint checks. */
+@supports not (color: oklch(0 0 0)) {
+  :root { --ot-canvas: #f9fafc; --ot-surface: #ffffff; --ot-raised: #ffffff; --ot-sunken: #f1f4f6; --ot-text: #191f2b; --ot-muted: #525b6b; }
+}
+
+/* Accents (OpenSpec change theming, design D3, D4; tokens-v2 D4): a theme declares
+   three values: its light accent (also the browser bar colour), its bright dark-mode
+   accent for text, focus and the chart, and the colour of text on the accent. Every
+   other accent step is derived from them with the --ot-mix-* ratios, in the mode
+   blocks above and again on any [data-accent] element (a theme tile in Settings),
+   so a nested tile gets its own steps. A derived step that misses its contrast
+   minimum may be overridden here next to a comment naming the pair; theme.test.ts
+   counts the overrides. */
+[data-accent="emerald"] { --ot-al-accent: oklch(0.5081 0.1049 165.61); --ot-ad-accent-text: oklch(0.7729 0.1535 163.22); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="blue"] { --ot-al-accent: oklch(0.4882 0.2172 264.38); --ot-ad-accent-text: oklch(0.7137 0.1434 254.62); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="indigo"] { --ot-al-accent: oklch(0.4568 0.2146 277.02); --ot-ad-accent-text: oklch(0.6801 0.1583 276.93); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="violet"] { --ot-al-accent: oklch(0.4907 0.2412 292.58); --ot-ad-accent-text: oklch(0.709 0.1592 293.54); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="rose"] { --ot-al-accent: oklch(0.5143 0.1978 16.93); --ot-ad-accent-text: oklch(0.7192 0.169 13.43); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="orange"] { --ot-al-accent: oklch(0.5534 0.1739 38.4); --ot-ad-accent-text: oklch(0.7576 0.159 55.93); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="teal"] { --ot-al-accent: oklch(0.5109 0.0861 186.39); --ot-ad-accent-text: oklch(0.7845 0.1325 181.91); --ot-a-on-accent: oklch(1 0 0); }
+[data-accent="graphite"] { --ot-al-accent: oklch(0.3717 0.0392 257.29); --ot-ad-accent-text: oklch(0.869 0.0198 252.89); --ot-a-on-accent: oklch(1 0 0); /* override: dark buttons a step lighter than the light accent, so on-accent text on the dark canvas keeps its edge */ --ot-ad-accent: oklch(0.4455 0.0374 257.28); }
 :root[data-accent], [data-accent] {
-  --ot-accent: var(--ot-al-accent, #047857);
-  --ot-accent-hover: var(--ot-al-accent-hover, #065f46);
-  --ot-on-accent: var(--ot-al-on-accent, #ffffff);
-  --ot-accent-text: var(--ot-al-accent-text, #047857);
-  --ot-accent-soft: var(--ot-al-accent-soft, #ecfdf5);
-  --ot-accent-soft-text: var(--ot-al-accent-soft-text, #065f46);
-  --ot-focus: var(--ot-al-focus, #059669);
+  --ot-accent: var(--ot-al-accent, oklch(0.5081 0.1049 165.61));
+  --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+  --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+  --ot-accent-text: var(--ot-accent);
+  --ot-accent-soft: color-mix(in oklab, var(--ot-accent) var(--ot-mix-accent-soft-light), var(--ot-surface));
+  --ot-sidebar: var(--ot-canvas);
+  --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-soft-text-light), oklch(0 0 0));
+  --ot-chart-base: var(--ot-accent);
+  --ot-focus: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-focus-light), oklch(1 0 0));
 }
 @media (prefers-color-scheme: dark) {
   :root[data-accent]:where(:not([data-theme="light"])), [data-accent]:where(:not([data-theme="light"], [data-theme="light"] *)) {
-    --ot-accent: var(--ot-ad-accent, #047857);
-    --ot-accent-hover: var(--ot-ad-accent-hover, #065f46);
-    --ot-on-accent: var(--ot-ad-on-accent, #ffffff);
-    --ot-accent-text: var(--ot-ad-accent-text, #34d399);
-    --ot-accent-soft: var(--ot-ad-accent-soft, #022c22);
-    --ot-accent-soft-text: var(--ot-ad-accent-soft-text, #6ee7b7);
-    --ot-focus: var(--ot-ad-focus, #34d399);
+    --ot-accent: var(--ot-ad-accent, var(--ot-al-accent, oklch(0.5081 0.1049 165.61)));
+    --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+    --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+    --ot-accent-text: var(--ot-ad-accent-text, oklch(0.7729 0.1535 163.22));
+    --ot-accent-soft: color-mix(in oklab, var(--ot-accent-text) var(--ot-mix-accent-soft-dark), var(--ot-surface));
+    --ot-sidebar: var(--ot-canvas);
+    --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent-text) var(--ot-mix-accent-soft-text-dark), oklch(1 0 0));
+    --ot-chart-base: var(--ot-accent-text);
+    --ot-focus: var(--ot-accent-text);
   }
 }
 :root[data-accent][data-theme="dark"],
 [data-accent]:where([data-theme="dark"], [data-theme="dark"] *):where(:not([data-theme="dark"] [data-theme="light"], [data-theme="dark"] [data-theme="light"] *)) {
-  --ot-accent: var(--ot-ad-accent, #047857);
-  --ot-accent-hover: var(--ot-ad-accent-hover, #065f46);
-  --ot-on-accent: var(--ot-ad-on-accent, #ffffff);
-  --ot-accent-text: var(--ot-ad-accent-text, #34d399);
-  --ot-accent-soft: var(--ot-ad-accent-soft, #022c22);
-  --ot-accent-soft-text: var(--ot-ad-accent-soft-text, #6ee7b7);
-  --ot-focus: var(--ot-ad-focus, #34d399);
+  --ot-accent: var(--ot-ad-accent, var(--ot-al-accent, oklch(0.5081 0.1049 165.61)));
+  --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
+  --ot-on-accent: var(--ot-a-on-accent, oklch(1 0 0));
+  --ot-accent-text: var(--ot-ad-accent-text, oklch(0.7729 0.1535 163.22));
+  --ot-accent-soft: color-mix(in oklab, var(--ot-accent-text) var(--ot-mix-accent-soft-dark), var(--ot-surface));
+  --ot-sidebar: var(--ot-canvas);
+  --ot-accent-soft-text: color-mix(in oklch, var(--ot-accent-text) var(--ot-mix-accent-soft-text-dark), oklch(1 0 0));
+  --ot-chart-base: var(--ot-accent-text);
+  --ot-focus: var(--ot-accent-text);
 }
 
 /* Chart ramp (OpenSpec change stats-dashboard, design D2): five steps of one hue for
@@ -362,168 +447,174 @@
    reach [data-theme] subtrees (the workbench frame). The two dark blocks must stay
    identical; contrast.test.ts measures every pair of the override at 7:1 for text. */
 html:root[data-contrast="high"], html[data-contrast="high"] [data-theme="light"] {
-  --ot-canvas: #ffffff;
-  --ot-surface: #ffffff;
-  --ot-raised: #ffffff;
-  --ot-sunken: #ffffff;
-  --ot-text-strong: #000000;
-  --ot-text: #000000;
-  --ot-muted: #262626;
-  --ot-faint: #3d3d3d;
-  --ot-border: #000000;
-  --ot-border-input: #000000;
-  --ot-accent: #000000;
-  --ot-accent-hover: #262626;
-  --ot-on-accent: #ffffff;
-  --ot-accent-text: #000000;
-  --ot-accent-soft: #ffffff;
-  --ot-accent-soft-text: #000000;
-  --ot-focus: #000000;
-  --ot-p1: #991b1b;
-  --ot-p2: #9a3412;
-  --ot-p3: #1e40af;
-  --ot-p4: #334155;
-  --ot-p1-soft: #ffffff;
-  --ot-p2-soft: #ffffff;
-  --ot-p3-soft: #ffffff;
-  --ot-p4-soft: #ffffff;
-  --ot-success: #065f46;
-  --ot-success-soft: #ffffff;
-  --ot-success-soft-text: #065f46;
-  --ot-warning: #78350f;
-  --ot-warning-soft: #ffffff;
-  --ot-warning-soft-text: #78350f;
-  --ot-danger: #991b1b;
-  --ot-danger-soft: #ffffff;
-  --ot-danger-soft-text: #991b1b;
-  --ot-info: #0c4a6e;
-  --ot-info-soft: #ffffff;
-  --ot-info-soft-text: #0c4a6e;
-  --ot-scrim: rgb(0 0 0 / 0.6);
-  --ot-highlight: #fde68a;
-  --ot-highlight-text: #000000;
-  --ot-hue-red-soft: #ffffff; --ot-hue-red-text: #991b1b;
-  --ot-hue-orange-soft: #ffffff; --ot-hue-orange-text: #9a3412;
-  --ot-hue-yellow-soft: #ffffff; --ot-hue-yellow-text: #78350f;
-  --ot-hue-lime-soft: #ffffff; --ot-hue-lime-text: #365314;
-  --ot-hue-green-soft: #ffffff; --ot-hue-green-text: #14532d;
-  --ot-hue-teal-soft: #ffffff; --ot-hue-teal-text: #134e4a;
-  --ot-hue-cyan-soft: #ffffff; --ot-hue-cyan-text: #164e63;
-  --ot-hue-blue-soft: #ffffff; --ot-hue-blue-text: #1e3a8a;
-  --ot-hue-indigo-soft: #ffffff; --ot-hue-indigo-text: #312e81;
-  --ot-hue-violet-soft: #ffffff; --ot-hue-violet-text: #4c1d95;
-  --ot-hue-pink-soft: #ffffff; --ot-hue-pink-text: #831843;
-  --ot-hue-slate-soft: #ffffff; --ot-hue-slate-text: #1e293b;
+  --ot-canvas: oklch(1 0 0);
+  --ot-surface: oklch(1 0 0);
+  --ot-raised: oklch(1 0 0);
+  --ot-sunken: oklch(1 0 0);
+  --ot-text-strong: oklch(0 0 0);
+  --ot-text: oklch(0 0 0);
+  --ot-muted: oklch(0.2686 0 0);
+  --ot-faint: oklch(0.36 0 0);
+  --ot-border: oklch(0 0 0);
+  --ot-border-soft: oklch(0 0 0);
+  --ot-border-input: oklch(0 0 0); --ot-line-strong: oklch(0 0 0);
+  --ot-accent: oklch(0 0 0);
+  --ot-accent-hover: oklch(0.2686 0 0);
+  --ot-on-accent: oklch(1 0 0);
+  --ot-accent-text: oklch(0 0 0);
+  --ot-accent-soft: oklch(1 0 0);
+  --ot-sidebar: oklch(1 0 0);
+  --ot-accent-soft-text: oklch(0 0 0);
+  --ot-focus: oklch(0 0 0);
+  --ot-p1: oklch(0.4437 0.1613 26.9);
+  --ot-p2: oklch(0.4698 0.143 37.3);
+  --ot-p3: oklch(0.4244 0.1809 265.64);
+  --ot-p4: oklch(0.3717 0.0392 257.29);
+  --ot-p1-soft: oklch(1 0 0);
+  --ot-p2-soft: oklch(1 0 0);
+  --ot-p3-soft: oklch(1 0 0);
+  --ot-p4-soft: oklch(1 0 0);
+  --ot-success: oklch(0.4318 0.0865 166.91);
+  --ot-success-soft: oklch(1 0 0);
+  --ot-success-soft-text: oklch(0.4318 0.0865 166.91);
+  --ot-warning: oklch(0.4137 0.1054 45.9);
+  --ot-warning-soft: oklch(1 0 0);
+  --ot-warning-soft-text: oklch(0.4137 0.1054 45.9);
+  --ot-danger: oklch(0.4437 0.1613 26.9);
+  --ot-danger-soft: oklch(1 0 0);
+  --ot-danger-soft-text: oklch(0.4437 0.1613 26.9);
+  --ot-info: oklch(0.3912 0.0845 240.88);
+  --ot-info-soft: oklch(1 0 0);
+  --ot-info-soft-text: oklch(0.3912 0.0845 240.88);
+  --ot-scrim: oklch(0 0 0 / 0.6);
+  --ot-highlight: oklch(0.9243 0.1151 95.75);
+  --ot-highlight-text: oklch(0 0 0);
+  --ot-hue-red-soft: oklch(1 0 0); --ot-hue-red-text: oklch(0.4437 0.1613 26.9);
+  --ot-hue-orange-soft: oklch(1 0 0); --ot-hue-orange-text: oklch(0.4698 0.143 37.3);
+  --ot-hue-yellow-soft: oklch(1 0 0); --ot-hue-yellow-text: oklch(0.4137 0.1054 45.9);
+  --ot-hue-lime-soft: oklch(1 0 0); --ot-hue-lime-text: oklch(0.405 0.0956 131.06);
+  --ot-hue-green-soft: oklch(1 0 0); --ot-hue-green-text: oklch(0.3925 0.0896 152.54);
+  --ot-hue-teal-soft: oklch(1 0 0); --ot-hue-teal-text: oklch(0.3861 0.059 188.42);
+  --ot-hue-cyan-soft: oklch(1 0 0); --ot-hue-cyan-text: oklch(0.3982 0.0664 227.39);
+  --ot-hue-blue-soft: oklch(1 0 0); --ot-hue-blue-text: oklch(0.3791 0.1378 265.52);
+  --ot-hue-indigo-soft: oklch(1 0 0); --ot-hue-indigo-text: oklch(0.3588 0.1354 278.7);
+  --ot-hue-violet-soft: oklch(1 0 0); --ot-hue-violet-text: oklch(0.3796 0.1783 293.74);
+  --ot-hue-pink-soft: oklch(1 0 0); --ot-hue-pink-text: oklch(0.4078 0.1442 2.43);
+  --ot-hue-slate-soft: oklch(1 0 0); --ot-hue-slate-text: oklch(0.2795 0.0368 260.03);
 }
 @media (prefers-color-scheme: dark) {
   html:root[data-contrast="high"]:not([data-theme="light"]) {
-    --ot-canvas: #000000;
-    --ot-surface: #000000;
-    --ot-raised: #000000;
-    --ot-sunken: #000000;
-    --ot-text-strong: #ffffff;
-    --ot-text: #ffffff;
-    --ot-muted: #e5e5e5;
-    --ot-faint: #d4d4d4;
-    --ot-border: #ffffff;
-    --ot-border-input: #ffffff;
-    --ot-accent: #ffffff;
-    --ot-accent-hover: #e5e5e5;
-    --ot-on-accent: #000000;
-    --ot-accent-text: #ffffff;
-    --ot-accent-soft: #000000;
-    --ot-accent-soft-text: #ffffff;
-    --ot-focus: #ffffff;
-    --ot-p1: #fca5a5;
-    --ot-p2: #fdba74;
-    --ot-p3: #93c5fd;
-    --ot-p4: #cbd5e1;
-    --ot-p1-soft: #000000;
-    --ot-p2-soft: #000000;
-    --ot-p3-soft: #000000;
-    --ot-p4-soft: #000000;
-    --ot-success: #6ee7b7;
-    --ot-success-soft: #000000;
-    --ot-success-soft-text: #6ee7b7;
-    --ot-warning: #fcd34d;
-    --ot-warning-soft: #000000;
-    --ot-warning-soft-text: #fcd34d;
-    --ot-danger: #fca5a5;
-    --ot-danger-soft: #000000;
-    --ot-danger-soft-text: #fca5a5;
-    --ot-info: #7dd3fc;
-    --ot-info-soft: #000000;
-    --ot-info-soft-text: #7dd3fc;
-    --ot-scrim: rgb(0 0 0 / 0.7);
-    --ot-highlight: #fde68a;
-    --ot-highlight-text: #000000;
-    --ot-hue-red-soft: #000000; --ot-hue-red-text: #fca5a5;
-    --ot-hue-orange-soft: #000000; --ot-hue-orange-text: #fdba74;
-    --ot-hue-yellow-soft: #000000; --ot-hue-yellow-text: #fcd34d;
-    --ot-hue-lime-soft: #000000; --ot-hue-lime-text: #bef264;
-    --ot-hue-green-soft: #000000; --ot-hue-green-text: #86efac;
-    --ot-hue-teal-soft: #000000; --ot-hue-teal-text: #5eead4;
-    --ot-hue-cyan-soft: #000000; --ot-hue-cyan-text: #67e8f9;
-    --ot-hue-blue-soft: #000000; --ot-hue-blue-text: #93c5fd;
-    --ot-hue-indigo-soft: #000000; --ot-hue-indigo-text: #a5b4fc;
-    --ot-hue-violet-soft: #000000; --ot-hue-violet-text: #c4b5fd;
-    --ot-hue-pink-soft: #000000; --ot-hue-pink-text: #f9a8d4;
-    --ot-hue-slate-soft: #000000; --ot-hue-slate-text: #cbd5e1;
+    --ot-canvas: oklch(0 0 0);
+    --ot-surface: oklch(0 0 0);
+    --ot-raised: oklch(0 0 0);
+    --ot-sunken: oklch(0 0 0);
+    --ot-text-strong: oklch(1 0 0);
+    --ot-text: oklch(1 0 0);
+    --ot-muted: oklch(0.9219 0 0);
+    --ot-faint: oklch(0.8699 0 0);
+    --ot-border: oklch(1 0 0);
+    --ot-border-soft: oklch(1 0 0);
+    --ot-border-input: oklch(1 0 0); --ot-line-strong: oklch(1 0 0);
+    --ot-accent: oklch(1 0 0);
+    --ot-accent-hover: oklch(0.9219 0 0);
+    --ot-on-accent: oklch(0 0 0);
+    --ot-accent-text: oklch(1 0 0);
+    --ot-accent-soft: oklch(0 0 0);
+    --ot-sidebar: oklch(0 0 0);
+    --ot-accent-soft-text: oklch(1 0 0);
+    --ot-focus: oklch(1 0 0);
+    --ot-p1: oklch(0.8077 0.1035 19.57);
+    --ot-p2: oklch(0.8366 0.1165 66.29);
+    --ot-p3: oklch(0.8091 0.0956 251.81);
+    --ot-p4: oklch(0.869 0.0198 252.89);
+    --ot-p1-soft: oklch(0 0 0);
+    --ot-p2-soft: oklch(0 0 0);
+    --ot-p3-soft: oklch(0 0 0);
+    --ot-p4-soft: oklch(0 0 0);
+    --ot-success: oklch(0.8452 0.1299 164.98);
+    --ot-success-soft: oklch(0 0 0);
+    --ot-success-soft-text: oklch(0.8452 0.1299 164.98);
+    --ot-warning: oklch(0.879 0.1534 91.61);
+    --ot-warning-soft: oklch(0 0 0);
+    --ot-warning-soft-text: oklch(0.879 0.1534 91.61);
+    --ot-danger: oklch(0.8077 0.1035 19.57);
+    --ot-danger-soft: oklch(0 0 0);
+    --ot-danger-soft-text: oklch(0.8077 0.1035 19.57);
+    --ot-info: oklch(0.8276 0.1013 230.32);
+    --ot-info-soft: oklch(0 0 0);
+    --ot-info-soft-text: oklch(0.8276 0.1013 230.32);
+    --ot-scrim: oklch(0 0 0 / 0.7);
+    --ot-highlight: oklch(0.9243 0.1151 95.75);
+    --ot-highlight-text: oklch(0 0 0);
+    --ot-hue-red-soft: oklch(0 0 0); --ot-hue-red-text: oklch(0.8077 0.1035 19.57);
+    --ot-hue-orange-soft: oklch(0 0 0); --ot-hue-orange-text: oklch(0.8366 0.1165 66.29);
+    --ot-hue-yellow-soft: oklch(0 0 0); --ot-hue-yellow-text: oklch(0.879 0.1534 91.61);
+    --ot-hue-lime-soft: oklch(0 0 0); --ot-hue-lime-text: oklch(0.8972 0.1786 126.67);
+    --ot-hue-green-soft: oklch(0 0 0); --ot-hue-green-text: oklch(0.8712 0.1363 154.45);
+    --ot-hue-teal-soft: oklch(0 0 0); --ot-hue-teal-text: oklch(0.8549 0.1251 181.07);
+    --ot-hue-cyan-soft: oklch(0 0 0); --ot-hue-cyan-text: oklch(0.8651 0.1153 207.08);
+    --ot-hue-blue-soft: oklch(0 0 0); --ot-hue-blue-text: oklch(0.8091 0.0956 251.81);
+    --ot-hue-indigo-soft: oklch(0 0 0); --ot-hue-indigo-text: oklch(0.7853 0.1041 274.71);
+    --ot-hue-violet-soft: oklch(0 0 0); --ot-hue-violet-text: oklch(0.8112 0.1013 293.57);
+    --ot-hue-pink-soft: oklch(0 0 0); --ot-hue-pink-text: oklch(0.8228 0.1095 346.02);
+    --ot-hue-slate-soft: oklch(0 0 0); --ot-hue-slate-text: oklch(0.869 0.0198 252.89);
   }
 }
 html:root[data-contrast="high"][data-theme="dark"], html[data-contrast="high"] [data-theme="dark"] {
-  --ot-canvas: #000000;
-  --ot-surface: #000000;
-  --ot-raised: #000000;
-  --ot-sunken: #000000;
-  --ot-text-strong: #ffffff;
-  --ot-text: #ffffff;
-  --ot-muted: #e5e5e5;
-  --ot-faint: #d4d4d4;
-  --ot-border: #ffffff;
-  --ot-border-input: #ffffff;
-  --ot-accent: #ffffff;
-  --ot-accent-hover: #e5e5e5;
-  --ot-on-accent: #000000;
-  --ot-accent-text: #ffffff;
-  --ot-accent-soft: #000000;
-  --ot-accent-soft-text: #ffffff;
-  --ot-focus: #ffffff;
-  --ot-p1: #fca5a5;
-  --ot-p2: #fdba74;
-  --ot-p3: #93c5fd;
-  --ot-p4: #cbd5e1;
-  --ot-p1-soft: #000000;
-  --ot-p2-soft: #000000;
-  --ot-p3-soft: #000000;
-  --ot-p4-soft: #000000;
-  --ot-success: #6ee7b7;
-  --ot-success-soft: #000000;
-  --ot-success-soft-text: #6ee7b7;
-  --ot-warning: #fcd34d;
-  --ot-warning-soft: #000000;
-  --ot-warning-soft-text: #fcd34d;
-  --ot-danger: #fca5a5;
-  --ot-danger-soft: #000000;
-  --ot-danger-soft-text: #fca5a5;
-  --ot-info: #7dd3fc;
-  --ot-info-soft: #000000;
-  --ot-info-soft-text: #7dd3fc;
-  --ot-scrim: rgb(0 0 0 / 0.7);
-  --ot-highlight: #fde68a;
-  --ot-highlight-text: #000000;
-  --ot-hue-red-soft: #000000; --ot-hue-red-text: #fca5a5;
-  --ot-hue-orange-soft: #000000; --ot-hue-orange-text: #fdba74;
-  --ot-hue-yellow-soft: #000000; --ot-hue-yellow-text: #fcd34d;
-  --ot-hue-lime-soft: #000000; --ot-hue-lime-text: #bef264;
-  --ot-hue-green-soft: #000000; --ot-hue-green-text: #86efac;
-  --ot-hue-teal-soft: #000000; --ot-hue-teal-text: #5eead4;
-  --ot-hue-cyan-soft: #000000; --ot-hue-cyan-text: #67e8f9;
-  --ot-hue-blue-soft: #000000; --ot-hue-blue-text: #93c5fd;
-  --ot-hue-indigo-soft: #000000; --ot-hue-indigo-text: #a5b4fc;
-  --ot-hue-violet-soft: #000000; --ot-hue-violet-text: #c4b5fd;
-  --ot-hue-pink-soft: #000000; --ot-hue-pink-text: #f9a8d4;
-  --ot-hue-slate-soft: #000000; --ot-hue-slate-text: #cbd5e1;
+  --ot-canvas: oklch(0 0 0);
+  --ot-surface: oklch(0 0 0);
+  --ot-raised: oklch(0 0 0);
+  --ot-sunken: oklch(0 0 0);
+  --ot-text-strong: oklch(1 0 0);
+  --ot-text: oklch(1 0 0);
+  --ot-muted: oklch(0.9219 0 0);
+  --ot-faint: oklch(0.8699 0 0);
+  --ot-border: oklch(1 0 0);
+  --ot-border-soft: oklch(1 0 0);
+  --ot-border-input: oklch(1 0 0); --ot-line-strong: oklch(1 0 0);
+  --ot-accent: oklch(1 0 0);
+  --ot-accent-hover: oklch(0.9219 0 0);
+  --ot-on-accent: oklch(0 0 0);
+  --ot-accent-text: oklch(1 0 0);
+  --ot-accent-soft: oklch(0 0 0);
+  --ot-sidebar: oklch(0 0 0);
+  --ot-accent-soft-text: oklch(1 0 0);
+  --ot-focus: oklch(1 0 0);
+  --ot-p1: oklch(0.8077 0.1035 19.57);
+  --ot-p2: oklch(0.8366 0.1165 66.29);
+  --ot-p3: oklch(0.8091 0.0956 251.81);
+  --ot-p4: oklch(0.869 0.0198 252.89);
+  --ot-p1-soft: oklch(0 0 0);
+  --ot-p2-soft: oklch(0 0 0);
+  --ot-p3-soft: oklch(0 0 0);
+  --ot-p4-soft: oklch(0 0 0);
+  --ot-success: oklch(0.8452 0.1299 164.98);
+  --ot-success-soft: oklch(0 0 0);
+  --ot-success-soft-text: oklch(0.8452 0.1299 164.98);
+  --ot-warning: oklch(0.879 0.1534 91.61);
+  --ot-warning-soft: oklch(0 0 0);
+  --ot-warning-soft-text: oklch(0.879 0.1534 91.61);
+  --ot-danger: oklch(0.8077 0.1035 19.57);
+  --ot-danger-soft: oklch(0 0 0);
+  --ot-danger-soft-text: oklch(0.8077 0.1035 19.57);
+  --ot-info: oklch(0.8276 0.1013 230.32);
+  --ot-info-soft: oklch(0 0 0);
+  --ot-info-soft-text: oklch(0.8276 0.1013 230.32);
+  --ot-scrim: oklch(0 0 0 / 0.7);
+  --ot-highlight: oklch(0.9243 0.1151 95.75);
+  --ot-highlight-text: oklch(0 0 0);
+  --ot-hue-red-soft: oklch(0 0 0); --ot-hue-red-text: oklch(0.8077 0.1035 19.57);
+  --ot-hue-orange-soft: oklch(0 0 0); --ot-hue-orange-text: oklch(0.8366 0.1165 66.29);
+  --ot-hue-yellow-soft: oklch(0 0 0); --ot-hue-yellow-text: oklch(0.879 0.1534 91.61);
+  --ot-hue-lime-soft: oklch(0 0 0); --ot-hue-lime-text: oklch(0.8972 0.1786 126.67);
+  --ot-hue-green-soft: oklch(0 0 0); --ot-hue-green-text: oklch(0.8712 0.1363 154.45);
+  --ot-hue-teal-soft: oklch(0 0 0); --ot-hue-teal-text: oklch(0.8549 0.1251 181.07);
+  --ot-hue-cyan-soft: oklch(0 0 0); --ot-hue-cyan-text: oklch(0.8651 0.1153 207.08);
+  --ot-hue-blue-soft: oklch(0 0 0); --ot-hue-blue-text: oklch(0.8091 0.0956 251.81);
+  --ot-hue-indigo-soft: oklch(0 0 0); --ot-hue-indigo-text: oklch(0.7853 0.1041 274.71);
+  --ot-hue-violet-soft: oklch(0 0 0); --ot-hue-violet-text: oklch(0.8112 0.1013 293.57);
+  --ot-hue-pink-soft: oklch(0 0 0); --ot-hue-pink-text: oklch(0.8228 0.1095 346.02);
+  --ot-hue-slate-soft: oklch(0 0 0); --ot-hue-slate-text: oklch(0.869 0.0198 252.89);
 }
 /* Soft tints read as the surface in high contrast; an outline keeps the shape. */
 html:root[data-contrast="high"] :is(.bg-accent-soft, .bg-success-soft, .bg-warning-soft, .bg-danger-soft, .bg-info-soft, .bg-hue-soft, .bg-p1-soft, .bg-p2-soft, .bg-p3-soft, .bg-p4-soft) {
@@ -539,6 +630,7 @@ html:root[data-contrast="high"] :focus-visible {
 :root[data-motion="none"] {
   --duration-ui: 0ms;
   --duration-emphasis: 0ms;
+  --duration-moment: 0ms;
 }
 :root[data-motion="none"] *, :root[data-motion="none"] *::before, :root[data-motion="none"] *::after {
   animation-duration: 0s !important;
@@ -586,10 +678,23 @@ html, body, #root {
 
 html {
   font-synthesis: style;
+  /* Inter's optical-size axis picks its Display cut at large sizes (tokens-v2 D7). */
+  font-optical-sizing: auto;
 }
 
 body {
   @apply bg-canvas text-default antialiased;
+}
+
+/* Pointer on clickable elements (OpenSpec change row-and-cursor D2, design-system):
+   Tailwind 4 resets buttons to the arrow. One rule gives everything clickable the hand,
+   at zero specificity in the base layer, so a utility still chooses another cursor that
+   means something (cursor-grab, cursor-text, cursor-not-allowed, cursor-progress).
+   A task row opens from its empty area, so it shows the hand too. */
+@layer base {
+  :where(button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [role="menuitem"]:not([aria-disabled="true"]), [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="option"]:not([aria-disabled="true"]), summary, label[for], a[href], li[data-task-id]) {
+    cursor: pointer;
+  }
 }
 
 @layer components {
@@ -601,9 +706,9 @@ body {
 /* The three surfaces (ux-overhaul, design-system "Three surfaces"): a row, a card
    and an overlay. Dark pairs a border with the elevation, which does not read on a
    dark canvas on its own. */
-.surface-row { @apply rounded-control hover:bg-sunken dark:hover:bg-raised; }
-.surface-card { @apply rounded-card border border-default bg-surface shadow-1; }
-.surface-overlay { @apply rounded-card border border-default bg-raised shadow-3; }
+.surface-row { @apply rounded-chip hover:bg-hover; }
+.surface-card { @apply rounded-card border border-default bg-surface; }
+.surface-overlay { @apply rounded-popover border border-strong bg-pop shadow-3; }
 /* Shared Button (src/ui/Button.tsx, OpenSpec change ui-primitives D3): the same
    tokens as the legacy classes, plus sizes, icon-only and busy states. */
 /* Labels may wrap on narrow screens instead of pushing the page sideways; heights are minimums. */
@@ -619,22 +724,35 @@ body {
 .ui-btn--icon.ui-btn--md { @apply h-10 w-10 p-0; }
 .ui-btn--icon.ui-btn--lg { @apply h-12 w-12 p-0; }
 .ui-btn--primary { @apply bg-accent text-on-accent shadow-1 hover:bg-accent-hover active:translate-y-px; }
-.ui-btn--secondary { @apply border border-input bg-surface text-default hover:bg-sunken active:bg-sunken dark:hover:bg-raised; }
-.ui-btn--ghost { @apply text-muted hover:bg-sunken hover:text-default active:bg-sunken dark:hover:bg-raised; }
+.ui-btn--secondary { @apply border border-default bg-surface text-default hover:bg-hover active:bg-selected; }
+.ui-btn--ghost { @apply text-muted hover:bg-hover hover:text-default active:bg-selected; }
 .ui-btn--danger { @apply text-danger hover:bg-danger-soft active:bg-danger-soft; }
 /* WebKit lets a long option label in a native select paint past the box, and the
    GTK port (Linux) ignores overflow on it; paint containment keeps it inside. */
 select.ui-input { @apply truncate; contain: layout paint; }
+/* The composer frame draws the box and the focus ring; the field inside it is bare (task-full-page D6). */
+[data-composer-frame] .ui-input { @apply rounded-none border-0 bg-transparent px-0 py-1 focus:ring-0; }
+/* The design-system select (precision-settings D4): no platform arrow; a chevron drawn
+   with two gradients in the muted text colour, so no image and no hex. */
+select.ui-input:not([multiple]) {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ot-muted) 50%), linear-gradient(135deg, var(--ot-muted) 50%, transparent 50%);
+  background-position: calc(100% - 0.9375rem) 50%, calc(100% - 0.625rem) 50%;
+  background-size: 0.3125rem 0.3125rem;
+  background-repeat: no-repeat;
+}
+/* A settings row's control column (precision-settings D4): controls at the 32 px step. */
+[data-setting-control] :is(.ui-input:not(textarea), .ui-btn--md) { @apply min-h-8 px-2.5 py-1 text-meta; }
+[data-setting-control] select.ui-input:not([multiple]) { padding-right: 2rem; }
 .ui-kbd { @apply whitespace-nowrap rounded-chip border border-default bg-sunken px-1.5 py-0.5 font-mono text-hint text-muted; }
 /* Rich-text notes (collaborative-rich-text). ProseMirror's required base rules
    are inlined instead of importing its stylesheet. */
 /* At rest the notes are a quiet block of text (one placeholder line when empty);
    while focused they grow into a bordered editor (ux-overhaul, "Task panel layout"). */
 .notes-host { @apply -mx-2; }
-/* Long notes at rest in the panel (task-panel-facets D4): eight lines and a fade; not a scroller. */
-.notes-clamp[data-clamped] > :first-child { max-height: calc(8lh + 0.5rem); overflow: hidden; mask-image: linear-gradient(to bottom, black 75%, transparent); }
 .notes-editor {
-  @apply relative min-h-8 w-full space-y-2 rounded-control border border-transparent px-2 py-1 text-body text-default
+  @apply relative min-h-8 w-full space-y-2 rounded-control border border-transparent px-2 py-1 text-prose text-default
     focus:outline-none;
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -678,25 +796,139 @@ select.ui-input { @apply truncate; contain: layout paint; }
 .notes-editor a { @apply text-accent underline; }
 .notes-editor .ProseMirror-gapcursor { @apply hidden; }
 .notes-editor .ProseMirror-hideselection *::selection { background: transparent; }
+/* editor-everywhere: quotes, code blocks, tables (scrolling in their own box), images, mentions. */
+.notes-editor blockquote { @apply space-y-2 border-l-2 border-input pl-2 text-muted; }
+.notes-editor pre { @apply overflow-x-auto rounded-control bg-sunken p-2 font-mono text-meta dark:bg-raised; white-space: pre; }
+.notes-editor pre code { @apply bg-transparent p-0; }
+.notes-editor .tableWrapper { @apply max-w-full overflow-x-auto; }
+.notes-editor table, .md-table { @apply border-collapse text-meta; }
+.notes-editor td, .notes-editor th { @apply min-w-16 border border-default px-2 py-1 align-top; }
+.notes-editor th { @apply font-semibold; }
+.notes-editor .selectedCell { @apply bg-accent-soft; }
+.notes-editor figure.note-image { @apply my-1; }
+.notes-editor figure.note-image.ProseMirror-selectednode { @apply rounded-control ring-2 ring-focus; }
+.mention, .mention-chip { @apply rounded-chip bg-accent-soft px-0.5 text-accent; }
+/* group-mentions D4: a group reads as the same chip with an outline (and the group icon where rendered). */
+.mention[data-mention^="group:"], .mention-chip--group { @apply font-medium ring-1 ring-inset ring-focus; }
+.mention-chip--group svg { display: inline; vertical-align: -0.125em; margin-right: 0.125rem; }
+.issue-chip { @apply inline-flex items-center gap-1 rounded-chip border border-default bg-sunken px-1 font-mono text-meta text-default no-underline; }
+.slash-menu { @apply z-50 w-64 max-w-[calc(100vw-2rem)] rounded-control border border-default bg-surface p-1 shadow-3 dark:bg-raised; }
+.slash-menu [aria-selected="true"] { @apply bg-accent-soft text-strong; }
+.editor-toolbar { @apply -mx-2 mb-1 flex items-center gap-1 overflow-x-auto px-2 py-1; }
+}
+
+/* Surfaces (OpenSpec change surfaces-v2): structure felt through soft fills and
+   sunken areas instead of outlines. One block recipe for every task block, month and
+   plan row and timeline bar (D1); events are neutral with a hatched edge (D2); the
+   past is dimmed by mixing, never by opacity (D3); a board column is a sunken surface
+   (D6) with a drop placeholder sized to the dragged card (D7); board cards lift on
+   hover (D8); secondary settings cards and statistics panels are flat sections (D9). */
+@layer components {
+.ui-block {
+  background: var(--hue-soft);
+  border-inline-start: 3px solid var(--hue-solid);
+  border-radius: var(--radius-control);
+  color: var(--ot-text-strong);
+}
+.ui-block--row { border-radius: var(--radius-chip); }
+.ui-block--dashed { border-inline-start-style: dashed; }
+.ui-block--past {
+  background: color-mix(in oklab, var(--hue-soft) 55%, var(--ot-surface));
+  border-inline-start-color: color-mix(in oklab, var(--hue-solid) 60%, var(--ot-surface));
+  color: var(--ot-faint);
+}
+/* A re-plan preview's proposed place (replan-the-day D4): the block recipe with a dashed accent outline. */
+.ui-block--ghost {
+  background: color-mix(in oklab, var(--hue-soft) 70%, var(--ot-surface));
+  border: 1.5px dashed var(--ot-accent);
+  border-inline-start: 3px dashed var(--ot-accent);
+  color: var(--ot-text-strong);
+}
+.ui-block--late {
+  background: var(--ot-danger-soft);
+  border-inline-start-color: var(--ot-danger);
+  color: var(--ot-danger-soft-text);
+}
+.ui-block--event {
+  background:
+    repeating-linear-gradient(45deg, var(--ot-border-input) 0 2px, transparent 2px 4px) left / 3px 100% no-repeat,
+    var(--ot-sunken);
+  border-inline-start: 0;
+  padding-inline-start: calc(3px + 0.375rem);
+  color: var(--ot-muted);
+}
+.ui-block-dot { @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-hue-solid; }
+/* A frame's band behind the Day and Week blocks (calendar-frames D3): a tint lighter
+   than a block's fill, a hairline top in the hue, no other edge; dimmed on past days. */
+.ui-frame-band {
+  background: color-mix(in oklab, var(--hue-soft) 70%, transparent);
+  border-top: 1px solid color-mix(in oklab, var(--hue-solid) 70%, transparent);
+}
+.ui-frame-band--past {
+  background: color-mix(in oklab, var(--hue-soft) 40%, transparent);
+  border-top-color: color-mix(in oklab, var(--hue-solid) 35%, transparent);
+}
+/* An event of Today's agenda that already ended (OpenSpec change today-agenda, D6): dimmed by mixing, never by opacity. */
+.ui-event-past {
+  color: var(--ot-faint);
+  border-color: color-mix(in oklab, var(--hue-solid) 60%, var(--ot-surface));
+}
+.ui-event-past .ui-block-dot { background: color-mix(in oklab, var(--hue-solid) 60%, var(--ot-surface)); }
+.ui-column { @apply rounded-card bg-sunken p-1.5 dark:border dark:border-default; }
+/* The board's "Add a section" column (precision-boards-timeline D4): a dashed outline the height of a column. */
+.ui-column-add { @apply flex h-[calc(100dvh-14rem)] w-[88vw] shrink-0 snap-start flex-col items-stretch gap-2 rounded-card border border-dashed border-input p-1.5 text-meta text-muted sm:w-72; }
+button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hover:bg-sunken hover:text-default focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus; }
+.ui-drop-placeholder {
+  border: 2px dashed var(--ot-border-input);
+  border-radius: var(--radius-control);
+  background: var(--ot-accent-soft);
+}
+.ui-section-flat { @apply px-4 py-5 sm:px-6; }
+/* A settings section (precision-settings D3): flat on the page, its rows between hairlines; the page spaces them. */
+.ui-settings-section { @apply min-w-0; }
+/* The setting a search result or link opened (settings-subpages D3): tinted on arrival,
+   the tint fading out after a moment. A colour fade only, so it stays under reduced motion. */
+[data-settings-highlight] {
+  border-radius: var(--radius-control);
+  transition: background-color var(--duration-emphasis) var(--ease-calm), box-shadow var(--duration-emphasis) var(--ease-calm);
+}
+[data-settings-highlight="on"] { background-color: var(--ot-accent-soft); box-shadow: 0 0 0 0.5rem var(--ot-accent-soft); }
+/* A hairline between a flat section and whatever comes before it on the page (D9). */
+.ui-section-flat:not(:first-child) { @apply border-t border-default; }
+/* A dashboard panel: flat, full width of its grid cell, a hairline above every one (statistics). */
+.ui-panel-flat { @apply border-t border-default px-0; }
+}
+
+/* Outside the layers, so they win over the row's own shadow and opacity utilities (surfaces-v2 D7, D8). */
+.ui-card--lift, .ui-cards--lift > li:not([data-drop-placeholder]) { @apply hover:shadow-2 focus-within:shadow-2; }
+/* The origin card while dragged: a sunken, dashed ghost with readable text (opacity would fail 4.5:1). */
+.ui-cards--lift > li[data-dragging] {
+  opacity: 1;
+  transform: none;
+  scale: none;
+  box-shadow: none;
+  border-style: dashed;
+  border-color: var(--ot-border-input);
+  background: var(--ot-sunken);
 }
 
 /* Phone layout rules (OpenSpec change `mobile-layout`, design D2). */
 @layer components {
 /* Row density (OpenSpec change ux-overhaul, appearance-preferences "Density
-   preference"): comfortable rows by default, 36 px rows under compact. Touch
+   preference", precision-tokens D5): comfortable rows are 36 px, compact 32 px. Touch
    targets keep 44 px on coarse pointers through the rules further down. */
 .row-pad { padding-block: 0.5rem; }
-/* The page frame (ux-feedback-2 D7, app-shell "Page template"): the header spans the
-   frame; everything else takes the page type's width, starting at the frame's left. */
-.page-frame[data-page-body="list"] > :not([data-page-header]) { max-width: 48rem; }
+/* The page (precision-shell D3, app-shell "Page template"): content uses the whole
+   content surface, the header included, so every title, first row and last action
+   share the surface's padding. Only a form page keeps its fields at 42 rem from the
+   left edge; its header still spans the surface. */
 .page-frame[data-page-body="form"] > :not([data-page-header]) { max-width: 42rem; }
-.page-frame[data-page-body="wide"] > :not([data-page-header]) { max-width: 72rem; }
-/* The selected row (inline-task-editing D5, ux-feedback-2 D5): a 2 px leading accent
-   bar and a 4% accent tint, no ring and no full background. Hovering another row
-   gives it only a 3% neutral tint; hovering the selected row adds nothing. */
-.row-selected { background-color: color-mix(in oklab, var(--text-color-accent) 4%, transparent); }
+/* The selected row (inline-task-editing D5, precision-rows D4): a 2 px leading accent
+   bar on the neutral selected-row surface, no ring. Hovering another row gives it the
+   lighter hover surface; hovering the selected row adds nothing. */
+.row-selected { background-color: var(--ot-selected-row); }
 .row-selected::before { content: ''; position: absolute; inset-block: 0.375rem; inset-inline-start: 0; width: 2px; border-radius: 9999px; background-color: var(--text-color-accent); }
-.row-hover:hover { background-color: color-mix(in oklab, var(--text-color-default) 3%, transparent); }
+.row-hover:hover { background-color: var(--ot-hover); }
 /* A touch hold armed (task-row-context-menu "Touch: hold and release"): the pressed
    row tints while the hold counts, so holding reads as feedback before the menu opens
    on release. A plain attribute, so it survives the row's re-renders mid-hold. */
@@ -722,11 +954,81 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   background-size: 75% 75%;
   background-repeat: no-repeat;
 }
-/* Completion feedback (task-list-presentation): the check mark pops within the emphasis
-   duration; under reduced motion the animation is instant and only the row's opacity fades. */
+/* A narrow row's line is one run of muted text (rows-v2 D4): a faint middle dot between
+   adjacent items, as generated content so it is never read out. A row's line holds two
+   wrappers (the column's cells, then the rest), so its dots also cross from the first
+   to the second. A card's property row has no dots: its items are spaced and lead with
+   icons (precision-boards-timeline D3). */
+[data-row-meta="row"] > * > [data-row-item] ~ [data-row-item]::before,
+[data-row-meta="row"] > [data-row-props]:has(> [data-row-item]) + [data-row-rest] > :first-child [data-row-item]:first-child::before,
+[data-row-meta="row"] > [data-row-props]:has(> [data-row-item]) + [data-row-rest] > [data-row-item]:first-child::before {
+  content: '·'; color: var(--ot-faint); margin-inline-end: 0.125rem;
+}
+[data-row-meta="row"] [data-row-labels] { margin-inline: 0.25rem; }
+/* The time column's width (rows-v2 D2): one value for every list, from the user's time
+   format; DateTimePrefsProvider sets it on the root ("23:59" or "12:00 PM"). */
+:root { --row-time-w: 3.25rem; }
+/* Focus not obscured (rows-v2 D7, WCAG 2.2 2.4.11): the content scroller keeps room for
+   a toast (3.5 rem) and the selection bar (3.5 rem) plus their gap, so a focused row
+   action scrolled into view with `block: 'nearest'` stays clear of both. */
+:root { --list-scroll-pad: 8rem; }
+/* The phone add button's footprint under every list (phone-v2 D2): its 3.5 rem, its 0.75 rem offset above the tab bar, a 0.5 rem gap. */
+:root { --add-room: 4.75rem; }
+/* Completion feedback (task-list-presentation; motion-v2 D3). The op is written at
+   once; the list keeps the row as a departing row (`data-departing`) for the moment:
+   0-250 ms the check mark pops, 60-260 ms the strike draws and the text fades to half,
+   200-400 ms the row collapses (its height is measured into --row-h) and the rows
+   below move up. A repeating task stays (`data-rolled`): the check pops, the line
+   below fades back in with the next date and the row tints briefly. Undo brings a
+   departing row back with a 120 ms fade (`data-restored`). Reduced motion: the row
+   fades within 120 ms and nothing moves or scales; no motion: everything is instant. */
 @keyframes row-check-pop { 0% { transform: scale(0.8); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
-.row-check-pop { animation: row-check-pop var(--duration-emphasis) var(--ease-calm, ease-out) both; }
-:root[data-density="compact"] .row-pad { padding-block: 0.25rem; }
+@keyframes row-strike { from { inline-size: 0; } to { inline-size: 100%; } }
+@keyframes row-text-fade { from { opacity: 1; } to { opacity: 0.5; } }
+@keyframes row-collapse {
+  from { block-size: var(--row-h, auto); opacity: 1; }
+  to { block-size: 0; padding-block: 0; margin-block: 0; opacity: 0; }
+}
+@keyframes row-rolled { from { background-color: var(--ot-accent-soft); } to { background-color: transparent; } }
+@keyframes row-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.row-check-pop, [data-departing] [data-check-mark], [data-rolled] [data-check-mark] {
+  animation: row-check-pop var(--duration-emphasis) var(--ease-spring) backwards;
+}
+[data-departing] { overflow: hidden; animation: row-collapse calc(var(--duration-moment) - 200ms) var(--ease-spring) 200ms both; }
+[data-departing] [data-row-open] { animation: row-text-fade 200ms var(--ease-calm) 60ms both; }
+[data-departing] [data-row-title] { position: relative; inline-size: fit-content; max-inline-size: 100%; text-decoration-line: none; }
+[data-departing] [data-row-title]::after {
+  content: ""; position: absolute; inset-inline-start: 0; inset-block-start: 50%; block-size: 1px;
+  background: currentColor; animation: row-strike 200ms var(--ease-calm) 60ms both;
+}
+[data-rolled] { animation: row-rolled var(--duration-emphasis) var(--ease-calm) var(--duration-emphasis) both; }
+[data-rolled] [data-row-meta] { animation: row-fade-in var(--duration-ui) var(--ease-calm) var(--duration-emphasis) both; }
+[data-restored] { animation: row-fade-in var(--duration-ui) var(--ease-calm) both; }
+/* An expanded row's details fade in (row-expand D5); reduced motion makes it instant, like every animation. */
+[data-row-details] { animation: row-fade-in var(--duration-ui) var(--ease-calm) both; }
+@media (prefers-reduced-motion: reduce) {
+  .row-check-pop, [data-departing], [data-departing] *, [data-departing] [data-row-title]::after,
+  [data-rolled], [data-rolled] *, [data-restored] { animation: none !important; }
+  [data-departing] [data-row-title]::after { content: none; }
+  [data-departing] [data-row-title] { text-decoration-line: line-through; }
+  /* The departing row fades within the interface duration, then leaves. */
+  @starting-style { [data-departing] { opacity: 1; } }
+  [data-departing] { opacity: 0; transition: opacity var(--duration-ui) ease-out; }
+}
+:root[data-motion="none"] [data-departing] { display: none; }
+
+/* List reflow (task-list-presentation "List reflow", motion-v2 D4): the rows named for a
+   local change slide to their new places within the moment: the slide takes the emphasis
+   duration, so with the browser's snapshot of the rows (about 100 ms on a slow phone,
+   measured in design.md) the whole change stays under 400 ms. Old and new snapshots
+   only crossfade; the root keeps a crossfade within the interface duration. */
+::view-transition-group(*) { animation-duration: var(--duration-emphasis); animation-timing-function: var(--ease-spring); }
+::view-transition-old(*), ::view-transition-new(*) { animation-duration: var(--duration-ui); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--duration-ui); }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+:root[data-density="compact"] .row-pad { padding-block: 0.375rem; }
 /* The task panel's facet lines follow the density too (task-panel-facets D4). */
 :root[data-density="compact"] .facet-line [data-part], :root[data-density="compact"] .facet-line > span:first-child { min-height: 1.5rem; height: auto; }
 :root[data-density="compact"] [data-sidebar-item] { min-height: 2rem; padding-block: 0.25rem; }
@@ -737,6 +1039,103 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
 }
 /* User-written text wraps instead of pushing the page sideways. */
 .user-text { overflow-wrap: anywhere; }
+/* A part of the day pages' briefing that leads somewhere (briefing-links D3): the clause's
+   own colour and weight, underlined on hover and keyboard focus. Inline, so it wraps with
+   the sentence. */
+.briefing-link { @apply inline cursor-pointer rounded-chip text-inherit underline-offset-2 outline-none hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus; font: inherit; text-align: inherit; }
+}
+
+/* The property column (precision-rows D1 to D3, task-list-presentation "One row
+   anatomy"). Every list row is its own size container. From 40 rem of row width the
+   open control is a grid: the title with its marks on the left, the column's cells on
+   the right in fixed tracks, so values line up down the list, and the facts the column
+   does not hold on a second line. The column drops cells from its end as the row
+   narrows (assignee and estimate under 56 rem, then the third cell under 48 rem; with
+   no project cell, assignee and estimate under 48 rem); the task panel shows them all.
+   Under 40 rem the wrappers are not boxes and the row keeps its two lines. These rules
+   are outside the layers so they win over the line's utility classes. */
+@container row (width < 40rem) {
+  [data-row-props] :is([data-date], [data-estimate], [data-progress]) > svg { display: none; }
+}
+@container row (width >= 40rem) {
+  /* align-content: on touch the open control is at least 44 px tall (the coarse-pointer
+     button rule); the lines stay at its top, on the circle's line, not in its middle. */
+  [data-row-open] { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-content: start; column-gap: 0.75rem; row-gap: 0.125rem; }
+  [data-row-head] { grid-area: 1 / 1; }
+  [data-row-meta="row"] { display: contents; }
+  [data-row-props] {
+    grid-area: 1 / 2; display: grid; align-items: center; column-gap: 0.75rem; white-space: nowrap;
+    grid-template-columns: [date] 5.75rem [extra] 6.875rem [estimate] 4rem [assignee] 1.25rem;
+  }
+  [data-row-props="project"] { grid-template-columns: [date] 5.75rem [project] 9.375rem [extra] 6rem [estimate] 4rem [assignee] 1.25rem; }
+  [data-row-cell] { overflow: hidden; }
+  [data-row-cell="date"] { grid-column: date; }
+  [data-row-cell="project"] { grid-column: project; }
+  [data-row-cell="extra"] { grid-column: extra; }
+  [data-row-cell="estimate"] { grid-column: estimate; }
+  [data-row-cell="assignee"] { grid-column: assignee; }
+  [data-row-cell] [data-label-chips] { flex-wrap: nowrap; }
+  /* The assignee cell shows the avatar; the name stays in the tooltip and is read out. */
+  [data-row-cell="assignee"] [data-assignee] > :last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  [data-row-rest] { grid-area: 2 / 1 / 3 / 3; display: flex; flex-wrap: wrap; align-items: center; column-gap: 0.25rem; row-gap: 0.125rem; }
+  [data-row-meta="row"] > [data-row-props] > [data-row-item]::before,
+  [data-row-meta="row"] > [data-row-props] + [data-row-rest] > :first-child [data-row-item]:first-child::before,
+  [data-row-meta="row"] > [data-row-props] + [data-row-rest] > [data-row-item]:first-child::before { content: none; }
+  [data-row-meta="row"] [data-row-labels] { margin-inline: 0; }
+  /* The revealed actions float over the column's end (precision-rows D5), so the row keeps no room for them. */
+  [data-row-trailing] { min-width: 0; }
+}
+@container row (40rem <= width < 48rem) {
+  [data-row-props] { grid-template-columns: [date] 5.75rem [extra] 6.875rem; }
+  [data-row-props="project"] { grid-template-columns: [date] 5.75rem [project] 9.375rem; }
+  [data-row-props="project"] > [data-row-cell="extra"] { display: none; }
+  [data-row-cell="estimate"], [data-row-cell="assignee"] { display: none; }
+}
+@container row (48rem <= width < 56rem) {
+  [data-row-props="project"] { grid-template-columns: [date] 5.75rem [project] 9.375rem [extra] 6rem; }
+  [data-row-props="project"] > :is([data-row-cell="estimate"], [data-row-cell="assignee"]) { display: none; }
+}
+/* The phone row (precision-phone D2, task-list-presentation "Phone rows"): below 768 px
+   a narrow list row is one line, 44 px tall, with the title at 14.5 px and one cell at
+   its end, the one the row marks `data-row-phone`: the date, else the deadline, else the
+   assignee's avatar, else the project's dot. The other facts are on the task page. A
+   narrow list beside other content on a wider screen keeps its two lines. The open
+   control is the 44 px row: 12 px above and below the title's 20 px line, so on touch
+   no row padding adds to its 44 px minimum; the slots before it sit on the title's first
+   line, also when a second line (the Inbox's source) follows. The time column shows
+   only where a row has a time, and the counts stay off the line. */
+@media (width < 48rem) {
+  .row-pad, :root[data-density="compact"] .row-pad { padding-block: 0; }
+  .row-pad > [data-row-open] { min-height: 2.75rem; padding-block: 0.75rem; }
+  .row-pad > :is([data-leading-slot], [data-row-controls], [data-row-time], [data-row-expand]) { margin-top: 0.75rem; }
+  .row-pad > [data-row-time]:empty { display: none; }
+  @container row (width < 40rem) {
+    [data-row-counts] { display: none; }
+    [data-row-time] { width: auto; margin-inline-end: 0.25rem; }
+    [data-row-open] { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem; }
+    [data-row-head] { grid-area: 1 / 1; }
+    [data-row-title] { font-size: 0.90625rem; }
+    [data-row-meta="row"] { display: contents; }
+    [data-row-props] { grid-area: 1 / 2; display: flex; align-items: center; white-space: nowrap; }
+    [data-row-props] > [data-row-cell]:not([data-row-phone]), [data-row-rest] { display: none; }
+    [data-row-meta="row"] > [data-row-props] > [data-row-item]::before { content: none; }
+    /* The project as its dot, the assignee as the avatar; both names stay in the accessible text. */
+    [data-row-cell="project"][data-dot] > :last-child,
+    [data-row-cell="assignee"] [data-assignee] > :last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+}
+
+/* Detailed rows (OpenSpec change row-layouts, design D2): the title, the parent and a
+   details line, stacked at every width; the property column and the phone's one-line
+   row are for one-line rows only. Outside the layers, after the column's rules, so
+   they win over them. */
+@container row (width >= 40rem) {
+  [data-row-layout="detailed"] [data-row-open] { display: flex; align-items: stretch; }
+}
+@media (width < 48rem) {
+  @container row (width < 40rem) {
+    [data-row-layout="detailed"] [data-row-open] { display: flex; align-items: stretch; }
+  }
 }
 
 /* A side scroller (OpenSpec change sidebar-compact-desktop): a thin scrollbar in the
@@ -752,16 +1151,34 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   --fade: linear-gradient(to bottom, transparent, black var(--fade-top), black calc(100% - var(--fade-bottom)), transparent);
 }
 .ui-scroller:hover, .ui-scroller:focus-within { scrollbar-color: var(--ot-border-input) transparent; }
+/* A tab row's baseline (tab-row-scrollbar D1): an inset box-shadow, not a border, so the
+   selected tab's underline covers it without overflowing the row; the row scrolls
+   sideways only and never shows a vertical scrollbar (GitHub issue 445). Forced
+   colours drop box-shadows, so the border comes back there (D3). */
+.ui-tab-row { overflow-y: hidden; box-shadow: inset 0 -1px 0 var(--tab-row-line, var(--ot-border)); }
+.ui-tab-row-soft { --tab-row-line: var(--ot-border-soft); }
+@media (forced-colors: active) { .ui-tab-row { border-bottom: 1px solid CanvasText; } }
 .ui-scroller::-webkit-scrollbar { width: 6px; }
 .ui-scroller::-webkit-scrollbar-thumb { border-radius: 3px; background: var(--ot-border); }
 .ui-scroller:hover::-webkit-scrollbar-thumb { background: var(--ot-border-input); }
 .ui-scroller[data-fade-top] { --fade-top: 0.75rem; }
 .ui-scroller[data-fade-bottom] { --fade-bottom: 1rem; }
-/* A sidebar count shown on hover or focus (quiet-sidebar D1): opacity, not display, so
-   the number keeps its width and the row never moves; always shown where there is no hover. */
+/* Shown on hover or focus (quiet-sidebar D1, sidebar-v2 D5): a row's count, a group
+   header's actions. Opacity, not display, so it keeps its width, stays in the Tab order
+   and the accessibility tree, and nothing moves; always shown where there is no hover. */
 @media (hover: hover) {
-  .ui-count-quiet { opacity: 0; transition: opacity var(--duration-ui); }
-  :is(.group, [data-sidebar-item]):is(:hover, :focus-within) .ui-count-quiet { opacity: 1; }
+  .ui-reveal { opacity: 0; transition: opacity var(--duration-ui); }
+  :is(.group, [data-sidebar-item], [data-sidebar-group-header]):is(:hover, :focus-within) .ui-reveal, .ui-reveal:focus-within { opacity: 1; }
+}
+/* Every count on (sidebar-polish D2): the count sits in a slot as wide as the row's
+   menu button; with a fine pointer the button takes the slot while the row is hovered
+   or focused, so the row never grows. Touch keeps the count and the button side by side. */
+@media (hover: hover) and (pointer: fine) {
+  .ui-swap-row { position: relative; }
+  .ui-swap-count { min-width: 1.75rem; text-align: center; }
+  .ui-swap-menu { position: absolute; right: 0.25rem; top: 50%; translate: 0 -50%; opacity: 0; }
+  .ui-swap-row:is(:hover, :focus-within) .ui-swap-menu, .ui-swap-menu[aria-expanded="true"] { opacity: 1; }
+  .ui-swap-row:is(:hover, :focus-within) .ui-swap-count, .ui-swap-row:has(.ui-swap-menu[aria-expanded="true"]) .ui-swap-count { visibility: hidden; }
 }
 .ui-scroller:is([data-fade-top], [data-fade-bottom]) {
   mask-image: var(--fade), linear-gradient(black, black);
@@ -801,7 +1218,7 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
 
 @layer components {
 /* In-app Help (user-documentation): the guide HTML generated from docs/. */
-.help-prose { @apply text-body leading-relaxed text-default; overflow-wrap: break-word; }
+.help-prose { @apply text-prose leading-relaxed text-default; overflow-wrap: break-word; }
 .help-prose h1 { @apply mb-3 text-h1 font-semibold; }
 .help-prose h2 { @apply mt-8 mb-2 scroll-mt-16 border-t border-default pt-4 text-h2 font-semibold; }
 .help-prose h3 { @apply mt-6 mb-1.5 scroll-mt-16 text-h3 font-semibold; }
@@ -822,55 +1239,91 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
 .help-prose table { @apply w-full border-collapse text-meta; }
 .help-prose th, .help-prose td { @apply border-t border-default px-3 py-2 text-left align-top; }
 .help-prose thead th { @apply border-t-0 bg-sunken font-semibold; }
-.help-prose summary { @apply cursor-pointer font-medium; }
+.help-prose summary { @apply font-medium; }
 .help-snippet mark, .help-prose mark { @apply rounded-chip bg-highlight px-0.5 text-on-highlight; }
 }
 
 @layer components {
 /* Focus (OpenSpec change focus-mode, design D6): the timer's digits, from the type
    tokens, with tabular figures so they do not jump each second; fit at 360 px. */
-.focus-clock { @apply font-semibold text-strong; font-size: min(calc(var(--text-h1) * 2.75), 20vw); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.focus-clock { @apply font-semibold text-strong; font-size: min(calc(var(--text-display) * 2.357), 20vw); line-height: 1.05; font-variant-numeric: tabular-nums; }
 /* Display mode (OpenSpec change display-mode, design D4): one view at a large type
    scale for a tablet or an e-ink panel. Sizes derive from the type tokens times
    --display-scale (set per size on the display's root), so they follow the
    browser's font-size setting: body text is about 20, 24 and 32 px at m, l, xl.
    Day columns stack below 768 px and wrap instead of scrolling sideways. */
-.display-root { --display-scale: 1.6; @apply flex flex-col bg-canvas text-default; min-height: 100%; font-size: calc(var(--text-body) * var(--display-scale)); line-height: 1.35; }
+.display-root { --display-scale: 1.6; @apply flex flex-col bg-canvas text-default; min-height: 100%; font-size: calc(var(--text-prose) * var(--display-scale)); line-height: 1.35; }
 .display-root[data-size="m"] { --display-scale: 1.35; }
 .display-root[data-size="xl"] { --display-scale: 2.15; }
-.display-clock { @apply font-semibold text-strong; font-size: min(calc(var(--text-h1) * var(--display-scale) * 1.75), 16vw); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.display-clock { @apply font-semibold text-strong; font-size: min(calc(var(--text-display) * var(--display-scale) * 1.5), 16vw); line-height: 1.05; font-variant-numeric: tabular-nums; }
 .display-date { @apply text-muted; font-size: calc(var(--text-h2) * var(--display-scale)); line-height: 1.25; }
 .display-title { @apply font-semibold text-strong; font-size: calc(var(--text-h2) * var(--display-scale)); line-height: 1.2; }
-.display-heading { @apply font-semibold text-strong; font-size: calc(var(--text-h3) * var(--display-scale)); line-height: 1.3; }
+/* Group labels follow the list's group header (page-rhythm D2): semibold, muted, the
+   metadata size scaled; uppercase with wide tracking for groups the view generated. */
+.display-heading { @apply font-semibold text-muted; font-size: calc(var(--text-meta) * var(--display-scale)); line-height: 1.3; }
+.display-heading[data-generated] { text-transform: uppercase; letter-spacing: 0.04em; }
 .display-meta { @apply text-muted; font-size: calc(var(--text-meta) * var(--display-scale)); line-height: 1.3; }
-.display-task { font-size: calc(var(--text-body) * var(--display-scale)); line-height: 1.3; }
+.display-task { font-size: calc(var(--text-prose) * var(--display-scale)); line-height: 1.3; }
 /* A row is at least 56 px tall at size l; its checkbox is a 44 px touch target or larger. */
-.display-row { @apply flex items-center gap-3 rounded-control px-2 py-1 outline-none focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-focus; min-height: calc(35px * var(--display-scale)); }
+.display-row { @apply flex items-center gap-3 rounded-control px-2 py-1 outline-none focus-visible:outline-3 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-focus; min-height: calc(35px * var(--display-scale)); }
 .display-check { @apply flex shrink-0 items-center justify-center rounded-full; width: max(44px, 1.5em); height: max(44px, 1.5em); }
 .display-check-mark { @apply flex items-center justify-center rounded-full border-2; width: 1.1em; height: 1.1em; }
 .display-columns { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
 /* Today on a landscape screen: the day's list on the left, the next days beside it. */
 .display-board { display: flex; flex-direction: column; gap: 1.5rem; }
-@media (min-width: 768px) {
+@media (min-width: 48rem) {
   .display-columns { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11em), 1fr)); }
   /* Side by side, the day columns use a step smaller type than the day's own list. */
   .display-columns .display-task { font-size: calc(var(--text-body) * var(--display-scale) * 0.85); }
-  .display-columns .display-heading { font-size: calc(var(--text-body) * var(--display-scale)); }
+  .display-columns .display-heading { font-size: calc(var(--text-meta) * var(--display-scale) * 0.9); }
 }
-@media (min-width: 1024px) {
+@media (min-width: 64rem) {
   .display-board[data-split] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 2rem; align-items: start; }
 }
 }
 
-/* Dialog placement="sheet" (OpenSpec change lean-chrome D3): below 640 px the card
-   slides up from the bottom within --duration-ui; under reduced motion it only fades.
-   From 640 px up it is the ordinary centred card, without motion. */
+/* Overlay motion (web-app "Overlay motion", motion-v2 D5). Dialog placement="sheet"
+   (lean-chrome D3) slides up from the bottom below 640 px within the emphasis duration
+   and slides down in three quarters of it; from 640 px every dialog fades and scales
+   up from 98 %, and leaves the same way, faster. Toasts slide up 8 px and fade out.
+   Menus, popovers, tooltips and the palette fade in over the interface duration and
+   close at once. Reduced motion: every overlay only fades; no motion: instant.
+   Entrances fill `backwards` only: a transform left in effect after the animation would
+   make the overlay the containing block of the fixed pickers inside it. */
 @layer components {
 @keyframes dialog-sheet-up { from { transform: translateY(1.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dialog-sheet-down { from { transform: none; opacity: 1; } to { transform: translateY(1.5rem); opacity: 0; } }
 @keyframes dialog-sheet-fade { from { opacity: 0; } to { opacity: 1; } }
-.dialog-sheet { animation: dialog-sheet-up var(--duration-ui) var(--ease-calm, ease-out) both; }
-@media (prefers-reduced-motion: reduce) { .dialog-sheet { animation-name: dialog-sheet-fade; } }
-@media (min-width: 640px) { .dialog-sheet { animation: none; } }
+@keyframes overlay-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes dialog-enter { from { transform: scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dialog-exit { from { transform: none; opacity: 1; } to { transform: scale(0.98); opacity: 0; } }
+@keyframes toast-enter { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes panel-enter { from { transform: translateX(1.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes panel-exit { from { transform: none; opacity: 1; } to { transform: translateX(1.5rem); opacity: 0; } }
+.dialog-sheet { animation: dialog-sheet-up var(--duration-emphasis) var(--ease-spring) backwards; }
+.dialog-sheet[data-closing] { animation: dialog-sheet-down calc(var(--duration-emphasis) * 0.75) var(--ease-calm) both; }
+@media (min-width: 40rem) {
+  .dialog-card { animation: dialog-enter var(--duration-emphasis) var(--ease-spring) backwards; }
+  .dialog-card[data-closing] { animation: dialog-exit calc(var(--duration-emphasis) * 0.75) var(--ease-calm) both; }
+}
+/* The toast primitive (moments-and-onboarding D9, motion-v2 D5): it slides up 8 px as it
+   enters and only fades as it leaves; under reduced motion it only fades. */
+.ui-toast { animation: toast-enter var(--duration-emphasis) var(--ease-spring) backwards; }
+.ui-toast[data-closing] { animation: overlay-fade-out calc(var(--duration-emphasis) * 0.75) var(--ease-calm) both; }
+.panel-enter { animation: panel-enter var(--duration-emphasis) var(--ease-spring) backwards; }
+.panel-exit[data-closing] { animation: panel-exit calc(var(--duration-emphasis) * 0.75) var(--ease-calm) both; }
+/* An exit copy's scrim fades with its card. */
+.overlay-scrim-exit { animation: overlay-fade-out calc(var(--duration-emphasis) * 0.75) var(--ease-calm) both; }
+.overlay-fade-in { animation: dialog-sheet-fade var(--duration-ui) var(--ease-calm) backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .dialog-sheet, .dialog-card, .ui-toast, .panel-enter, .overlay-fade-in { animation-name: dialog-sheet-fade !important; animation-duration: var(--duration-ui) !important; }
+  .dialog-sheet[data-closing], .dialog-card[data-closing], .ui-toast[data-closing], .panel-exit[data-closing] { animation-name: overlay-fade-out !important; }
+  .panel-exit[data-closing] { animation-duration: var(--duration-ui) !important; }
+}
+/* Quick add's inline tints (moments-and-onboarding D8): the chip's soft hue behind the
+   recognised span; under the high-contrast presentation a 1 px underline in its colour. */
+.quick-add-tint { background-color: var(--hue-soft); color: transparent; border-radius: 0.1875rem; }
+html:root[data-contrast="high"] .quick-add-tint { background-color: transparent; text-decoration: underline 1px var(--hue-solid); text-decoration-color: var(--hue-solid); text-underline-offset: 0.2em; }
 /* The sequence spotlight (shortcut-spotlight D2) fades in; reduced motion makes it instant. */
 .spotlight-in { animation: dialog-sheet-fade 120ms var(--ease-calm, ease-out) both; }
 }
@@ -888,3 +1341,27 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
    unanimated from 640 px up — this rule comes after it and wins there. */
 @media (min-width: 640px) { .dialog-card-in { animation: overlay-in var(--duration-ui) var(--ease-calm, ease-out) both; } }
 }
+
+
+/* The docked panel's width (web-app "Task panel layout"): 26 rem, 30 rem from 1440 px,
+   read by both panels (`lg:w-(--panel-w)`). A `min-[1440px]` utility lost to `lg` in
+   Tailwind's order (px and rem do not sort), so the panel stayed 26 rem. */
+:root { --panel-w: 26rem; }
+@media (min-width: 90rem) { :root { --panel-w: 30rem; } }
+/* A split page (inbox-split D1): the detail takes about half of the content beside the
+   sidebar, between 26 and 44 rem; the width the user chose with the panel's handle
+   (task-side-panel D3, `--task-panel-w`, this device only) instead, kept between 22 rem
+   and what leaves 38 rem for the sidebar and the list. */
+:root[data-task-split] {
+  --panel-w: clamp(22rem, var(--task-panel-w, clamp(26rem, 42vw, 44rem)), max(22rem, min(64rem, 100vw - 38rem)));
+}
+/* The panel's resize handle: a hairline that takes the accent on hover, focus and drag. */
+.panel-resize::after {
+  content: ""; position: absolute; inset-block: 0; left: 50%; width: 2px; transform: translateX(-50%);
+  background-color: transparent; transition: background-color var(--duration-ui, 120ms) var(--ease-calm, ease-out);
+}
+.panel-resize:hover::after, .panel-resize:focus-visible::after, .panel-resize:active::after { background-color: var(--color-accent); }
+
+/* The frame (precision-shell D3): the whole content surface, from its left edge, so the
+   docked panel narrows it from the right and nothing moves. */
+.page-frame { margin-left: 0; margin-right: 0; }

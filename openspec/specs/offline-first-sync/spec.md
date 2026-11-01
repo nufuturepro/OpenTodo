@@ -46,11 +46,11 @@ The server SHALL ignore an operation whose id it has already stored, and the cli
 - **THEN** the server reports them as duplicates and the state is identical to a single delivery
 
 ### Requirement: Sync exchange
-A single request SHALL push the client's pending operations and pull operations recorded after the client's cursor, excluding those authored by the requesting device. The response SHALL include the new cursor, whether more remain, the server time, the refused operations with reasons, and the caller's project memberships. The client SHALL exchange until the outbox is empty and nothing remains, treating added response fields as optional.
+A single request SHALL push the client's pending operations and pull operations recorded after the client's cursor, excluding those authored by the requesting device. The response SHALL include the new cursor, whether more remain, the server time, the refused operations with reasons, the caller's project memberships, and the caller's workspaces with their members and groups. The client SHALL exchange until the outbox is empty and nothing remains, treating added response fields as optional, and SHALL replace its cached workspace directory with the response's on every exchange.
 
 #### Scenario: New device catches up
 - **WHEN** a device with an empty cursor syncs
-- **THEN** it receives every operation ever recorded for the user's own data and for every project shared with the user, including those created through the REST API, and ends with the same tasks and projects as the other devices
+- **THEN** it receives every operation ever recorded for the user's own data and for every project shared with the user, including those created through the REST API, and ends with the same tasks and projects as the other devices, partitioned into the same workspaces
 
 #### Scenario: Offline edits upload on reconnect
 - **WHEN** a device made edits offline and the network returns
@@ -64,8 +64,16 @@ A single request SHALL push the client's pending operations and pull operations 
 - **WHEN** a pushed batch contains an operation the caller is not allowed to make
 - **THEN** the response is 200, the allowed operations are applied, the refused one is listed with its id and reason, and the device removes it from the outbox instead of retrying it
 
+#### Scenario: Workspace directory in the response
+- **WHEN** a member of "Family" syncs after a group there gained a member
+- **THEN** the response's workspaces carry Family with the new group member, the device replaces its cached copy, and a client from before this change ignores the field and syncs as before
+
+#### Scenario: Left a workspace
+- **WHEN** a device of a user who was removed from "Family" syncs
+- **THEN** the response no longer lists Family, the device drops it from its cache and switcher, and the projects of Family the user had through grants are purged as for a removed project member
+
 ### Requirement: Sync triggers and status
-The client SHALL sync shortly after each local edit, when the network comes back, when the tab becomes visible, when the server signals that new operations are available, and periodically while open. It SHALL show whether it is synced, syncing, offline (with the count of pending changes), signed out, or in error, SHALL show whether live updates are connected, and SHALL let the user trigger a sync manually.
+The client SHALL sync shortly after each local edit, except that a note document saved while typing is sent after the note's push cadence (`rich-text-editing` "Note push cadence": 3 seconds after the last save, at once when the editor is left, and at least every 60 seconds), when the network comes back, when the tab becomes visible, when the server signals that new operations are available, and periodically while open. Any exchange SHALL carry every pending change, note documents included. It SHALL show whether it is synced, syncing, offline (with the count of pending changes), signed out, or in error, SHALL show whether live updates are connected, and SHALL let the user trigger a sync manually. Offline, every pending change SHALL stay on the device until the next successful exchange, and convergence SHALL not depend on when a change is sent.
 
 #### Scenario: Status while offline
 - **WHEN** the device is offline with unsent edits
@@ -79,8 +87,12 @@ The client SHALL sync shortly after each local edit, when the network comes back
 - **WHEN** the live channel is connected, and later when it is disconnected
 - **THEN** the indicator distinguishes the two states, and in the disconnected state syncing still happens on the periodic timer
 
+#### Scenario: Note typing waits for a pause
+- **WHEN** the user types in a note with one-second pauses and changes nothing else
+- **THEN** no exchange runs for the note until a 3-second pause, the editor leaves focus, or 60 seconds pass, and the indicator shows the change as pending meanwhile
+
 ### Requirement: Clock safety
-Timestamps SHALL be strictly increasing per device even if the system clock moves backwards. An operation stamped more than five minutes ahead of the server's clock SHALL NOT be stored with that timestamp, so a wrong clock cannot make a field unchangeable: a device that announces the `clock_skew` feature SHALL get it refused with reason `clock_skew` and the server's time, SHALL correct its clock and SHALL send the same change again with a new timestamp, so the edit is kept; for a device that does not announce it, the server SHALL clamp the timestamp to five minutes ahead of its clock. The client SHALL follow the server's clock while the skew exceeds two seconds, SHALL drop its correction once its clock is right again, and SHALL bring a stored clock seed more than five minutes ahead of the server back to server time.
+Timestamps SHALL be strictly increasing per device even if the system clock moves backwards. An operation stamped more than five minutes ahead of the server's clock SHALL NOT be stored with that timestamp, so a wrong clock cannot make a field unchangeable: a device that announces the `clock_skew` feature SHALL get it refused with reason `clock_skew` and the server's time, SHALL correct its clock and SHALL send the same change again with a new timestamp, so the edit is kept; for a device that does not announce it, the server SHALL clamp the timestamp to five minutes ahead of its clock. The client SHALL follow the server's clock while the skew exceeds two seconds, SHALL drop its correction once its clock is right again, and SHALL bring a stored clock seed more than five minutes ahead of the server back to server time. Every operation a device or the `ot vault` receives SHALL move its clock to at least that operation's timestamp, and the stored seed with it, so its next change is stamped after every value it has seen even when its clock runs behind the writer's.
 
 #### Scenario: Device clock far in the future
 - **WHEN** a device with a clock one hour ahead syncs an edit
@@ -93,6 +105,14 @@ Timestamps SHALL be strictly increasing per device even if the system clock move
 #### Scenario: Older client keeps clamping
 - **WHEN** a client that does not announce the `clock_skew` feature sends an op stamped an hour ahead
 - **THEN** the op is stored with a timestamp five minutes ahead of server time and is not reported as refused
+
+#### Scenario: Slow device edits after receiving a newer value
+- **WHEN** a device whose clock runs a second behind receives a title another device stamped by its own clock, and then edits the title
+- **THEN** its edit is stamped after the received one and wins on the server and on both devices
+
+#### Scenario: Encrypt-on-sight beats the plaintext it replaces
+- **WHEN** an encrypted account's device receives a plaintext value stamped a second ahead of its clock and re-encrypts it on sight
+- **THEN** the encrypted rewrite is stamped after the plaintext op and is the server's current value
 
 ### Requirement: Per-user isolation
 Operations SHALL be stored and served per scope: a user's personal scope holds their Inbox, unshared projects and the tasks in them, and each shared project is its own scope. A user SHALL receive operations only from their personal scope and from the scopes of projects they are currently a member of, and SHALL be able to affect only those scopes, within their role. No user SHALL receive or affect any other scope.
@@ -270,7 +290,7 @@ One fixture file SHALL list, per entity, the op fields the server accepts, the f
 - **THEN** the client's schema fixture test fails
 
 ### Requirement: One server clock
-Every operation the server writes itself (REST and assistant writes, CalDAV, public links, reminder deliveries, imports, email, unassignments) SHALL take its timestamp from one strictly increasing clock per server process, and SHALL carry the device `server:<boot id>`, chosen at process start. The bare device `server` of operations stored by older releases SHALL keep being treated as the server's.
+Every operation the server writes itself (REST and assistant writes, CalDAV, public links, reminder deliveries, imports, email, unassignments) SHALL take its timestamp from one strictly increasing clock per server process, and SHALL carry the device `server:<boot id>`, chosen at process start. The bare device `server` of operations stored by older releases SHALL keep being treated as the server's. Every stored operation SHALL move that clock to at least its timestamp, and the clock SHALL start from the newest stored operations when the process starts, so a server write after a device operation stamped ahead of the server's clock is stamped after it.
 
 #### Scenario: Two server writers in one millisecond
 - **WHEN** a REST write and a reminder delivery write within the same millisecond
@@ -279,6 +299,10 @@ Every operation the server writes itself (REST and assistant writes, CalDAV, pub
 #### Scenario: Server device stays reserved
 - **WHEN** a device sends ops with device `server` or `server:abc` to `/api/v1/sync`
 - **THEN** the request is refused with 400 `invalid_op`
+
+#### Scenario: Server write after a device op stamped ahead
+- **WHEN** a device's op is stored with a timestamp a minute ahead of the server's clock, and a REST write then changes the same field
+- **THEN** the REST write is stamped after the device op and wins
 
 ### Requirement: Post-commit effects survive a disconnect
 Once a batch has committed, the server SHALL deliver its effects (webhook queueing, assignment, mention and unblocked notifications) even when the client that sent it disconnected and its request was cancelled.

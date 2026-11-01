@@ -8,7 +8,9 @@ import { navigate } from './router'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { formatInstant } from '../lib/dates'
 import { t } from '../lib/i18n'
+import { InstanceMark, InstanceWordmark } from './InstanceBrand'
 import { roleName } from '../lib/roleNames'
+import { readString, removeItem, writeString } from '../lib/deviceStorage'
 
 // Screen behind /invite/p/<token> (OpenSpec `project-invite-links`): previews a
 // project invite link, lets a signed-in person join, and offers a visitor
@@ -19,18 +21,14 @@ import { roleName } from '../lib/roleNames'
 export const PENDING_PROJECT_INVITE = 'opentodo.pendingProjectInvite'
 
 export function rememberPendingInvite(token: string) {
-  try { sessionStorage.setItem(PENDING_PROJECT_INVITE, token) } catch { /* storage blocked: sign-in still works, the link must be opened again */ }
+  writeString(PENDING_PROJECT_INVITE, token, 'session') // storage blocked: sign-in still works, the link must be opened again
 }
 
 /** Reads and clears a remembered link. */
 export function takePendingInvite(): string | null {
-  try {
-    const item = sessionStorage.getItem(PENDING_PROJECT_INVITE)
-    if (item) sessionStorage.removeItem(PENDING_PROJECT_INVITE)
-    return item
-  } catch {
-    return null
-  }
+  const item = readString(PENDING_PROJECT_INVITE, 'session')
+  if (item) removeItem(PENDING_PROJECT_INVITE, 'session')
+  return item
 }
 
 export type ProjectInviteState =
@@ -45,6 +43,8 @@ export type JoinState =
   | { kind: 'idle' }
   | { kind: 'busy' }
   | { kind: 'already-member' }
+  /** The project is in a workspace this account is not in (workspaces 6.3). */
+  | { kind: 'not-in-workspace' }
   | { kind: 'error'; message: string }
 
 /** What an anonymous visitor is doing: choosing, signing in, or creating an account. */
@@ -96,6 +96,7 @@ export function ProjectInviteScreen({ token, user, status, onAuthenticated, onLo
       navigate({ view: 'project', id: res.projectId }, { replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'already_member') setJoin({ kind: 'already-member' })
+      else if (err instanceof ApiError && err.code === 'not_in_workspace') setJoin({ kind: 'not-in-workspace' })
       else if (err instanceof ApiError && err.code === 'invitation_invalid') setState({ kind: 'invalid' })
       else if (isNetworkError(err)) setJoin({ kind: 'error', message: t('The server could not be reached. Joining needs a connection; try again when you are online.') })
       else setJoin({ kind: 'error', message: (err as ApiError).message })
@@ -149,7 +150,7 @@ export function ProjectInviteView({ state, user, join, step, form, onRetry, onJo
   useDateTimeFormat()
   switch (state.kind) {
     case 'loading':
-      return <Card title={t('Checking your invite link…')}><p className="text-body text-muted">{t('One moment.')}</p></Card>
+      return <CheckingCard />
     case 'offline':
       return (
         <Card title={t('You seem to be offline')}>
@@ -185,7 +186,7 @@ export function ProjectInviteView({ state, user, join, step, form, onRetry, onJo
     <div className="rounded-control bg-accent-soft p-3 text-body text-on-accent-soft" data-testid="project-invite-summary">
       <p>{t.rich('<strong>{inviterName}</strong> invited you to the project <strong2>{projectName}</strong2> as <strong3>{role}</strong3>.', { inviterName: p.inviterName, projectName: p.projectName, role: roleName(p.role), strong: (chunks) => <strong>{chunks}</strong>, strong2: (chunks) => <strong className="user-text">{chunks}</strong>, strong3: (chunks) => <strong>{chunks}</strong> })}</p>
       {p.email && <p className="mt-1">{t.rich('This link is for <strong>{email}</strong>.', { email: p.email, strong: (chunks) => <strong>{chunks}</strong> })}</p>}
-      <p className="mt-1 text-meta opacity-80">{t('It expires {when} and works once.', { when: when(p.expiresAt) })}</p>
+      <p className="mt-1 text-meta">{t('It expires {when} and works once.', { when: when(p.expiresAt) })}</p>
     </div>
   )
   if (user) {
@@ -199,6 +200,11 @@ export function ProjectInviteView({ state, user, join, step, form, onRetry, onJo
           <>
             <p className="text-body text-muted" role="status">{t('You are on this project already, so the link stays unused. Forward it to the person it was meant for, or ignore it.')}</p>
             <a className="ui-btn ui-btn--primary ui-btn--md" href="/">{t('Back to my tasks')}</a>
+          </>
+        ) : join.kind === 'not-in-workspace' ? (
+          <>
+            <p className="text-body text-warning" role="alert" data-not-in-workspace>{t('This project belongs to a workspace you are not part of. Ask the workspace owner to add you first, then open the link again.')}</p>
+            <a className="ui-btn ui-btn--secondary ui-btn--md" href="/">{t('Back to my tasks')}</a>
           </>
         ) : mismatch ? (
           <>
@@ -239,13 +245,27 @@ export function ProjectInviteView({ state, user, join, step, form, onRetry, onJo
   )
 }
 
+/**
+ * The checking card shows only when the answer takes a while: a quick answer would
+ * otherwise swap a small centred card for a taller one and move it (motion-polish D2).
+ */
+function CheckingCard() {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(true), 400)
+    return () => clearTimeout(timer)
+  }, [])
+  if (!shown) return <div className="min-h-full bg-canvas" aria-busy="true" />
+  return <Card title={t('Checking your invite link…')}><p className="text-body text-muted">{t('One moment.')}</p></Card>
+}
+
 function Card({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <div className="flex min-h-full items-center justify-center bg-canvas p-4 sm:p-6">
       <main className="w-full max-w-sm space-y-3 rounded-card border border-default bg-surface p-5 shadow-1 sm:p-6">
         <div className="flex items-center gap-3">
-          <img src="/favicon.svg" alt="" className="h-9 w-9" />
-          <p className="text-h3 font-semibold">{t('OpenTaskKit')}</p>
+          <InstanceMark size={32} />
+          <p className="text-h3 font-semibold"><InstanceWordmark /></p>
         </div>
         <h1 className="font-medium">{title}</h1>
         {children}

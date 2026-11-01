@@ -7,7 +7,7 @@
 // and .tools/lint-apps.mjs.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { checkShared, listFiles, readText, ROOT } from './common.mjs'
 import { parseYaml, YAML_COMPOSE, YAML_UMBREL_MANIFEST } from './yaml.mjs'
 
@@ -54,11 +54,14 @@ export const parseManifest = (text) => parseYaml(text, YAML_UMBREL_MANIFEST)
 /** The top-level keys of a YAML text, in order. */
 const topKeys = (text) => [...text.matchAll(/^([A-Za-z][\w-]*):/gm)].map((m) => m[1])
 
-/** Every route pattern registered in internal/httpapi (tests excluded), without the method. */
+/**
+ * Every route pattern registered in internal/httpapi and its route packages
+ * (internal/httpapi/**, tests excluded), without the method.
+ */
 export function routes(root = ROOT) {
   const dir = join(root, 'internal/httpapi')
   const out = new Set()
-  for (const f of readdirSync(dir)) {
+  for (const f of readdirSync(dir, { recursive: true })) {
     if (!f.endsWith('.go') || f.endsWith('_test.go')) continue
     for (const m of readFileSync(join(dir, f), 'utf8').matchAll(/\.(?:Handle(?:Func)?|handle)\("(?:[A-Z]+ )?(\/[^"]*)"/g)) out.add(m[1])
   }
@@ -113,7 +116,8 @@ export function checkManifest(text, ctx) {
   if (m.path !== '') errors.push('path must be "" (OpenTodo opens at the root)')
   if (m.defaultUsername !== '' || m.defaultPassword !== '') errors.push('defaultUsername and defaultPassword must be "": the first visitor creates the owner account')
   if (!/^https:\/\/github\.com\/getumbrel\/umbrel-apps\/pull\/\d+$/.test(m.submission ?? '')) errors.push('submission must be the pull request URL in getumbrel/umbrel-apps')
-  if (m.submission?.endsWith('/pull/0000') && m.releaseNotes !== '') errors.push('releaseNotes must be "" until the app is listed')
+  // Submitted as getumbrel/umbrel-apps#6251; the manifest keeps that URL for every later update.
+  if (m.submission?.endsWith('/pull/0000')) errors.push('submission must be the real pull request URL (getumbrel/umbrel-apps#6251), not the 0000 placeholder')
 
   // The essential settings are offered through umbrelOS's app settings (manifest `environment`).
   const variables = new Map()
@@ -194,7 +198,7 @@ export function checkUpstream(root = ROOT) {
   const dir = join(root, UPSTREAM)
   if (!existsSync(dir)) return [`${UPSTREAM}/ is missing`]
   const want = ['data/.gitkeep', 'docker-compose.yml', 'umbrel-app.yml']
-  const have = listFiles(dir).map((f) => relative(dir, f)).sort()
+  const have = listFiles(dir).map((f) => relative(dir, f).split(sep).join('/')).sort()
   if (have.join(',') !== want.join(',')) errors.push(`${UPSTREAM}/ must hold exactly ${want.join(', ')} (no icon or gallery files), got: ${have.join(', ')}`)
   if (readText(MANIFEST, root) !== readText(`${UPSTREAM}/umbrel-app.yml`, root)) errors.push(`${UPSTREAM}/umbrel-app.yml must be identical to ${MANIFEST}`)
   if (readText(COMPOSE, root) !== readText(`${UPSTREAM}/docker-compose.yml`, root)) errors.push(`${UPSTREAM}/docker-compose.yml must be identical to ${COMPOSE}`)

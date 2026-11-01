@@ -1,18 +1,18 @@
 // Settings → Data: export, import and sync status (OpenSpec settings-navigation; settings-redesign D3).
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useSettingsPending } from './settingsPending'
 import { keysOf } from '../lib/shortcuts'
 import { Kbd } from './shortcuts/Kbd'
 import { formatBytes, refreshLimits, useAttachmentLimits } from '../lib/attachments'
 import { useSyncStatus } from '../lib/sync'
 import { DEMO_RESTRICTED_NOTE } from '../lib/demo'
 import type { AttachmentLimits, SyncState } from '../lib/types'
-import { Button } from '../ui'
-import { Badge } from '../ui'
+import { Button, StatusIndicator, toneForHue } from '../ui'
 import { Icon } from '../ui'
 import { Notice } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
 import type { HueName } from '../ui'
-import { followLink } from './SettingsView'
+import { followLink } from './settingsLinks'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t } from '../lib/i18n'
 import { cardCopy, rowCopy, SETTINGS_COPY } from '../lib/settingsCopy'
@@ -66,12 +66,13 @@ export function YourDataView({ demo, isOwner, sync, attachments = null }: { demo
         description={<>{t.rich(SETTINGS_COPY.data.rows.import.description, { kbd: <Kbd k={keysOf('go.import')} /> })}</>}
         status={demo ? <span id="demo-import-note" className="text-muted">{t('Import: {note}', { note: t(DEMO_RESTRICTED_NOTE) })}</span> : undefined}
         control={demo
-          ? <Button size="sm" disabled aria-describedby="demo-import-note">{t('Import data…')}</Button>
-          : <a className={linkButton} href="/settings/import" onClick={(e) => followLink(e, { view: 'import' })}><Icon name="upload" size="sm" />{t('Import data…')}</a>} />
+          ? <Button size="sm" disabled aria-describedby="demo-import-note">{t('Import data')}</Button>
+          : <a className={linkButton} href="/settings/import" onClick={(e) => followLink(e, { view: 'import' })}><Icon name="upload" size="sm" />{t('Import data')}</a>} />
       <SettingRow {...rowCopy('data', 'sync')}
         status={(
-          <span className="flex flex-wrap items-center gap-2" data-testid="sync-summary">
-            <Badge hue={s.hue}>{s.label}</Badge>
+          // The badge on its own line: its word changes while syncing and must not rewrap the sentence (motion-polish D2).
+          <span className="flex flex-col items-start gap-1" data-testid="sync-summary">
+            <StatusIndicator tone={toneForHue(s.hue)}>{s.label}</StatusIndicator>
             <span className="text-muted">
               {sync.pending ? t('{n, plural, one {# change waiting to upload.} other {# changes waiting to upload.}}', { n: sync.pending }) : t('No changes waiting.')}
               {sync.lastSyncedAt ? ` ${t('Last synced {instant}.', { instant: dt.formatInstant(sync.lastSyncedAt, 'datetime') })}` : ''}
@@ -83,7 +84,7 @@ export function YourDataView({ demo, isOwner, sync, attachments = null }: { demo
         <SettingRow {...rowCopy('data', 'backups')}
           status={(
             <span data-testid="backups-link">
-              {t.rich('Backups of the whole server are under <a>Settings → Server</a>.', { a: (chunks) => <a className="text-accent underline" href="/settings/server" onClick={(e) => followLink(e, { view: 'settings', section: 'server' })}>{chunks}</a> })}
+              {t.rich('Backups of the whole server are under <a>Settings → Server</a>.', { a: (chunks) => <a className="text-accent underline" href="/settings/server/backups" onClick={(e) => followLink(e, { view: 'settings', section: 'server', page: 'backups' })}>{chunks}</a> })}
             </span>
           )} />
       )}
@@ -94,6 +95,9 @@ export function YourDataView({ demo, isOwner, sync, attachments = null }: { demo
 export function YourDataSection({ demo, isOwner }: { demo: boolean; isOwner: boolean }) {
   const sync = useSyncStatus()
   const attachments = useAttachmentLimits()
-  useEffect(() => { void refreshLimits() }, [])
+  // The export row gains its attachments button from the server's answer: the section waits for it (motion-polish D3).
+  const [refreshed, setRefreshed] = useState(false)
+  useEffect(() => { void refreshLimits().finally(() => setRefreshed(true)) }, [])
+  useSettingsPending(!refreshed)
   return <YourDataView demo={demo} isOwner={isOwner} sync={sync} attachments={attachments} />
 }

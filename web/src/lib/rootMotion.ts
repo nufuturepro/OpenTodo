@@ -1,10 +1,14 @@
 // The root no-motion presentation (OpenSpec change task-menu-refinement,
 // "Motion preference"): one module-level snapshot of the account's motion
 // preference, so a path that only overrode it — display mode's
-// useRootPresentation cleanup — can restore it again. Its own module with no
-// imports: displayHooks is shared with the public list page, which must not
-// pull the local database in.
+// useRootPresentation cleanup — can restore it again. Its only import is the
+// reset registry — no database, so displayHooks' public list page stays light.
+import { resettable } from './moduleState'
+
 let motionOff = false
+// The flag is process-lifetime in the app but must not leak between tests:
+// setup resets registered module state before every test.
+resettable('rootMotion', () => { motionOff = false })
 
 /** Applies the motion preference to a document root: `data-motion="none"` while off, removed while on, and remembers it. */
 export function applyMotion(off: boolean, doc: Document = document): void {

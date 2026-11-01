@@ -1,8 +1,10 @@
 // Shared data types. Field names mirror the server op schema exactly
 // (internal/sync/ops.go); never rename a field without a migration plan.
 
-export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place'
-export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place']
+import type { AttachmentFields, CommentFields, FieldDefFields, FrameFields, LabelFields, PlaceFields, ProjectFields, ProjectPrefsFields, ReminderFields, ReviewFields, RuleFields, SectionFields, SlotFields, TaskFields, TimeEntryFields, UserPrefsFields, ViewFields } from '../generated/opSchema'
+
+export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place' | 'rule' | 'frame' | 'slot'
+export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place', 'rule', 'frame', 'slot']
 
 export interface Op {
   id: string
@@ -36,7 +38,7 @@ export interface Due {
   tz?: string
 }
 
-export interface Project {
+export interface Project extends ProjectFields {
   id: string
   name: string
   color: string
@@ -51,12 +53,18 @@ export interface Project {
   description?: string
   /** The mergeable note document (an envelope), or '' / absent. */
   notes_doc?: string
+  /** Workspace id (OpenSpec change `workspaces`), null or absent for the default workspace. Read with `workspaceOf` from lib/workspaces.ts. */
+  workspace_id?: string | null
+  /** The stored flow (project-flow-modes), kept as received; read it with `projectFlowOf` from lib/flow.ts. */
+  flow_mode?: string
+  /** The stored status (project-review-cadence), kept as received; read it with `projectStatusOf` from lib/reviewCadence.ts. */
+  status?: string
   _clock: Clock
 }
 
 export type Priority = 1 | 2 | 3 | 4
 
-export interface Task {
+export interface Task extends TaskFields {
   id: string
   title: string
   description: string
@@ -92,6 +100,12 @@ export interface Task {
    * rows stored before the field; read with `?? []`.
    */
   blocked_by?: string[]
+  /**
+   * The members an @mention in the notes names (OpenSpec change editor-everywhere,
+   * D7): written with `notes_doc`, filtered by the server to current members of
+   * the task's shared project, plaintext. Optional on older rows; read with `?? []`.
+   */
+  note_mentions?: string[]
   /**
    * Recurrence rule in canonical form (docs/recurrence.md) or null. A task with a
    * rule is a series: completing it records an occurrence and moves `due` forward.
@@ -170,6 +184,15 @@ export interface Task {
    * string: read it with `locationOf(task)` from `lib/locations.ts`.
    */
   location?: TaskLocation | string | null
+  /**
+   * A start guide sample task (OpenSpec change `moments-and-onboarding`, design D3):
+   * excluded from Statistics, the Loop pulse and the digest; completing it keeps the
+   * marker. Rows stored before the field read as undefined: read it with `?? false`
+   * or `isSample(task)` from `lib/sampleTasks.ts`.
+   */
+  sample?: boolean
+  /** Workspace of a task without a project (OpenSpec change `workspaces`); a task with a project follows its project. */
+  workspace_id?: string | null
   _clock: Clock
   /** Local-only end-to-end encryption bookkeeping (OpenSpec `e2ee`). */
   _e2ee?: RowEncryption
@@ -198,12 +221,57 @@ export interface Geo {
  * `geo` is one value, so an encrypted account encrypts it whole; a value this
  * device could not decrypt is the placeholder string.
  */
-export interface Place {
+export interface Place extends PlaceFields {
   id: string
   name: string
   address: string
   geo: Geo | string | null
   position: number
+  created_at: number
+  deleted_at: number | null
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
+/**
+ * A frame (OpenSpec change `calendar-frames`, design D1): a recurring
+ * background window on the Day and Week grid. Personal; `weekdays` is a comma
+ * list of ISO weekdays ("1,2,3,4,5"), `start` and `end` floating wall times
+ * "HH:MM", `source` a planning source key (`project:<id>`, `label:<id>`,
+ * `view:<id>` or ""). Occurrences are derived in `lib/frames.ts`.
+ */
+export interface Frame extends FrameFields {
+  id: string
+  title: string
+  weekdays: string
+  start: string
+  end: string
+  color: string
+  source: string
+  from_date: string | null
+  until_date: string | null
+  position: number
+  created_at: number
+  deleted_at: number | null
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
+/**
+ * A slot (OpenSpec change `calendar-slots`, design D1): one block on the Day
+ * and Week grid that holds a checklist of small tasks. Personal; `date` is the
+ * floating day, `start` a wall time "HH:MM", `minutes` the length, `task_ids`
+ * the ordered list (one whole value, at most 20). Which tasks it shows is
+ * derived in `lib/slots.ts`; no field is added to tasks.
+ */
+export interface Slot extends SlotFields {
+  id: string
+  title: string
+  date: string | null
+  start: string
+  minutes: number
+  task_ids: string[]
+  color: string
   created_at: number
   deleted_at: number | null
   _clock: Clock
@@ -236,7 +304,7 @@ export type FieldType = 'text' | 'number' | 'date' | 'choice' | 'link' | 'checkb
  * `project_id` and `type` never change after creation; `options` holds a choice
  * field's options, one per line, in display order (`""` otherwise).
  */
-export interface FieldDef {
+export interface FieldDef extends FieldDefFields {
   id: string
   name: string
   project_id: string
@@ -254,7 +322,7 @@ export interface FieldDef {
  * A named, ordered container inside one project (OpenSpec `board-view`): a heading
  * in the list view, a column on the board. `project_id` never changes after creation.
  */
-export interface Section {
+export interface Section extends SectionFields {
   id: string
   name: string
   project_id: string
@@ -265,28 +333,43 @@ export interface Section {
   color?: string | null
   /** A name from the icon catalogue, or null (icons-and-section-style). */
   icon?: string | null
+  /** The stored flow (project-flow-modes), kept as received; read it with `sectionFlowOf` from lib/flow.ts. */
+  flow_mode?: string
   _clock: Clock
 }
 
-export interface Label {
+export interface Label extends LabelFields {
   id: string
   name: string
   color: string
   position: number
   created_at: number
   deleted_at: number | null
+  /** Workspace id (OpenSpec change `workspaces`), null or absent for the default workspace. Read with `workspaceOf` from lib/workspaces.ts. */
+  workspace_id?: string | null
+  /** The label page's display options (list-display-options D1); "" or absent reads as the default. Read with `listDisplayOf` from lib/listDisplay.ts. */
+  group_by?: string
+  sort_by?: string
+  sort_dir?: string
+  /** The label page's row layout (row-layouts D1); '' or absent follows the account's. */
+  row_layout?: string
   _clock: Clock
 }
 
 export type ViewKind = 'list' | 'dashboard'
 export type GroupBy = 'project' | 'due' | 'priority' | 'label' | 'none'
-export type SortBy = 'due' | 'priority' | 'position' | 'created' | 'title'
+export type SortBy = 'due' | 'priority' | 'position' | 'created' | 'title' | 'deadline'
 export type SortDir = 'asc' | 'desc'
 
 export const VIEW_KINDS: readonly ViewKind[] = ['list', 'dashboard']
 export const GROUP_BY_OPTIONS: readonly GroupBy[] = ['project', 'due', 'priority', 'label', 'none']
-export const SORT_BY_OPTIONS: readonly SortBy[] = ['due', 'priority', 'position', 'created', 'title']
+export const SORT_BY_OPTIONS: readonly SortBy[] = ['due', 'priority', 'position', 'created', 'deadline', 'title']
 export const SORT_DIR_OPTIONS: readonly SortDir[] = ['asc', 'desc']
+export type ViewLayout = 'list' | 'board'
+export const VIEW_LAYOUTS: readonly ViewLayout[] = ['list', 'board']
+/** What a row can show beside its title (views-and-display D3), in the display panel's order. */
+export type RowProperty = 'date' | 'project' | 'labels' | 'estimate' | 'assignee' | 'deadline' | 'start' | 'origin' | 'energy'
+export const ROW_PROPERTIES: readonly RowProperty[] = ['date', 'project', 'labels', 'estimate', 'assignee', 'deadline', 'start', 'origin', 'energy']
 
 /**
  * A saved view (OpenSpec `custom-views`): a filter query plus presentation options.
@@ -294,7 +377,7 @@ export const SORT_DIR_OPTIONS: readonly SortDir[] = ['asc', 'desc']
  * a newer client) is kept in the row and mapped to the default when read, see
  * `viewOptions` in lib/views.ts. `panels` holds view ids and is only used by dashboards.
  */
-export interface View {
+export interface View extends ViewFields {
   id: string
   name: string
   query: string
@@ -308,8 +391,20 @@ export interface View {
   panels: string[]
   /** List views only: what a drop into a board column showing this view changes (OpenSpec change `rule-boards`). */
   on_drop: OnDropRule | null
+  /** List views only (views-and-display D2): `list` or `board`, columns by the grouping; unknown values read as `list`. */
+  layout?: string
+  /** List views only: completed matches are listed too, when the query does not name a state itself. */
+  show_completed?: boolean
+  /** List views only: the row properties the view hides (ROW_PROPERTIES); empty shows them all. */
+  hidden_props?: string[]
+  /** The view's row layout (row-layouts D1): 'line' or 'detailed'; '' or absent follows the account's. */
+  row_layout?: string
   created_at: number
   deleted_at: number | null
+  /** Workspace id (OpenSpec change `workspaces`), null or absent for the default workspace. Read with `workspaceOf` from lib/workspaces.ts. */
+  workspace_id?: string | null
+  /** A catalogue icon name (sidebar-polish D4); null, absent or unknown shows the default icon of the view's kind. */
+  icon?: string | null
   _clock: Clock
 }
 
@@ -332,6 +427,100 @@ export interface OnDropRule {
   state?: (typeof RULE_STATE)[number]
 }
 
+/** Trigger kinds of an automation rule (automation-rules "Rule validation"). */
+export const RULE_TRIGGERS = ['task.created', 'task.completed', 'task.reopened', 'label.added', 'label.removed', 'assigned.to_me', 'task.moved', 'due.reached', 'overdue', 'schedule'] as const
+export type RuleTriggerKind = (typeof RULE_TRIGGERS)[number]
+
+/** An automation rule's trigger: one kind with the members it takes. */
+export interface RuleTrigger {
+  kind: RuleTriggerKind
+  label_id?: string
+  project_id?: string
+  section_id?: string | null
+  /** `schedule`: HH:MM in the user's zone, on these weekdays (1 Monday … 7 Sunday). */
+  at?: string
+  weekdays?: number[]
+}
+
+/** A date predicate (`due`, `deadline`). */
+export type RuleDatePredicate = 'none' | 'set' | 'today' | 'overdue' | { within_days: number }
+/** A minutes predicate (`estimate`, `tracked`). */
+export type RuleMinutesPredicate = 'none' | { min_minutes: number } | { max_minutes: number }
+
+/** An automation rule's condition: every predicate that is set must hold (automation-rules "Conditions"). */
+export interface RuleCondition {
+  project?: 'none' | { in: string[]; descendants?: boolean }
+  section?: 'none' | { in: string[] }
+  labels?: { any?: string[]; all?: string[]; none?: string[] }
+  priority?: { in: number[] }
+  due?: RuleDatePredicate
+  deadline?: 'none' | 'set' | { within_days: number }
+  start?: 'someday' | 'deferred' | 'none'
+  evening?: boolean
+  blocked?: boolean
+  assignee?: 'me' | 'none' | 'anyone'
+  origin?: 'none' | { kind: OriginKind }
+  habit?: boolean
+  estimate?: RuleMinutesPredicate
+  tracked?: 'none' | { min_minutes: number }
+}
+
+/** An automation rule's actions: the on-drop keys plus the automation keys (automation-rules "Actions"). */
+export interface RuleActions extends Omit<OnDropRule, 'due'> {
+  due?: (typeof RULE_DUE)[number] | { in_days: number }
+  deadline?: 'clear' | { in_days: number }
+  assignee?: 'me' | 'clear'
+  comment?: { text: string }
+  notify?: true
+  webhook?: { webhook_id: string }
+}
+
+/** One run of an automation rule (GET /api/v1/rules/{id}/runs); titles are never stored. */
+export interface RuleRun {
+  id: number
+  rule_id: string
+  occurrence: string
+  task_id?: string
+  at: number
+  outcome: 'pending' | 'applied' | 'already_matched' | 'skipped' | 'stopped' | 'failed' | 'partial'
+  reason?: string
+  changes: { task_id: string; fields: Record<string, unknown> }[]
+  depth: number
+}
+
+/** The Rules page's server state (GET /api/v1/me/rules). */
+export interface RulesStatus {
+  enabled: boolean
+  paused: boolean
+  rules: Record<string, { last_run?: number; runs_7d?: number; paused_reason?: string }>
+}
+
+/** The owner's automations switch (GET /api/v1/settings/automations). */
+export interface AutomationsSetting {
+  enabled: boolean
+  locked: boolean
+  locked_by: string
+}
+
+/**
+ * An automation rule (OpenSpec change `automation-rules`): personal like a label,
+ * run by the server for its author. `trigger`, `condition` and `actions` are each
+ * one whole value; a key this build does not know is kept in the row.
+ */
+export interface Rule extends RuleFields {
+  id: string
+  name: string
+  enabled: boolean
+  trigger: RuleTrigger | null
+  condition: RuleCondition | null
+  actions: RuleActions | null
+  position: number
+  created_at: number
+  deleted_at: number | null
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
 /** 'deadline' (OpenSpec change `deadlines`): offset from 09:00 local on the task's deadline. */
 export type ReminderKind = 'relative' | 'absolute' | 'deadline'
 
@@ -343,7 +532,7 @@ export type ReminderKind = 'relative' | 'absolute' | 'deadline'
  * is written by the server when a push went out; a delivery older than `fire_at`
  * belongs to an earlier firing (a snooze or a moved due date).
  */
-export interface Reminder {
+export interface Reminder extends ReminderFields {
   id: string
   task_id: string
   kind: ReminderKind
@@ -363,7 +552,7 @@ export interface Reminder {
  * the author, project admins and the owner may set `deleted_at`, and `mentions`
  * keeps current members only (always empty on a personal task).
  */
-export interface Comment {
+export interface Comment extends CommentFields {
   id: string
   task_id: string
   parent_id: string | null
@@ -377,6 +566,12 @@ export interface Comment {
   guest_name?: string | null
   /** The task page a guest reply came through (task-pages D6); null otherwise. */
   page_id?: string | null
+  /**
+   * Reactions per account (editor-everywhere D8): `reactions[accountId]` is that
+   * account's list of names from REACTION_NAMES, each synced as its own
+   * `reactions.<account>` op so concurrent reactions never overwrite each other.
+   */
+  reactions?: Record<string, string[]>
   _clock: Clock
 }
 
@@ -389,7 +584,7 @@ export interface Comment {
  * running entry, a rule every device applies (lib/time.ts `repairs`). `note` is
  * user-written text and encrypted for an encrypted account.
  */
-export interface TimeEntry {
+export interface TimeEntry extends TimeEntryFields {
   id: string
   task_id: string
   user_id: string
@@ -411,7 +606,7 @@ export interface TimeEntry {
  * keeps them in `attachmentBlobs` until the server stores them and says so with
  * `uploaded_at`. A non-null `url` makes it a link.
  */
-export interface Attachment {
+export interface Attachment extends AttachmentFields {
   id: string
   task_id: string
   comment_id: string | null
@@ -437,12 +632,20 @@ export interface Attachment {
  * server, also for shared projects, so it follows the user to their own devices
  * and never reaches other members. Stored locally in the `prefs` table.
  */
-export interface ProjectPrefs {
+export interface ProjectPrefs extends ProjectPrefsFields {
   id: string
   /** Activity of the project up to this event time (Unix ms) has been seen; 0 = never marked. */
   feed_seen_at: number
   /** When this user last marked the project reviewed in the review's project walk (open-loops-method D4), Unix ms; 0 = never. */
   reviewed_at: number
+  /** The project list's display options (list-display-options D1), personal; "" or absent reads as the default. */
+  group_by?: string
+  sort_by?: string
+  sort_dir?: string
+  /** The project list's row layout (row-layouts D1); '' or absent follows the account's. */
+  row_layout?: string
+  /** The review interval (project-review-cadence D2), kept as received; read it with `reviewEveryOf` from lib/reviewCadence.ts. */
+  review_every?: string
   _clock: Clock
 }
 
@@ -454,7 +657,7 @@ export type TimeFormatPref = 'system' | '12h' | '24h'
 export type WeekStartPref = 'system' | 'mon' | 'sun' | 'sat'
 
 /** The user's date and time preferences: the synced `user_prefs` entity, one row with id "me" in the personal scope. */
-export interface UserPrefs {
+export interface UserPrefs extends UserPrefsFields {
   id: string
   date_format: DateFormatPref
   time_format: TimeFormatPref
@@ -482,6 +685,8 @@ export interface UserPrefs {
   welcome: string
   /** How you work (open-loops-method D2): lists | companion | first; unknown or empty values read as lists. */
   method_mode: string
+  /** The first-day checklist (moments-and-onboarding D5): "hidden" once hidden on any device; anything else reads as shown. */
+  start_checklist: string
   /**
    * Focus timer preferences (focus-mode D5): mode pomodoro | flowtime | countdown,
    * auto-start none | breaks | work | both, sound off | on; lengths in minutes
@@ -504,6 +709,30 @@ export interface UserPrefs {
    * and kept in the stored value. Empty (the default) means every plugin is on.
    */
   disabled_plugins?: string
+  /** Haptic feedback on this user's devices (motion-v2 D6): 'off' turns the tick off; '' and anything else read as on. */
+  haptics?: string
+  /** The day pages' briefing (briefing-links D4): 'hidden' hides it; '' and anything else read as shown. */
+  briefing?: string
+  /** How a task opens from a list (task-side-panel D1): 'panel' docks it beside the list from 1024 px; '' and anything else read as 'page'. */
+  task_open?: string
+  /** The account's task row layout (row-layouts D1): 'line' or 'detailed'; '' and anything else read as 'line'. */
+  row_layout?: string
+  /** Today's agenda of calendar events (today-agenda D1): 'shown' shows it; '' and anything else read as hidden. */
+  today_events?: string
+  /** Where new tasks are added from a list's quick add (add-position D1): 'top' or 'bottom'; '' and anything else read as 'bottom'. */
+  add_position?: string
+  /** Default reminder for tasks with a time (default-reminders D1): minutes from the due time as a decimal string; '' or anything malformed reads as none. */
+  reminder_default_timed?: string
+  /** Default reminder for tasks with a date only (default-reminders D1): minutes from 09:00 on the due date; '' or anything malformed reads as none. */
+  reminder_default_dated?: string
+  /** Sidebar counts (sidebar-polish D1): 'all' shows every list's count at rest; '' and anything else read as Inbox and Today only. */
+  sidebar_counts?: string
+  /** Primary destination order (sidebar-polish D3): comma-separated destination ids; unknown ids are ignored and kept. */
+  sidebar_order?: string
+  /** Countdown presets (focus-everywhere D5): comma-separated minutes (5-180, at most four); '' or unreadable reads as 10,20,40. */
+  focus_presets?: string
+  /** Background noise (focus-everywhere D6): off | white | pink | brown; '' and anything else read as off. */
+  focus_noise?: string
   _clock: Clock
 }
 
@@ -514,7 +743,7 @@ export type ThemeModePref = 'system' | 'light' | 'dark'
  * design D4): the synced personal `review` entity, one row with id "me". Not
  * content: never encrypted, and it derives no activity event.
  */
-export interface Review {
+export interface Review extends ReviewFields {
   id: string
   /** Unix ms of the latest finish; 0 = never. */
   completed_at: number
@@ -526,6 +755,8 @@ export interface Review {
   focus: string
   /** The latest Close the day (close-the-day D5), Unix ms; 0 = never. */
   closed_at: number
+  /** The logical date that close closed (close-the-day-v2 D1), YYYY-MM-DD; "" = the logical day of `closed_at`. Not content. */
+  closed_day: string
   /** The one-line note for tomorrow written at that close; content (encrypted for encrypted accounts). */
   tomorrow_note: string
   /** The latest carry-over as JSON (ux-feedback-2 D1), "" = none: what Reopen the day puts back. Not content. */
@@ -631,6 +862,38 @@ export interface User {
 }
 
 /**
+ * The Profile card's data (OpenSpec change settings-refresh, design D10): server
+ * account data, never an op. `avatarVersion` is 0 without a picture.
+ */
+/** Whether the owner connected a speech service, and its host (settings-refresh D7). */
+export interface SpeechService { connected: boolean; host?: string }
+
+/** The owner's view of the speech service: never the key. */
+export interface SpeechSettings {
+  url: string
+  model: string
+  keySet: boolean
+  /** Fields fixed by OPENTODO_STT_URL, _MODEL or _KEY_FILE. */
+  locked: ('url' | 'model' | 'key')[]
+  connected: boolean
+  host?: string
+}
+
+/** A change from the owner's card: an absent field is kept, an empty key removes it. */
+export interface SpeechSettingsInput { url?: string; model?: string; key?: string }
+
+export interface Profile {
+  user: User
+  avatarVersion: number
+  /** An email change waiting for the link sent to it. */
+  pendingEmail?: string
+  /** The sign-in provider of an account that signs in only through single sign-on. */
+  emailManagedBy?: string
+  /** Whether an email change waits for a link (otherwise it applies at once). */
+  emailByLink: boolean
+}
+
+/**
  * An entry of the server's user list (owner and admins only). Fetched live and
  * kept in component state: never written to IndexedDB or any cache.
  */
@@ -670,6 +933,8 @@ export interface AuthStatus {
   minClientVersion?: number
   /** Public demo instance (OpenSpec `demo-mode`, `demo-sandboxes`); absent on a normal server. */
   demo?: DemoInfo
+  /** The instance's name and logo (OpenSpec `instance-branding`); absent on older servers. */
+  branding?: { name: string; logoVersion: number }
   /** Outgoing email (OpenSpec `outgoing-email`): email actions are shown only when enabled; absent on older servers. */
   outgoingEmail?: { enabled: boolean }
   /** A tenant of a hosted service (OpenSpec `multi-tenant-host`): the operator owns server settings; absent when self-hosted. */
@@ -763,6 +1028,73 @@ export interface CalendarSubscription {
   stoppedReason?: string
   warnings?: string[]
   eventCount?: number
+  /** A calendar of a calendar sync connection (calendar-two-way), not one of the user's subscriptions. */
+  managed?: boolean
+}
+
+/** One calendar of a calendar sync account, as discovery found it. */
+export interface SyncCalendar {
+  url: string
+  name: string
+  color: string
+  time_zone?: string
+  read_only: boolean
+}
+
+/** What one calendar sync cycle did. */
+export interface CalendarSyncRun {
+  moved: number
+  renamed: number
+  unscheduled: number
+  written: number
+  removed: number
+  conflicts: number
+  refused: number
+  partial: boolean
+}
+
+/** A calendar sync connection (calendar-two-way) as the server reports it: never the password or token. */
+export interface CalendarConnection {
+  id: string
+  provider: 'caldav' | 'google'
+  name: string
+  server_url: string
+  username: string
+  calendars: SyncCalendar[]
+  target: string
+  read: string[]
+  include_date_only: boolean
+  enabled: boolean
+  state: 'off' | 'choose_calendar' | 'pending' | 'ok' | 'failed' | 'reconnect' | 'stopped'
+  next_sync_at: number
+  last_sync_at: number | null
+  last_success_at: number | null
+  last_error: string
+  last_error_at: number | null
+  stopped_reason: string
+  last_run: CalendarSyncRun | null
+  password_set: boolean
+  event_count: number
+  created_at: number
+  updated_at: number
+}
+
+/** The owner's Google client for calendar sync; never the secret. */
+export interface GoogleClientSetting {
+  client_id: string
+  secret_set: boolean
+  from_env: boolean
+  redirect_uri: string
+}
+
+/** The body of changing a calendar connection. */
+export interface CalendarConnectionPatch {
+  name?: string
+  target?: string
+  read?: string[]
+  include_date_only?: boolean
+  enabled?: boolean
+  password?: string
 }
 
 /** The filter of an issue connection (OpenSpec issue-connections "Filter"). */
@@ -839,6 +1171,28 @@ export interface CalendarFeed {
 }
 
 /** The owner's attachment settings (Settings → People → Attachments). */
+/** One notes compaction run, or a complete pass (GET /api/v1/settings/storage, op-log-compaction). */
+export interface CompactionReport {
+  at: number
+  ops_removed: number
+  value_bytes_removed: number
+  file_bytes_reclaimed: number
+  more: boolean
+  converted: boolean
+}
+
+/** The owner's view of the database file (op-log-compaction D7). */
+export interface StorageStatus {
+  database_bytes: number
+  /** Free pages inside the file. */
+  free_bytes: number
+  wal_bytes: number
+  last_compaction: CompactionReport | null
+  conversion: 'pending' | 'waiting_for_quiet' | 'no_space' | 'done'
+  /** The free disk space the one-time conversion needs (no_space). */
+  conversion_needed_bytes?: number
+}
+
 export interface AttachmentSettings {
   enabled: boolean
   max_file_mb: number
@@ -885,6 +1239,8 @@ export interface OidcSettings {
   allowProvision: boolean
   ssoOnly: boolean
   providerLogout: boolean
+  /** The provider's `picture` claim becomes the profile picture at sign-in (oidc-profile-pictures); absent on older servers. */
+  syncPictures?: boolean
   /** Paste this into the provider's client configuration. */
   redirectUri: string
   /** False when the redirect URI was derived from the request (set OPENTODO_BASE_URL). */
@@ -895,7 +1251,7 @@ export interface OidcSettings {
 
 /** A settings change; omitted fields are kept. `clientSecret: ''` removes the secret. */
 export type OidcSettingsInput = Partial<Pick<OidcSettings,
-  'issuer' | 'clientId' | 'clientSecret' | 'displayName' | 'scopes' | 'allowProvision' | 'ssoOnly' | 'providerLogout'>>
+  'issuer' | 'clientId' | 'clientSecret' | 'displayName' | 'scopes' | 'allowProvision' | 'ssoOnly' | 'providerLogout' | 'syncPictures'>>
 
 /** Result of POST /api/v1/settings/oidc/test. */
 export interface OidcTestResult {
@@ -1015,7 +1371,7 @@ export interface ProjectInvitePreview extends InvitationPreview {
 export type WebhookEvent =
   | 'task.created' | 'task.updated' | 'task.completed' | 'task.reopened' | 'task.deleted'
   | 'project.created' | 'project.updated' | 'project.archived' | 'project.deleted'
-  | 'import.completed' | 'import.undone'
+  | 'import.completed' | 'import.undone' | 'rule.fired'
 
 /** A user's webhook (server-side configuration, never synced). `secret` is present only in the create response. */
 export interface Webhook {
@@ -1121,7 +1477,7 @@ export const PROJECT_FIELDS = ['name', 'color', 'position', 'archived', 'parent_
 export const TASK_FIELDS = [
   'title', 'description', 'project_id', 'parent_id', 'priority', 'due', 'labels',
   'position', 'created_at', 'completed_at', 'deleted_at', 'estimate_minutes', 'recurrence', 'series_id',
-  'assignee_id', 'section_id', 'notes_doc', 'deadline', 'start', 'evening', 'blocked_by', 'completed_by',
+  'assignee_id', 'section_id', 'notes_doc', 'deadline', 'start', 'evening', 'blocked_by', 'completed_by', 'note_mentions',
 ] as const
 export const SECTION_FIELDS = ['name', 'project_id', 'position', 'created_at', 'deleted_at'] as const
 export const LABEL_FIELDS = ['name', 'color', 'position', 'created_at', 'deleted_at'] as const
@@ -1256,6 +1612,7 @@ export const AUDIT_EVENT_NAMES = [
   'calendar_feed.created', 'calendar_feed.rotated', 'calendar_feed.revoked',
   'email_inbox.created', 'email_inbox.rotated', 'email_inbox.updated',
   'issue_connection.created', 'issue_connection.updated', 'issue_connection.deleted',
+  'notification_channel.created', 'notification_channel.updated', 'notification_channel.deleted',
   'invitation.created', 'invitation.accepted', 'invitation.revoked',
   'project_invite.created', 'project_invite.revoked', 'project_invite.accepted',
   'public_link.created', 'public_link.revoked',
@@ -1272,6 +1629,16 @@ export const AUDIT_EVENT_NAMES = [
   'email.failed',
   'relay.enabled',
   'relay.disabled',
+  'account.name_changed',
+  'account.email_change_requested',
+  'account.email_changed',
+  'account.avatar_changed',
+  'workspace.created', 'workspace.renamed', 'workspace.deleted', 'workspace.transferred',
+  'workspace.member_added', 'workspace.member_role_changed', 'workspace.member_removed',
+  'workspace.group_created', 'workspace.group_deleted', 'workspace.group_member_added', 'workspace.group_member_removed',
+  'project.member_added', 'project.grant_added', 'project.grant_changed', 'project.grant_removed',
+  'workspace_invite.created', 'workspace_invite.accepted', 'workspace_invite.revoked',
+  'member_invitation.created', 'member_invitation.accepted', 'member_invitation.declined', 'member_invitation.cancelled',
 ] as const
 export type AuditEventName = (typeof AUDIT_EVENT_NAMES)[number]
 
@@ -1310,8 +1677,11 @@ export interface AuditSettings {
 export type ImportFormat =
   | 'opentodo' | 'things-db' | 'json-items' | 'json-lists' | 'json-generic'
   | 'todoist-csv' | 'todoist-backup' | 'ticktick-csv' | 'linear-csv' | 'csv'
+  | 'google-tasks-json' | 'trello-json' | 'asana-csv' | 'microsoft-todo-json' | 'apple-reminders-json' | 'anydo-json'
 export const IMPORT_FORMATS: readonly ImportFormat[] = [
-  'opentodo', 'todoist-backup', 'todoist-csv', 'things-db', 'ticktick-csv', 'linear-csv', 'json-items', 'json-lists', 'json-generic', 'csv',
+  'opentodo', 'todoist-backup', 'todoist-csv', 'things-db', 'ticktick-csv', 'linear-csv',
+  'google-tasks-json', 'trello-json', 'asana-csv', 'microsoft-todo-json', 'apple-reminders-json', 'anydo-json',
+  'json-items', 'json-lists', 'json-generic', 'csv',
 ]
 
 export interface ImportOptions {
@@ -1325,6 +1695,8 @@ export interface ImportOptions {
   duplicates?: 'skip' | 'import'
   errors?: 'skip_rows' | 'abort'
   existing?: 'skip' | 'overwrite'
+  /** Workspace id that receives what the import creates (import-workspace); omitted = default, or an own export's own mapping. */
+  workspace?: string
 }
 
 export interface ImportTotals {
@@ -1345,6 +1717,8 @@ export interface ImportTotals {
   deadlines?: number
   /** Created time entries (time-tracking); absent on older jobs. */
   timeEntries?: number
+  /** Created custom field definitions (more-importers); absent on older jobs. */
+  fields?: number
   entities: number
   written: number
   ops: number
@@ -1416,6 +1790,10 @@ export interface ProjectMember {
   name: string
   email: string
   role: ProjectRole
+  /** Profile picture version, absent or 0 without one (settings-refresh D10). */
+  avatarVersion?: number
+  /** The groups the role comes from (workspaces); empty or absent for a direct grant alone. */
+  via?: { id: string; name?: string }[]
 }
 
 /**
@@ -1428,6 +1806,85 @@ export interface Membership {
   role: ProjectRole
   ownerId: string
   members: ProjectMember[]
+  /** The project's group grants (workspaces); only in the member route's answer. */
+  grants?: { groupId: string; name: string; role: ProjectRole }[]
+  /** Open invitations (member-add-consent); only in the member route's answer, for owners and admins. */
+  pending?: PendingMember[]
+}
+
+/**
+ * An open membership invitation as a project's or workspace's owner and admins
+ * see it (OpenSpec change member-add-consent). It never says whether the address
+ * has an account: an address without one is listed the same way.
+ */
+export interface PendingMember {
+  id: string
+  email: string
+  role: ProjectRole | WorkspaceRole
+  invitedBy: string
+  createdAt: number
+  expiresAt: number
+}
+
+/** One of the signed-in account's open invitations (GET /api/v1/me/member-invitations). */
+export interface MemberInvitation {
+  id: string
+  kind: 'project' | 'workspace'
+  targetId: string
+  targetName: string
+  role: ProjectRole | WorkspaceRole
+  inviterId: string
+  inviterName: string
+  createdAt: number
+  expiresAt: number
+}
+
+/** The answer of an add by email that became an invitation (202). */
+export interface PendingAnswer {
+  pending: true
+}
+
+// ---- workspaces (OpenSpec `workspaces`) ----
+
+export type WorkspaceRole = 'owner' | 'admin' | 'member'
+
+/**
+ * One of the caller's workspaces as the sync response carries it (design D8),
+ * cached in the local `workspaces` table. Server-side directory data, never ops.
+ */
+export interface Workspace {
+  id: string
+  name: string
+  icon: string
+  color: string
+  /** The account's default workspace ("Personal" until renamed). */
+  default: boolean
+  role: WorkspaceRole
+  ownerId: string
+}
+
+/** A member of a workspace, by name only (the directory is shown to every member). */
+export interface WorkspaceMember {
+  /** `${workspaceId}\u0000${userId}`: a plain string key. */
+  id: string
+  workspaceId: string
+  userId: string
+  name: string
+  role: WorkspaceRole
+}
+
+/** A group of a workspace with its members' account ids. */
+export interface WorkspaceGroup {
+  id: string
+  workspaceId: string
+  name: string
+  members: string[]
+}
+
+/** A workspace in the sync response, with its members and groups. */
+export interface WorkspaceEntry extends Workspace {
+  members: { userId: string; name: string; role: WorkspaceRole }[]
+  groups: { id: string; name: string; members: string[] }[]
 }
 
 /** A pushed op the server refused (forbidden, scope_change or not_a_member); it was not stored. */
@@ -1448,6 +1905,8 @@ export interface SyncResponse {
   generation?: string
   rejected?: Rejection[]
   memberships?: Membership[]
+  /** The caller's workspaces with members and groups (workspaces D8); absent from older servers. */
+  workspaces?: WorkspaceEntry[]
   /** Entities purged on the server since the cursor (trash-and-history); delete them locally. */
   purged?: { entity: Entity; entityId: string }[]
   /** Days an item stays in the Trash before the server purges it; 0 = never (additive). */
@@ -1510,6 +1969,11 @@ export interface MentionedPayload {
   projectName?: string
   excerpt: string
   at: number
+  /** "note" for a mention in a task's notes (editor-everywhere D7); absent for a comment. */
+  source?: 'note'
+  /** The workspace group through which the recipient was mentioned (group-mentions D3); absent for a direct mention. */
+  groupId?: string
+  groupName?: string
 }
 
 /** Payload of an `assigned` notification (task-assignment); names resolved by the server. */
@@ -1538,6 +2002,22 @@ export interface UnblockedPayload {
   at: number
 }
 
+/** Payload of a `member_invitation` notification (member-add-consent): someone asks to add the recipient. */
+export interface MemberInvitationPayload {
+  invitationId: string
+  target: 'project' | 'workspace'
+  targetId: string
+  targetName?: string
+  inviterId: string
+  inviterName: string
+  role: ProjectRole | WorkspaceRole
+  at: number
+  taskId?: undefined
+  projectId?: undefined
+  projectName?: undefined
+  actorName?: undefined
+}
+
 /**
  * An in-app notification (GET /api/v1/notifications), cached in the local
  * `notifications` table so it shows offline. Server-side account data, not an op.
@@ -1546,8 +2026,8 @@ export interface UnblockedPayload {
 export interface AppNotification {
   id: string
   kind: string
-  /** AssignedPayload for kind `assigned`, MentionedPayload for `mentioned`, UnblockedPayload for `unblocked`, PagePayload for `page_replied` and `page_completed`. */
-  payload: AssignedPayload | MentionedPayload | UnblockedPayload | PagePayload
+  /** AssignedPayload for kind `assigned`, MentionedPayload for `mentioned`, UnblockedPayload for `unblocked`, PagePayload for `page_replied` and `page_completed`, MemberInvitationPayload for `member_invitation`. */
+  payload: AssignedPayload | MentionedPayload | UnblockedPayload | PagePayload | MemberInvitationPayload
   createdAt: number
   readAt: number | null
   readPending?: boolean

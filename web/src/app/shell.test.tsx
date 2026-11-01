@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
-// The shell owns the task panel (OpenSpec change ux-overhaul, app-shell "The panel
-// slot has an address", design D1): every view opens a task into the same slot,
-// the address carries the task id, and a route change closes a panel opened
-// elsewhere.
+// Every view opens a task the same way (OpenSpec change task-full-page, superseding
+// ux-overhaul D1's panel slot for tasks): as its page at /task/<id>, with Esc
+// returning to the view it was opened from.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
@@ -25,13 +24,11 @@ beforeEach(async () => {
   history.replaceState(null, '', '/')
 })
 afterEach(() => {
-  document.body.innerHTML = ''
   vi.unstubAllGlobals()
   resetPanel()
 })
 
-const panels = () => document.querySelectorAll('aside[data-detail-for]')
-const panelFor = () => panels()[0]?.getAttribute('data-detail-for') ?? null
+const pageFor = () => document.querySelector('[data-task-page]')?.getAttribute('data-task-page') ?? null
 const rowOf = (title: string) => [...document.querySelectorAll<HTMLElement>('[data-task-id]')].find((r) => r.textContent?.includes(title))!
 
 async function openByClick(title: string) {
@@ -39,11 +36,11 @@ async function openByClick(title: string) {
   const open = row.querySelector<HTMLButtonElement>('button.min-w-0')!
   await flush()
   open.click()
-  await waitFor(() => panels().length > 0)
+  await waitFor(() => pageFor() !== null)
 }
 
-describe('one panel slot for every view', () => {
-  it('opens from the Inbox, a project, the Filter view and a saved view, one panel at a time', async () => {
+describe('every view opens a task as its page', () => {
+  it('opens from the Inbox, a project, the Filter view and a saved view; Esc returns to each', async () => {
     const project = await createProject({ name: 'Home' })
     const inboxTask = await createTask({ title: 'Renew passport', priority: 1 })
     const projectTask = await createTask({ title: 'Paint the fence', project_id: project, priority: 1 })
@@ -55,60 +52,73 @@ describe('one panel slot for every view', () => {
     // Inbox: Enter on the selected row.
     await key(document.body, 'j')
     await key(document.body, 'Enter')
-    await waitFor(() => panelFor() === inboxTask)
-    expect(panels().length).toBe(1)
-    expect(new URLSearchParams(location.search).get('task')).toBe(inboxTask)
+    await waitFor(() => pageFor() === inboxTask)
+    expect(location.pathname).toBe(`/task/${inboxTask}`)
+    expect(document.querySelectorAll('aside[data-detail-variant="panel"]')).toHaveLength(0)
 
-    // Escape closes it and clears the address.
+    // Escape returns to the list.
     await key(document.body, 'Escape')
-    await waitFor(() => panels().length === 0)
-    expect(new URLSearchParams(location.search).get('task')).toBeNull()
+    await waitFor(() => pageFor() === null && location.pathname === '/')
 
     // Project view.
     navigate({ view: 'project', id: project })
     await waitFor(() => r.container.textContent!.includes('Paint the fence'))
     await openByClick('Paint the fence')
-    expect(panelFor()).toBe(projectTask)
-    expect(panels().length).toBe(1)
+    expect(pageFor()).toBe(projectTask)
+    await key(document.body, 'Escape')
+    await waitFor(() => location.pathname === `/project/${project}`)
 
-    // Leaving the page closes a panel opened there.
+    // The Filter view: its query comes back with it.
     navigate({ view: 'filter', q: 'p1' })
-    await waitFor(() => panels().length === 0)
     await waitFor(() => r.container.textContent!.includes('Renew passport') && r.container.textContent!.includes('Paint the fence'))
     await openByClick('Paint the fence')
-    expect(panels().length).toBe(1)
+    await key(document.body, 'Escape')
+    await waitFor(() => location.pathname === '/views/new' && new URLSearchParams(location.search).get('q') === 'p1')
 
     // Saved view.
     navigate({ view: 'view', id: view })
-    await waitFor(() => panels().length === 0)
     await waitFor(() => r.container.textContent!.includes('Renew passport'))
     await openByClick('Renew passport')
-    expect(panelFor()).toBe(inboxTask)
-    expect(panels().length).toBe(1)
+    expect(pageFor()).toBe(inboxTask)
     await r.unmount()
   })
 
-  it('reopens the task named in the address on a page other than the root', async () => {
+  it('opens the task named in an older ?task= address as its page', async () => {
     const id = await createTask({ title: 'Call the bank', due: { date: '2099-01-05' } })
-    // A reload: the page is Upcoming and the address still carries the task.
     navigate({ view: 'upcoming' })
     history.replaceState(null, '', `/upcoming?task=${id}`)
     const r = await render(<Shell user={user} onLogout={() => {}} />)
-    await waitFor(() => panelFor() === id)
-    expect(location.pathname).toBe('/upcoming')
+    await waitFor(() => pageFor() === id)
+    expect(location.pathname).toBe(`/task/${id}`)
     await r.unmount()
   })
 
-  it('a deleted task leaves the slot', async () => {
-    const id = await createTask({ title: 'Old chore' })
-    navigate({ view: 'inbox' })
+  it('a task deleted while its page is open says so', async () => {
+    // A project: the Inbox keeps its task beside the list from 1024 px instead (inbox-split).
+    const pid = await createProject({ name: 'Home' })
+    const id = await createTask({ title: 'Old chore', project_id: pid })
+    navigate({ view: 'project', id: pid })
     const r = await render(<Shell user={user} onLogout={() => {}} />)
     await waitFor(() => r.container.textContent!.includes('Old chore'))
     await openByClick('Old chore')
-    expect(panelFor()).toBe(id)
+    expect(pageFor()).toBe(id)
     const { deleteTask } = await import('../lib/ops')
     await deleteTask(id)
-    await waitFor(() => panels().length === 0)
+    await waitFor(() => pageFor() === null && r.container.textContent!.includes('This task no longer exists.'))
+    await r.unmount()
+  })
+})
+
+describe('task page order (task-panel-notes-below 2.1, GitHub issue 444)', () => {
+  it('reads the title, then the facts, then the notes, so narrow screens show the facts above a long note', async () => {
+    const id = await createTask({ title: 'Long plan', description: 'Line one.' })
+    navigate({ view: 'task', id })
+    const r = await render(<Shell user={user} onLogout={() => {}} />)
+    await waitFor(() => pageFor() === id && !!document.querySelector('[data-task-facts]') && !!document.querySelector('[data-task-notes-block] .notes-host, [data-task-notes-block] .notes-editor'))
+    const page = document.querySelector('[data-task-page]')!
+    const parts = ['[data-task-content]', '[data-task-facts]', '[data-task-notes-block]', '[data-task-rest]'].map((sel) => page.querySelector(sel)!)
+    for (let i = 1; i < parts.length; i++) expect(parts[i - 1].compareDocumentPosition(parts[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `block ${i - 1} before block ${i}`).toBeTruthy()
+    expect(page.querySelector('[data-task-content] .notes-host')).toBeNull()
     await r.unmount()
   })
 })

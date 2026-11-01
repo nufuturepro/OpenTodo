@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Button, IconButton, Dialog, Menu } from '../ui'
+import { useCallback, useEffect, useState } from 'react'
+import { Button, IconButton, Dialog, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Badge } from '../ui'
 import { Field, Input } from '../ui'
 import { Icon } from '../ui'
@@ -10,12 +10,16 @@ import { Notice } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
 import { Switch } from '../ui'
 import { SecretReveal } from './TokensSection'
-import { api, ApiError } from '../lib/api'
+import { api } from '../lib/api'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 import type { AppPassword, CaldavSetting } from '../lib/types'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { formatInstant } from '../lib/dates'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { useSettingsPending } from './settingsPending'
+import { copyText } from '../lib/clipboard'
 
 // Settings → Calendar apps (OpenSpec change `caldav`): the owner's toggle, the
 // server address with per-client setup hints, and per-user app passwords. The
@@ -49,7 +53,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
     <span className="flex min-w-0 items-center gap-2">
       <code className="min-w-0 break-all rounded-chip bg-sunken px-1.5 py-0.5 font-mono text-meta text-default">{value}</code>
       <IconButton icon={copied ? 'check' : 'copy'} label={t('Copy {label}', { label })} size="sm"
-        onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})} />
+        onClick={() => void copyText(value).then(() => setCopied(true), () => {})} />
     </span>
   )
 }
@@ -67,7 +71,7 @@ export function CaldavView(p: CaldavViewProps) {
       ) : (
         <SettingRow label={rowCopy('caldav', 'server', { variant: 'owner' }).label}
           description={p.isOwner || !on ? rowCopy('caldav', 'server', { variant: p.isOwner ? 'owner' : 'member' }).description : undefined}
-          status={<span className="flex items-center gap-2"><Badge hue={on ? 'green' : 'slate'}>{on ? t('On') : t('Off')}</Badge>{!p.isOwner && <span>{on ? t('CalDAV is on for this server.') : t('CalDAV is off.')}</span>}</span>}
+          status={<span className="flex items-center gap-2"><StatusIndicator tone={toneForHue(on ? 'green' : 'slate')}>{on ? t('On') : t('Off')}</StatusIndicator>{!p.isOwner && <span>{on ? t('CalDAV is on for this server.') : t('CalDAV is off.')}</span>}</span>}
           control={p.isOwner && <Switch checked={on} disabled={p.busy} onChange={p.onToggle} label={t('Allow calendar apps to sync with this server')} hideLabel />} />
       )}
       {p.setting?.encryption && (
@@ -85,7 +89,7 @@ export function CaldavView(p: CaldavViewProps) {
             </Notice>
           )}
           <details className="py-3 text-body">
-            <summary className="cursor-pointer font-medium text-default">{t('How to connect a calendar app')}</summary>
+            <summary className="font-medium text-default">{t('How to connect a calendar app')}</summary>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
               <li>{t.rich('<strong>Apple Reminders</strong> (iPhone, iPad, Mac): Settings → Calendar → Accounts → Add Account → Other → Add CalDAV Account. Server: the address above, then your email and an app password.', { strong: (chunks) => <strong className="text-default">{chunks}</strong> })}</li>
               <li>{t.rich('<strong>Thunderbird</strong>: New Calendar → On the Network → your email and the address above; pick the lists to show and enter an app password when asked.', { strong: (chunks) => <strong className="text-default">{chunks}</strong> })}</li>
@@ -147,42 +151,30 @@ export function CaldavView(p: CaldavViewProps) {
   )
 }
 
-const message = (err: unknown) => (err instanceof ApiError ? err.message : t('Offline: CalDAV is managed on the server.'))
+const message = (err: unknown) => errorText(err, { capitalise: false, offline: t('Offline: CalDAV is managed on the server.') })
 
 export function CaldavPanel({ isOwner, email }: { isOwner: boolean; email: string }) {
   const [setting, setSetting] = useState<CaldavSetting | null>(null)
   const [passwords, setPasswords] = useState<AppPassword[] | null>(null)
+  useSettingsPending(setting === null || passwords === null)
   const [newName, setNewName] = useState('')
   const [secret, setSecret] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const { busy, error, setError, run } = useAction({ describe: message })
   const [creating, setCreating] = useState(false)
   const [revoking, setRevoking] = useState<AppPassword | null>(null)
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
-      const [s, list] = await Promise.all([api.caldavSetting(), api.listAppPasswords()])
+      const [s, list] = await Promise.all([api.caldavSwitch.get(), api.listAppPasswords()])
       setSetting(s)
       setPasswords(list.appPasswords)
     } catch (err) {
       setError(message(err))
     }
-  }
+  }, [setError])
   useEffect(() => {
     void load()
-  }, [])
-
-  async function run(fn: () => Promise<void>) {
-    setBusy(true)
-    setError(null)
-    try {
-      await fn()
-    } catch (err) {
-      setError(message(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [load])
 
   return (
     <>
@@ -190,7 +182,7 @@ export function CaldavPanel({ isOwner, email }: { isOwner: boolean; email: strin
         error={error} busy={busy} creating={creating} onNameChange={setNewName}
         onNew={() => { setError(null); setSecret(null); setCreating(true) }}
         onCloseNew={() => { setCreating(false); setSecret(null); setNewName('') }}
-        onToggle={(enabled) => void run(async () => setSetting(await api.setCaldavEnabled(enabled)))}
+        onToggle={(enabled) => void run(async () => setSetting(await api.caldavSwitch.put(enabled)))}
         onCreate={() => void run(async () => {
           const res = await api.createAppPassword(newName.trim() || 'Calendar app')
           setSecret(res.secret)

@@ -24,16 +24,23 @@ export type Route =
   // Saved locations (task-locations, the `place` entity): /locations, and /location/<id> lists the open tasks linked to one.
   | { view: 'places' }
   | { view: 'place'; id: string }
+  // Automation rules (automation-rules): /rules, and /rules#new opens the editor.
+  | { view: 'rules'; create?: boolean }
   // All projects (sidebar-favourites D6): /projects, and /projects#archived with the archived projects open.
   | { view: 'projects'; archived?: boolean }
   | { view: 'filter'; q?: string }
   | { view: 'views' }
   | { view: 'view'; id: string }
-  | { view: 'settings'; section?: SettingsSectionId; anchor?: string }
+  // A settings section, or one of its sub-pages at /settings/<section>/<page> (settings-subpages).
+  | { view: 'settings'; section?: SettingsSectionId; page?: string; anchor?: string }
   | { view: 'import' }
   | { view: 'invite'; token: string }
   | { view: 'project-invite'; token: string }
+  // A workspace invite link (workspaces): /invite/w/<token>.
+  | { view: 'workspace-invite'; token: string }
   | { view: 'reset'; token: string }
+  // The link that confirms a new sign-in email (settings-refresh D10).
+  | { view: 'confirm-email'; token: string }
   | { view: 'triage' }
   | { view: 'forgot' }
   | { view: 'verify'; token: string }
@@ -55,30 +62,30 @@ export type Route =
   // Focus (focus-mode D7): one task and a timer; /focus takes the first task of today's focus.
   | { view: 'focus'; id?: string }
 
-/** Settings sections, each at /settings/<id> (settings-navigation); ten, in list order. */
+/** Settings sections, each at /settings/<id> (settings-navigation), in list order (workspaces added Workspaces, settings-subpages Language and region). */
 export const SETTINGS_SECTION_IDS = [
-  'account', 'appearance',
-  'general', 'notifications', 'capture', 'plugins', 'about',
+  'account', 'workspaces', 'appearance',
+  'general', 'language', 'notifications', 'capture', 'plugins', 'about',
   'integrations', 'data',
   'people', 'server',
 ] as const
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number]
 
 /**
- * Section ids of earlier layouts, opened as the section that now holds their
- * content, at the anchor of that content (settings-navigation "Legacy settings
- * addresses"). The address is replaced in place.
+ * Section ids of earlier layouts, opened as the section or sub-page that now
+ * holds their content, at the anchor of that content (settings-navigation "Legacy
+ * settings addresses"). The address is replaced in place.
  */
-export const LEGACY_SETTINGS_IDS: Readonly<Record<string, { section: SettingsSectionId; anchor?: string }>> = {
-  security: { section: 'account', anchor: 'security' },
-  encryption: { section: 'account', anchor: 'encryption' },
-  activity: { section: 'account', anchor: 'sessions' },
+export const LEGACY_SETTINGS_IDS: Readonly<Record<string, { section: SettingsSectionId; page?: string; anchor?: string }>> = {
+  security: { section: 'account', page: 'security' },
+  encryption: { section: 'account', page: 'encryption' },
+  activity: { section: 'account', page: 'activity' },
   preferences: { section: 'general' },
   projects: { section: 'data', anchor: 'projects' },
-  ai: { section: 'integrations', anchor: 'ai' },
+  ai: { section: 'integrations', page: 'assistant' },
   admin: { section: 'people' },
-  access: { section: 'people', anchor: 'access-policies' },
-  backups: { section: 'server' },
+  access: { section: 'people', page: 'access-policies' },
+  backups: { section: 'server', page: 'backups' },
 }
 
 function isSettingsSection(s: string | undefined): s is SettingsSectionId {
@@ -117,17 +124,22 @@ export function parseRoute(pathname: string): Route {
     case 'settings':
       // /settings/import is the import screen; an unknown section shows the overview.
       if (parts[1] === 'import') return { view: 'import' }
-      if (parts[1] && parts[1] in LEGACY_SETTINGS_IDS) { const l = LEGACY_SETTINGS_IDS[parts[1]]; return { view: 'settings', section: l.section, ...(l.anchor ? { anchor: l.anchor } : {}) } }
-      return isSettingsSection(parts[1]) ? { view: 'settings', section: parts[1] } : { view: 'settings' }
+      if (parts[1] && parts[1] in LEGACY_SETTINGS_IDS) { const l = LEGACY_SETTINGS_IDS[parts[1]]; return { view: 'settings', section: l.section, ...(l.page ? { page: l.page } : {}), ...(l.anchor ? { anchor: l.anchor } : {}) } }
+      // A sub-page id is checked against the section table by the Settings screen (settings-subpages).
+      if (!isSettingsSection(parts[1])) return { view: 'settings' }
+      return parts[2] && /^[a-z][a-z-]*$/.test(parts[2]) ? { view: 'settings', section: parts[1], page: parts[2] } : { view: 'settings', section: parts[1] }
     case 'labels':
       return { view: 'labels' }
     case 'locations':
       return { view: 'places' }
+    case 'rules':
+      return hash === 'new' ? { view: 'rules', create: true } : { view: 'rules' }
     case 'location':
       return parts[1] ? { view: 'place', id: parts[1] } : { view: 'places' }
     case 'projects':
       return hash === 'archived' ? { view: 'projects', archived: true } : { view: 'projects' }
     case 'filter': {
+      // The address before views-and-display, replaced by /views/new.
       // An initial query from the command palette (search-and-command-palette D4).
       const q = new URLSearchParams(query).get('q') ?? undefined
       return q ? { view: 'filter', q } : { view: 'filter' }
@@ -147,9 +159,17 @@ export function parseRoute(pathname: string): Route {
       const q = new URLSearchParams(query).get('q') ?? undefined
       return { view: 'help', ...(parts[1] ? { page: safeDecode(parts[1]) } : {}), ...(q ? { q } : {}) }
     }
-    case 'views':
-      return { view: 'views' }
+    case 'views': {
+      // Views (views-and-display D1): /views, /views/new (the New view page, with an
+      // initial query from the command palette) and /views/<id>.
+      if (parts[1] === 'new') {
+        const q = new URLSearchParams(query).get('q') ?? undefined
+        return q ? { view: 'filter', q } : { view: 'filter' }
+      }
+      return parts[1] ? { view: 'view', id: parts[1] } : { view: 'views' }
+    }
     case 'view':
+      // The address before views-and-display, replaced by /views/<id>.
       return parts[1] ? { view: 'view', id: parts[1] } : { view: 'views' }
     case 'project':
       return parts[1] ? { view: 'project', id: parts[1] } : { view: 'inbox' }
@@ -159,11 +179,14 @@ export function parseRoute(pathname: string): Route {
     case 'invite':
       // /invite/p/<token> is a project invite link (project-invite-links).
       if (parts[1] === 'p') return parts[2] ? { view: 'project-invite', token: safeDecode(parts[2]) } : { view: 'inbox' }
+      if (parts[1] === 'w') return parts[2] ? { view: 'workspace-invite', token: safeDecode(parts[2]) } : { view: 'inbox' }
       // The secret is URL-safe base64; decode defensively in case a mail client encoded it.
       return parts[1] ? { view: 'invite', token: safeDecode(parts[1]) } : { view: 'inbox' }
     case 'reset':
       // Password reset link from an administrator or `opentodo reset-owner-password`.
       return parts[1] ? { view: 'reset', token: safeDecode(parts[1]) } : { view: 'inbox' }
+    case 'confirm-email':
+      return parts[1] ? { view: 'confirm-email', token: safeDecode(parts[1]) } : { view: 'inbox' }
     case 'triage':
       // Process the Inbox one task at a time (inbox-triage).
       return { view: 'triage' }
@@ -207,6 +230,9 @@ export function canonicalPath(pathname: string): string | null {
   const [path] = pathname.split('?')
   const parts = path.split('/').filter(Boolean)
   if (parts[0] === 'activity' || parts[0] === 'calendar') return routePath(parseRoute(path))
+  // /filter and /view/<id> before views-and-display (D1); the caller keeps the query (?q=).
+  if (parts[0] === 'filter') return '/views/new'
+  if (parts[0] === 'view') return routePath(parseRoute(path))
   if (parts[0] === 'settings' && parts[1] && parts[1] in LEGACY_SETTINGS_IDS) return routePath(parseRoute(path))
   return null
 }
@@ -223,18 +249,24 @@ export function routePath(r: Route): string {
   switch (r.view) {
     case 'project':
     case 'label':
-    case 'view':
     case 'task':
       return `/${r.view}/${r.id}`
+    case 'view':
+      return `/views/${r.id}`
     case 'place':
       return `/location/${r.id}`
     case 'places':
       return '/locations'
+    case 'rules':
+      return r.create ? '/rules#new' : '/rules'
     case 'invite':
     case 'reset':
+    case 'confirm-email':
       return `/${r.view}/${encodeURIComponent(r.token)}`
     case 'project-invite':
       return `/invite/p/${encodeURIComponent(r.token)}`
+    case 'workspace-invite':
+      return `/invite/w/${encodeURIComponent(r.token)}`
     case 'forgot':
       return '/forgot'
     case 'verify':
@@ -249,7 +281,7 @@ export function routePath(r: Route): string {
     case 'inbox':
       return '/'
     case 'settings':
-      return r.section ? `/settings/${r.section}` : '/settings'
+      return r.section ? `/settings/${r.section}${r.page ? `/${r.page}` : ''}` : '/settings'
     case 'import':
       return '/settings/import'
     case 'projects':
@@ -259,7 +291,7 @@ export function routePath(r: Route): string {
     case 'ask':
       return '/ask'
     case 'filter':
-      return r.q ? `/filter?q=${encodeURIComponent(r.q)}` : '/filter'
+      return r.q ? `/views/new?q=${encodeURIComponent(r.q)}` : '/views/new'
     case 'display': {
       const q = serializeDisplayOptions(r.options)
       return `${displayTargetPath(r.target)}${q ? `?${q}` : ''}`

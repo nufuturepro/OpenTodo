@@ -1,13 +1,10 @@
 package httpapi
 
 import (
-	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	gotoken "go/token"
-	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/demo"
-	"github.com/pixari/opentodo/internal/push"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/httpx"
+	"github.com/OpenTodoApp/opentodo/internal/push"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
 )
 
 // Route authorization policy (OpenSpec change `route-authorization-policy`).
@@ -36,22 +33,13 @@ func routeTableOf(t *testing.T, demoMode bool) []routeEntry {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg := config.Config{SessionTTL: time.Hour, DataDir: dir, Demo: demoMode}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	syncSvc := opsync.NewService(db)
-	authSvc := auth.NewService(db, cfg.SessionTTL, false)
+	// Hosted, with web push on (even on a demo instance), so every optional
+	// route is registered.
+	set := testSet(t, config.Config{SessionTTL: time.Hour, DataDir: dir, Demo: demoMode}, db, services.Options{Hosted: &services.Hosted{}})
+	set.Push = push.New(db, set.Sync, dir, push.Options{AllowHTTP: true, Client: http.DefaultClient})
+	set.Cfg.PushDisabled = false
 	var srv *Server
-	opts := []Option{WithHosted(), WithPush(push.New(db, syncSvc, dir, push.Options{AllowHTTP: true, Client: http.DefaultClient})),
-		func(s *Server) { srv = s }}
-	if demoMode {
-		d := demo.New(authSvc, syncSvc, log)
-		if err := d.Start(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		opts = append(opts, WithDemo(d))
-	}
-	New(cfg, authSvc, syncSvc, http.NotFoundHandler(), log, "test", opts...)
-	t.Cleanup(syncSvc.Notifier().CloseAll)
+	New(set, http.NotFoundHandler(), func(s *Server) { srv = s })
 	if srv == nil || len(srv.routeTable) < 150 {
 		t.Fatalf("route table not recorded")
 	}
@@ -70,11 +58,11 @@ func TestEveryRouteDeclaresAPolicy(t *testing.T) {
 		}
 		got[e.pattern] = e.policy
 		switch {
-		case e.policy.kind == kindUnset:
+		case e.policy.Kind == httpx.KindUnset:
 			t.Errorf("%s has no policy", e.pattern)
-		case e.policy.kind == kindPublic && e.policy.reason == "":
+		case e.policy.Kind == httpx.KindPublic && e.policy.Reason == "":
 			t.Errorf("public route %s has no reason", e.pattern)
-		case e.policy.kind == kindPublic && (e.policy.role != anyRole || e.policy.tokens != tokensByMethod || e.policy.fresh):
+		case e.policy.Kind == httpx.KindPublic && (e.policy.Role != httpx.AnyRole || e.policy.Tokens != httpx.TokensByMethod || e.policy.Fresh):
 			t.Errorf("public route %s declares sign-in rules it cannot enforce", e.pattern)
 		}
 	}
@@ -117,31 +105,31 @@ func TestEveryRouteDeclaresAPolicy(t *testing.T) {
 
 // describe renders a policy for the table below.
 func describe(p routePolicy) string {
-	if p.kind == kindPublic {
-		if p.demo {
+	if p.Kind == httpx.KindPublic {
+		if p.Demo {
 			return "public demo"
 		}
 		return "public"
 	}
 	parts := []string{"auth"}
-	switch p.role {
-	case ownerRole:
+	switch p.Role {
+	case httpx.OwnerRole:
 		parts = append(parts, "owner")
-	case adminRole:
+	case httpx.AdminRole:
 		parts = append(parts, "admins")
 	}
-	switch p.tokens {
-	case tokensFull:
+	switch p.Tokens {
+	case httpx.TokensFull:
 		parts = append(parts, "full-tokens")
-	case tokensAdmin:
+	case httpx.TokensAdmin:
 		parts = append(parts, "admin-token")
-	case tokensNone:
+	case httpx.TokensNone:
 		parts = append(parts, "session-only")
 	}
-	if p.fresh {
+	if p.Fresh {
 		parts = append(parts, "fresh")
 	}
-	if p.demo {
+	if p.Demo {
 		parts = append(parts, "demo")
 	}
 	return strings.Join(parts, " ")
@@ -169,12 +157,12 @@ func TestSecurityRoutePolicies(t *testing.T) {
 		"DELETE /api/v1/app-passwords/{id}":   "auth demo",
 		"POST /api/v1/me/sign-out-everywhere": "auth session-only fresh demo",
 		// Second factor and passkeys.
-		"POST /api/v1/mfa/totp/enroll":               "auth admin-token demo",
-		"POST /api/v1/mfa/totp/confirm":              "auth admin-token demo",
+		"POST /api/v1/mfa/totp/enroll":               "auth admin-token fresh demo",
+		"POST /api/v1/mfa/totp/confirm":              "auth admin-token fresh demo",
 		"DELETE /api/v1/mfa/totp":                    "auth admin-token fresh demo",
 		"POST /api/v1/mfa/recovery-codes/regenerate": "auth admin-token fresh demo",
-		"POST /api/v1/passkeys/register/options":     "auth admin-token demo",
-		"POST /api/v1/passkeys/register":             "auth admin-token demo",
+		"POST /api/v1/passkeys/register/options":     "auth admin-token fresh demo",
+		"POST /api/v1/passkeys/register":             "auth admin-token fresh demo",
 		"PATCH /api/v1/passkeys/{id}":                "auth admin-token demo",
 		"DELETE /api/v1/passkeys/{id}":               "auth admin-token demo",
 		"DELETE /api/v1/me/identities/{id}":          "auth admin-token demo",
@@ -206,20 +194,45 @@ func TestSecurityRoutePolicies(t *testing.T) {
 		"PUT /api/v1/encryption/keys":      "auth admin-token demo",
 		"DELETE /api/v1/encryption/keys":   "auth admin-token fresh demo",
 		"GET /api/v1/settings/webhooks":    "auth owner",
-		"PUT /api/v1/settings/webhooks":    "auth owner demo",
-		"PUT /api/v1/settings/mcp":         "auth owner demo",
+		"PUT /api/v1/settings/webhooks":    "auth owner admin-token demo",
+		"PUT /api/v1/settings/mcp":         "auth owner admin-token demo",
+		"PUT /api/v1/settings/maps":        "auth owner admin-token demo",
+		"PUT /api/v1/settings/audit":       "auth owner admin-token demo",
 		"PUT /api/v1/settings/caldav":      "auth owner demo",
 		"PUT /api/v1/settings/attachments": "auth owner demo",
+		// Calendar sync (calendar-two-way D14): the Google client holds a secret,
+		// connections carry passwords, the Google callback is a browser's.
+		"PUT /api/v1/settings/calendar-sync":               "auth owner demo",
+		"GET /api/v1/settings/calendar-sync/google":        "auth owner demo",
+		"PUT /api/v1/settings/calendar-sync/google":        "auth owner admin-token demo",
+		"POST /api/v1/calendar-sync/connections":           "auth fresh demo",
+		"PATCH /api/v1/calendar-sync/connections/{id}":     "auth demo",
+		"POST /api/v1/calendar-sync/google/start":          "auth fresh demo",
+		"GET /api/v1/calendar-sync/google/callback":        "auth session-only demo",
+		"GET /api/v1/calendar-sync/connections":            "auth demo",
+		"POST /api/v1/calendar-sync/connections/{id}/sync": "auth demo",
+		"DELETE /api/v1/calendar-sync/connections/{id}":    "auth demo",
 		// Owner data and restore.
 		"GET /api/v1/backups":                                 "auth owner",
 		"POST /api/v1/backups/restore":                        "auth owner session-only fresh demo",
 		"DELETE /api/v1/backups/restore/safety-copies/{name}": "auth owner session-only fresh demo",
 		"GET /api/v1/export/archive":                          "auth owner admin-token fresh demo",
 		// Switches only a person flips.
-		"GET /api/v1/me/agent-access":    "auth full-tokens",
-		"PUT /api/v1/me/agent-access":    "auth full-tokens demo",
-		"POST /api/v1/assistant/turn":    "auth session-only demo",
-		"POST /api/v1/me/assistant/test": "auth session-only demo",
+		"GET /api/v1/me/agent-access": "auth full-tokens",
+		"PUT /api/v1/me/agent-access": "auth full-tokens demo",
+		// The email-inbox address creates tasks: not for read or agent tokens.
+		"GET /api/v1/email-inbox":         "auth full-tokens",
+		"PATCH /api/v1/email-inbox":       "auth full-tokens demo",
+		"POST /api/v1/email-inbox/rotate": "auth full-tokens demo",
+		// Membership invitations (member-add-consent D4): the invitee answers
+		// with a session or a full token; managers cancel like they add.
+		"GET /api/v1/me/member-invitations":                                "auth full-tokens demo",
+		"POST /api/v1/me/member-invitations/{id}/accept":                   "auth full-tokens demo",
+		"POST /api/v1/me/member-invitations/{id}/decline":                  "auth full-tokens demo",
+		"DELETE /api/v1/projects/{id}/member-invitations/{invitationId}":   "auth demo",
+		"DELETE /api/v1/workspaces/{id}/member-invitations/{invitationId}": "auth full-tokens demo",
+		"POST /api/v1/assistant/turn":                                      "auth session-only demo",
+		"POST /api/v1/me/assistant/test":                                   "auth session-only demo",
 		// Regular content routes.
 		"POST /api/v1/sync":                       "auth",
 		"POST /api/v1/{collection}":               "auth",
@@ -244,7 +257,9 @@ func TestSecurityRoutePolicies(t *testing.T) {
 var wildcard = regexp.MustCompile(`\{[^}]*\}`)
 
 // samplePath turns a pattern's path into a concrete one ("{id}" → "x").
-func samplePath(path string) string { return wildcard.ReplaceAllString(path, "x") }
+func samplePath(path string) string {
+	return wildcard.ReplaceAllString(strings.TrimSuffix(path, "{$}"), "x")
+}
 
 // TestDemoDenyListMatchesPolicy: the demo deny list (demoRules, applied before
 // routing) refuses exactly the routes whose policy says demoDenied, and every
@@ -260,12 +275,12 @@ func TestDemoDenyListMatchesPolicy(t *testing.T) {
 		for _, m := range methods {
 			denied = denied || demoRestricted(m, samplePath(path)) != ""
 		}
-		if denied != e.policy.demo {
-			t.Errorf("%s: demo deny list says %v, policy says %v", e.pattern, denied, e.policy.demo)
+		if denied != e.policy.Demo {
+			t.Errorf("%s: demo deny list says %v, policy says %v", e.pattern, denied, e.policy.Demo)
 		}
 		write := ok && method != "GET" && method != "HEAD"
-		privileged := e.policy.role != anyRole || e.policy.tokens == tokensAdmin || e.policy.tokens == tokensNone
-		if write && privileged && !e.policy.demo {
+		privileged := e.policy.Role != httpx.AnyRole || e.policy.Tokens == httpx.TokensAdmin || e.policy.Tokens == httpx.TokensNone
+		if write && privileged && !e.policy.Demo {
 			t.Errorf("%s changes credentials, administration or settings but is allowed on a demo", e.pattern)
 		}
 	}
@@ -330,6 +345,11 @@ func TestCredentialRoutesNeedAdminToken(t *testing.T) {
 		{"DELETE", "/api/v1/encryption/keys", nil},
 		{"PUT", "/api/v1/backups/settings", map[string]any{}},
 		{"PUT", "/api/v1/settings/assistant", map[string]any{}},
+		// Security-relevant owner settings (L4 of the 2026-10 audit).
+		{"PUT", "/api/v1/settings/webhooks", map[string]any{"allowPrivate": false}},
+		{"PUT", "/api/v1/settings/maps", map[string]any{}},
+		{"PUT", "/api/v1/settings/mcp", map[string]any{"enabled": false}},
+		{"PUT", "/api/v1/settings/audit", map[string]any{"retentionDays": 90}},
 	}
 	for _, r := range routes {
 		resp, out := p.as(p.full, r.method, r.path, r.body)

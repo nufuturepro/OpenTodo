@@ -11,11 +11,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/blobs"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/notify"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/blobs"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // The public task page routes (OpenSpec `task-pages`). They never authenticate:
@@ -122,7 +122,7 @@ func (s *Server) handleTaskPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := rp.page
-	out := map[string]any{"rights": p.Rights, "serverTime": time.Now().UnixMilli(), "label": p.Label}
+	out := map[string]any{"rights": p.Rights, "serverTime": s.now().UnixMilli(), "label": p.Label}
 	if rp.encrypted {
 		out["mode"] = "encrypted"
 		out["snapshot"] = string(p.Snapshot)
@@ -152,7 +152,7 @@ func (s *Server) handleTaskPage(w http.ResponseWriter, r *http.Request) {
 	}
 	out["links"], out["files"] = links, files
 	out["location"] = nil
-	if p.IncludeMap && !isNullish(t["location"]) && s.mapsAvailable(r.Context()) {
+	if p.IncludeMap && !isNullish(t["location"]) && s.mapRoutes.Available(r.Context()) {
 		out["location"] = t["location"]
 	}
 	out["comments"] = s.pageComments(r, rp)
@@ -229,7 +229,7 @@ func (s *Server) handleTaskPageReply(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.sync.EmitPageActivity(ctx, notify.PageEvent{Kind: notify.KindPageReplied, PublisherID: p.UserID, PageID: p.ID, TaskID: p.TaskID,
-			Encrypted: true, At: time.Now().UnixMilli()})
+			Encrypted: true, At: s.now().UnixMilli()})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "pending": true})
 		return
 	}
@@ -248,7 +248,7 @@ func (s *Server) handleTaskPageReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := ids.New()
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	ts := s.opTS()
 	fields := map[string]json.RawMessage{
 		"task_id": mustJSON(p.TaskID), "author_id": mustJSON(p.UserID), "body": mustJSON(body), "parent_id": json.RawMessage("null"),
@@ -256,8 +256,7 @@ func (s *Server) handleTaskPageReply(w http.ResponseWriter, r *http.Request) {
 		"guest_name": mustJSON(name), "page_id": mustJSON(p.ID),
 	}
 	device := opsync.PageDevice(p.ID)
-	res, err := s.sync.ApplyStrict(ctx, p.UserID, deviceOps("comment", id, fields, ts, device))
-	if err != nil {
+	if _, err := s.applyAs(ctx, p.UserID, device, deviceOps("comment", id, fields, ts, device)); err != nil {
 		var rej *opsync.RejectedError
 		if errors.As(err, &rej) && rej.Reason == opsync.ReasonRateLimited {
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "too many comments on this task, try again in a minute")
@@ -266,9 +265,6 @@ func (s *Server) handleTaskPageReply(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("task page reply refused", "page", p.ID, "err", err)
 		s.internal(w, err)
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, device)
 	}
 	if err := s.auth.RecordTaskPageAction(ctx, p.ID, ts, name, true); err != nil {
 		s.log.Warn("task page action", "err", err)
@@ -325,7 +321,7 @@ func (s *Server) handleTaskPageTick(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such task on this page")
 		return
 	}
-	now := time.Now()
+	now := s.now()
 	if !*in.Completed {
 		var done int64
 		_ = json.Unmarshal(task["completed_at"], &done)
@@ -360,14 +356,10 @@ func (s *Server) applyPageTick(w http.ResponseWriter, r *http.Request, rp resolv
 		}
 	}
 	ops = append(ops, deviceOps("task", taskID, body, ts, device)...)
-	res, err := s.sync.ApplyStrict(ctx, p.UserID, ops)
-	if err != nil {
+	if _, err := s.applyAs(ctx, p.UserID, device, ops); err != nil {
 		s.log.Error("task page tick refused", "page", p.ID, "err", err)
 		s.internal(w, err)
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, device)
 	}
 	if err := s.auth.RecordTaskPageAction(ctx, p.ID, ts, name, false); err != nil {
 		s.log.Warn("task page action", "err", err)
@@ -434,7 +426,7 @@ func (s *Server) pageMap(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	p, err := s.auth.LookupTaskPage(r.Context(), r.PathValue("secret"))
-	if err != nil || !p.IncludeMap || p.PublisherDeactivated || !s.mapsAvailable(r.Context()) {
+	if err != nil || !p.IncludeMap || p.PublisherDeactivated || !s.mapRoutes.Available(r.Context()) {
 		writeError(w, http.StatusNotFound, "page_invalid", auth.ErrTaskPageInvalid.Error())
 		return false
 	}
@@ -457,7 +449,7 @@ func (s *Server) handleTaskPageMapStyle(w http.ResponseWriter, r *http.Request) 
 	}
 	body, err := s.maps.Style(r.Context())
 	if err != nil {
-		s.mapError(w, err)
+		s.mapRoutes.Error(w, err)
 		return
 	}
 	// The style points at the signed-in proxy; a guest uses the page's own.
@@ -478,7 +470,7 @@ func (s *Server) handleTaskPageMapTile(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _, err := s.maps.Tile(r.Context(), z, x, y)
 	if err != nil {
-		s.mapError(w, err)
+		s.mapRoutes.Error(w, err)
 		return
 	}
 	pageMapBody(w, body, "application/x-protobuf")
@@ -490,7 +482,7 @@ func (s *Server) handleTaskPageMapGlyphs(w http.ResponseWriter, r *http.Request)
 	}
 	body, _, err := s.maps.Glyphs(r.Context(), r.PathValue("fontstack"), strings.TrimSuffix(r.PathValue("range"), ".pbf"))
 	if err != nil {
-		s.mapError(w, err)
+		s.mapRoutes.Error(w, err)
 		return
 	}
 	pageMapBody(w, body, "application/x-protobuf")
@@ -503,7 +495,7 @@ func (s *Server) handleTaskPageMapSprite(w http.ResponseWriter, r *http.Request)
 	file := r.PathValue("file")
 	body, _, err := s.maps.Sprite(r.Context(), file)
 	if err != nil {
-		s.mapError(w, err)
+		s.mapRoutes.Error(w, err)
 		return
 	}
 	ct := "application/json"

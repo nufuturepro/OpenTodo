@@ -14,8 +14,21 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
-	"github.com/pixari/opentodo/internal/timetrack"
+	"github.com/OpenTodoApp/opentodo/internal/timetrack"
+)
+
+// The limits on a query (OpenSpec change filter-limits), the same as
+// MAX_QUERY_LENGTH and MAX_NESTING in web/src/lib/filter/parse.ts. Each "(" and
+// "!" opens one level; the parser recurses once per level, so without the depth
+// limit a long run of "(" exhausts the goroutine stack, which is fatal to the
+// whole process (recover cannot catch it).
+const (
+	// MaxQueryLength is the longest query in characters (Unicode code points).
+	MaxQueryLength = 4096
+	// MaxNesting is the deepest nesting of "(" and "!".
+	MaxNesting = 64
 )
 
 // SyntaxError is a rejected query: a message naming a 1-based position and the
@@ -45,6 +58,10 @@ const (
 	tSearch
 	// tOrigin is `origin: value` (OpenSpec change task-origin).
 	tOrigin
+	// tWorkspace is `workspace: name` (OpenSpec change group-mentions, D6).
+	tWorkspace
+	// tEnergy is `energy: deep|medium|low` (OpenSpec change task-energy, D5).
+	tEnergy
 	tWord
 	tString
 )
@@ -71,6 +88,8 @@ func fail(offset int, format string, args ...any) error {
 var (
 	searchPrefix = regexp.MustCompile(`(?i)^search:`)
 	originPrefix = regexp.MustCompile(`(?i)^origin:`)
+	wsPrefix     = regexp.MustCompile(`(?i)^workspace:`)
+	energyPrefix = regexp.MustCompile(`(?i)^energy:`)
 	priorityWord = regexp.MustCompile(`(?i)^p([1-4])$`)
 	anyPriority  = regexp.MustCompile(`^p\d+$`)
 	isoDate      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -169,8 +188,9 @@ func tokenize(src []rune) ([]token, error) {
 			continue
 		}
 		word := readBare()
-		// `search: text` and `origin: value` (task-origin): the prefix, then the
-		// rest of the word, or the next bare word or quoted string.
+		// `search: text`, `origin: value` (task-origin), `workspace: name`
+		// (group-mentions) and `energy: level` (task-energy): the prefix, then
+		// the rest of the word, or the next bare word or quoted string.
 		readPrefixed := func(prefix string) (string, error) {
 			text := string([]rune(word)[len(prefix):])
 			if text != "" {
@@ -184,26 +204,15 @@ func tokenize(src []rune) ([]token, error) {
 			}
 			return readBare(), nil
 		}
-		if searchPrefix.MatchString(word) {
-			text, err := readPrefixed("search:")
+		if term, ok := prefixedTermOf(word); ok {
+			text, err := readPrefixed(term.prefix)
+			if err == nil {
+				text, err = term.check(text, pos)
+			}
 			if err != nil {
 				return nil, err
 			}
-			if text == "" {
-				return nil, fail(pos, `Expected text after "search:" at position %d`, pos+1)
-			}
-			out = append(out, token{typ: tSearch, pos: pos, raw: string(src[pos:i]), value: text})
-			continue
-		}
-		if originPrefix.MatchString(word) {
-			text, err := readPrefixed("origin:")
-			if err != nil {
-				return nil, err
-			}
-			if text == "" {
-				return nil, fail(pos, `Expected a provider or kind after "origin:" at position %d`, pos+1)
-			}
-			out = append(out, token{typ: tOrigin, pos: pos, raw: string(src[pos:i]), value: text})
+			out = append(out, token{typ: term.typ, pos: pos, raw: string(src[pos:i]), value: text})
 			continue
 		}
 		if priorityWord.MatchString(word) {
@@ -215,16 +224,71 @@ func tokenize(src []rune) ([]token, error) {
 	return out, nil
 }
 
+// prefixedTerm is a `prefix: text` term: the token it makes and the check of
+// its text, which returns the value to keep.
+type prefixedTerm struct {
+	re     *regexp.Regexp
+	prefix string
+	typ    tokType
+	check  func(text string, pos int) (string, error)
+}
+
+// needText refuses an empty text with message (one %d: the 1-based position).
+func needText(message string) func(string, int) (string, error) {
+	return func(text string, pos int) (string, error) {
+		if text == "" {
+			return "", fail(pos, message, pos+1)
+		}
+		return text, nil
+	}
+}
+
+// energyText accepts deep, medium or low in any case, kept in lower case
+// (OpenSpec change task-energy, design D5).
+func energyText(text string, pos int) (string, error) {
+	v := strings.ToLower(text)
+	if v != "deep" && v != "medium" && v != "low" {
+		return "", fail(pos, "Energy must be deep, medium or low at position %d", pos+1)
+	}
+	return v, nil
+}
+
+var prefixedTerms = []prefixedTerm{
+	{searchPrefix, "search:", tSearch, needText(`Expected text after "search:" at position %d`)},
+	{originPrefix, "origin:", tOrigin, needText(`Expected a provider or kind after "origin:" at position %d`)},
+	{wsPrefix, "workspace:", tWorkspace, needText(`Expected a workspace name after "workspace:" at position %d`)},
+	{energyPrefix, "energy:", tEnergy, energyText},
+}
+
+func prefixedTermOf(word string) (prefixedTerm, bool) {
+	for _, t := range prefixedTerms {
+		if t.re.MatchString(word) {
+			return t, true
+		}
+	}
+	return prefixedTerm{}, false
+}
+
 var (
-	simpleKeywords = map[string]bool{"overdue": true, "today": true, "tomorrow": true, "completed": true, "open": true, "subtask": true, "someday": true, "deferred": true, "evening": true, "blocked": true, "unblocked": true, "habit": true, "origin": true}
-	noKeywords     = map[string]bool{"date": true, "project": true, "labels": true, "time": true, "deadline": true, "start": true, "origin": true}
+	simpleKeywords = map[string]bool{"overdue": true, "today": true, "tomorrow": true, "completed": true, "open": true, "subtask": true, "someday": true, "deferred": true, "evening": true, "morning": true, "afternoon": true, "blocked": true, "unblocked": true, "available": true, "habit": true, "origin": true, "energy": true}
+	noKeywords     = map[string]bool{"date": true, "project": true, "labels": true, "time": true, "deadline": true, "start": true, "origin": true, "energy": true}
 	weekdays       = map[string]bool{"sunday": true, "monday": true, "tuesday": true, "wednesday": true, "thursday": true, "friday": true, "saturday": true}
 )
 
 type parser struct {
-	toks []token
-	i    int
-	end  int
+	toks  []token
+	i     int
+	end   int
+	depth int // open "(" and "!" levels
+}
+
+// enter opens one nesting level at t, refusing one beyond MaxNesting.
+func (p *parser) enter(t *token) error {
+	p.depth++
+	if p.depth > MaxNesting {
+		return fail(t.pos, `Too deeply nested at position %d; use at most %d levels of "(" and "!"`, t.pos+1, MaxNesting)
+	}
+	return nil
 }
 
 func (p *parser) peek() *token {
@@ -286,9 +350,17 @@ func (p *parser) parseNot(prev *token) error {
 	switch t.typ {
 	case tNot:
 		p.i++
+		if err := p.enter(t); err != nil {
+			return err
+		}
+		defer func() { p.depth-- }()
 		return p.parseNot(t)
 	case tLParen:
 		p.i++
+		if err := p.enter(t); err != nil {
+			return err
+		}
+		defer func() { p.depth-- }()
 		if err := p.parseOr(t); err != nil {
 			return err
 		}
@@ -308,7 +380,7 @@ func (p *parser) parseNot(prev *token) error {
 func (p *parser) parseTerm(prev *token) error {
 	t := p.peek()
 	switch t.typ {
-	case tLabel, tProject, tPriority, tSearch, tOrigin:
+	case tLabel, tProject, tPriority, tSearch, tOrigin, tWorkspace, tEnergy:
 		p.i++
 		return nil
 	case tWord:
@@ -462,8 +534,12 @@ func validISO(s string) bool {
 
 // Parse checks a query against the grammar. It returns nil for a valid query and
 // for an empty (whitespace-only) one; callers that need a non-empty query check
-// that themselves. Errors are *SyntaxError.
+// that themselves. Errors are *SyntaxError. A query longer than MaxQueryLength or
+// nested deeper than MaxNesting is refused.
 func Parse(query string) error {
+	if n := utf8.RuneCountInString(query); n > MaxQueryLength {
+		return fail(MaxQueryLength, "Query is too long: %d characters, at most %d", n, MaxQueryLength)
+	}
 	src := []rune(query)
 	toks, err := tokenize(src)
 	if err != nil {

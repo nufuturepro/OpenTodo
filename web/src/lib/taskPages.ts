@@ -16,7 +16,9 @@ import { mutate } from './ops'
 import { currentUserId } from './sharing'
 import { decryptReply, encryptSnapshot, generateShareKey, shareKeyFragment, unwrapShareKey, wrapShareKey } from './taskPageCrypto'
 import { setKnownTaskPages } from './taskPageStore'
+import { onTestTeardown } from './testTeardown'
 import type { PublishTaskPageInput, Task, TaskPageContent, TaskPageCreated, TaskPageRights } from './types'
+import { readJSON, writeJSON } from './deviceStorage'
 
 /** Is the task served from a snapshot: an encrypted account's task outside every shared project? */
 export async function taskPageEncrypted(task: Pick<Task, 'project_id'>): Promise<boolean> {
@@ -109,11 +111,11 @@ function hashOf(content: unknown): string {
 }
 
 function uploaded(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(UPLOADED_KEY) ?? '{}') as Record<string, string> } catch { return {} }
+  return readJSON<Record<string, string>>(UPLOADED_KEY, {})
 }
 
 function rememberUploaded(pageId: string, hash: string): void {
-  try { localStorage.setItem(UPLOADED_KEY, JSON.stringify({ ...uploaded(), [pageId]: hash })) } catch { /* storage refused: upload again next time */ }
+  writeJSON(UPLOADED_KEY, { ...uploaded(), [pageId]: hash }) // storage refused: upload again next time
 }
 
 let running: Promise<void> | null = null
@@ -157,6 +159,15 @@ export function maintainTaskPages(opts: { force?: boolean } = {}): Promise<void>
   })
   return running
 }
+
+// The deferred pass never fires into the next test, and the next test starts unthrottled.
+onTestTeardown(async () => {
+  if (deferred) clearTimeout(deferred)
+  deferred = null
+  again = false
+  await running
+  lastRun = 0
+})
 
 async function maintain(): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return

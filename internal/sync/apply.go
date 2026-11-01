@@ -22,6 +22,10 @@ func (s *Service) apply(ctx context.Context, userID string, ops []Op, strict boo
 	if s.attachmentLimit != nil {
 		attachmentLimit = s.attachmentLimit()
 	}
+	var attachmentQuota int64
+	if s.attachmentQuota != nil {
+		attachmentQuota = s.attachmentQuota()
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ApplyResult{}, err
@@ -31,6 +35,7 @@ func (s *Service) apply(ctx context.Context, userID string, ops []Op, strict boo
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	b.rs.attachmentQuota = attachmentQuota
 	for _, op := range ops {
 		if err := b.applyOne(op); err != nil {
 			return b.res, err
@@ -78,6 +83,7 @@ type applyBatch struct {
 	// with a changed value the author's device must adopt.
 	refused, rewritten []Op
 	storedBytes        int64 // value bytes of the stored ops, for the write guard
+	newestTS           int64 // the newest stored timestamp, for the server clock
 	res                ApplyResult
 }
 
@@ -181,7 +187,7 @@ func (b *applyBatch) store(op Op, scope string) error {
 	// is stored with the filtered value and handed back to the author's
 	// device, whose copy carries the same clock (see applyOps on the client).
 	filtered := false
-	if op.Entity == "comment" && op.Field == "mentions" {
+	if (op.Entity == "comment" && op.Field == "mentions") || (op.Entity == "task" && op.Field == "note_mentions") {
 		var err error
 		if op.Value, filtered, err = b.rs.filterMentions(scope, op.Value); err != nil {
 			return err
@@ -201,6 +207,7 @@ func (b *applyBatch) store(op Op, scope string) error {
 		b.rewritten = append(b.rewritten, op)
 	}
 	b.storedBytes += int64(len(op.Value))
+	b.newestTS = max(b.newestTS, op.TS)
 	b.touched[scope] = true
 	b.res.Applied++
 	return nil
@@ -230,6 +237,7 @@ func (b *applyBatch) finish(guard WriteGuard) (ApplyResult, error) {
 	if err := tx.Commit(); err != nil {
 		return res, err
 	}
+	s.observeTS(b.newestTS)
 	if s.quota != nil && res.Applied > 0 {
 		s.quota.Stored(res.Applied)
 	}

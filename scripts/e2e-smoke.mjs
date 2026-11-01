@@ -27,7 +27,7 @@ const snap = async (p, name) => { if (shots) await p.screenshot({ path: `${shots
 // Scoped to the role so the Parent task picker's <option> and subtask toggles never match.
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const row = (p, title) => p.getByRole('button', { name: new RegExp('^' + esc(title)) })
-const detail = (p) => p.locator('aside[data-detail-for]')
+const detail = (p) => p.locator('[data-detail-for]')
 
 await page.goto(base)
 step('setup screen')
@@ -181,16 +181,35 @@ await page.locator('aside').getByRole('button', { name: /^Home renovation/ }).cl
 await row(page, 'Added while offline').waitFor({ timeout: 40000 })
 await snap(page, 'project')
 
+step('co-editing a note: device 1 shows device 2\'s paragraph after its pause (notes-save-cadence)')
+// Device 2 types and stops with the editor still focused: the note is pushed 3 s after
+// its last save, and device 1 (live channel connected) merges it into its open editor.
+await row(page, 'Pick paint colours').click()
+await detail(page).getByRole('textbox', { name: 'Notes' }).waitFor()
+await row(p2, 'Pick paint colours').click()
+const notes2 = detail(p2).getByRole('textbox', { name: 'Notes' })
+await notes2.click()
+await p2.keyboard.type('Sample the greens in daylight.', { delay: 15 })
+const stopped = Date.now()
+await detail(page).getByRole('textbox', { name: 'Notes' }).getByText('Sample the greens in daylight.').waitFor({ timeout: 5000 })
+console.log('  shown on device 1', Date.now() - stopped, 'ms after the last keystroke')
+await page.keyboard.press('Escape')
+await p2.keyboard.press('Escape')
+
 step('close the day on device 1, reopen it offline on device 2 (ux-feedback-2)')
 const serverDue = async (p, title) => p.evaluate(async (t) => ((await (await fetch('/api/v1/tasks')).json()).tasks ?? []).find((x) => x.title === t)?.due?.date ?? null, title)
 await page.goto(`${base}/review/close`)
 await page.locator('[data-review-step="summary"]').waitFor()
 await page.keyboard.press(']')
-await page.locator('[data-close-apply]').click()
-await page.locator('[data-close-nothing]').waitFor()
+await page.locator('[data-carry-card]').waitFor()
+// Moving on from Carry over applies its decisions (close-the-day-v2 D3): Tomorrow by default.
 await page.keyboard.press(']')
+await page.locator('[data-review-step="note"]').waitFor()
 await page.locator('[data-close-note-input]').fill('Reopen check')
 await page.locator('[data-close-note-input]').press('Enter')
+// Done for today (moments-and-onboarding D6), then Back to Today.
+await page.locator('[data-day-done]').waitFor()
+await page.locator('[data-day-done-back]').click()
 await page.waitForURL(/\/today$/)
 for (let i = 0; i < 75 && (await serverDue(page, 'Get three quotes for the kitchen')) !== tomorrow; i++) await page.waitForTimeout(200)
 if ((await serverDue(page, 'Get three quotes for the kitchen')) !== tomorrow) throw new Error('carry-over did not reach the server')
@@ -250,7 +269,7 @@ await page.locator('[data-triage-start]').waitFor()
 
 step('Open Loops (open-loops-method): first, the Loop home, the walk, a focus, back to Lists only')
 const primary = () => page.locator('nav[data-sidebar-primary] [data-sidebar-item]').evaluateAll((els) => els.map((e) => e.getAttribute('data-destination')))
-await page.goto(`${base}/settings/account`)
+await page.goto(`${base}/settings/account/profile`)
 await page.locator('[data-method-mode="first"]').click()
 await page.locator('[data-offer="start"]').getByRole('button', { name: 'Keep my start view' }).click()
 await page.locator('[data-offer="contexts"]').getByRole('button', { name: 'Create them' }).click()
@@ -277,7 +296,7 @@ if (await page.locator('[data-group="today"] [data-task-id]').count()) {
   await page.keyboard.press('j'); await page.keyboard.press('f')
   await page.locator('[data-group="focus"] [data-task-id]').first().waitFor()
 }
-await page.goto(`${base}/settings/account`)
+await page.goto(`${base}/settings/account/profile`)
 await page.locator('[data-method-mode="lists"]').click()
 for (let i = 0; i < 50 && (await primary())[0] !== 'inbox'; i++) await page.waitForTimeout(100)
 const listsNav = await primary()
@@ -288,8 +307,8 @@ await page.keyboard.press('Escape')
 await page.keyboard.press('g'); await page.keyboard.press('s')
 // Settings opens on its first section (settings-navigation).
 await page.getByRole('heading', { name: 'Account', exact: true }).waitFor()
-// API tokens live in Settings → Integrations (settings-redesign); "New token" opens the form.
-await page.goto(`${base}/settings/integrations`)
+// API tokens live in Settings → Integrations → API tokens (settings-subpages); "New token" opens the form.
+await page.goto(`${base}/settings/integrations/tokens`)
 await page.getByRole('button', { name: 'New token' }).click()
 await page.getByLabel('Token name').fill('e2e')
 await page.getByRole('button', { name: 'Create token', exact: true }).click()

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/config"
 )
 
 // Health, sign-in, sign-out, the current user and API tokens.
@@ -46,10 +46,12 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"passkeyDomain": s.cfg.RPID(),
 		"oidc":          s.oidcStatus(r.Context()),
 		"outgoingEmail": map[string]bool{"enabled": s.mailEnabled(r.Context())},
+		// The instance's name and logo (instance-branding): public, like the page.
+		"branding": brandingJSON(s.branding(r)),
 	}
 	// Without a token, a client outside the local network needs the setup code
 	// from the server log (trusted-client-identity).
-	out["setupCodeRequired"] = count == 0 && s.auth.SetupCodeRequired() && !isLocalAddr(clientIP(r))
+	out["setupCodeRequired"] = count == 0 && s.auth.SetupCodeRequired() && !isLocalSetup(r)
 	if s.hosted {
 		// A hosted tenant (multi-tenant-host D4): the app hides the operator's panels.
 		out["hosted"] = true
@@ -83,6 +85,9 @@ type credentials struct {
 	// ProjectInvite is an optional project invite link secret: the new account
 	// joins that project (OpenSpec `project-invite-links`).
 	ProjectInvite string `json:"projectInvite"`
+	// WorkspaceInvite is an optional workspace invite link secret: the new
+	// account joins that workspace (OpenSpec change workspaces).
+	WorkspaceInvite string `json:"workspaceInvite"`
 	// SetupToken must accompany the first registration when OPENTODO_SETUP_TOKEN
 	// is set (OpenSpec `owner-bootstrap`); ignored afterwards.
 	SetupToken string `json:"setupToken"`
@@ -108,6 +113,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "sso_required", auth.ErrSSORequired.Error())
 		return
 	}
+	if c.WorkspaceInvite != "" {
+		if c.Invitation != "" || c.ProjectInvite != "" {
+			writeError(w, http.StatusBadRequest, "invalid_input", "send one of invitation, projectInvite or workspaceInvite")
+			return
+		}
+		s.registerWithWorkspaceInvite(w, r, c)
+		return
+	}
 	if c.ProjectInvite != "" {
 		if c.Invitation != "" {
 			writeError(w, http.StatusBadRequest, "invalid_input", "send either invitation or projectInvite, not both")
@@ -126,7 +139,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	// Without a setup token, a first registration from a public address needs
 	// the setup code from the server log (trusted-client-identity).
-	u, err := s.auth.RegisterFrom(r.Context(), c.Email, c.Name, c.Password, c.Invitation, c.SetupToken, isLocalAddr(clientIP(r)))
+	u, err := s.auth.RegisterFrom(r.Context(), c.Email, c.Name, c.Password, c.Invitation, c.SetupToken, isLocalSetup(r))
 	switch {
 	case errors.Is(err, auth.ErrSetupTokenInvalid):
 		writeError(w, http.StatusForbidden, "setup_token_invalid", err.Error())
@@ -278,6 +291,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.secureCookie(r), SameSite: http.SameSiteLaxMode})
+	// The browser drops its HTTP cache (attachments, profile pictures) for
+	// this site; browsers honour it on https and localhost
+	// (attachment-client-hardening D2).
+	w.Header().Set("Clear-Site-Data", `"cache"`)
 	// Provider sign-out (oidc-login D7): the local session is already gone; the
 	// client follows the redirect to the provider's end-session endpoint.
 	if redirect != "" {
@@ -314,7 +331,26 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	// Whether maps are on for the server (task-locations D6); each user's own
 	// switch is the synced user_prefs.maps.
-	out["maps"] = s.mapsAvailable(r.Context())
+	out["maps"] = s.mapRoutes.Available(r.Context())
+	// Whether the owner connected a speech-to-text service, and its host
+	// (settings-refresh D7), for the Voice capture card's recogniser choice.
+	out["speech"] = s.speech.Status(r)
+	// Projects kept away from AI assistants (agent-planning-fields D9), cached by
+	// the app like memberships.
+	out["agent_excluded_projects"] = s.agentExcludedProjects(r)
+	// Whether automation rules run on this server and whether this user paused
+	// theirs (automation-rules D9).
+	out["automations"] = s.automationsStatus(r.Context(), u.ID)
+	// The Day parts preference (day-parts D5), so a client without the synced
+	// preferences (the CLI) reads quick-add lines as the app does.
+	if prefs, err := s.sync.Get(r.Context(), u.ID, "user_prefs", "me"); err == nil {
+		out["day_parts"] = idOf(prefs["day_parts"]) == "on"
+		// And Energy levels (task-energy D3), for the CLI's `~deep` tokens.
+		out["energy_levels"] = idOf(prefs["energy"]) == "on"
+	}
+	// Today's closed list (today-closed-list D7): the limit and today's chosen
+	// tasks, so the CLI fills Today's slots as the app does.
+	out["closed_list"] = s.closedListInfo(r.Context(), u.ID)
 	// Configuration problems the server started despite (trusted-proxies-lenient):
 	// for the owner's own session only, never for members, admins or API tokens.
 	if u.Role == auth.RoleOwner && tokenFrom(r.Context()).ID == "" {

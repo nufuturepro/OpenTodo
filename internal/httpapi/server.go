@@ -4,43 +4,52 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/assistant"
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/backup"
-	"github.com/pixari/opentodo/internal/blobs"
-	"github.com/pixari/opentodo/internal/calfeed"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/demo"
-	"github.com/pixari/opentodo/internal/email"
-	"github.com/pixari/opentodo/internal/importer"
-	"github.com/pixari/opentodo/internal/issues"
-	"github.com/pixari/opentodo/internal/mail"
-	"github.com/pixari/opentodo/internal/maps"
-	"github.com/pixari/opentodo/internal/mcp"
-	"github.com/pixari/opentodo/internal/notify"
-	"github.com/pixari/opentodo/internal/oidc"
-	"github.com/pixari/opentodo/internal/push"
-	"github.com/pixari/opentodo/internal/relay"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/webhook"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/assistant"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/backup"
+	"github.com/OpenTodoApp/opentodo/internal/blobs"
+	"github.com/OpenTodoApp/opentodo/internal/calfeed"
+	"github.com/OpenTodoApp/opentodo/internal/calsync"
+	"github.com/OpenTodoApp/opentodo/internal/channels"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/demo"
+	"github.com/OpenTodoApp/opentodo/internal/email"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/httpx"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/maproutes"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/speech"
+	"github.com/OpenTodoApp/opentodo/internal/importer"
+	"github.com/OpenTodoApp/opentodo/internal/issues"
+	"github.com/OpenTodoApp/opentodo/internal/mail"
+	"github.com/OpenTodoApp/opentodo/internal/maps"
+	"github.com/OpenTodoApp/opentodo/internal/mcp"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/oidc"
+	"github.com/OpenTodoApp/opentodo/internal/push"
+	"github.com/OpenTodoApp/opentodo/internal/relay"
+	"github.com/OpenTodoApp/opentodo/internal/rules"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/stt"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
+	"github.com/OpenTodoApp/opentodo/internal/webhook"
+
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/davroutes"
 )
 
 const sessionCookie = "opentodo_session"
 
 // Server holds the dependencies of the HTTP layer.
 type Server struct {
+	// clock is the request path's time source (clock.go): time.Now unless WithClock.
+	clock   func() time.Time
 	cfg     config.Config
 	auth    *auth.Service
 	audit   *audit.Recorder
@@ -54,6 +63,10 @@ type Server struct {
 	blobs *blobs.Store
 	// attachmentLimiter caps uploads per account (120/hour, attachments D5).
 	attachmentLimiter *rateLimiter
+	// uploading holds the bytes of each account's uploads in progress, under
+	// uploadsMu, so parallel uploads share the quota (see checkRoom).
+	uploadsMu sync.Mutex
+	uploading map[string]int64
 	// One limiter per purpose, per client address, 10 a minute each
 	// (trusted-client-identity): limiter counts failed password sign-ins,
 	// registerLimiter registrations and sign-up links, resetLimiter password
@@ -74,6 +87,16 @@ type Server struct {
 	// projectInviteLimiter caps project invite link creation per account
 	// (20/hour; OpenSpec `project-invite-links`), see projectinvites.go.
 	projectInviteLimiter *rateLimiter
+	// membersInviteOn is the owner's "members may invite new people" switch.
+	membersInviteOn *settings.Switch
+	// set is every service of the tenant (services.Build); the fields below
+	// that hold a service are copied from it.
+	set *services.Set
+	// settings is the owner settings table (see also the switches, switch.go).
+	settings *settings.Store
+	// workspaceInviteLimiter caps workspace invite link creation per account
+	// (20/hour; OpenSpec change workspaces), see workspaceinvites.go.
+	workspaceInviteLimiter *rateLimiter
 	// mfaLimiter guards the second sign-in step and reauthLimiter
 	// re-authentication, per client address (10/min each; OpenSpec `mfa-totp`).
 	mfaLimiter    *rateLimiter
@@ -83,6 +106,14 @@ type Server struct {
 	// account (10/hour) (OpenSpec `user-management` D9).
 	adminLimiter    *rateLimiter
 	passwordLimiter *rateLimiter
+	// emailChangeLimiter caps email change requests per account (5/hour) and
+	// avatarLimiter picture uploads per account (30/hour) (settings-refresh D10).
+	emailChangeLimiter, avatarLimiter *rateLimiter
+	// dav is the CalDAV endpoint (internal/httpapi/davroutes).
+	dav *davroutes.Server
+	// speech serves speech to text (internal/httpapi/speech); its limiter caps
+	// phrases per account (30/minute).
+	speech *speech.Routes
 	// pushTestLimiter caps test pushes per account (5 per 10 minutes; OpenSpec
 	// `push-test-delivery` D3), see push.go.
 	pushTestLimiter *rateLimiter
@@ -99,6 +130,14 @@ type Server struct {
 	importer *importer.Service
 	// hooks manages outbound webhooks; nil when not wired (routes answer 503).
 	hooks *webhook.Service
+	// unforwardedWarned: the one log warning about a trusted peer sending no
+	// X-Forwarded-For has been written (see warnUnforwarded).
+	unforwardedWarned atomic.Bool
+	// background tracks work a handler leaves running after its answer (the
+	// self-service password reset mail); tests wait for it.
+	background sync.WaitGroup
+	// webhookSendLimiter bounds hand-started test sends and redeliveries per user.
+	webhookSendLimiter *rateLimiter
 
 	// backups is nil when the server runs without the backup service (tests).
 	backups *backup.Service
@@ -110,34 +149,60 @@ type Server struct {
 	inbox *notify.InApp
 	// oidc is single sign-on (OpenSpec `oidc-login`); oidcLimiter guards its
 	// anonymous start and callback routes per client address (20/min).
-	oidc        *oidc.Service
+	oidc *oidc.Service
+	// pictureClient fetches provider pictures (oidc-profile-pictures); nil
+	// means the outbound client.
+	pictureClient *http.Client
+	// brand caches the instance branding (instance-branding).
+	brand       brandingState
 	oidcLimiter *rateLimiter
-	// caldav caches the CalDAV toggle and davLimiter counts failed Basic
+	// caldavOn is the CalDAV toggle and davLimiter counts failed Basic
 	// authentications per client address (10/min; OpenSpec `caldav`).
-	caldav caldavState
-	// Calendar feeds (calendar-feeds): the switch cache, the fetch worker and limiters.
-	calFeeds        caldavState
+	caldavOn *settings.Switch
+	// Calendar feeds (calendar-feeds): the switch, the fetch worker and limiters.
+	calFeedsOn      *settings.Switch
 	calWorker       *calfeed.Worker
 	calFetchLimiter *rateLimiter
 	feedLimiter     *rateLimiter
 	davLimiter      *rateLimiter
-	// Issue import (issue-import): the switch cache, the poller and the
+	// Issue import (issue-import): the switch, the poller and the
 	// shared limit of hand-triggered checks and syncs.
-	issuesOn     caldavState
-	issueWorker  *issues.Worker
+	issuesOn    *settings.Switch
+	issueWorker *issues.Worker
+	// Calendar sync (calendar-two-way): the switch, the worker and the shared
+	// limit of hand-triggered checks and syncs; see calsync.go.
+	calsyncOn      *settings.Switch
+	calsync        *calsync.Worker
+	calsyncLimiter *rateLimiter
+	// Notification channels (notification-channels): the service and the
+	// per-user limit of test messages; see channels.go.
+	channels       *channels.Service
+	channelLimiter *rateLimiter
+	// stt is the speech-to-text service (settings-refresh D7), see stt.go.
+	stt          *stt.Service
 	issueLimiter *rateLimiter
 	// maps is the map proxy and mapsLimiter the per-user search limit (OpenSpec
 	// `task-locations`); see maps.go.
-	maps        *maps.Service
-	mapsLimiter *rateLimiter
+	maps      *maps.Service
+	mapRoutes *maproutes.Routes
+	// parseLimiter is the per-account quick-add parse limit (OpenSpec change
+	// extension-v2, design D1).
+	parseLimiter *rateLimiter
 	// mcpSettings is the owner's AI assistants toggle and mcp the read-only MCP
 	// server behind /mcp (OpenSpec `mcp-server`); see mcp.go.
 	mcpSettings *mcp.Settings
-	mcp         *mcp.Server
+	// rules is the automation rules engine and ruleSwitch its owner switch
+	// (automation-rules); rules is nil on a demo instance.
+	rules      *rules.Engine
+	ruleSwitch *settings.Switch
+	mcp        *mcp.Server
 	// agentTools is the AI agent tool registry behind /mcp and agentAccess the
 	// users' "Allow AI assistants to make changes" switches (mcp-write-tools).
 	agentTools  *agenttools.Registry
 	agentAccess *agenttools.Access
+	// agentExclusions is the per-project "Keep away from AI assistants" switch
+	// (agent-planning-fields D9).
+	agentExclusions *agenttools.Exclusions
 	// relayStore and relayHub let an encrypted account's opted-in device answer
 	// MCP tool calls (mcp-device-relay); see relay.go.
 	relayStore *relay.Store
@@ -146,6 +211,10 @@ type Server struct {
 	// inbox changes and rotations per account (30/hour).
 	email        *email.Service
 	emailLimiter *rateLimiter
+	// memberAddLimiter counts adding people to a project or workspace by email,
+	// per actor (memberAddsPerHour): an add answers whether an account exists
+	// and needs no consent, so it must not be usable to list accounts or spam.
+	memberAddLimiter *rateLimiter
 	// demo is set on a demo instance (OpenSpec `demo-mode`); see demo.go.
 	demo *demo.Service
 	// assistant is the in-app assistant (OpenSpec `in-app-assistant`); see
@@ -154,6 +223,8 @@ type Server struct {
 	assistantSetup func(*assistant.Service)
 	// assistantTestLimiter limits members' own connection tests (assistant-member-provider).
 	assistantTestLimiter *rateLimiter
+	// csp caches the page's Content-Security-Policy (assistant-on-device D3).
+	csp cspCache
 	// idemSalt makes Idempotency-Key ids unguessable (agent-ready-cli D5);
 	// see idempotency.go.
 	idemSalt string
@@ -166,21 +237,19 @@ type Server struct {
 	streams streamCounter
 }
 
-// WithBackups (an Option, see webhooks.go) enables the owner-only /api/v1/backups routes.
-func WithBackups(b *backup.Service) Option { return func(s *Server) { s.backups = b } }
-
 // opTS stamps REST-originated ops with the sync service's server clock
 // (sync-convergence), shared with every other server-side writer, so two writes
 // to one field within the same millisecond never tie under the winner rule.
 func (s *Server) opTS() int64 { return s.sync.ServerTS() }
 
-// New builds the router. web may be nil when only the API is wanted (tests).
-func New(cfg config.Config, authSvc *auth.Service, syncSvc *opsync.Service, web http.Handler, log *slog.Logger, version string, opts ...Option) http.Handler {
-	s := newServer(cfg, authSvc, syncSvc, web, log, version)
+// New builds the router over the tenant's services (services.Build). web may
+// be nil when only the API is wanted (tests).
+func New(set *services.Set, web http.Handler, opts ...Option) http.Handler {
+	s := newServer(set, web)
 	for _, o := range opts {
 		o(s)
 	}
-	s.wireServices(cfg, log)
+	s.wireServices()
 	// Every route declares its access policy (route-authorization-policy); see
 	// policy.go and router.go.
 	mux := &routes{s: s, mux: http.NewServeMux()}
@@ -189,10 +258,10 @@ func New(cfg config.Config, authSvc *auth.Service, syncSvc *opsync.Service, web 
 	return s.securityHeaders(s.logRequests(auditContext(s.demoGuard(s.hostGuard(mux.mux)))))
 }
 
-// newServer builds the Server with its rate limiters and the importer; the
-// options run after it.
-func newServer(cfg config.Config, authSvc *auth.Service, syncSvc *opsync.Service, web http.Handler, log *slog.Logger, version string) *Server {
-	s := &Server{cfg: cfg, auth: authSvc, audit: authSvc.Audit(), sync: syncSvc, web: web, log: log, version: version,
+// newServer builds the Server over set with its rate limiters; the options
+// run after it.
+func newServer(set *services.Set, web http.Handler) *Server {
+	s := &Server{clock: time.Now, set: set, cfg: set.Cfg, auth: set.Auth, audit: set.Auth.Audit(), sync: set.Sync, web: web, log: set.Log, version: set.Version,
 		limiter: newRateLimiter(10, time.Minute), inviteLimiter: newRateLimiter(20, time.Hour),
 		registerLimiter: newRateLimiter(10, time.Minute), resetLimiter: newRateLimiter(10, time.Minute),
 		invitePreviewLimiter: newRateLimiter(10, time.Minute), publicLinkLimiter: newRateLimiter(10, time.Minute),
@@ -201,89 +270,45 @@ func newServer(cfg config.Config, authSvc *auth.Service, syncSvc *opsync.Service
 		passkeyOptions: newRateLimiter(10, time.Minute),
 		mfaLimiter:     newRateLimiter(10, time.Minute), reauthLimiter: newRateLimiter(10, time.Minute),
 		adminLimiter: newRateLimiter(60, time.Hour), passwordLimiter: newRateLimiter(10, time.Hour),
+		emailChangeLimiter: newRateLimiter(5, time.Hour), avatarLimiter: newRateLimiter(30, time.Hour),
 		oidcLimiter: newRateLimiter(20, time.Minute), davLimiter: newRateLimiter(10, time.Minute),
-		emailLimiter: newRateLimiter(30, time.Hour),
-		importer:     importer.New(syncSvc.DB(), syncSvc, log)}
-	// Imports: unpacked archives are bounded by the upload limit, and an uploaded
-	// database is read from a private copy under the data directory (OpenSpec
-	// change named-importers).
-	importTmp := ""
-	if cfg.DataDir != "" {
-		importTmp = filepath.Join(cfg.DataDir, "tmp")
-		if err := os.MkdirAll(importTmp, 0o700); err != nil {
-			log.Warn("import: temporary directory", "err", err)
-			importTmp = ""
-		}
-	}
-	s.importer.SetLimits(cfg.ImportMaxBytes(), importTmp)
+		emailLimiter: newRateLimiter(30, time.Hour), memberAddLimiter: newRateLimiter(memberAddsPerHour, time.Hour),
+		settings: set.Settings, importer: set.Importer, hooks: set.Hooks, inbox: set.Inbox, backups: set.Backups,
+		mcpSettings: set.MCP, push: set.Push, channels: set.Channels, email: set.Email, calWorker: set.Calendar,
+		issueWorker: set.Issues, calsync: set.CalSync, mail: set.Mail, demo: set.Demo, rules: set.Rules,
+		ruleSwitch: set.RuleSwitch, oidc: set.OIDC, blobs: set.Blobs, maps: set.Maps, stt: set.STT, hosted: set.Hosted != nil,
+		caldavOn: set.CalDAV, calFeedsOn: set.CalendarFeeds, issuesOn: set.IssuesOn, calsyncOn: set.CalendarSync,
+		membersInviteOn: set.MembersInvite}
 	return s
 }
 
-// wireServices connects the services to each other once the options have run:
-// trusted proxies, the setup code, the idempotency salt, the demo write guard,
-// webhooks for imports, single sign-on, email capture, the in-app inbox,
-// passkeys and account deletion. cfg and log are New's arguments, not the
-// fields an option may have replaced.
-func (s *Server) wireServices(cfg config.Config, log *slog.Logger) {
-	authSvc, syncSvc := s.auth, s.sync
-	setTrustedProxies(cfg.TrustedProxies, cfg.TrustCloudflare)
+// wireServices runs the HTTP layer's own start-up once the options have run:
+// trusted proxies, the setup code, the idempotency salt, and the adapters that
+// hand handler logic to the services (calendar sync's task source, the AI agent
+// tools, the device relay). Every service itself is built by services.Build.
+func (s *Server) wireServices() {
+	setTrustedProxies(s.cfg.TrustedProxies, s.cfg.TrustCloudflare)
 	s.announceSetupCode()
 	if err := s.loadIdempotencySalt(context.Background()); err != nil {
 		// Without a stored salt keyed ids still derive per user; they are only
 		// guessable by someone who knows the user id and the key.
-		log.Error("idempotency salt unavailable", "err", err)
+		s.log.Error("idempotency salt unavailable", "err", err)
 	}
-	if s.demo != nil {
-		// Sandbox writes are bounded: field sizes and the write budget (demo-sandboxes D3).
-		syncSvc.SetWriteGuard(s.demo.Guard())
+	// Calendar sync writes the user's tasks as events with the task feed's selection.
+	s.calsync.Tasks = s.feedTasksFor
+	davLimiter := s.davLimiter
+	s.dav = davroutes.New(davroutes.Deps{Sync: s.sync, Auth: s.auth, Log: s.log, On: s.caldavOn, Now: s.now, ApplyAs: s.applyAs,
+		ClientIP: clientIP, PublicOrigin: s.publicOrigin, AuthBlocked: davLimiter.blocked, AuthFailed: davLimiter.allow,
+		TZLocation: s.tzLocation, ReminderOps: s.reminderOpsForTaskAs, RecurringCompletion: s.recurringCompletion,
+		EncryptionEnabled: s.encryptionEnabled})
+	s.speech = &speech.Routes{STT: s.stt, Audit: s.audit, Log: s.log, Demo: s.cfg.Demo, Allow: newRateLimiter(30, time.Minute).allow}
+	s.mapRoutes = &maproutes.Routes{Maps: s.maps, Settings: s.settings, Audit: s.audit, Log: s.log, Demo: s.cfg.Demo,
+		Allow: newRateLimiter(maproutes.SearchesPerMinute, time.Minute).allow}
+	if s.attachmentLimiter == nil {
+		s.attachmentLimiter = newRateLimiter(120, time.Hour)
 	}
-	if s.hooks != nil {
-		// Imports reach webhooks as one summary per job (harden-server-edges).
-		s.importer.SetSummaryObserver(s.hooks.ObserveImport)
-	}
-	if s.oidc == nil {
-		s.oidc = oidc.New(settings.New(syncSvc.DB()), cfg.DataDir, oidc.Options{Env: oidc.Env(cfg.OIDC)})
-	}
-	// SSO-only mode refuses local sign-in for members (oidc-login D6).
-	authSvc.SetSSOOnly(s.oidc.SSOOnly)
-	if s.email == nil {
-		// Disabled unless cfg.Email is set; only cmd/opentodo starts the poller.
-		s.email = email.New(syncSvc.DB(), syncSvc, cfg.Email, email.Options{Log: log, Audit: authSvc.Audit()})
-	}
-	if s.inbox == nil {
-		s.inbox = notify.NewInApp(syncSvc.DB(), log)
-		syncSvc.AddSink(s.inbox)
-	}
-	// Passkeys need a relying party; it is derived from the base URL so the
-	// 409 guard in the handlers and the service always agree.
-	if cfg.PasskeysAvailable() && !authSvc.PasskeysAvailable() {
-		authSvc.ConfigurePasskeys(cfg.RPID(), cfg.Origin())
-	}
-	// Deleting an account removes its synced data in the same transaction
-	// (user-management D4; the project-sharing hook lives in the sync package).
-	authSvc.SetBeforeDelete(syncSvc.DeleteAccountData)
 }
 
 // internal answers 500 (or 503 while every password-hashing slot is busy) and
 // logs the cause.
-func (s *Server) internal(w http.ResponseWriter, err error) {
-	if errors.Is(err, auth.ErrBusy) {
-		// Every password-hashing slot is taken (SEC-5): a retry soon succeeds.
-		w.Header().Set("Retry-After", "1")
-		writeError(w, http.StatusServiceUnavailable, "busy", "the server is busy, try again in a moment")
-		return
-	}
-	s.log.Error("request failed", "err", err)
-	writeError(w, http.StatusInternalServerError, "internal", "internal error")
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
-}
+func (s *Server) internal(w http.ResponseWriter, err error) { httpx.Internal(w, s.log, err) }

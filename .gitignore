@@ -9,6 +9,9 @@
 # Dependencies
 /web/node_modules/
 /web/node_modules
+# A test runner started from the repository root writes its cache here.
+/node_modules/
+__pycache__/
 
 # Runtime data
 /data/
@@ -22,12 +25,14 @@
 
 # Tooling
 coverage.out
+gosec.sarif
 *.log
 .DS_Store
 /web/.vite/
 /web/playwright-report/
 /web/test-results/
 /layout-report/
+/ux-audit-report/
 
 # Agent worktrees
 /.claude/worktrees/
@@ -35,3 +40,5 @@ coverage.out
 /docs-report/
 /web/storybook-static/
 /tmp/
+# extension-v2: written from extension/manifest.src.json for loading the folder unpacked
+/extension/manifest.json

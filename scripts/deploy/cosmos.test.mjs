@@ -4,11 +4,13 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { configVariables, loadFacts, readText, ROOT } from './common.mjs'
+import { configVariables, loadFacts, readText, releaseVersion, ROOT } from './common.mjs'
 import { check, checkCompose, checkDescription, checkUpstream, COMPOSE, DESCRIPTION, UPSTREAM_DIR } from './cosmos.mjs'
 
 const facts = loadFacts()
 const ctx = { facts, configVars: configVariables(), changelog: readText('CHANGELOG.md') }
+/** The latest release in CHANGELOG.md, which the pinned templates name. */
+const V = releaseVersion(ctx.changelog)
 const compose = readText(COMPOSE)
 const description = readText(DESCRIPTION)
 const has = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}, got:\n${errors.join('\n')}`)
@@ -25,8 +27,8 @@ test('cosmos: strict JSON', () => {
 })
 
 test('cosmos: image policy stable', () => {
-  has(checkCompose(compose.replace('opentodo:stable', 'opentodo:0.9.0'), ctx), /image must be ghcr\.io\/pixari\/opentodo:stable/)
-  has(checkCompose(compose.replace('opentodo:stable', 'opentodo:latest'), ctx), /image must be ghcr\.io\/pixari\/opentodo:stable/)
+  has(checkCompose(compose.replace('opentodo:stable', `opentodo:${V}`), ctx), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
+  has(checkCompose(compose.replace('opentodo:stable', 'opentodo:latest'), ctx), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
   has(checkDescription(description.replace('opentodo:stable', 'opentodo:latest'), ctx), /description\.json: image must be/)
 })
 
@@ -45,7 +47,7 @@ test('cosmos: variables, setup token and base URL', () => {
   has(checkCompose(compose.replace('"OPENTODO_SETUP_TOKEN={Passwords.0}"', '"OPENTODO_SETUP_TOKEN="'), ctx), /OPENTODO_SETUP_TOKEN must be \{Passwords\.0\}/)
   has(checkCompose(compose.replace('"OPENTODO_BASE_URL={RootProtocol}://', '"OPENTODO_BASE_URL=https://'), ctx), /OPENTODO_BASE_URL must be/)
   has(checkCompose(compose.replace('setup token: {Passwords.0}', 'setup token'), ctx), /post-install must show/)
-  has(checkCompose(compose.replace('"minVersion": "0.22.23"', '"minVersion": "0.9.0"'), ctx), /minVersion must be/)
+  has(checkCompose(compose.replace('"minVersion": "0.22.23"', '"minVersion": "0.14.2"'), ctx), /minVersion must be/)
 })
 
 test('cosmos: labels and description', () => {

@@ -4,6 +4,7 @@
 // becomes input text; saving stays the quick-add Enter handler.
 import { type RecognitionCallbacks, type RecognitionSession, startRecognition, type VoiceErrorKind } from './recognition'
 import { t } from '../i18n'
+import { resettable } from '../moduleState'
 
 export type DictationStatus = 'idle' | 'starting' | 'listening'
 
@@ -35,6 +36,7 @@ export const MESSAGES = {
   get denied() { return t('Microphone access is blocked. Allow the microphone for this site in your browser’s site settings (usually the icon next to the address), then try again.') },
   get unavailable() { return t('Voice capture is unavailable right now. Typing works as usual.') },
   get noMicrophone() { return t('No microphone was found. Connect one, or keep typing.') },
+  get service() { return t('The speech service did not answer. Try again, or keep typing.') },
   language: (name: string) => t('This browser cannot recognise {name}; listening in the browser’s default language instead.', { name }),
 }
 
@@ -45,6 +47,7 @@ const unsupportedTags = new Set<string>()
 export function resetLanguageFallbacks(): void {
   unsupportedTags.clear()
 }
+resettable('dictation', resetLanguageFallbacks)
 
 /** Insert `text` between `prefix` and `suffix` with single spaces; the caret goes right after it. */
 export function insertTranscript(prefix: string, text: string, suffix: string): { value: string; caret: number } {
@@ -117,6 +120,7 @@ export function createDictation(host: DictationHost, recognize: Recognizer = sta
         const failure =
           error === 'denied' ? MESSAGES.denied
           : error === 'no-microphone' ? MESSAGES.noMicrophone
+          : error === 'service' ? MESSAGES.service
           : error === 'unavailable' || error === 'language' ? MESSAGES.unavailable
           : null
         // A language fallback notice stays visible through the retried session.

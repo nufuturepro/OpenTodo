@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -228,7 +228,7 @@ func TestToolsListShape(t *testing.T) {
 			t.Fatalf("%s schema = %v", tl["name"], tl["inputSchema"])
 		}
 	}
-	if strings.Join(names, ",") != "list_projects,list_tasks,get_task,search_tasks,today_summary,list_icons,list_time_entries" {
+	if strings.Join(names, ",") != "list_projects,list_tasks,get_task,search_tasks,today_summary,list_frames,list_icons,list_slots,list_time_entries,list_workspaces" {
 		t.Fatalf("tools = %v", names)
 	}
 }
@@ -251,7 +251,7 @@ func TestResourcesListShape(t *testing.T) {
 		}
 		uris = append(uris, m["uri"].(string))
 	}
-	if strings.Join(uris, " ") != "opentodo://projects opentodo://views/inbox opentodo://views/today opentodo://views/upcoming opentodo://integrations/issues" {
+	if strings.Join(uris, " ") != "opentodo://projects opentodo://workspaces opentodo://views/inbox opentodo://views/today opentodo://views/upcoming opentodo://views/someday opentodo://views/anytime opentodo://rules opentodo://frames opentodo://slots opentodo://integrations/issues" {
 		t.Fatalf("resources = %v", uris)
 	}
 	tpl := f.call("u1", "resources/templates/list", nil)["result"].(map[string]any)
@@ -335,7 +335,7 @@ func TestListTasksInvalidPriority32602(t *testing.T) {
 	f := newFixture(t)
 	for _, a := range []map[string]any{
 		{"priority": 7}, {"priority": 0}, {"priority": 1.5}, {"priority": "high"},
-		{"view": "someday"}, {"due_from": "10/03/2026"}, {"limit": 0}, {"cursor": "!!"}, {"project_id": "nope"},
+		{"view": "later"}, {"due_from": "10/03/2026"}, {"limit": 0}, {"cursor": "!!"}, {"project_id": "nope"},
 		{"completed_after": "yesterday"}, {"completed_before": "2026-02-30"},
 	} {
 		r := f.call("u1", "tools/call", map[string]any{"name": "list_tasks", "arguments": a})
@@ -538,7 +538,7 @@ func TestReadResources(t *testing.T) {
 	if task, _ := read("opentodo://tasks/t1"); ut(task["task"].(map[string]any))["title"] != "Water" {
 		t.Fatalf("task = %v", task)
 	}
-	for _, uri := range []string{"opentodo://tasks/t2", "opentodo://tasks/nope", "opentodo://projects/nope", "opentodo://views/someday", "https://example.com/x"} {
+	for _, uri := range []string{"opentodo://tasks/t2", "opentodo://tasks/nope", "opentodo://projects/nope", "opentodo://views/later", "https://example.com/x"} {
 		if _, r := read(uri); errCode(r) != CodeResourceNotFound {
 			t.Fatalf("%s: %v", uri, r)
 		}
@@ -611,8 +611,8 @@ func ut(m map[string]any) map[string]any {
 }
 
 // TestToolsListReadOnlyUnchanged: every caller without write permission sees
-// exactly the seven read tools (time-tracking added list_time_entries,
-// mcp-projects list_icons),
+// exactly the read tools (time-tracking added list_time_entries,
+// mcp-projects list_icons, calendar-frames list_frames, calendar-slots list_slots),
 // byte-identical to the golden, however the switches are set.
 func TestToolsListReadOnlyUnchanged(t *testing.T) {
 	f := newFixture(t)
@@ -649,10 +649,10 @@ func TestWriteToolsThroughHandle(t *testing.T) {
 	// Listed with readOnlyHint false; instructions mention undo.
 	r := send(agent, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	tools := r["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 22 {
+	if len(tools) != 25 {
 		t.Fatalf("tools = %d", len(tools))
 	}
-	for _, tl := range tools[7:] {
+	for _, tl := range tools[10:] {
 		if tl.(map[string]any)["annotations"].(map[string]any)["readOnlyHint"] != false {
 			t.Fatalf("write tool annotations: %v", tl)
 		}

@@ -5,9 +5,10 @@
 // is a drop target: dragging a card onto it, or Shift+← / Shift+→, applies the rule.
 import { blockedMap } from '../lib/dependencies'
 import { beginDrag } from '../lib/dnd'
-import { Badge, Button, Icon, PageBody, PageHeader, ReadAs, Tooltip } from '../ui'
+import { Badge, Button, EmptyState, Icon, PageBody, PageHeader, ReadAs, Tooltip } from '../ui'
 import { useId, useMemo, useRef, useState } from 'react'
 import { resolveLabels } from '../lib/labels'
+import { hasTimeColumn } from '../lib/rowTime'
 import { useLiveSections } from '../lib/localData'
 import { setTaskCompleted } from '../lib/ops'
 import { describeRule, type RuleNames } from '../lib/rules'
@@ -18,11 +19,13 @@ import { useBoardDrop } from './useBoardDrop'
 import { setPanelTaskId, usePanelTaskId } from './panel'
 import { TaskRow } from './TaskRow'
 import { navigate } from './router'
-import { ViewMenu } from './ViewsView'
+import { ViewMark, ViewMenu } from './ViewsView'
 import type { ViewData } from './useViews'
 import { isActivationTarget, useShortcutScope } from './shortcuts'
 import { t } from '../lib/i18n'
 import { act } from './actionError'
+import { messageOf } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 
 export function DashboardView({ dashboard, data }: { dashboard: View; data: ViewData }) {
   const { views, projects, labels, ctx } = data
@@ -48,7 +51,7 @@ export function DashboardView({ dashboard, data }: { dashboard: View; data: View
 
   const [editing, setEditing] = useState(false)
   const [ruleFor, setRuleFor] = useState<View | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { error, run: attempt } = useAction({ describe: messageOf })
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
   // The selection is a task id within a panel, so a card moved by a rule stays selected.
   const [selected, setSelected] = useState<{ panel: number; id: string } | null>(null)
@@ -56,10 +59,7 @@ export function DashboardView({ dashboard, data }: { dashboard: View; data: View
   const setOpenId = setPanelTaskId
   const gridRef = useRef<HTMLDivElement>(null)
 
-  const run = (fn: () => Promise<void>) => {
-    setError(null)
-    fn().catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }
+  const run = (fn: () => Promise<void>) => void attempt(fn)
   const focusPanel = (i: number) => gridRef.current?.querySelector<HTMLElement>(`[data-panel-index="${i}"]`)?.focus()
 
   // The dashboard's `view` scope: Tab moves between panels, j / k inside the focused
@@ -120,11 +120,12 @@ export function DashboardView({ dashboard, data }: { dashboard: View; data: View
 
   return (
     <PageBody width="full">
-        <PageHeader title={dashboard.name} icon="kanban" meta={`${panels.length}/${MAX_PANELS}`} help="dashboard"
+        <PageHeader title={dashboard.name} icon={dashboard.icon ? undefined : 'kanban'}
+          leading={dashboard.icon ? <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted" aria-hidden="true"><ViewMark view={dashboard} /></span> : undefined} meta={`${panels.length}/${MAX_PANELS}`} help="dashboard"
           actions={<>
             <select className="ui-input w-auto py-1 text-meta" aria-label={t('Add panel')} value="" disabled={panels.length >= MAX_PANELS || candidates.length === 0}
               onChange={(e) => { const id = e.target.value; if (id) run(() => addPanel(dashboard.id, id)) }}>
-              <option value="">{panels.length >= MAX_PANELS ? t('Six panels at most') : candidates.length === 0 ? t('No filter to add') : t('+ Add panel…')}</option>
+              <option value="">{panels.length >= MAX_PANELS ? t('Six panels at most') : candidates.length === 0 ? t('No view to add') : t('+ Add panel…')}</option>
               {candidates.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
             <Button variant="ghost" size="sm" aria-expanded={editing} onClick={() => setEditing((x) => !x)}>{editing ? t('Done') : t('Arrange')}</Button>
@@ -149,7 +150,7 @@ export function DashboardView({ dashboard, data }: { dashboard: View; data: View
         {ruleFor && <RuleEditor view={ruleFor} labels={labels} projects={projects} sections={sections} onClose={() => setRuleFor(null)} />}
         {panels.length === 0 ? (
           <p className="rounded-control border border-dashed border-input p-6 text-center text-body text-muted">
-            {t('Add up to six saved filters with “Add panel”.')}
+            {t('Add up to six views with “Add panel”.')}
           </p>
         ) : (
           <div ref={gridRef} className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -217,6 +218,8 @@ function Panel({ index, panel, selectedId, tasks, held, names, projectMap, label
   // A rule whose only parts name deleted labels changes nothing, so it makes no target either.
   const rule = describeRule(view.on_drop, names)
   const ruled = !!rule
+  // The time column (rows-v2 D2): one fact of the panel's list.
+  const timeColumn = hasTimeColumn(tasks)
   return (
     <section data-panel-index={index} tabIndex={0} onFocus={onFocus} onBlur={onBlur} aria-label={view.name} aria-describedby={ruled ? ruleId : undefined}
       data-drop-target={ruled ? `panel:${view.id}` : undefined} data-has-rule={ruled ? '' : undefined}
@@ -237,13 +240,14 @@ function Panel({ index, panel, selectedId, tasks, held, names, projectMap, label
       {!summary.ok ? (
         <p role="alert" className="text-meta text-danger">{summary.error}</p>
       ) : tasks.length === 0 ? (
-        <p className="px-2 py-3 text-meta text-faint">{t('Nothing here.')}</p>
+        // The empty-state pattern with the sentence this panel needs (ux-audit-three-widths F2, F13).
+        <EmptyState compact title={t('No tasks match this panel.')} />
       ) : (
         <ul>
           {tasks.map((tk) => {
             const row = (
               <TaskRow key={tk.id} task={tk} project={tk.project_id ? projectMap.get(tk.project_id) : undefined} labels={resolveLabels(tk.labels, labelMap)}
-                showProject selected={tk.id === selectedId} blockedBy={blocked.get(tk.id)} onToggle={() => act(setTaskCompleted(tk.id, !tk.completed_at))} onOpen={() => onOpenTask(tk.id)}
+                showProject selected={tk.id === selectedId} timeColumn={timeColumn} blockedBy={blocked.get(tk.id)} onToggle={() => act(setTaskCompleted(tk.id, !tk.completed_at))} onOpen={() => onOpenTask(tk.id)}
                 onPointerDown={(e) => onDragTask(tk, e)} />
             )
             // A held card (rule-boards D6): shown first, marked, until it matches or changes again.

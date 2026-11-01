@@ -7,6 +7,7 @@
 // `activity` table (author, old value, project), so the history works offline;
 // events are derived from those rows when a view reads them. Each project keeps
 // at most LOCAL_RETENTION events; older ones come from the server on demand.
+import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { api } from './api'
 import { decryptActivityPage } from './e2ee'
@@ -35,6 +36,14 @@ export function isPageEvent(ev: Pick<ActivityEvent, 'device'> | undefined): bool
   return !!ev?.device?.startsWith(PAGE_DEVICE_PREFIX)
 }
 
+/** Device prefix of an automation rule's ops (OpenSpec `automation-rules`). */
+export const RULE_DEVICE_PREFIX = 'rule:'
+
+/** True for an event an automation rule made: it groups apart from the user's own edits. */
+export function isRuleEvent(ev: Pick<ActivityEvent, 'device'> | undefined): boolean {
+  return !!ev?.device?.startsWith(RULE_DEVICE_PREFIX)
+}
+
 /**
  * The actor shown for a guest's event, or null for a member's: "Public link" for a
  * public link's tick, "<name> (guest, task page)" for a task page's write. The name
@@ -43,6 +52,7 @@ export function isPageEvent(ev: Pick<ActivityEvent, 'device'> | undefined): bool
  */
 export function guestActorLabel(ev: Pick<ActivityEvent, 'device' | 'changes' | 'actorName'> | undefined): string | null {
   if (isPublicEvent(ev)) return t(PUBLIC_ACTOR_LABEL)
+  if (isRuleEvent(ev)) return t('Rule')
   if (!isPageEvent(ev)) return null
   const typed = ev?.changes.find((c) => c.field === 'guest_name')?.to
   if (typeof typed === 'string' && typed) return t('{name} (guest, task page)', { name: typed })
@@ -61,7 +71,14 @@ const COUNTED = new Set(['task', 'project', 'comment'])
  * Same list as `Opaque` in internal/activity.
  */
 export const OPAQUE = new Set(['task.notes_doc', 'project.notes_doc'])
-const counts = (op: { entity: string; field: string }) => COUNTED.has(op.entity) && !OPAQUE.has(`${op.entity}.${op.field}`)
+/**
+ * Ops that never form or join an event (editor-everywhere): a comment's reactions,
+ * and a task's note_mentions, which travel with the note edit. Same as `quiet` in
+ * internal/activity.
+ */
+const quiet = (op: { entity: string; field: string }) =>
+  OPAQUE.has(`${op.entity}.${op.field}`) || (op.entity === 'task' && op.field === 'note_mentions') || (op.entity === 'comment' && op.field.startsWith('reactions.'))
+const counts = (op: { entity: string; field: string }) => COUNTED.has(op.entity) && !quiet(op)
 
 /** An op as the rule needs it; `from` is an optional known old value (local rows). */
 export type ActivityOp = Pick<Op, 'id' | 'entity' | 'entityId' | 'field' | 'value' | 'ts' | 'device'> & {
@@ -108,7 +125,7 @@ export function deriveActivity(ops: ActivityOp[], prior?: Map<string, unknown>):
     const actor = op.actor ?? ''
     // A public link's ticks and a task page's guest writes group apart and carry
     // their device (public-links D6, task-pages D5).
-    const pub = op.device?.startsWith(PUBLIC_DEVICE_PREFIX) || op.device?.startsWith(PAGE_DEVICE_PREFIX) ? op.device : ''
+    const pub = op.device?.startsWith(PUBLIC_DEVICE_PREFIX) || op.device?.startsWith(PAGE_DEVICE_PREFIX) || op.device?.startsWith(RULE_DEVICE_PREFIX) ? op.device : ''
     const gk = `${actor}\u0000${op.entity}\u0000${op.entityId}${pub ? `\u0000${pub}` : ''}`
     let g = open.get(gk)
     if (!g || op.ts - g.ev.ts > WINDOW_MS) {
@@ -338,6 +355,7 @@ const FIELD_LABELS = translatedMap<string>({
   position: msg('the order'), estimate_minutes: msg('the estimate'), recurrence: msg('the repeat rule'), name: msg('the name'), color: msg('the colour'),
   series_id: msg('the series'), deadline: msg('the deadline'),
   start: msg('when it starts'), evening: msg('This Evening'), origin: msg('the origin'),
+  day_part: msg('the part of the day'),
 })
 
 /** The event kinds a project activity view can filter by, with labels. */
@@ -353,3 +371,18 @@ export const KIND_FILTERS: KindFilter[] = translatedList<KindFilter, 'label'>([
   { value: 'deleted', label: msg('Deleted / restored'), kinds: ['deleted', 'restored'] },
   { value: 'edited', label: msg('Other edits'), kinds: ['edited', 'archived', 'unarchived'] },
 ], 'label')
+
+/** The ids of this device's ops not yet sent, live (none until read). */
+export function usePendingOpIds(): Set<string> {
+  return useLiveQuery(() => pendingOpIds(), [], new Set<string>())
+}
+
+/** A project's activity from local data, live (none until read). */
+export function useProjectActivity(projectId: string): ActivityEvent[] {
+  return useLiveQuery(() => projectActivity(projectId), [projectId], [] as ActivityEvent[])
+}
+
+/** A task's activity from local data, live (none until read). */
+export function useTaskActivity(taskId: string): ActivityEvent[] {
+  return useLiveQuery(() => taskActivity(taskId), [taskId], [] as ActivityEvent[])
+}

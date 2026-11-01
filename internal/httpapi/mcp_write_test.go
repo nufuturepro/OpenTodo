@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/notify"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Security and behaviour tests of the MCP write tools (OpenSpec change
@@ -217,7 +217,7 @@ func TestAgentTokenDowngradeSafe(t *testing.T) {
 	if _, err := e.db.Exec(`DELETE FROM api_token_agent WHERE token_id = ?`, tokenID); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(c.toolNames(secret)); n != 7 {
+	if n := len(c.toolNames(secret)); n != 10 {
 		t.Fatalf("tools without the marker = %d", n)
 	}
 	if sc, isErr := c.toolCall(secret, "create_tasks", map[string]any{"items": []any{map[string]any{"title": "x"}}}); !isErr || sc["error"] != "token_scope" {
@@ -307,11 +307,11 @@ func TestToolsListByToken(t *testing.T) {
 	e.mustStatus(resp, 201, out)
 	tid := out["id"].(string)
 	read, full := e.token("read"), e.token("full")
-	if n := len(c.toolNames(agentSecret)); n != 22 {
+	if n := len(c.toolNames(agentSecret)); n != 25 {
 		t.Fatalf("agent tools = %d", n)
 	}
 	for name, secret := range map[string]string{"read": read, "full": full} {
-		if n := len(c.toolNames(secret)); n != 7 {
+		if n := len(c.toolNames(secret)); n != 10 {
 			t.Fatalf("%s token sees %d tools", name, n)
 		}
 		for _, tool := range []string{"complete_tasks", "create_tasks", "trash_tasks"} {
@@ -326,7 +326,7 @@ func TestToolsListByToken(t *testing.T) {
 	}
 	// The user's switch off: writes_disabled_by_user, nothing created.
 	e.allowMyAssistants(false)
-	if n := len(c.toolNames(agentSecret)); n != 7 {
+	if n := len(c.toolNames(agentSecret)); n != 10 {
 		t.Fatalf("user off: %d tools", n)
 	}
 	if sc, isErr := c.toolCall(agentSecret, "create_tasks", map[string]any{"items": []any{map[string]any{"title": "x"}}}); !isErr || sc["error"] != "writes_disabled_by_user" {
@@ -336,7 +336,7 @@ func TestToolsListByToken(t *testing.T) {
 	e.allowMyAssistants(true)
 	c.mustTool(agentSecret, "create_tasks", map[string]any{"items": []any{map[string]any{"title": "while allowed"}}})
 	e.allowWrites(false)
-	if n := len(c.toolNames(agentSecret)); n != 7 {
+	if n := len(c.toolNames(agentSecret)); n != 10 {
 		t.Fatalf("owner off: %d tools", n)
 	}
 	if sc, isErr := c.toolCall(agentSecret, "complete_tasks", map[string]any{"ids": []string{tid}}); !isErr || sc["error"] != "writes_disabled_by_owner" {
@@ -456,12 +456,12 @@ func TestAgentWriteBatchRefusedOnViewerScope(t *testing.T) {
 // a laptop's offline title change both survive.
 func TestAgentWriteConvergesWithOfflineEdit(t *testing.T) {
 	e, _, secret, c := agentReady(t)
+	e.now.Freeze(time.Now())
 	resp, out := e.do("POST", "/api/v1/tasks", map[string]any{"title": "Draft"})
 	e.mustStatus(resp, 201, out)
 	id := out["id"].(string)
-	time.Sleep(5 * time.Millisecond)
-	offlineTS := time.Now().UnixMilli() // edited on the laptop, offline, before the assistant acted
-	time.Sleep(5 * time.Millisecond)
+	// Edited on the laptop, offline, after the task was created and before the assistant acted.
+	offlineTS := e.now.Now().UnixMilli()
 	c.mustTool(secret, "update_tasks", map[string]any{"updates": []any{map[string]any{"id": id, "priority": 1}}})
 	syncOnce(e, "laptop", 0, []map[string]any{{"id": ids.New(), "entity": "task", "entityId": id, "field": "title", "value": "Final", "ts": offlineTS, "device": "laptop"}})
 	if e.taskField(id, "title") != "Final" || e.taskField(id, "priority").(float64) != 1 {
@@ -473,9 +473,10 @@ func TestAgentWriteConvergesWithOfflineEdit(t *testing.T) {
 // phone completing the same occurrence offline give one record.
 func TestAgentCompleteRecurringConvergesWithDevice(t *testing.T) {
 	e, _, secret, c := agentReady(t)
-	// Due today, so the next occurrence is a week later whatever day the test runs.
-	now := time.Now()
-	due, next := now.Format("2006-01-02"), now.AddDate(0, 0, 7).Format("2006-01-02")
+	// Due far ahead of the clock, so the next occurrence is a week after it
+	// whatever day (or side of midnight) the test runs; the cases with a pinned
+	// "today" are TestRecurringCompletionPinnedToday in internal/sync.
+	due, next := "2099-01-06", "2099-01-13"
 	resp, out := e.do("POST", "/api/v1/tasks", map[string]any{"title": "Water plants", "recurrence": "every week", "due": map[string]any{"date": due}})
 	e.mustStatus(resp, 201, out)
 	series := out["id"].(string)

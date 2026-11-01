@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,8 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/httpx"
 )
 
 // Middleware: authentication, origin checks, security headers and request
@@ -22,33 +22,6 @@ func auditContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(audit.WithRequest(r.Context(), clientIP(r), r.UserAgent())))
 	})
-}
-
-type ctxKey int
-
-const (
-	userKey ctxKey = 1
-	// sessionKey holds the *auth.Session of cookie-authenticated requests; it is
-	// absent for bearer tokens, which step-up and policy never touch.
-	sessionKey ctxKey = 2
-	// tokenKey holds the auth.TokenInfo of the request: the API token's id,
-	// name and scope, or only scope full for a session (agent-ready-cli D7).
-	tokenKey ctxKey = 3
-)
-
-func tokenFrom(ctx context.Context) auth.TokenInfo {
-	t, _ := ctx.Value(tokenKey).(auth.TokenInfo)
-	return t
-}
-
-func userFrom(ctx context.Context) *auth.User {
-	u, _ := ctx.Value(userKey).(*auth.User)
-	return u
-}
-
-func sessionFrom(ctx context.Context) *auth.Session {
-	sess, _ := ctx.Value(sessionKey).(*auth.Session)
-	return sess
 }
 
 func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
@@ -70,8 +43,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 			return
 		}
-		ctx := context.WithValue(r.Context(), userKey, u)
-		ctx = context.WithValue(ctx, tokenKey, tok)
+		ctx := httpx.WithUser(r.Context(), u, tok)
 		// Only sessions, full and admin tokens reach a handler that writes: read tokens
 		// (mcp-server D2) and agent tokens (mcp-write-tools D2) are refused, and
 		// so is any scope this binary does not know (fail closed). The one
@@ -108,7 +80,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.Handler {
 			}
 		}
 		if sess != nil {
-			ctx = context.WithValue(ctx, sessionKey, sess)
+			ctx = httpx.WithSession(ctx, sess)
 		}
 		next(w, r.WithContext(ctx))
 	})
@@ -152,7 +124,11 @@ func (s *Server) authenticateScoped(r *http.Request) (*auth.User, *auth.Session,
 
 // isWriteRequest reports whether a request may change state: every method but
 // GET, HEAD and OPTIONS, and the sync route whatever its method (mcp-server D2).
+// The quick-add parse POST changes nothing (extension-v2 D1).
 func isWriteRequest(r *http.Request) bool {
+	if isReadOnlyPost(r) {
+		return false
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return r.URL.Path == "/api/v1/sync"
@@ -231,7 +207,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+			h.Set("Content-Security-Policy", s.contentSecurityPolicy(r.Context()))
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -254,6 +230,7 @@ func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		s.warnUnforwarded(r)
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(sw, r)
 		if strings.HasPrefix(r.URL.Path, "/api/") || sw.status >= 400 {

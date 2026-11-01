@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixari/opentodo/skills"
+	"github.com/OpenTodoApp/opentodo/skills"
 )
 
 // Tests of the agent-ready CLI contract (OpenSpec change `agent-ready-cli`).
@@ -442,7 +442,8 @@ func TestSchemaCoversEveryCommandAndFlag(t *testing.T) {
 				t.Errorf("%s: schema lists --%s, which the command does not accept", sp.Name, name)
 			}
 		}
-		if sp.Writes != sp.DryRun {
+		// `vault watch` runs until interrupted; its dry run is `vault sync --dry-run`.
+		if sp.Writes != sp.DryRun && sp.Name != "vault watch" {
 			t.Errorf("%s: every write command supports --dry-run", sp.Name)
 		}
 		if sp.Destructive && !declared["yes"] {
@@ -576,6 +577,9 @@ func TestDryRunSendsNoWrites(t *testing.T) {
 	h.seedViews()
 	h.mustRun("token", "create", "victim")
 	issueConn := h.seedIssueConnection()
+	h.seedRule()
+	h.seedFrame()
+	h.seedSlot()
 	cfgBefore, _ := os.ReadFile(h.configPath)
 	schemas := loadSchemas(t)
 	cases := [][]string{
@@ -586,6 +590,7 @@ func TestDryRunSendsNoWrites(t *testing.T) {
 		{"rm", "book"},
 		{"project", "add", "Dry project"},
 		{"project", "rename", "Home", "Elsewhere"},
+		{"project", "move", "Home", "--workspace", "Personal"},
 		{"project", "archive", "Home"},
 		{"project", "rm", "Home"},
 		{"token", "create", "dry-token"},
@@ -597,6 +602,14 @@ func TestDryRunSendsNoWrites(t *testing.T) {
 		{"time", "stop"},
 		{"time", "log", "plum", "1h30", "--on", "yesterday", "--note", "review"},
 		{"issues", "sync", issueConn[:6]},
+		{"rules", "enable", "Sweep"},
+		{"rules", "disable", "Sweep"},
+		{"frames", "add", "Dry frame", "--days", "mon-fri"},
+		{"frames", "rm", "Admin"},
+		{"slots", "add", "Dry slot", "--date", "2026-11-05"},
+		{"slots", "put", "Errands", "plum"},
+		{"slots", "rm", "Errands"},
+		{"import", writeTemp(t, "dry.csv", "title\nDry import\n")},
 	}
 	covered := map[string]bool{}
 	for _, c := range cases {
@@ -621,7 +634,9 @@ func TestDryRunSendsNoWrites(t *testing.T) {
 		}
 	}
 	for _, sp := range cmdSpecs {
-		if sp.Writes && !covered[sp.Name] {
+		// The vault plans its own sync ops (vault_report.planned), covered by
+		// TestVaultDryRun.
+		if sp.Writes && !covered[sp.Name] && !strings.HasPrefix(sp.Name, "vault ") {
 			t.Errorf("write command %q not covered by the dry-run test", sp.Name)
 		}
 	}

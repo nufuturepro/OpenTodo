@@ -14,7 +14,7 @@ The weekly review SHALL offer seven steps in order, grouped into three phases. E
 - **Get current**
   - Look back: this week's completions and the overdue tasks. Done when nothing is overdue.
   - Waiting: the Waiting view's tasks. Always done.
-  - Projects: the project walk. Done when every project in it was reviewed by the user in the last seven days and none is without a next action.
+  - Projects: the project walk. Done when no project in the walk is due for review ("Review interval per project") and none is without a next action.
   - Look ahead: the next seven days. Always done.
 - **Get creative**
   - Someday: always done.
@@ -37,8 +37,12 @@ Steps SHALL be computed from local rows and work offline. A task captured during
 - **WHEN** two tasks are assigned to Ana and one is blocked
 - **THEN** Waiting lists the three tasks grouped as the Waiting view groups them, and opening one shows its comments so the user can follow up
 
+#### Scenario: Projects step with a monthly project
+- **WHEN** every project was reviewed this week except "Car", which is reviewed every month and was last reviewed 12 days ago
+- **THEN** the Projects step reads as done
+
 ### Requirement: Finishing a review
-"Finish review" SHALL write `completed_at` on the user's `review` entity (id `me`, personal scope) through the operation log. The Daily check SHALL write `daily_at`, `focus_date` and `focus` on the same entity, and the Monthly look SHALL write `monthly_at`. The entity SHALL sync to every device of the user, SHALL be written offline through the outbox, and SHALL converge per field by last-writer-wins, so the latest finish of each rhythm wins. It is not user-written content and is never encrypted. It SHALL be included in the JSON export and SHALL derive no activity event.
+"Finish review" SHALL write `completed_at` on the user's `review` entity (id `me`, personal scope) through the operation log. The Daily check SHALL write `daily_at`, `focus_date` and `focus` on the same entity, the Monthly look SHALL write `monthly_at`, and Close the day SHALL write `closed_at` and `tomorrow_note`. The entity SHALL sync to every device of the user, SHALL be written offline through the outbox, and SHALL converge per field by last-writer-wins, so the latest finish of each rhythm wins. Its times and focus are not user-written content and are never encrypted; `tomorrow_note` is content and follows the end-to-end encryption rules. The entity SHALL be included in the JSON export and SHALL derive no activity event.
 
 #### Scenario: Finish on one device
 - **WHEN** the user finishes a review on the laptop and later opens the phone
@@ -55,6 +59,10 @@ Steps SHALL be computed from local rows and work offline. A task captured during
 #### Scenario: Older server
 - **WHEN** the device syncs with a server that does not know the `review` entity or one of its fields
 - **THEN** the op is rejected as unknown, the device keeps its local value, and nothing else is affected
+
+#### Scenario: Encrypted account's note
+- **WHEN** an encrypted account closes the day with the note "Call the bank"
+- **THEN** the operation that leaves the device carries ciphertext for `tomorrow_note`, the close time is plaintext, and the user's other device shows the note decrypted
 
 ### Requirement: Review screen and sidebar marker
 The web app SHALL show Review at `/review`, reachable from the sidebar and by `g` then `r`. Review SHALL show one step at a time as a guided sequence. A progress indicator above the step SHALL show the three phases with their steps in order, each step marked done, current or with the count left; every step in the indicator SHALL open that step directly, and the indicator SHALL fit a 375 px wide screen without horizontal scrolling. The current step SHALL be shown in one card with its position and phase ("Step 3 of 7 · Get current"), its title, what is left, a short explanation, its content and its main action; the position SHALL also be available to assistive technology from the indicator. Back and Next buttons below the card SHALL move to the previous and next step, `[` and `]` SHALL do the same, and on the last step Next SHALL be "Finish review". Moving to a step SHALL move focus to its title. Lists inside a step SHALL use the list shortcuts, and the project walk SHALL use its card keys. The Daily check and the Monthly look SHALL be in the header's menu. The sidebar entry SHALL show when the last review was and the markers of the Rhythm markers requirement. The screen SHALL open on the first step that is not done. The screen only reads local rows and writes through the op log, so it works offline and follows changes from other devices as they sync.
@@ -87,7 +95,7 @@ The Mind sweep step SHALL show a short list of trigger prompts in the interface 
 - **THEN** the three tasks are in the Inbox in that order and focus stays in the quick add
 
 ### Requirement: Project walk
-The Projects step SHALL walk projects one at a time. The walk includes every live, unarchived project in which the user may edit tasks, ordered by the user's last review of it (never reviewed first, then oldest), then by the project's position.
+The Projects step SHALL walk projects one at a time. The walk includes every live, unarchived project in which the user may edit tasks and that is due for review for the user ("Review interval per project"), ordered by the user's last review of it (never reviewed first, then oldest), then by the project's position.
 
 The card SHALL show:
 - the project's name
@@ -97,6 +105,8 @@ The card SHALL show:
 - a stalled marker when stalled
 - a "without a next action" marker
 - when the user last reviewed it
+- its review interval ("Every week", "Every 2 weeks", "Every month", "Every quarter")
+- "In maintenance" when the project is in maintenance
 
 The keys SHALL be:
 
@@ -106,10 +116,16 @@ The keys SHALL be:
 | `q` | open quick add scoped to the project, the same key as quick add everywhere; the new task becomes the next action when it qualifies | no |
 | Enter | open the project | no |
 | `a` | archive the project, only where the user may archive it, through the ordinary op, undoable | yes |
+| `e` | choose the review interval: every week, 2 weeks, month, quarter, or paused | no |
+| `m` | put the project in maintenance or end it, only where the user may change the project's fields, undoable | no |
 | `j` or Space | skip without marking | yes |
 | `k` | go back | — |
 
-The walk SHALL show "n of N", and after the last card a summary of what is still without a next action. Every action SHALL be a visible button with its key, usable by touch at 360 px. A polite live region SHALL announce each card and each outcome.
+The walk SHALL show "n of N". After the last card it SHALL show:
+- a summary of what is still without a next action
+- how many projects are not due yet and how many are paused, with "Review them too", which adds them to the end of this walk only
+
+Every action SHALL be a visible button with its key, usable by touch at 360 px. A polite live region SHALL announce each card and each outcome.
 
 #### Scenario: Add a next action, then mark reviewed
 - **WHEN** the card for Garage shows "No next action", the user presses `q`, types "Buy shelf brackets", then presses `r`
@@ -126,6 +142,14 @@ The walk SHALL show "n of N", and after the last card a summary of what is still
 #### Scenario: Archive offline
 - **WHEN** the user archives a project from the walk while offline
 - **THEN** the project is archived locally at once, the walk advances, and the op is sent when the connection returns
+
+#### Scenario: Only due projects
+- **WHEN** the user has twelve projects, "Car" is reviewed every quarter and was reviewed a month ago, "Old ideas" is paused, and the other ten were last reviewed eight days ago
+- **THEN** the walk shows "1 of 10", and after the last card reads "2 not due yet, 1 of them paused" with "Review them too"
+
+#### Scenario: Change the interval from the card
+- **WHEN** on the card for "Car" the user presses `e` and chooses "Every quarter", then presses `r`
+- **THEN** the card shows "Every quarter", Car is stamped as reviewed, and it is not in the walk again until its quarter has passed
 
 ### Requirement: Personal review stamp per project
 Marking a project reviewed SHALL write the time on the user's personal preferences for that project. These sync to the user's own devices and never to other members of a shared project, converge by last-writer-wins, and can be written offline. The stamp is not user-written content and is never encrypted. It SHALL be included in the JSON export and SHALL derive no activity event. A server that does not know the field SHALL reject the op as unknown, and the device SHALL keep its local value.
@@ -147,11 +171,13 @@ The Someday step SHALL list the user's Someday tasks, oldest first. For each, `n
 
 ### Requirement: Daily check
 The app SHALL offer a Daily check at `/review/daily`, reachable from the Review screen's menu, the Loop home, the command palette and `g` then `Shift+R`. It SHALL show on one page:
+- Today's briefing (web-app "Day page briefing"), shown first
+- yesterday's line for tomorrow, when the last Close the day closed an earlier logical day than today and left a note, shown next and read-only
 - the open Inbox count with "Process the Inbox"
 - the overdue tasks
 - today's tasks, where `f` toggles a task in or out of today's focus, up to three tasks
 
-"Done for today" SHALL write the time of the daily check on the user's `review` entity. Today's focus SHALL be written there as the local date and the chosen task ids. Both sync to the user's devices only, are written offline, converge by last-writer-wins, are not content, are included in the export, and derive no activity event. A focus whose date is not today SHALL be shown as empty. Completed or deleted tasks SHALL drop out of the focus as it is shown, without a write. "Today" and "the local date" here are the user's logical today (OpenSpec `date-time-preferences`, "Logical today"), so a check finished or a focus chosen after midnight but before the day start belongs to the day being lived.
+"Done for today" SHALL write the time of the daily check on the user's `review` entity. Today's focus SHALL be written there as the local date and the chosen task ids. Both sync to the user's devices only, are written offline, converge by last-writer-wins, are not content, are included in the export, and derive no activity event. A focus whose date is not today SHALL be shown as empty. Completed or deleted tasks SHALL drop out of the focus as it is shown, without a write. "Today" and "the local date" here are the user's logical today (OpenSpec `date-time-preferences`, "Logical today"), so a check finished or a focus chosen after midnight but before the day start belongs to the day being lived. The day a close closed is the day stored with it (`closed_day`), or, for a close stored without one, the logical day of its time. The note needs no write to show or to stop showing: it is shown while the latest close closed an earlier day and disappears once the day is closed again.
 
 #### Scenario: Pick a focus
 - **WHEN** the user presses `f` on three of today's tasks and then on a fourth
@@ -165,13 +191,29 @@ The app SHALL offer a Daily check at `/review/daily`, reachable from the Review 
 - **WHEN** the user finishes the Daily check on the phone
 - **THEN** the laptop's Review marker no longer shows the daily check as due after sync
 
+#### Scenario: Yesterday's note in the morning
+- **WHEN** the day was closed yesterday with "Start with the invoice" and the user opens the Daily check today
+- **THEN** the note is shown under Today's briefing and above the Inbox count as yesterday's line, and it is gone once today is closed
+
+#### Scenario: No note
+- **WHEN** the day was closed yesterday without a note, or never
+- **THEN** the Daily check shows no note line and nothing else changes
+
 #### Scenario: Focus kept past midnight
 - **WHEN** the day start is `04:00`, the focus was chosen on Wednesday evening and the user opens the Loop home at 01:00 on Thursday
 - **THEN** the focus is still shown, and it is empty once 04:00 has passed
 
+#### Scenario: Closed just after midnight
+- **WHEN** the day start is `00:00`, the user opened Close the day at 23:59 on Wednesday, wrote "Start with the invoice" and closed at 00:02 on Thursday
+- **THEN** Thursday's Daily check shows "Start with the invoice" as yesterday's line
+
+#### Scenario: The check opens with Today's briefing
+- **WHEN** one task is two days late and the user opens the Daily check
+- **THEN** the page starts with the same sentence as Today, "One thing matters today." followed by the late task, and it changes as Today's does
+
 ### Requirement: Monthly look
 The app SHALL offer a Monthly look at `/review/monthly`, reachable from the Review screen's menu, the Loop home and the command palette, with three steps:
-- **Areas:** each live top-level project that has child projects, with its number of child projects and how many of them are without a next action or stalled.
+- **Areas:** each live top-level project that has child projects or whose flow is Area (project-flow "Areas"), with its number of child projects and how many of them are without a next action or stalled; an area without child projects reads "Area" instead of the count.
 - **Old someday:** Someday tasks created more than 90 days ago, with the Someday step's keys.
 - **Trend:** the last four weeks' completed, created and slipped counts, with the definitions of Statistics.
 
@@ -181,22 +223,335 @@ The app SHALL offer a Monthly look at `/review/monthly`, reachable from the Revi
 - **WHEN** the top-level project Home has four child projects, one stalled and one without a next action
 - **THEN** Areas lists Home with "4 projects, 2 need attention", and opening it lists the two
 
+#### Scenario: An area without sub-projects
+- **WHEN** the top-level project Finances has the Area flow and no child projects
+- **THEN** Areas lists Finances, reading "Area"
+
 ### Requirement: Rhythm markers
 A rhythm SHALL be due as follows:
 - the weekly review, when its last finish is more than seven days ago or never
 - the Monthly look, when it is more than 30 days ago or never
 - the Daily check, when it was not done on the user's logical today (OpenSpec `date-time-preferences`, "Logical today")
 
-The sidebar Review entry SHALL carry the weekly marker in every mode. In `companion` and `first` modes it SHALL also carry the monthly marker. In `first` mode it SHALL also carry the daily marker. Each marker SHALL have a text alternative naming the rhythm. In `first` mode, the first time the app is opened on a logical day on which the Daily check is not done, a toast SHALL offer to start it, at most once per logical day per device.
+Close the day is never due and carries no marker of its own. When the day was closed on the user's local date, the sidebar Review entry SHALL show "Day closed" in place of its "last review" text for the rest of that local day, unless a rhythm is due, in which case the due marker wins; the text alternative SHALL name both. The sidebar Review entry SHALL carry the weekly marker in every mode. In `companion` and `first` modes it SHALL also carry the monthly marker. In `first` mode it SHALL also carry the daily marker. The marker SHALL be one small dot in the accent colour, never a filled or coloured badge with text; its text alternative SHALL name each due rhythm and, for the weekly review, when the last one was ("Review due · last weekly review 9 days ago; the Monthly look is due"), and SHALL be the entry's tooltip and part of its accessible name. When no rhythm is due the entry SHALL carry no marker, and when the last review was SHALL be in its tooltip and accessible description. While Review is in the More group, the More row or heading SHALL carry the same dot with the same text, and the Review item inside the More menu SHALL show the text as its description. The marker is derived from the synced review row and local time, so it is correct offline and follows a finish on another device after sync; nothing is written for it. In `first` mode, the first time the app is opened on a logical day on which the Daily check is not done, a toast SHALL offer to start it, at most once per logical day per device.
 
 #### Scenario: Lists only
 - **WHEN** a user in `lists` mode has never done a Daily check or Monthly look and finished the weekly review yesterday
-- **THEN** the Review entry carries no marker
+- **THEN** the Review entry and the More row carry no marker, and hovering the Review item in the More menu reads "Last review yesterday"
 
 #### Scenario: Open Loops first in the morning
 - **WHEN** a user in `first` mode opens the app on a new day
-- **THEN** a toast offers "Start your daily check", and dismissing it means it does not return on that device that day
+- **THEN** a toast offers "Start your daily check", the primary Review entry shows one dot whose text names the Daily check, and dismissing the toast means it does not return on that device that day
+
+#### Scenario: Day closed in the evening
+- **WHEN** no rhythm is due and the user closes the day at 18:42
+- **THEN** the Review entry reads "Day closed" with the time in its text alternative until the local date changes, after which it shows the last review again
+
+#### Scenario: Day closed while the weekly review is due
+- **WHEN** the weekly review was finished nine days ago and the user closes the day
+- **THEN** the Review entry keeps its "due" marker and its text alternative also says the day is closed
 
 #### Scenario: Daily check done in the evening, app open after midnight
 - **WHEN** a user in `first` mode with a day start of `04:00` finished the Daily check on Wednesday evening and uses the app at 00:30 on Thursday
 - **THEN** the Review entry carries no daily marker and no toast is shown until 04:00 has passed
+
+#### Scenario: Due in Companion
+- **WHEN** a user in `companion` mode last finished the weekly review nine days ago and the Monthly look 40 days ago
+- **THEN** the Review entry inside More shows one dot, its tooltip and accessible description read "Review due · last weekly review 9 days ago; the Monthly look is due", the More row carries no dot, and finishing the review on another device removes the dot here after sync without a reload
+
+### Requirement: Close the day is reachable
+The app SHALL offer Close the day at `/review/close`, reachable in every mode from a row at the end of the Today list, from the Loop home's Review move, from the command palette and by `g` then `Shift+D`. The row at the end of Today SHALL add no row above the list's first item and SHALL read "Day closed, <time>" after a close on the user's local date. Opening the screen SHALL need no connection; it reads local rows only.
+
+#### Scenario: From the end of Today
+- **WHEN** Today lists five tasks and the user moves past the last row and activates "Close the day"
+- **THEN** the Close the day screen opens on its first step with focus on the step's title
+
+#### Scenario: Keyboard path
+- **WHEN** focus is not in a text field and the user presses `g` then `Shift+D`
+- **THEN** the Close the day screen opens, and the cheat sheet lists the shortcut under "Go to a view"
+
+#### Scenario: Already closed today
+- **WHEN** the day was closed at 18:42 on this device's local date
+- **THEN** the row at the end of Today reads "Day closed, 18:42" and still opens the screen, so a second close is possible
+
+### Requirement: Close the day steps
+Close the day SHALL be a guided sequence of three steps with a progress indicator that fits 375 px and one step card showing its position ("Step 2 of 3"), the step's content, and Back and Next inside the card, with `[` and `]` moving between steps and focus moving to each step's title. The steps are How the day went, Carry over, and A note for tomorrow morning. On the last step Next SHALL be "Close the day". Every step SHALL work offline from local rows.
+
+The day being closed SHALL be the user's logical today at the moment the screen opened, and it SHALL stay that day until the screen is left, whatever the clock does meanwhile: the figures, the tasks offered for carry-over, the meaning of "Tomorrow", the carry-over record and the close all refer to it.
+
+#### Scenario: Walk the three steps
+- **WHEN** the user opens Close the day and presses `]` twice
+- **THEN** the card shows Carry over, then A note for tomorrow morning with "Step 3 of 3", the primary action reads "Close the day", and each move puts focus on the step's title
+
+#### Scenario: Phone width
+- **WHEN** Close the day is shown on a 375 px wide screen
+- **THEN** the three steps are visible in the progress indicator without horizontal scrolling, the carry-over decisions wrap under the task inside the card, and Back and Next are reachable inside the card
+
+#### Scenario: Closing across midnight
+- **WHEN** the day start is `00:00`, the user opens Close the day at 23:59 on Wednesday with three tasks unfinished, leaves them on Tomorrow, and closes at 00:02 on Thursday
+- **THEN** the figures stay Wednesday's, the three tasks are due Thursday, the close is recorded for Wednesday, and Thursday's Today offers "Close the day" for Thursday
+
+### Requirement: How the day went
+The first step SHALL show, computed on the device from local rows and nothing written, in one sentence with the numbers emphasised: planned (the open and completed tasks Today listed on the day being closed), done (tasks completed on that day, as Statistics counts completed), and, when a focus was chosen for that day, a second sentence with the focus as "n of m done". Deleted tasks and skipped habit occurrences SHALL count nowhere. No time, mood or score SHALL be shown, and every device SHALL show the same figures for the same rows.
+
+#### Scenario: A day with a focus
+- **WHEN** Today listed eight tasks, five were completed on the local date, and two of the three focus tasks are done
+- **THEN** the step reads 8 planned, 5 done, and focus "2 of 3 done"
+
+#### Scenario: Agrees with Statistics
+- **WHEN** the step says 5 done today and the user opens Statistics for this week on the same day
+- **THEN** the per-day chart shows 5 for today
+
+#### Scenario: Nothing was planned
+- **WHEN** Today listed nothing and nothing was completed
+- **THEN** the step says so in one line and Next still leads to Carry over
+
+### Requirement: Carry over unfinished tasks
+The Carry over step SHALL take every open task Today lists on the day being closed, one at a time: a card shows the task's whole title, its project and why it is in Today (due that day, open since an earlier day, or started), with five decisions: Tomorrow (the default), Pick a day, Someday, Keep in Today, and Done already. `t`, `p`, `y`, `h` and `d` SHALL set them for the task on the card, and choosing one SHALL show the next task. Below the card a list SHALL show every task with its decision so far, a task not yet decided showing the default; activating a line SHALL bring that task back to the card so its decision can be changed. A task the user may not edit SHALL offer Keep only and say why. Neither the card nor the list SHALL offer a control that completes a task on its own: completing is the Done already decision. Decisions are device interface state until they are written: nothing is written or synced by choosing them.
+
+#### Scenario: Default carry-over
+- **WHEN** three tasks are unfinished, one due today at 14:00, one overdue since Monday and one started by its start date, and the user moves on from Carry over without changing a decision
+- **THEN** the first is due tomorrow at 14:00, the two others are due tomorrow without a time, all three leave Today at once, and the toast reads "3 tasks rescheduled" with Undo
+
+#### Scenario: Mixed decisions
+- **WHEN** the user presses `y` on the first task's card, `h` on the second, picks Friday for the third and moves on
+- **THEN** the first is in Someday without a date, the second is unchanged and still in Today, the third is due Friday, and the batch is undone in one step
+
+#### Scenario: Read-only task
+- **WHEN** one unfinished task is in a shared project where the user is a viewer
+- **THEN** its card offers Keep only with the reason, and moving on writes nothing for it
+
+#### Scenario: Nothing to carry over
+- **WHEN** every task of Today is completed
+- **THEN** the step says the day is done and offers Next, and moving on writes nothing
+
+#### Scenario: Done already
+- **WHEN** the user presses `d` on a task that was in fact finished and on a weekly repeating task, then moves on
+- **THEN** the first is completed, the repeating task moves to its next occurrence, both in the same batch and toast as the other decisions, and Undo reopens them with the rest
+
+#### Scenario: Change an earlier decision
+- **WHEN** the user decided Someday for the first task and, from the list below the card, opens it again and presses `t`
+- **THEN** the list shows Tomorrow for it, and moving on reschedules it to tomorrow
+
+#### Scenario: No accidental completion
+- **WHEN** the user clicks anywhere on the card or on a line of the list
+- **THEN** no task is completed or rescheduled until the user moves on from the step
+
+### Requirement: Carry-over is one batch
+Moving on from Carry over (Next, `]`, or a later step in the progress indicator) SHALL write the decisions as ONE batch of ordinary task operations (due date, Someday, completion) through the same path as bulk actions: every change shows at once, is queued while offline, syncs as per-field operations converging by last-writer-wins per task and field, and is undone in one step from the toast or `Ctrl`/`⌘`+`Z`, with a field changed since skipped and its task named. Keep writes nothing. Once the user is past Carry over, the progress indicator SHALL show it as done, never as tasks left. Going back to Carry over shows the tasks still in Today; moving on again writes their changed decisions as a further batch of the same day.
+
+#### Scenario: Apply offline
+- **WHEN** the device is offline and the user moves on from Carry over with four carry-overs
+- **THEN** the four tasks are rescheduled locally at once and the operations reach the user's other devices after the next sync
+
+#### Scenario: Concurrent edit converges
+- **WHEN** the batch moves a task to tomorrow while the phone renames it offline, and both sync
+- **THEN** every device shows the task due tomorrow with the new title
+
+#### Scenario: Undo after a later change
+- **WHEN** the user carries over five tasks, gives one of them a date by hand, then activates Undo
+- **THEN** the four others return to their previous dates, the hand-edited one is left alone and named in the toast
+
+#### Scenario: Past Carry over
+- **WHEN** the user moves on to A note for tomorrow morning after Carry over
+- **THEN** Carry over's circle shows a check and no count
+
+### Requirement: Closing the day
+"Close the day" on the last step SHALL write the time as `closed_at`, the day being closed as `closed_day` (`YYYY-MM-DD`) and the note (one line, trimmed, empty allowed) as `tomorrow_note` on the user's `review` entity through the operation log, and then show the Done for today state. The third step SHALL show, while a note is typed, a preview of where it will appear ("Tomorrow your Daily check starts with: …"). Closing a day that is already closed SHALL be allowed and write a newer time and note. The stamp and the day are not content; the note is user-written content and SHALL be encrypted for an encrypted account.
+
+#### Scenario: Close with a note
+- **WHEN** the user types "Start with the invoice" and activates Close the day
+- **THEN** the review row carries the time, the day and the note, Done for today is shown, "Back to Today" shows Today with "Day closed" at its end, and the laptop shows the same after sync
+
+#### Scenario: Close again
+- **WHEN** the day was closed at 18:00 and the user closes it again at 21:10 with a new note
+- **THEN** the row carries 21:10 and the new note, and the Daily check shows the new note the next morning
+
+#### Scenario: Undo does not reopen the day
+- **WHEN** the user undoes the carry-over batch after closing the day
+- **THEN** the tasks return to Today and the close stamp is kept; closing again writes a newer time
+
+#### Scenario: Note preview
+- **WHEN** the user types "Call Ana first" on the third step
+- **THEN** the step shows "Tomorrow your Daily check starts with: “Call Ana first”"
+
+### Requirement: Close record syncs and converges
+`closed_at`, `closed_day` and `tomorrow_note` SHALL sync to the user's devices only, be written offline through the outbox, and converge per field by last-writer-wins. All three SHALL be in the JSON export and derive no activity event. A server that does not know a field SHALL reject that op as unknown while the device keeps its local value; a device that has no `closed_day` for a close SHALL take the logical day of `closed_at` as the day closed.
+
+#### Scenario: Two closes offline
+- **WHEN** the phone closes the day at 18:00 with the note "Call Ana" and the laptop at 18:30 with no note, both offline, then sync
+- **THEN** every device holds 18:30 as the close and the empty note, each field by its own latest write
+
+#### Scenario: Older server
+- **WHEN** the device syncs with a server that does not know `closed_at`, `closed_day` or `tomorrow_note`
+- **THEN** those ops are rejected as unknown, the device keeps its local values, and the carry-over ops still sync
+
+#### Scenario: Close from an older version
+- **WHEN** a close was written by a version that did not store `closed_day`
+- **THEN** every device treats the logical day of its `closed_at` as the day closed
+
+### Requirement: Reopen the day
+Until the user's logical day ends, a day closed on that logical day SHALL be reopenable from the "Day closed" row at the end of Today and from the Close the day screen with "Reopen the day". Carrying over SHALL record on the user's `review` entity, in the additive field `carry_over`, the logical date and, for each task a batch changed, the task, the field and its value before and after the batch; a further batch of the same date SHALL add its items to the record. Reopening SHALL write, as ONE batch of ordinary operations undone in one step from its toast or `Ctrl`/`⌘`+`Z`: each recorded field back to its value before, unless the field no longer holds the value the batch wrote, in which case it is left alone and the task is named in the toast; `closed_at` cleared (0, as for a day never closed), `closed_day` cleared and `carry_over` emptied; `tomorrow_note` kept, so a later close starts from it. After the logical day ends, or when nothing was closed on it, Reopen SHALL not be offered. Reopening SHALL work offline through the outbox, and every field SHALL converge by last-writer-wins like any other edit. `carry_over` holds task ids, field names and dates, never user-written text, so it is not encrypted for an encrypted account; it is in the JSON export and derives no activity event.
+
+#### Scenario: Reopen after the toast is gone
+- **WHEN** the user closed the day at 18:30, moving four tasks to tomorrow, and at 20:00 activates "Reopen the day" on the row at the end of Today
+- **THEN** the four tasks are due today again, the row reads "Close the day", the toast reads "Day reopened, 4 tasks back in Today" with Undo, and the line for tomorrow is still filled in when Close the day is opened again
+
+#### Scenario: A task changed since the close
+- **WHEN** the carry-over moved five tasks to tomorrow, the user then gave one of them Friday by hand, and reopens the day
+- **THEN** four tasks return to today, the one due Friday stays on Friday, and the toast names it
+
+#### Scenario: Reopen on another device
+- **WHEN** the laptop closed the day and the phone, after syncing, reopens it while offline
+- **THEN** the phone shows the tasks back in Today at once, and after both sync every device shows the day open and the tasks due today
+
+#### Scenario: Next morning
+- **WHEN** the day was closed yesterday and the user opens Today after the day start
+- **THEN** no Reopen is offered for yesterday, and the row offers "Close the day" for the new day
+
+#### Scenario: Older server
+- **WHEN** the device syncs with a server that does not know `carry_over`
+- **THEN** that op is rejected as unknown, the device keeps its local value, the carry-over and reopen task ops still sync, and Reopen on another device restores only the close stamp and says that the tasks stay where they are
+
+#### Scenario: Two batches in one evening
+- **WHEN** the user carried over three tasks, went back, moved a kept task to Friday, closed the day and then reopens it
+- **THEN** all four tasks are back in Today
+
+### Requirement: Done for today
+After "Close the day" has written the close, the Close the day screen SHALL show one final state in place of its step card: the `day-done` illustration, "Day closed, <time>", one line with the figures of "How the day went" and the carry-over ("5 done, 3 moved to tomorrow, 1 kept"), the line for tomorrow quoted when one was written, a primary "Back to Today" with focus, and "Reopen the day" where that is offered. It SHALL show no streak, score, comparison or prompt to do more. The state is device interface state: showing it writes nothing, Escape and "Back to Today" return to Today, and reloading the route shows the ordinary first step. Under reduced motion the state SHALL appear with a crossfade only. It SHALL work offline from local rows.
+
+#### Scenario: Close with carry-over
+- **WHEN** 5 tasks were completed, the user moved 3 to tomorrow, kept 1 in Today, wrote "Start with the invoice" and activates Close the day at 18:42
+- **THEN** the screen shows the notebook-and-moon drawing, "Day closed, 18:42", "5 done, 3 moved to tomorrow, 1 kept", the quoted line, focus on "Back to Today", and Enter opens Today with "Day closed, 18:42" at its end
+
+#### Scenario: Nothing was planned
+- **WHEN** Today listed nothing and the user closes the day without a note
+- **THEN** the state reads "Day closed" with the time and "Nothing was planned today", no figures line beyond that, and no quoted line
+
+#### Scenario: Reload
+- **WHEN** the user reloads the page while the final state is shown
+- **THEN** the Close the day screen shows its first step with "Day closed, 18:42" in its header, as for any closed day
+
+### Requirement: Review interval per project
+Each user SHALL be able to give each project a review interval: every week, every 2 weeks, every month, every quarter, or paused. It SHALL be stored as the additive field `review_every` on the user's personal preferences for that project, with the values `week`, `2weeks`, `month`, `quarter` and `paused`.
+
+Reading rules:
+- An empty, missing or unknown value SHALL read as `week`, and the client SHALL keep the stored value unchanged.
+
+Sync and storage:
+- The field SHALL sync to the user's own devices and never to other members of a shared project.
+- It SHALL be written offline and converge by last-writer-wins.
+- It is not user-written content and is never encrypted.
+- It SHALL be included in the JSON export and SHALL derive no activity event.
+
+A project SHALL be due for review for the user when:
+- it was never reviewed by the user, or
+- the user's logical today is on or after the review date: the logical day of the user's last review stamp, plus 7 days (week), 14 days (2 weeks), one calendar month (month) or three calendar months (quarter). A month added to a day that the target month lacks SHALL land on that month's last day.
+
+A paused project SHALL never be due.
+
+Due-ness SHALL be computed on the device from the synced stamp and interval, with no write. The interval SHALL be changeable from the walk card and from a "Review every…" submenu in the project menu. In `lists` mode the menu item SHALL be shown only when a value other than the default is stored. Changing it SHALL write one operation and offer Undo.
+
+#### Scenario: Monthly review date
+- **WHEN** "Car" is reviewed every month and the user last reviewed it on 31 January
+- **THEN** it is due from the last day of February in the user's logical days, offline too
+
+#### Scenario: Shared project, personal rhythm
+- **WHEN** the user sets the shared project "Household" to every month and Ana keeps it weekly
+- **THEN** Household is due for Ana every week and for the user every month, and neither choice reaches the other's devices
+
+#### Scenario: Two devices offline
+- **WHEN** the phone sets "Car" to every quarter and the laptop sets it to paused, both offline, and both sync
+- **THEN** every device of the user shows the value written with the greater timestamp
+
+#### Scenario: Older server
+- **WHEN** the device syncs with a server that does not know `review_every`
+- **THEN** the op is rejected as unknown, the device keeps its local value, and the walk on this device uses it
+
+### Requirement: Focus style
+The user SHALL choose today's focus style, **Three tasks** (default) or **Bento**, stored as the synced additive preference `user_prefs.focus_style` (`bento`; empty or unknown reads as Three tasks and is not rewritten), from Settings › Account › How you work ("Daily focus") and from the Daily check's header menu. Three tasks SHALL behave exactly as the Daily check does without this change. The preference SHALL be written offline, converge by last-writer-wins and sync to the user's own devices only. Switching style SHALL write nothing to the focus.
+
+#### Scenario: Default unchanged
+- **WHEN** a user who never chose a style opens the Daily check
+- **THEN** today's tasks are listed and `f` toggles up to three of them into the focus, as before
+
+#### Scenario: Chosen on one device
+- **WHEN** the user chooses Bento in How you work on the laptop, offline, and later syncs
+- **THEN** the phone's Daily check shows the three slots after its next sync
+
+#### Scenario: Switching keeps the focus
+- **WHEN** three tasks are in today's focus in Three tasks style and the user switches to Bento
+- **THEN** the same three tasks are shown in slots by their estimates, and no operation is written
+
+### Requirement: Bento slots
+In Bento style today's focus SHALL be three slots, Large, Medium and Small, each holding at most one task. A task's suggested slot SHALL follow its estimate: Small up to 30 minutes, Medium 31 to 89, Large 90 or more. `f` on a focused task SHALL remove it; on an estimated task it SHALL put the task in its suggested slot when free, and otherwise refuse with a message naming the slot's task and offering Choose a slot; on an unestimated task it SHALL open a menu of the free slots and Set estimate…, offered only when the user may edit the task. Choosing a slot SHALL write only the user's `review` row: the plain id list `focus` in display order, the additive field `focus_slots` (`L:<id>,M:<id>,S:<id>`) and `focus_date`, as one batch with Undo. Reading SHALL write nothing: a `focus_slots` entry counts only for an id in `focus`, and an id in `focus` without one takes its suggested slot when free, else the first free slot, else is listed after the slots as Not sized. The fields are not content, are written offline, converge per field by last-writer-wins and sync to the user's own devices only; completed or deleted tasks drop out as in the Daily check.
+
+#### Scenario: Placed by estimate
+- **WHEN** Bento is on and the user presses `f` on a 2-hour task, a 45-minute task and a 20-minute task
+- **THEN** they fill Large, Medium and Small in that order, and the Loop home on every device lists them after sync
+
+#### Scenario: Slot taken
+- **WHEN** Large holds "Write the report" and the user presses `f` on another 3-hour task
+- **THEN** nothing is written, the message reads that Large holds "Write the report", and Choose a slot lists Medium and Small if free
+
+#### Scenario: Unestimated task
+- **WHEN** the user presses `f` on a task without an estimate and Medium is free
+- **THEN** a menu offers Medium, any other free slot and Set estimate…, and choosing Medium puts the task there without changing its estimate
+
+#### Scenario: Viewer of a shared project
+- **WHEN** the user presses `f` on an unestimated task of a shared project they only view
+- **THEN** the menu lists the free slots without Set estimate…, and the task can be put in a slot
+
+#### Scenario: Older device writes the focus
+- **WHEN** a device without Bento replaces today's focus with three other tasks while `focus_slots` still names the old ones
+- **THEN** the Bento device shows the three new tasks in slots by their estimates, with no write until the user changes a slot
+
+#### Scenario: Older device reads the focus
+- **WHEN** the user picks a Bento on the phone and opens the Loop home on a device that predates this change
+- **THEN** the older device lists the same three tasks
+
+#### Scenario: Offline
+- **WHEN** the device is offline and the user fills the three slots
+- **THEN** the slots show at once and the review row is uploaded on the next successful sync
+
+### Requirement: Bento order
+In Bento style the user SHALL choose an order, Frog (Large, Medium, Small; default) or Summit (Medium, Large, Small), stored as the synced additive preference `user_prefs.bento_order` (`summit`; empty or unknown reads as Frog and is not rewritten), from How you work, where it is shown only while Bento is chosen, and from the Daily check's header menu. The Daily check's slots, the Loop home's Today's focus and the Focus screen's first task SHALL follow the order, with Not sized tasks after the slots. Changing the order SHALL write only the preference, offline included, converging by last-writer-wins.
+
+#### Scenario: Summit
+- **WHEN** Bento holds a Large, a Medium and a Small task and the user chooses Summit
+- **THEN** the Loop home lists Medium, Large, Small, and the Focus screen opens on the Medium task
+
+#### Scenario: Frog by default
+- **WHEN** a user turns Bento on and never chooses an order
+- **THEN** the focus is listed Large, Medium, Small
+
+#### Scenario: Not shown without Bento
+- **WHEN** the style is Three tasks
+- **THEN** How you work shows no Order row and the focus keeps the order it was picked in
+
+### Requirement: Filling the focus by touch
+Today's focus SHALL be fillable and emptiable without a keyboard. In Bento style an empty slot in the Daily check SHALL be a target of at least 44 × 44 px on a coarse pointer that opens a task picker for that slot, listing open tasks not already in the focus: today's and overdue tasks first, and within each group the tasks whose estimate suggests that slot first, then tasks without an estimate, then the rest; choosing one SHALL put it in that slot. In Three tasks style the Daily check SHALL show Today's focus with an Add to focus row while it holds fewer than three tasks, and the Loop home SHALL offer Add to focus while there is room; both open the picker. One task's Actions menu, the task panel's and task page's menu and the Focus screen's menu SHALL offer Add to focus (Three tasks) or Put in a slot (Bento) for an open task not in today's focus, and Remove from focus for a task in it, also for a task of a shared project the user only views. These paths SHALL follow the same rules as `f`, and every change SHALL be one batch on the user's `review` row with Undo, written offline and converging like the focus written with `f`.
+
+#### Scenario: Empty slot by touch
+- **WHEN** Bento is on, Large is empty and the user taps the empty Large row at 390 px
+- **THEN** a picker lists today's tasks with a 90-minute or longer estimate first, and choosing "Write the report" puts it in Large with Undo
+
+#### Scenario: Three tasks by touch
+- **WHEN** Three tasks is on and today's focus holds one task
+- **THEN** the Daily check shows Add to focus, and choosing a task in its picker adds it as the second focus task
+
+#### Scenario: Menu adds and removes
+- **WHEN** the user opens a task's Actions menu and chooses Add to focus, then opens it again
+- **THEN** the task is in today's focus, the toast offers Undo, and the menu now offers Remove from focus
+
+#### Scenario: Menu in Bento without an estimate
+- **WHEN** Bento is on and the user chooses Put in a slot for a task without an estimate
+- **THEN** the slot menu opens with the free slots, as for `f`
+
+#### Scenario: Full
+- **WHEN** the focus already holds three tasks and the user chooses Add to focus on a fourth
+- **THEN** nothing is written and a message says to take one out first
+
+#### Scenario: Viewer
+- **WHEN** the task belongs to a shared project the user only views
+- **THEN** the menu still offers Add to focus or Put in a slot, and the task joins the user's own focus

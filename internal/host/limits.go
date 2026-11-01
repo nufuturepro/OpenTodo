@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/config"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // quota is one open tenant's write limits (design D5), installed as the sync
@@ -82,6 +82,17 @@ func (q *quota) Stored(n int) {
 	q.addLocked(n)
 }
 
+// Removed implements opsync.QuotaRemover: compaction deleted n ops, so the
+// total goes down at once (op-log-compaction D8). The hourly window counts what
+// was written and stays as it is.
+func (q *quota) Removed(n int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.seeded {
+		q.total = max(0, q.total-n)
+	}
+}
+
 func (q *quota) addLocked(n int) {
 	m := q.now().Unix() / 60
 	i := m % 60
@@ -102,7 +113,7 @@ func (q *quota) hourLocked() int {
 	return sum
 }
 
-// requestLimiter counts requests per tenant in fixed one-minute windows.
+// requestLimiter counts requests per key (tenant and client) in fixed one-minute windows.
 type requestLimiter struct {
 	now func() time.Time
 	mu  sync.Mutex

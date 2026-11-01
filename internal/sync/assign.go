@@ -7,8 +7,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/e2ee"
-	"github.com/pixari/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
 )
 
 // Assignment events (OpenSpec change `task-assignment`, design D4).
@@ -26,6 +26,12 @@ func (s *Service) AddSink(sink notify.Sink) {
 // the sinks (OpenSpec task-pages, design D9).
 func (s *Service) EmitPageActivity(ctx context.Context, e notify.PageEvent) {
 	s.sinks.PageActivity(ctx, e)
+}
+
+// EmitMemberInvited hands a membership invitation to the sinks
+// (member-add-consent D5).
+func (s *Service) EmitMemberInvited(ctx context.Context, e notify.MemberInvited) {
+	s.sinks.MemberInvited(ctx, e)
 }
 
 // emitAssignments hands one notify.Assigned event per task whose assignee_id

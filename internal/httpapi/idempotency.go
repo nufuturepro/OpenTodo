@@ -9,10 +9,9 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Idempotency keys on create (OpenSpec change `agent-ready-cli`, design D5).
@@ -68,7 +67,7 @@ func (s *Server) loadIdempotencySalt(ctx context.Context) error {
 	db := s.sync.DB()
 	fresh, _ := json.Marshal(ids.Secret(32))
 	if _, err := db.ExecContext(ctx, `INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO NOTHING`,
-		idempotencySaltKey, string(fresh), time.Now().UnixMilli()); err != nil {
+		idempotencySaltKey, string(fresh), s.now().UnixMilli()); err != nil {
 		return fmt.Errorf("store idempotency salt: %w", err)
 	}
 	var raw string

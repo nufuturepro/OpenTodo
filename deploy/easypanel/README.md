@@ -4,14 +4,14 @@ An [Easypanel](https://easypanel.io) template in the format of [`easypanel-io/te
 
 | File | What it is |
 | --- | --- |
-| [`meta.yaml`](meta.yaml) | The listing (description, instructions, links, benefits, features, tags) and the form: service name (`opentodo`) and image (`ghcr.io/pixari/opentodo:0.9.0`) |
+| [`meta.yaml`](meta.yaml) | The listing (description, instructions, links, benefits, features, tags) and the form: service name (`opentodo`) and image (`ghcr.io/opentodoapp/opentodo:0.18.1`) |
 | [`index.ts`](index.ts) | `generate()`: one app service from that image, the domain `$(EASYPANEL_DOMAIN)` on port 8080, the volume `data` on `/data`, and `OPENTODO_BASE_URL=https://$(PRIMARY_DOMAIN)`, a generated 32-character `OPENTODO_SETUP_TOKEN`, `OPENTODO_ALLOW_SIGNUP=false` and an empty `OPENTODO_TRUSTED_PROXIES` |
 | `assets/logo.svg` | The logo mark, identical to [`../coolify/opentodo.svg`](../coolify/opentodo.svg) |
 | `assets/screenshot.png` | [`docs/images/board-light.webp`](../../docs/images/board-light.webp) as PNG |
 
 The image is pinned to a release, not `stable`: the repository's checklist asks for "static versions" and "specific versions (2.1.7, instead of 2.1, or 2)". `make check` (`scripts/deploy/easypanel.mjs`) fails when the default image is not the latest release in `CHANGELOG.md`, and on the shared rules in [`../deploy.json`](../deploy.json). It reads the image from `meta.yaml` and the environment, port and mount from `index.ts`.
 
-**Status: not yet submitted.**
+**Status: Submitted: [easypanel-io/templates#1702](https://github.com/easypanel-io/templates/pull/1702).**
 
 ## Install it now, without the template list
 

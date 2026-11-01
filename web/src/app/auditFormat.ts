@@ -1,3 +1,4 @@
+import { addDaysISO, todayISO } from '../lib/dates'
 import { roleName } from '../lib/roleNames'
 import type { AuditEvent, AuditEventName, AuditFilters } from '../lib/types'
 import { t, msg, translatedMap } from '../lib/i18n'
@@ -25,6 +26,9 @@ export const AUDIT_LABELS = translatedMap<AuditEventName>({
   'issue_connection.created': msg('Issue connection added'),
   'issue_connection.updated': msg('Issue connection changed'),
   'issue_connection.deleted': msg('Issue connection deleted'),
+  'notification_channel.created': msg('Delivery channel added'),
+  'notification_channel.updated': msg('Delivery channel changed'),
+  'notification_channel.deleted': msg('Delivery channel deleted'),
   'invitation.created': msg('Invitation created'),
   'invitation.accepted': msg('Invitation accepted'),
   'invitation.revoked': msg('Invitation revoked'),
@@ -57,6 +61,32 @@ export const AUDIT_LABELS = translatedMap<AuditEventName>({
   'email.failed': msg('Email not sent'),
   'relay.enabled': msg('Device answers AI connectors'),
   'relay.disabled': msg('Device stopped answering AI connectors'),
+  'account.name_changed': msg('Name changed'),
+  'account.email_change_requested': msg('Email change requested'),
+  'account.email_changed': msg('Email changed'),
+  'account.avatar_changed': msg('Profile picture changed'),
+  'workspace.created': msg('Workspace created'),
+  'workspace.renamed': msg('Workspace changed'),
+  'workspace.deleted': msg('Workspace deleted'),
+  'workspace.transferred': msg('Workspace transferred'),
+  'workspace.member_added': msg('Workspace member added'),
+  'workspace.member_role_changed': msg('Workspace role changed'),
+  'workspace.member_removed': msg('Workspace member removed'),
+  'workspace.group_created': msg('Group created'),
+  'workspace.group_deleted': msg('Group deleted'),
+  'workspace.group_member_added': msg('Added to a group'),
+  'workspace.group_member_removed': msg('Removed from a group'),
+  'project.member_added': msg('Person added to a project'),
+  'project.grant_added': msg('Project shared with a group'),
+  'project.grant_changed': msg('Group role on a project changed'),
+  'project.grant_removed': msg('Group removed from a project'),
+  'workspace_invite.created': msg('Workspace invite link created'),
+  'workspace_invite.accepted': msg('Joined a workspace with a link'),
+  'workspace_invite.revoked': msg('Workspace invite link revoked'),
+  'member_invitation.created': msg('Invitation to join sent'),
+  'member_invitation.accepted': msg('Invitation to join accepted'),
+  'member_invitation.declined': msg('Invitation to join declined'),
+  'member_invitation.cancelled': msg('Invitation to join cancelled'),
 })
 
 const REASONS = translatedMap<string>({
@@ -93,6 +123,9 @@ const EMAIL_KINDS = translatedMap<string>({
   invitation: msg('Invitation'),
   project_invite: msg('Project invite'),
   test: msg('Test message'),
+  email_change: msg('Email change confirmation'),
+  email_change_notice: msg('Email change notice'),
+  member_invitation: msg('Invitation to join'),
 })
 
 const SETTINGS = translatedMap<string>({
@@ -126,11 +159,13 @@ export function eventSummary(ev: AuditEvent): string {
   if (d.app_password_count && d.app_password_count !== '0') parts.push(t('{n, plural, one {# app password} other {# app passwords}}', { n: Number(d.app_password_count) }))
   if (d.passkey_name) parts.push(`“${d.passkey_name}”`)
   if (d.project_role) parts.push(t('as {role}', { role: roleName(d.project_role) }))
+  if (d.workspace_role) parts.push(t('as {role}', { role: roleName(d.workspace_role) }))
   if (d.link_rights) parts.push(d.link_rights === 'tick' ? t('can tick off tasks') : t('view only'))
   if (d.invited_email) parts.push(t('for {email}', { email: d.invited_email }))
   if (d.setting) parts.push(`${SETTINGS[d.setting] ?? d.setting}: ${d.from ?? '?'} → ${d.to ?? '?'}`)
   else if (d.from || d.to) parts.push(`${d.from ?? '?'} → ${d.to ?? '?'}`)
   if (d.provider) parts.push(d.provider)
+  if (d.channel_kind) parts.push(d.channel_kind)
   if (d.count) {
     const n = Number(d.count)
     parts.push(ev.name === 'agent.write' ? t('{n, plural, one {# item changed} other {# items changed}}', { n }) : t('{n, plural, one {# event} other {# events}}', { n }))
@@ -148,7 +183,8 @@ export function shortAgent(ua: string): string {
   if (!ua) return t('unknown client')
   const m = ua.match(/(Firefox|Edg|Chrome|Safari)\/[\d.]+/)
   const os = ua.match(/\((?:[^;)]*; )?([^;)]+)/)
-  if (m) return os ? t('{browser} on {os}', { browser: m[1] === 'Edg' ? 'Edge' : m[1], os: os[1] }) : m[1] === 'Edg' ? 'Edge' : m[1]
+  // The processor architecture says nothing a person recognises ("Linux x86_64" reads as "Linux").
+  if (m) return os ? t('{browser} on {os}', { browser: m[1] === 'Edg' ? 'Edge' : m[1], os: os[1].replace(/\s+(x86_64|amd64|i686|aarch64|armv\w+)$/, '') }) : m[1] === 'Edg' ? 'Edge' : m[1]
   return ua.length > 40 ? `${ua.slice(0, 40)}…` : ua
 }
 
@@ -181,4 +217,81 @@ export function toFilters(form: FilterForm, now = Date.now()): AuditFilters {
     if (form.toDate) f.to = new Date(`${form.toDate}T23:59:59.999`).getTime()
   }
   return f
+}
+
+// ---- Recent activity, grouped and folded (OpenSpec change settings-refresh D4) ----
+
+/** Events that weaken or reset how the account is protected, named in the warning tone. */
+const UNUSUAL: ReadonlySet<AuditEventName> = new Set<AuditEventName>([
+  'mfa.disabled', 'mfa.reset', 'passkey.deleted', 'password.reset_completed', 'identity.unlinked', 'owner.transferred',
+])
+
+/** Whether an event is shown in the warning tone: it failed, or it is unusual for the account. */
+export function activityWarns(ev: AuditEvent): boolean {
+  return ev.outcome === 'failure' || UNUSUAL.has(ev.name)
+}
+
+/** One line of Recent activity: an event, or repeated sign-ins folded into the newest of them. */
+export interface ActivityLine {
+  event: AuditEvent
+  count: number
+  warn: boolean
+}
+
+/** The lines of one day (`YYYY-MM-DD` on this device), newest first. */
+export interface ActivityDay {
+  day: string
+  lines: ActivityLine[]
+}
+
+/**
+ * Groups events by the device's day, newest first, and folds successful sign-ins
+ * from the same client on the same day into one line with a count. Done on the
+ * device, so the activity route stays as it is.
+ */
+export function groupActivity(events: readonly AuditEvent[]): ActivityDay[] {
+  const days: ActivityDay[] = []
+  const folded = new Map<string, ActivityLine>()
+  for (const ev of [...events].sort((a, b) => b.ts - a.ts)) {
+    const day = todayISO(new Date(ev.ts))
+    let group = days[days.length - 1]
+    if (group?.day !== day) days.push(group = { day, lines: [] })
+    if (ev.name !== 'login.succeeded' || ev.outcome !== 'success') {
+      group.lines.push({ event: ev, count: 1, warn: activityWarns(ev) })
+      continue
+    }
+    const key = `${day} ${shortAgent(ev.userAgent)}`
+    const line = folded.get(key)
+    if (line) line.count++
+    else {
+      const fresh = { event: ev, count: 1, warn: false }
+      folded.set(key, fresh)
+      group.lines.push(fresh)
+    }
+  }
+  return days
+}
+
+/** The first `limit` lines across days, keeping their day headings. */
+export function firstLines(days: readonly ActivityDay[], limit: number): ActivityDay[] {
+  const out: ActivityDay[] = []
+  let left = limit
+  for (const d of days) {
+    if (left <= 0) break
+    out.push({ day: d.day, lines: d.lines.slice(0, left) })
+    left -= d.lines.length
+  }
+  return out
+}
+
+/** How many lines the days hold. */
+export function lineCount(days: readonly ActivityDay[]): number {
+  return days.reduce((n, d) => n + d.lines.length, 0)
+}
+
+/** "Today", "Yesterday", then the date from `date`. */
+export function activityDayHeading(day: string, today: string, date: (iso: string) => string): string {
+  if (day === today) return t('Today')
+  if (day === addDaysISO(today, -1)) return t('Yesterday')
+  return date(day)
 }

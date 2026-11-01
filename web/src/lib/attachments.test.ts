@@ -29,6 +29,7 @@ import { db, setMeta, useDatabase } from './db'
 import { applyOps, createTask, resetDeviceId } from './ops'
 import { removeLocally } from './trash'
 import type { Op } from './types'
+import { nextMillisecond } from '../test/clock'
 
 let n = 0
 beforeEach(async () => {
@@ -72,7 +73,7 @@ describe('attachment data layer', () => {
     const ids: string[] = []
     for (const name of ['1.txt', '2.txt', '3.txt']) {
       ids.push(...(await queueFiles(task, [file(name)])))
-      await new Promise((r) => setTimeout(r, 2))
+      await nextMillisecond()
     }
     await runUploader()
     expect(uploads).toEqual([])
@@ -197,6 +198,24 @@ describe('attachment data layer', () => {
     } finally {
       vi.unstubAllGlobals()
       forgetMemoryKeys()
+    }
+  })
+})
+
+// attachment-client-hardening D3: a link attachment's address, decrypted on the
+// device, never passed the server's URL check; only http(s) opens.
+describe('opening a link attachment', () => {
+  it('opens http(s) and nothing else', async () => {
+    const opened: string[] = []
+    vi.stubGlobal('window', { open: (u: string) => { opened.push(u) } })
+    try {
+      const link = (url: string) => ({ id: 'l', url } as unknown as Parameters<typeof openAttachment>[0])
+      await openAttachment(link('https://example.com/a'))
+      await openAttachment(link('javascript:alert(1)'))
+      await openAttachment(link('data:text/html,x'))
+      expect(opened).toEqual(['https://example.com/a'])
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 })

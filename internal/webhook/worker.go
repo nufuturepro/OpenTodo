@@ -7,24 +7,27 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
 	"time"
+
+	"github.com/OpenTodoApp/opentodo/internal/deliveryq"
+	"github.com/OpenTodoApp/opentodo/internal/outbound"
 )
 
-// Queue tuning from the design (D2).
+// Queue tuning from the design (D2); the shared values live in deliveryq.
 const (
 	// Concurrency is how many deliveries one worker pass sends in parallel.
-	Concurrency = 4
+	Concurrency = deliveryq.Concurrency
 	// MaxAttempts is the first attempt plus one retry per RetrySchedule entry.
 	MaxAttempts = 1 + 6
 	// AutoDisableAfter consecutive failed deliveries disables a webhook.
-	AutoDisableAfter = 20
-	// PollInterval is how often an idle worker looks for due retries.
-	PollInterval = time.Second
-	// PruneInterval and LogRetention bound the delivery log.
-	PruneInterval = time.Hour
-	LogRetention  = 30 * 24 * time.Hour
+	AutoDisableAfter = deliveryq.AutoDisableAfter
+	// LogRetention bounds the delivery log (LogLimit bounds it per webhook).
+	LogRetention = deliveryq.LogRetention
 )
+
+// table is the delivery queue and log (deliveryq).
+var table = deliveryq.Table{Items: "webhook_deliveries", Targets: "webhooks", TargetCol: "webhook_id",
+	Finished: "'delivered','failed'", LogLimit: LogLimit, Noun: "delivery", Nouns: "deliveries"}
 
 // RetrySchedule is the nominal wait after the n-th failed attempt (about 27 h in
 // total). Each wait is jittered by ±20 %.
@@ -45,37 +48,15 @@ func Backoff(failed int, r float64) (time.Duration, bool) {
 
 func defaultResolver() Resolver { return net.DefaultResolver }
 
-// Wake nudges the worker to look at the queue now instead of at the next poll.
-func (s *Service) Wake() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
+// SetWake installs what Wake calls: the tenant's jobs signal (internal/jobs).
+// Call it before the service is used.
+func (s *Service) SetWake(fn func()) { s.wake = fn }
 
-// Run is the single worker loop. It returns when ctx is cancelled, after the
-// pass in progress has finished (each send is bounded by the 10 s timeout).
-func (s *Service) Run(ctx context.Context) {
-	var lastPrune time.Time
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if now := s.now(); now.Sub(lastPrune) >= PruneInterval {
-			if err := s.Prune(ctx); err != nil && ctx.Err() == nil {
-				s.log.Error("webhooks: prune failed", "err", err)
-			}
-			lastPrune = now
-		}
-		if s.ProcessDue(ctx) > 0 {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.wake:
-		case <-s.after(PollInterval):
-		}
+// Wake reports that deliveries may be due now, so the "webhooks" job runs at
+// once instead of at its next check.
+func (s *Service) Wake() {
+	if s.wake != nil {
+		s.wake()
 	}
 }
 
@@ -121,25 +102,22 @@ func (s *Service) ProcessDue(ctx context.Context) int {
 		q.payload = []byte(payload)
 		batch = append(batch, q)
 	}
+	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		s.log.Error("webhooks: poll failed", "err", err)
+		return 0
+	}
 	if len(batch) == 0 {
 		return 0
 	}
-	// Sends must not be cut short by shutdown: an interrupted attempt would be
-	// recorded as a failure. Each is bounded by DeliveryTimeout instead.
-	sendCtx := context.WithoutCancel(ctx)
-	var wg sync.WaitGroup
-	for _, q := range batch {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res := s.send(sendCtx, q)
-			if err := s.record(sendCtx, q, res, false); err != nil {
-				s.log.Error("webhooks: record failed", "delivery", q.id, "err", err)
-			}
-		}()
-	}
-	wg.Wait()
+	// Each send is bounded by DeliveryTimeout, not by shutdown.
+	deliveryq.Fanout(ctx, batch, func(ctx context.Context, q queued) {
+		res := s.send(ctx, q)
+		if err := s.record(ctx, q, res, false); err != nil {
+			s.log.Error("webhooks: record failed", "delivery", q.id, "err", err)
+		}
+	})
 	return len(batch)
 }
 
@@ -162,10 +140,10 @@ func (s *Service) send(ctx context.Context, q queued) result {
 		switch {
 		case errors.Is(err, ErrPrivateTarget):
 			return result{errMsg: "private_target", duration: elapsed, terminal: true}
-		case errors.Is(err, context.DeadlineExceeded) || isTimeout(err):
+		case errors.Is(err, context.DeadlineExceeded) || outbound.IsTimeout(err):
 			return result{errMsg: "timeout", duration: elapsed}
 		default:
-			return result{errMsg: "connection failed: " + rootCause(err), duration: elapsed}
+			return result{errMsg: "connection failed: " + outbound.RootCause(err), duration: elapsed}
 		}
 	}
 	defer resp.Body.Close()
@@ -175,21 +153,6 @@ func (s *Service) send(ctx context.Context, q queued) result {
 		res.errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	}
 	return res
-}
-
-func isTimeout(err error) bool {
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
-}
-
-func rootCause(err error) string {
-	for {
-		u := errors.Unwrap(err)
-		if u == nil {
-			return err.Error()
-		}
-		err = u
-	}
 }
 
 // record stores an attempt's outcome, schedules a retry or finalises the
@@ -251,18 +214,4 @@ func (s *Service) record(ctx context.Context, q queued, res result, once bool) e
 // Prune drops log entries older than LogRetention and finished entries beyond
 // the newest LogLimit per webhook. Queued deliveries younger than the retention
 // window are never dropped.
-func (s *Service) Prune(ctx context.Context) error {
-	cutoff := s.now().Add(-LogRetention).UnixMilli()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE created_at < ?`, cutoff); err != nil {
-		return fmt.Errorf("prune old deliveries: %w", err)
-	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE id IN (
-		SELECT id FROM (
-			SELECT id, status, ROW_NUMBER() OVER (PARTITION BY webhook_id ORDER BY created_at DESC, rowid DESC) AS rn
-			FROM webhook_deliveries
-		) WHERE rn > ? AND status IN ('delivered','failed'))`, LogLimit)
-	if err != nil {
-		return fmt.Errorf("prune delivery log: %w", err)
-	}
-	return nil
-}
+func (s *Service) Prune(ctx context.Context) error { return deliveryq.Prune(ctx, s.db, table, s.now()) }

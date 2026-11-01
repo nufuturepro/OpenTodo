@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setOutgoingEmail } from '../lib/outgoingEmail'
 import type { SmtpSettings, User } from '../lib/types'
-import { click, flush, render, type } from '../ui/test-utils'
+import { click, render, type, waitFor } from '../ui/test-utils'
 import { NewInvitationDialog } from './MembersPanel'
 import { draftFrom, inputFrom, OutgoingEmailPanel, OutgoingEmailView, type OutgoingEmailViewProps } from './OutgoingEmailPanel'
 import { SettingsView } from './SettingsView'
@@ -38,17 +38,12 @@ function serve(routes: Record<string, [number, unknown]>) {
     return new Response(JSON.stringify(hit[1]), { status: hit[0], headers: { 'Content-Type': 'application/json' } })
   }))
 }
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const button = (root: ParentNode, text: string) => [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 
 beforeEach(() => { calls = []; setOutgoingEmail(false) })
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  document.body.innerHTML = ''
 })
 
 describe('Outgoing email panel', () => {
@@ -101,7 +96,7 @@ describe('Outgoing email panel', () => {
 
   it('is mounted on the Server page, for the owner only', () => {
     // Settings → Server is the owner's section (settings-navigation "Sections follow the user's role"); an admin opening it lands on Account.
-    const page = (user: User) => renderToStaticMarkup(<SettingsView user={user} onLogout={noop} section="server" />)
+    const page = (user: User) => renderToStaticMarkup(<SettingsView user={user} onLogout={noop} section="server" page="outgoing-email" />)
     expect(page(owner)).toContain('data-testid="outgoing-email-panel"')
     expect(page(admin)).not.toContain('outgoing-email-panel')
     expect(renderToStaticMarkup(<SettingsView user={owner} onLogout={noop} section="people" />)).not.toContain('outgoing-email-panel')
@@ -123,8 +118,9 @@ describe('Users reset with outgoing email', () => {
     const r = await render(<AdministrationSections user={owner} />)
     await waitFor(() => !!r.container.querySelector('button[aria-label^="Actions for Kim"]'))
     await click(r.container.querySelector('button[aria-label^="Actions for Kim"]')!)
-    await flush(20)
-    await click([...document.querySelectorAll('[role="menuitem"]')].find((e) => /reset/i.test(e.textContent ?? ''))!)
+    const reset = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((e) => /reset/i.test(e.textContent ?? ''))
+    await waitFor(() => !!reset(), 'the reset item')
+    await click(reset()!)
     await waitFor(() => document.querySelector('[data-reset-choice]') !== null)
     expect(button(document, 'Create reset link')).toBeTruthy()
     await click(button(document, 'Send reset email')!)

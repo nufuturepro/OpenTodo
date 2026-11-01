@@ -28,11 +28,15 @@ The activity log SHALL be derived only from the operation log; no separate event
 - **THEN** each appears as a distinct event wording the change, such as "completed", "moved the due date to 2026-10-12", "assigned to Bob", "commented"
 
 ### Requirement: Public link operations form their own events
-Operations written through a public link (device `public:<link-id>`, OpenSpec `public-links`) SHALL form their own events, attributed to the link and never folded into the creator's events.
+Operations written through a public link (device `public:<link-id>`, OpenSpec `public-links`) SHALL form their own events, attributed to the link and never folded into the creator's events. Operations written through a task page (device `page:<page-id>`, OpenSpec change `task-pages`) SHALL likewise form their own events, attributed to the page and the guest's typed name, never folded into the publisher's events.
 
 #### Scenario: Public tick next to the creator's edit
 - **WHEN** the link creator reschedules a task and, two seconds later, a guest completes it through the link
 - **THEN** the activity shows two events: "rescheduled" by the creator and "completed" by the public link, with the second carrying device `public:<link-id>`
+
+#### Scenario: Task page tick next to the publisher's edit
+- **WHEN** the publisher renames a task and, a second later, a guest ticks one of its subtasks through its task page
+- **THEN** the activity shows "renamed" by the publisher and "completed" by the guest through the task page, with device `page:<page-id>`
 
 ### Requirement: Activity derivation matches on server and device
 Derivation SHALL give the same result on the server and on a device holding the same operations.
@@ -114,3 +118,25 @@ A change of a task's `blocked_by` SHALL be an event of kind `dependencies`, carr
 #### Scenario: Same derivation on both sides
 - **WHEN** the shared fixture holds a batch that sets `blocked_by` and the title within the window
 - **THEN** the server and the device both derive a single `dependencies` event listing both changes
+
+### Requirement: Rule operations form their own events
+Operations written by a rule (device `rule:<rule-id>`, OpenSpec `automation-rules`) SHALL form their own events, attributed to the rule and never folded into the user's own events, derived identically on the server and on a device holding the same operations.
+
+#### Scenario: Rule change next to the user's edit
+- **WHEN** the user adds the label waiting to a task and, within the same minute, the rule "Waiting" moves the task to the Waiting section
+- **THEN** the activity shows two events: "added the label waiting" by the user and "moved to Waiting" by the rule, with the second carrying device `rule:<rule-id>`
+
+#### Scenario: Same derivation on both sides
+- **WHEN** the shared fixture holds a user batch followed by a rule batch on the same task
+- **THEN** the server and the device both derive the same two events with the same ids
+
+### Requirement: Reactions and note mentions form no event
+Operations on a comment's reaction fields SHALL form no activity event, and a change of a task's `note_mentions` SHALL fold into the note edit it accompanies rather than form an event of its own, on the server and on the device alike, so the activity log stays about changes to the work and the shared fixture pins both behaviours.
+
+#### Scenario: Reaction leaves no trace in activity
+- **WHEN** Bob reacts with a heart to Alice's comment
+- **THEN** the task's activity and the project feed show no new event, and the comment shows the reaction
+
+#### Scenario: Mention in a note is one edit
+- **WHEN** Alice edits a note and mentions Bob in it
+- **THEN** the activity shows one "edited the notes" event by Alice, and nothing about the mention list

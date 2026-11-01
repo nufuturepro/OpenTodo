@@ -15,7 +15,7 @@ In the task panel, **Notes** sits under the title. Below the property lines are 
 
 ## Write notes
 
-The notes field formats as you type. Start a line with `- ` for a bullet list, `1. ` for a numbered list, `[ ] ` for a checklist or `# ` for a heading. Select text and press <kbd>Ctrl</kbd>+<kbd>B</kbd> for bold or <kbd>Ctrl</kbd>+<kbd>K</kbd> for a link (<kbd>⌘</kbd> on a Mac): enter an address starting with `https://`, `http://` or `mailto:`, or clear it to remove the link. If two of your devices edit the same note at the same time, both sets of changes are kept.
+The notes field formats as you type: `- ` starts a bullet list, `[ ] ` a checklist, `# ` a heading, and `/` opens a menu with tables, quotes, code, images and more (see [Format notes and comments](formatting.md)). If two of your devices edit the same note at the same time, both sets of changes are kept.
 
 ## Break a task into subtasks
 
@@ -25,6 +25,8 @@ Big tasks are easier as a few small steps. To add one:
 - select the task in the list and press <kbd>a</kbd>.
 
 Subtasks appear indented under their parent, and the parent shows your progress, like **1/3**. You can nest subtasks inside subtasks.
+
+To add several at once, paste a list (up to 100 lines) into the empty **Add subtask** line and confirm **Add 3 subtasks**. Markers such as `-` and `1.` are removed as in [quick add](quick-add.md#paste-a-list), but dates and projects are not read. One **Undo** removes them all.
 
 To turn an existing task into a subtask, select it and press <kbd>Tab</kbd>: it moves under the task above it. <kbd>Shift</kbd>+<kbd>Tab</kbd> moves it back out. You can also pick a **Parent task** in the panel. Use <kbd>←</kbd> and <kbd>→</kbd> to fold and unfold a parent's subtasks.
 

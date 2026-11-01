@@ -7,6 +7,7 @@ import { useDateTimeFormat } from '../DateTimePrefsProvider'
 import { formatInstant } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 import { resolveLabels } from '../../lib/labels'
+import { hasTimeColumn } from '../../lib/rowTime'
 import { useAllLabels, useReviewRow, useReviewedAt } from '../../lib/localData'
 import { oldSomeday } from '../../lib/method/rules'
 import { setTaskCompleted } from '../../lib/ops'
@@ -41,6 +42,8 @@ export function MonthlyLook() {
     return { areas, someday, trend }
   }, [input, reviewedAt, now, weekStart])
   const rows = useMemo(() => (data?.someday ?? []).map((task) => ({ key: task.id, task })), [data])
+  // The time column (rows-v2 D2): one fact of the Old someday list.
+  const timeColumn = useMemo(() => hasTimeColumn(rows.map((r) => r.task)), [rows])
   useListKeys({ rows, selected, setSelected, openId, setOpenId: setPanelTaskId, pickerFor, setPickerFor, onIdleEscape: () => setSelected(null) })
   const labelMap = useMemo(() => new Map(labels.map((l) => [l.id, l])), [labels])
   const projectMap = useMemo(() => new Map((input?.projects ?? []).map((p) => [p.id, p])), [input])
@@ -58,7 +61,7 @@ export function MonthlyLook() {
           {finished && <p role="status" className="mb-3 text-meta text-muted">{t('Monthly look finished {instant}.', { instant: formatInstant(finished, 'long') })}</p>}
           <section className="mb-6" aria-labelledby="monthly-areas" data-monthly-areas>
             <h2 id="monthly-areas" className="mb-1 text-h3 font-semibold">{t('Areas')}</h2>
-            <p className="mb-2 text-meta text-muted">{t('Each top-level project that holds sub-projects, and those of them without a next action or stalled.')}</p>
+            <p className="mb-2 text-meta text-muted">{t('Each top-level project that holds sub-projects or is an area, and the sub-projects without a next action or stalled.')}</p>
             {data.areas.length === 0 ? <p className="text-body text-faint">{t('No area yet: nest projects under a top-level project to make one.')}</p> : (
               <ul className="divide-y divide-(--ot-border)">
                 {data.areas.map((a) => (
@@ -68,7 +71,7 @@ export function MonthlyLook() {
                         <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: a.project.color }} />
                         <span className="user-text truncate">{a.project.name}</span>
                       </button>
-                      <span className="text-meta text-muted">{t('{n, plural, one {# project} other {# projects}}, {k} need attention', { n: a.children.length, k: a.attention.length })}</span>
+                      <span className="text-meta text-muted">{a.children.length ? t('{n, plural, one {# project} other {# projects}}, {k} need attention', { n: a.children.length, k: a.attention.length }) : t('Area')}</span>
                     </div>
                     {a.attention.length > 0 && (
                       <ul className="mt-1 flex flex-wrap gap-2 pl-5">
@@ -95,7 +98,7 @@ export function MonthlyLook() {
               <ul>
                 {data.someday.map((task) => (
                   <TaskRow key={task.id} task={task} project={task.project_id ? projectMap.get(task.project_id) : undefined} labels={resolveLabels(task.labels, labelMap)}
-                    showProject selected={task.id === selected} onToggle={() => act(setTaskCompleted(task.id, !task.completed_at))}
+                    showProject selected={task.id === selected} timeColumn={timeColumn} onToggle={() => act(setTaskCompleted(task.id, !task.completed_at))}
                     onOpen={() => { setSelected(task.id); setPanelTaskId(task.id) }} />
                 ))}
               </ul>

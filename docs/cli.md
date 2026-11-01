@@ -11,21 +11,47 @@ order: 20
 
 `ot` is a small, statically linked client for the OpenTodo REST API. It is built for two audiences: people who live in a terminal (`ot add "Call the plumber" --due tomorrow`, `ot today`) and scripts, cron jobs and editor integrations that want stable JSON output and exit codes instead of hand-written `curl`.
 
-It is an **online** client: it keeps no local copy of your tasks and makes no change when the server cannot be reached. Every write goes through the REST API, which records it in the operation log, so changes made with `ot` reach your phone and browser on their next sync and converge under the same per-field last-writer-wins rule as any other edit.
+It is an **online** client: it keeps no local copy of your tasks and makes no change when the server cannot be reached. The one exception is [`ot vault`](vault.md), which keeps a folder of Markdown files and its own sync state. Every write goes through the REST API, which records it in the operation log, so changes made with `ot` reach your phone and browser on their next sync and converge under the same per-field last-writer-wins rule as any other edit.
+
+`ot rules list` lists your [automation rules](automations.md); `ot rules enable <id>` and `ot rules disable <id>` turn one on or off (an id prefix or the exact name works; `--dry-run` prints the request); `ot rules runs <id>` prints its run log. Rules are built in the app. A read token lists but cannot switch (exit 5).
 
 ## Install
 
 Release assets are published for linux, macOS and Windows on amd64 and arm64 (`ot-<os>-<arch>`, with `SHA256SUMS`); download one, make it executable and put it on your `PATH`. Or build from source (Go 1.26+, no other dependency):
 
 ```bash
-go install github.com/pixari/opentodo/cmd/ot@latest   # into $(go env GOPATH)/bin; or @vX.Y.Z for a release
+go install github.com/OpenTodoApp/opentodo/cmd/ot@latest   # into $(go env GOPATH)/bin; or @vX.Y.Z for a release
 # or, from a checkout:
 make cli                                              # -> bin/ot
 ```
 
-`go install` works from a clean `GOPATH` with the module path as declared (`github.com/pixari/opentodo`, lower case); an older local Go downloads the required toolchain itself. There is no Homebrew tap or Scoop bucket yet: release assets and `go install` are the supported ways (package manager manifests may follow later).
+`go install` works from a clean `GOPATH` with the module path as declared (`github.com/OpenTodoApp/opentodo`, the repository name in lower case); an older local Go downloads the required toolchain itself. There is no Homebrew tap or Scoop bucket yet: release assets and `go install` are the supported ways (package manager manifests may follow later).
 
 The server container image does not include `ot`; it belongs on the machine you type on.
+
+### Shell completion
+
+`ot completion bash`, `ot completion zsh` and `ot completion fish` print a completion script. Install it once:
+
+```bash
+# bash (needs the bash-completion package, which most distributions and Homebrew ship)
+mkdir -p ~/.local/share/bash-completion/completions
+ot completion bash > ~/.local/share/bash-completion/completions/ot
+# or, without bash-completion, in ~/.bashrc:
+source <(ot completion bash)
+
+# zsh: a directory on $fpath, before compinit runs in ~/.zshrc
+mkdir -p ~/.zfunc
+ot completion zsh > ~/.zfunc/_ot
+#   in ~/.zshrc:  fpath=(~/.zfunc $fpath); autoload -U compinit; compinit
+
+# fish
+ot completion fish > ~/.config/fish/completions/ot.fish
+```
+
+Open a new shell afterwards. Tab then completes commands, subcommands, flags and fixed values (`--priority`, `--scope`), and reads names from the server of your profile: projects after `--project` and as `#Name` in an `ot add` title, labels after `--label` and as `@name`, workspaces after `--workspace`, and open task ids (with their titles in zsh and fish) after `ot done`, `edit`, `rm`, `time start` and `time log`; `ot reopen` offers completed ones. Profile names come from your config file, and `--out` or a vault folder complete as paths. A `--profile` or `--server` earlier on the line is respected.
+
+The script is a thin wrapper: on each Tab it asks the `ot` on your `PATH` (`ot __complete`, a hidden command), which answers from the same command table as `ot help` and `ot schema`, so an upgraded `ot` completes its new flags without a new script. Names are read with one request that may take at most 2 seconds; when the server cannot be reached, you are signed out or the account is end-to-end encrypted, you get commands and flags but no names, and nothing is printed into your prompt. Nothing is cached on disk. Names with spaces or quotes are inserted quoted. In bash, values complete after `--flag value`, not `--flag=value`.
 
 ## Sign in
 
@@ -69,10 +95,15 @@ Pick a profile with `--profile work` or `OPENTODO_PROFILE=work`; `ot login --pro
 
 `OPENTODO_CONFIG=/path/to/config.json` points at another config file. No command ever prints a stored token.
 
+### Workspaces
+
+Every command acts on one [workspace](workspaces.md): the account's default workspace, unless `--workspace <name or id>`, `OPENTODO_WORKSPACE` or the profile's `"workspace"` (written by `ot login --workspace Work`) names another. `ot list`, `ot inbox` and the other views show that workspace's tasks, and `ot add` without `--project` puts the task in its Inbox. `ot workspaces` lists them (`--json` for the full shape). An unknown name exits with code 2 and lists the workspaces you have.
+
 ## Tasks
 
 ```bash
 ot today                       # due today or earlier, overdue first
+ot today --all                 # with a Today limit: every task, no "Waiting for a slot" section
 ot inbox                       # the Inbox: no project and no date
 ot upcoming                    # due after today
 ot list                        # every open task, soonest first
@@ -80,15 +111,21 @@ ot list --project Home         # one project (name or id)
 ot list --completed            # most recently completed first
 ot list --all --limit 20       # open and completed
 ot list --completed-after 2026-10-05 --completed-before 2026-10-12   # completed that week
+ot list --someday              # parked in Someday
+ot list --anytime              # no due date, deadline or start
+ot list --blocked --project Home   # waiting for an open task
+ot list --available                # what can be done now: not blocked, not waiting for an earlier step
 ```
 
-Human output is a compact table: an id prefix, priority, due date and time (overdue dates are marked and shown in red on a terminal), project and title, plus an `ORIGIN` column (the issue id or the page's host) when a listed task has an [origin](capture.md#where-a-task-came-from). Dates are evaluated in your local time zone. A task fixed to a time zone (see [sync.md](sync.md#zoned-due-values)) is shown converted to your zone with the original as a hint, e.g. `2026-10-11 00:00 (09:00 Berlin)`; `ot edit --due/--time` on it takes the date and time as shown and keeps the zone, and `--time ""` releases it to a floating date. Tasks of archived projects stay out of the cross-project views, as in the web app.
+Human output is a compact table: an id prefix, priority, due date and time (overdue dates are marked and shown in red on a terminal), project and title, plus an `ORIGIN` column (the issue id or the page's host) when a listed task has an [origin](capture.md#where-a-task-came-from) and a `BY` column with the deadline when one has a deadline (a passed deadline is marked overdue), and an `ENERGY` column when a listed task has an energy; `--json` always carries `energy` (null for none). The due cell adds `(someday)`, `starts <date>`, `evening` (or `morning`, `afternoon`) and `waiting` when they apply. Dates are evaluated in your local time zone. A task fixed to a time zone (see [sync.md](sync.md#zoned-due-values)) is shown converted to your zone with the original as a hint, e.g. `2026-10-11 00:00 (09:00 Berlin)`; `ot edit --due/--time` on it takes the date and time as shown and keeps the zone, and `--time ""` releases it to a floating date. Tasks of archived projects stay out of the cross-project views, as in the web app.
 
 ```
 ID        P   DUE                 PROJECT  TITLE
 8c2a91f0  P2  2026-10-08 overdue  Home     Pay rent
 3f1d7a22  P1  2026-10-10 09:00             Call the plumber
 ```
+
+With a [Today limit](today-limit.md) on, `ot today` prints the tasks in the slots, then a **Waiting for a slot** heading and the waiting tasks in fill order (the first comes in next), with the app's rule: today's focus, the tasks you let in, Earlier oldest first, then the rest by when they were created. `--all` prints every task in one table, and `--json` adds `waiting_for_slot` to each task while the limit is on.
 
 ### Add and edit
 
@@ -102,6 +139,11 @@ ot edit 8c2a --repeat none                           # stop repeating, keep the 
 ot add --natural "Water plants every Monday remind me at 8 #home"
 ot add "Fix the login timeout" --origin-url https://github.com/o/r/issues/7
 ot edit 8c2a --origin-url none                       # forget where it came from
+ot add "Quarterly report" --start monday --deadline 2026-11-06
+ot edit 8c2a --start someday                         # park it, keep the due date
+ot add "Install shelves" --blocked-by 91f0 --location Home
+ot edit 8c2a --evening=false --blocked-by none --location none
+ot add --done "Fixed the printer"                    # log a win: created already completed
 ```
 
 | Flag | Meaning |
@@ -115,9 +157,18 @@ ot edit 8c2a --origin-url none                       # forget where it came from
 | `--title <text>` | New title (`ot edit` only) |
 | `--repeat <rule>` | Recurrence rule in any spelling of the [rule grammar](recurrence.md) (`"Every Week"`, `"every mon, wed"`), checked locally and sent in canonical form; `none` (edit) clears the rule and keeps the date |
 | `--origin-url <url>` | Where the task comes from: an `http` or `https` URL, sent as the task's [origin](capture.md#where-a-task-came-from). A GitHub, GitLab, Jira or Linear issue link becomes `{kind: "issue", provider, id}` (`o/r#7`, `ENG-123`), derived on your machine with the same table as the web app; any other link is a `url` origin. `ot` never requests the URL. Another scheme (`ftp:`, `file:`) exits 2 before any request; `none` (edit) clears the origin |
+| `--deadline <when>` | The day the task must be finished by, separate from the due date; same words as `--due`; `none` (edit) clears it |
+| `--start <when>` | `someday` parks the task; a date (same words as `--due`) defers it until that day; `none` (edit) clears it. The due date is kept |
+| `--evening` | Put the task in This Evening; `--evening=false` takes it out |
+| `--part <part>` | The [part of the day](day-parts.md): `morning`, `afternoon`, `evening` (This Evening) or `none`; written with the evening flag, so `--part afternoon` takes an evening task out of This Evening. Another word exits 2 before any request. It wins over `--evening` |
+| `--energy <level>` | The task's energy: `deep`, `medium` or `low` (any case); `none` clears it. Another word exits 2 before any request |
+| `--blocked-by <ref>` | Repeatable: a task this one waits for, by id or unique id prefix (an ambiguous prefix exits 1 listing the candidates, before any write). With `ot edit` the list is replaced; `none` clears it |
+| `--location <where>` | A saved location's name (case-insensitive) or id, sent with its current name, address and coordinates; or `lat,lon`; `none` (edit) clears it. An unknown name exits 1 before any write |
 | `--remind <phrase>` | `ot add` only, repeatable: a reminder without the reminder word, either an offset (`"30 min before"`, `"1 day before"`, `"2 hours after"`) or a moment (`"at 9"`, `"tomorrow at 9"`, `"20 Oct at 9"`). It is resolved like a quick-add reminder: relative to the task's due time (09:00 for a date-only due), or absolute in your local time zone when the task has no due date. An offset on an undated task waits for a due date, and the command says so |
-| `--natural` | `ot add` only: read the title like the app's [quick add](quick-add.md): dates and times, `#project`, `@label`, `p1`–`p4`, `+30m`, `30m/2h` (time spent and an estimate), `every …` rules and `remind me …` reminders, in six languages. Explicit flags win over what the line says; an unknown `#name` stays in the title |
+| `--natural` | `ot add` only: read the title like the app's [quick add](quick-add.md): dates and times, `#project`, `@label`, `p1`–`p4`, `+30m`, `30m/2h` (time spent and an estimate), `every …` rules and `remind me …` reminders, in six languages, and `~deep`, `~medium`, `~low` while your account has Energy levels on. Explicit flags win over what the line says; an unknown `#name` stays in the title |
+| `--done` | `ot add` only: [log a win](today-limit.md#log-a-win), a task created already completed now by you in the one request, so it counts in Completed and your statistics like any completion. `--repeat` and `--remind` are usage errors with it (a win does not repeat or remind), and with `--natural` a rule or reminder phrase in the title is left out |
 | `--lang <codes>` | Languages for `--natural` and `--remind`, e.g. `de,en`. Default: the language of `LC_ALL`, `LC_MESSAGES` or `LANG`; English is always active |
+| `--no-default-reminder` | `ot add` and `ot edit`: add no [default reminder](default-reminders.md). Without it, a command that sets a due date asks the server for your default reminder (`?default_reminder=true`); `--remind` (or a `remind me …` phrase with `--natural`) also leaves it out, since you chose your own. With an `agent` token the server always applies your defaults |
 | `--idempotency-key <key>` | `ot add` only: a retry with the same key returns the same task, see [Retry-safe creates](#retry-safe-creates). Reminders send `<key>.r1`, `<key>.r2`, …, so a retry also converges to one set of reminders |
 
 `ot add` prints the new task's id (the whole task with `--json`, `origin` included). Priority, time, date, rule, origin URL and reminder phrases are validated locally before any request is sent. Reminders are created after the task with one `POST /api/v1/reminders` each (a dry run lists them, referring to the planned task as `(planned-1)`); if one fails, the command exits 1 and names the created task so you can add the reminder by hand. A `30m/2h` token in a `--natural` line also logs the time already spent: one `POST /api/v1/time-entries` after the task, ending now (`<key>.t` with an idempotency key).
@@ -143,11 +194,12 @@ A task that is already in the requested state (`ot done` on a completed task, `o
 ot project list [--all]                 # --all includes archived projects
 ot project add "Garden" [--color "#22c55e"] [--idempotency-key <key>]
 ot project rename Garden "Back garden"
+ot project move Garden --workspace Family  # only the project's owner
 ot project archive Garden [--undo]
 ot project rm Garden [--yes]
 ```
 
-Projects are referenced by name (case-insensitive), full id or unique id prefix.
+Projects are referenced by name (case-insensitive), full id or unique id prefix. `ot project list` shows every workspace's projects with a WORKSPACE column and each project's FLOW (`parallel`, `sequential` or `area`, see [Sequential projects and areas](project-flows.md)), and STATUS `archived` or `maintenance` ([Review intervals and maintenance](review-intervals.md)); `--workspace` narrows it to one.
 
 ## Time
 
@@ -167,6 +219,31 @@ A duration is `45m`, `1h30`, `1.5h` or `90` (minutes); anything else exits 2 bef
 ```bash
 0 18 * * 5  ot time export --from monday --to today -o "$HOME/time/week-$(date +\%F).csv"
 ```
+
+## Calendar frames
+
+Your [frames](frames.md), the recurring background windows of the Day and Week calendar:
+
+```bash
+ot frames                                                     # id, title, days, time, planning source
+ot frames add "Deep work" --days mon-fri --from 09:00 --to 11:00 [--color "#3b82f6"] [--source label:<id>]
+ot frames rm 7f3a [--yes]                                     # an id, id prefix or the exact title
+```
+
+`--days` takes `mon-fri`, `mon,wed,fri`, `weekdays`, `weekend`, `daily` or ISO digits (`1` Monday to `7` Sunday); without it a frame repeats on weekdays, from 09:00 to 10:00. The end must be after the start on the same day; the server refuses anything else with `invalid_input` (exit 1). `--source` is the list the app opens with Plan from this frame: `project:<id>`, `label:<id>` or `view:<id>`. `add` and `rm` write, so `--dry-run`, `--read-only` and token scope apply (a `read` or `agent` token exits 5). `--json` prints the [`frame`](#machine-readable-help-ot-schema) objects; an encrypted account's titles are ciphertext and the table shows `(encrypted)`.
+
+## Calendar slots
+
+Your [slots](slots.md), blocks of the Day and Week calendar that hold a checklist of small tasks:
+
+```bash
+ot slots [--from monday --to friday]                          # id, title, date, time, number of tasks
+ot slots add "Admin" --date 2026-11-04 --at 16:00 --for 45m [--color "#14b8a6"]
+ot slots put 7f3a 9c1e 4b20                                    # a slot (id, id prefix or title), then tasks
+ot slots rm 7f3a [--yes]                                      # its tasks stay on that day without a time
+```
+
+`--date` takes `YYYY-MM-DD`, `today`, `tomorrow` or a weekday name (default today); `--for` a length from 15 minutes to 8 hours in 15-minute steps (default `30m`). `put` adds the tasks at the end of the slot and, in the same batch, sets each one's date to the slot's day without a time and takes it out of your other slots of that day; a slot holds at most 20 tasks, and a task you may not edit (a viewer of its project) is refused with `forbidden` and nothing changes. `add`, `put` and `rm` write, so `--dry-run`, `--read-only` and token scope apply (a `read` or `agent` token exits 5). `--json` prints the [`slot`](#machine-readable-help-ot-schema) objects; an encrypted account's titles are ciphertext and the table shows `(encrypted)`.
 
 ## Issue connections
 
@@ -196,6 +273,21 @@ ot export                               # full JSON export (including tombstones
 ot export --out opentodo-$(date +%F).json
 ```
 
+## Import
+
+`ot import <file>` sends a file to the server's importer, the same one as **Settings → Data → Import data**: an OpenTodo export, a CSV file or another app's export (the [formats](import.md#formats)). It starts the job, waits until it has finished and prints what was created, skipped and failed; `--json` prints the job ([schema](#machine-readable-help-ot-schema) `import_job`). With `--dry-run` it only asks for the preview, which writes nothing, and prints its totals and notes (in `--json`, under `preview` in the dry-run document).
+
+`--workspace` (or `OPENTODO_WORKSPACE`, or the profile's workspace) chooses the [workspace](import.md#workspace) the import goes into. Without one, the server's default applies: the default workspace, or an OpenTodo export's own workspaces.
+
+```bash
+ot import todoist-backup.zip --workspace Work --dry-run   # what would happen
+ot import todoist-backup.zip --workspace Work             # import, wait, print the counts
+ot import tasks.csv --duplicates import --time-zone Europe/Rome
+ot import opentodo-export.json --existing overwrite       # restore, keeping the export's workspaces
+```
+
+`--format` forces a format id instead of detection, `--existing skip|overwrite` applies to an OpenTodo export, `--duplicates skip|import` to possible duplicates, and `--time-zone` (default: this machine's zone) to date-times written with a zone. Imports need a `full` or `admin` token: `read` and `agent` tokens and read-only mode exit 5 before the file is sent. A failed job exits 1 with `import_failed`; undo an import in the app under **Past imports**.
+
 ## MCP bridge and encryption
 
 `ot mcp` bridges an MCP client that only speaks stdio (Claude Desktop, Claude Code) to the server's [MCP endpoint](mcp.md); see [MCP](mcp.md#3-connect-an-assistant) for the client configuration. It starts with a `read` token, or an `agent` token for an assistant that may make changes through the server's write switches; a `full` token needs `--allow-full-token`, and `--read-only` accepts only a `read` token.
@@ -214,6 +306,17 @@ ot mcp --decrypt                           # the bridge, decrypting on this mach
 `ot encryption unlock` fetches the wrapped key record with the profile's token, checks its key-derivation settings as devices do, unwraps the key locally and stores it with its key version in an owner-only file (`keys/<profile>.json` next to the configuration file, the same protection as the token). The passphrase, the recovery key and the key itself are never sent or printed. After 5 failed attempts within a minute it waits before trying again. A passphrase with accented or other non-ASCII characters may need `--recovery`, since `ot` does not normalise Unicode the way the browser does. Lock the key on a shared machine.
 
 `ot mcp --decrypt` refuses to start, without prompting, when no key is stored or the stored one is out of date (`stale`: the passphrase or key changed on another device); run `ot encryption unlock` again. Custom field text and task origins are not encrypted by the bridge: the server refuses them for an encrypted account.
+
+## Markdown vault
+
+`ot vault` keeps a folder of Markdown files, one per project, in two-way sync with the account; it is the one command group that keeps local state (the files and `<dir>/.opentodo/`). It is a sync device of its own and needs a `full` token; with `--read-only` it pulls and writes the files but sends nothing. See [Markdown vault](vault.md).
+
+```bash
+ot vault init ~/Notes/Tasks [--adopt]
+ot vault sync [<dir>] [--dry-run] [--read-only] [--json]
+ot vault status [<dir>] [--json]
+ot vault watch [<dir>]
+```
 
 ## Scripting: JSON output and exit codes
 
@@ -302,10 +405,10 @@ Or add a reminder task every Monday morning:
 
 ## Limits
 
-- Online only: no offline queue, no local cache. Offline capture is what the web app and PWA are for.
+- Online only, apart from `ot vault`: no offline queue, no local cache. Offline capture is what the web app and PWA are for.
 - `--due` understands a fixed set of words; the natural-language quick-add grammar lives in the web client.
 - Rate limits on `auth/login` apply (10 per minute per address); `ot auth set-token` avoids them entirely.
-- No shell completion scripts yet (`ot schema` has everything a completion script needs).
+- Shell completion covers bash, zsh and fish; there is no PowerShell script.
 
 ## Using ot from an agent
 

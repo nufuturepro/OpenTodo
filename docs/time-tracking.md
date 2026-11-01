@@ -3,7 +3,7 @@ title: Time tracking
 summary: Track the time you spend on a task with a start and stop, add past work by hand, compare it with the estimate, and export it as a CSV.
 audience: user
 section: Reference
-specs: [web-app, statistics]
+specs: [web-app, statistics, time-tracking]
 screens: []
 order: 25
 ---
@@ -22,7 +22,7 @@ Completed and deleted tasks offer no start, and viewers of a shared project cann
 
 ## The running indicator
 
-While an entry runs, the sidebar footer shows the elapsed time and the task's name, `1:05 · Write the report`, with a **Stop** button; activate it to open the task. On a phone the bar shows the time as a pill that opens a sheet with **Open** and **Stop**. The time counts in minutes, then as hours and minutes from one hour, and turns to a caution colour after 12 hours in case you forgot to stop. Screen readers hear it once when tracking starts and once when it stops.
+While an entry runs, a pill in the sidebar's bottom row takes the place of your name: the elapsed time and the task's name, `1:05 · Write the report`, with a **Stop** button inside it; activate the pill to open the task. With the sidebar collapsed to icons it shows the time alone and opens a menu with **Open the tracked task** and **Stop**. On a phone the bar shows the time as a pill that opens a sheet with **Open** and **Stop**. The time counts in minutes, then as hours and minutes from one hour, and turns to a caution colour after 12 hours in case you forgot to stop. Screen readers hear it once when tracking starts and once when it stops.
 
 If you stop the entry on another device, the indicator disappears here after that device syncs.
 
@@ -38,7 +38,7 @@ An end before the start is refused. The **⋯** menu of each of your own entries
 
 ## Tracked against estimated
 
-Once a task has entries, its row shows the tracked time with the estimate, `35m / 1h`, or `35m tracked` without one. In Detailed rows it replaces the estimate chip; in Calm rows it sits in the quiet group at the end of the row. A running entry counts up to the current minute. Rows and the Time tab show the task's total, everyone's entries included.
+Once a task has entries, its row shows the tracked time with the estimate, `35m / 1h`, or `35m tracked` without one. It takes the estimate's place in the line under the title, as one item. A running entry counts up to the current minute. Rows and the Time tab show the task's total, everyone's entries included.
 
 Today's header adds `3h planned · 1h 20m tracked`: the estimates of the open tasks listed, and your own entries that started today, each counted whole on the day it started even across midnight, with your [day start](dates-and-times.md#when-a-day-ends) applied.
 

@@ -10,14 +10,15 @@ import { dailyDue } from '../../lib/review'
 import { Button, ToastRegion } from '../../ui'
 import { navigate, useRoute } from '../router'
 import { useToday } from '../useViews'
+import { readString, writeString } from '../../lib/deviceStorage'
 
 export const DAILY_OFFER_KEY = 'ot.daily.offered'
 
 function offeredOn(): string | null {
-  try { return localStorage.getItem(DAILY_OFFER_KEY) } catch { return null }
+  return readString(DAILY_OFFER_KEY)
 }
 function markOffered(day: string): void {
-  try { localStorage.setItem(DAILY_OFFER_KEY, day) } catch { /* private mode: offered again next launch */ }
+  writeString(DAILY_OFFER_KEY, day) // private mode: offered again next launch
 }
 
 export function DailyCheckToast() {
@@ -39,7 +40,7 @@ export function DailyCheckToast() {
   return (
     <ToastRegion label={t('Daily check', { context: 'method' })}>
       <div role="status" data-daily-toast className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-control border border-default bg-surface p-3 shadow-2">
-        <p className="min-w-0 flex-1 text-body">{t('Start your daily check: the Inbox, what is overdue and today’s focus.')}</p>
+        <p className="min-w-0 flex-1 text-body">{t('Start your daily check: the Inbox, what is open from earlier and today’s focus.')}</p>
         <Button size="sm" variant="primary" onClick={() => { setShown(false); navigate({ view: 'review', step: 'daily' }) }}>{t('Start')}</Button>
         <Button size="sm" variant="ghost" onClick={() => setShown(false)}>{t('Not today')}</Button>
       </div>

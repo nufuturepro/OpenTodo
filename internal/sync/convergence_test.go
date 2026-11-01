@@ -79,7 +79,7 @@ func (d *device) edit(now int64, v string) {
 	d.seq++
 	ts := d.hlc(now)
 	d.value, d.ts, d.vdev = v, ts, d.id
-	d.outbox = append(d.outbox, op(fmt.Sprintf("%s-%d", d.id, d.seq), "task", "t1", "title", string(jsonOf(v)), ts, d.id))
+	d.outbox = append(d.outbox, op(fmt.Sprintf("%s-%d", d.id, d.seq), "task", "t1", "title", string(JSONOf(v)), ts, d.id))
 }
 
 func (d *device) receive(o Op) {
@@ -237,6 +237,41 @@ func TestServerTSStrictlyIncreasing(t *testing.T) {
 	}
 	if d := s.ServerTSAt(5_000); d != 5_000 {
 		t.Fatalf("floor = %d", d)
+	}
+}
+
+// The server clock's receive rule: a device op stamped ahead of the server's
+// clock (within MaxFutureSkewMs) moves it, so a later server write to the same
+// field is stamped after the op and wins instead of being silently lost.
+func TestServerTSFollowsStoredOps(t *testing.T) {
+	s := newTestService(t)
+	fixed := time.UnixMilli(10_000_000)
+	s.now = func() time.Time { return fixed }
+	ctx := context.Background()
+	ahead := fixed.UnixMilli() + 60_000
+	if _, err := s.Apply(ctx, "u", []Op{op("dev", "task", "t1", "title", `"from the device"`, ahead, "zzzz")}); err != nil {
+		t.Fatal(err)
+	}
+	ts := s.ServerTS()
+	if ts <= ahead {
+		t.Fatalf("server ts %d not after the stored op %d", ts, ahead)
+	}
+	if _, err := s.ApplyStrict(ctx, "u", []Op{op("srv", "task", "t1", "title", `"from REST"`, ts, ServerDevice)}); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := s.Get(ctx, "u", "task", "t1")
+	if string(e["title"]) != `"from REST"` {
+		t.Fatalf("title = %s", e["title"])
+	}
+	// After a restart the clock starts from the newest stored op.
+	later := fixed.UnixMilli() + 90_000
+	if _, err := s.Apply(ctx, "u", []Op{op("dev2", "task", "t1", "title", `"again"`, later, "zzzz")}); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewService(s.db)
+	restarted.now = s.now
+	if got := restarted.ServerTS(); got <= later {
+		t.Fatalf("restarted server ts %d not after the stored op %d", got, later)
 	}
 }
 

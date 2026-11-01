@@ -1,23 +1,27 @@
 // Every local mutation becomes field-level ops that are applied to IndexedDB
 // immediately (optimistic, offline-safe) and queued for the server.
+import { OP_DEFAULTS } from '../generated/opSchema'
 import { db, entityTables, getMeta, localEpoch, setMeta, tableOf, type EntityRow } from './db'
 import { dueToInstant, logicalToday, todayISO } from './dates'
 import { resolveReminder, type ReminderPhrase } from './nlp/reminders'
-import { CLOCK_OFFSET_META, hlcNow, hlcSeed, hlcSeedOffset, wins } from './hlc'
+import { CLOCK_OFFSET_META, HLC_META, hlcLast, hlcNow, hlcReceive, hlcSeed, hlcSeedOffset, wins } from './hlc'
 import { firstOccurrence, parseRule } from './recurrence'
 import { deadlineFireAt, relativeFireAt } from './reminderTime'
+import { defaultReminderChanges } from './defaultReminder'
 import { planCompletion, planDetach, planSkip, seriesRule } from './recurring'
 import { assignableIn, currentUserId, membershipMap, roleOf, scopeOf } from './sharing'
 import { descendants, isDescendant } from './tree'
 import { GAP } from './ordering'
-import { ENTITIES, type Clock, type Attachment, type Comment, type Entity, type FieldDef, type Label, type Op, type Origin, type Place, type Project, type TaskLocation, type ProjectPrefs, type Reminder, type Review, type Section, type Task, type TimeEntry, type UserPrefs, type View } from './types'
+import { ENTITIES, type Clock, type Attachment, type Comment, type Entity, type FieldDef, type Label, type Op, type Origin, type Place, type Project, type Rule, type Frame, type Slot, type TaskLocation, type ProjectPrefs, type Reminder, type Review, type Section, type Task, type TimeEntry, type UserPrefs, type View } from './types'
 import { recordActivity, type RecordInput } from './activity'
-import { DocTooLargeError, isDocField, loadRichText, MAX_DOC_CHARS, MAX_DOC_CHARS_ENCRYPTED, MAX_TEXT_VALUE, NOTE_ENTITIES, type RichText } from './docfields'
+import { DOC_FIELDS, DocTooLargeError, isDocField, loadRichText, MAX_DOC_CHARS, MAX_DOC_CHARS_ENCRYPTED, MAX_TEXT_VALUE, NOTE_ENTITIES, type RichText } from './docfields'
 import { byteLength, MAX_PLAINTEXT_BYTES } from './crypto'
 import { encryptionSnapshot, isContentField } from './e2ee'
 import type { RowEncryption } from './types'
 import { t } from './i18n'
 import { uuid } from './ids'
+import { keepProjectWorkspace, keepWorkspaceFor, workspaceFields, type KeepWorkspace } from './workspaces'
+import { resettable } from './moduleState'
 
 let devicePromise: Promise<string> | null = null
 /** The local data epoch the memoised id was read in; a sign-out starts a new one. */
@@ -37,7 +41,7 @@ export function getDeviceId(): Promise<string> {
         id = uuid()
         await setMeta('device', id)
       }
-      hlcSeed(await getMeta<number>('hlc', 0))
+      hlcSeed(await getMeta<number>(HLC_META, 0))
       hlcSeedOffset(await getMeta<number>(CLOCK_OFFSET_META, 0))
       return id
     })()
@@ -50,59 +54,41 @@ export function getDeviceId(): Promise<string> {
 export function resetDeviceId(): void {
   devicePromise = null
 }
+resettable('deviceId', resetDeviceId)
 
-const PROJECT_DEFAULTS: Omit<Project, 'id' | '_clock'> = {
-  name: '', color: '#64748b', position: 0, archived: false, parent_id: null, icon: null, created_at: 0, deleted_at: null, description: '', notes_doc: '',
-}
-const TASK_DEFAULTS: Omit<Task, 'id' | '_clock'> = {
-  title: '', description: '', project_id: null, parent_id: null, priority: 4, due: null, labels: [],
-  position: 0, created_at: 0, completed_at: null, deleted_at: null, estimate_minutes: null, deadline: null, start: null, evening: false, blocked_by: [], recurrence: null, series_id: null,
-  assignee_id: null, section_id: null, ical_extra: null, notes_doc: '', habit: false, skipped: false, completed_by: null, fields: {}, origin: null, location: null,
-}
-const LABEL_DEFAULTS: Omit<Label, 'id' | '_clock'> = {
-  name: '', color: '#64748b', position: 0, created_at: 0, deleted_at: null,
-}
+const PROJECT_DEFAULTS: Omit<Project, 'id' | '_clock'> = OP_DEFAULTS.project
+const TASK_DEFAULTS: Omit<Task, 'id' | '_clock'> = OP_DEFAULTS.task
+const LABEL_DEFAULTS: Omit<Label, 'id' | '_clock'> = OP_DEFAULTS.label
 /** Defaults for a view row created from partial ops; also the read-time fallback for unknown option values. */
-export const VIEW_DEFAULTS: Omit<View, 'id' | '_clock'> = {
-  name: '', query: '', kind: 'list', group_by: 'project', sort_by: 'due', sort_dir: 'asc', pinned: false,
-  position: 0, color: '#64748b', panels: [], on_drop: null, created_at: 0, deleted_at: null,
-}
-const REMINDER_DEFAULTS: Omit<Reminder, 'id' | '_clock'> = {
-  task_id: '', kind: 'relative', offset_minutes: null, fire_at: null, delivered_at: null, dismissed_at: null,
-  created_at: 0, deleted_at: null,
-}
-const SECTION_DEFAULTS: Omit<Section, 'id' | '_clock'> = {
-  name: '', project_id: '', position: 0, created_at: 0, deleted_at: null, color: null, icon: null,
-}
+export const VIEW_DEFAULTS: Omit<View, 'id' | '_clock'> = OP_DEFAULTS.view
+const REMINDER_DEFAULTS: Omit<Reminder, 'id' | '_clock'> = OP_DEFAULTS.reminder
+const SECTION_DEFAULTS: Omit<Section, 'id' | '_clock'> = OP_DEFAULTS.section
 /** field (custom-fields D1): project_id and type are fixed at creation. */
-const FIELD_DEFAULTS: Omit<FieldDef, 'id' | '_clock'> = {
-  name: '', project_id: '', type: 'text', options: '', position: 0, created_at: 0, deleted_at: null,
-}
-const COMMENT_DEFAULTS: Omit<Comment, 'id' | '_clock'> = {
-  task_id: '', parent_id: null, body: '', author_id: '', mentions: [], created_at: 0, edited_at: null, deleted_at: null,
-  guest_name: null, page_id: null,
-}
+const FIELD_DEFAULTS: Omit<FieldDef, 'id' | '_clock'> = OP_DEFAULTS.field
+const COMMENT_DEFAULTS: Omit<Comment, 'id' | '_clock'> = OP_DEFAULTS.comment
 /** attachment (attachments D1): every field but name, uploaded_at and deleted_at is fixed at creation. */
-export const ATTACHMENT_DEFAULTS: Omit<Attachment, 'id' | '_clock'> = {
-  task_id: '', comment_id: null, name: '', mime: 'application/octet-stream', size: 0, sha256: '', url: null, encrypted: false,
-  author_id: '', created_at: 0, uploaded_at: null, deleted_at: null,
-}
+export const ATTACHMENT_DEFAULTS: Omit<Attachment, 'id' | '_clock'> = OP_DEFAULTS.attachment
 /** project_prefs (activity-feed): 0 means "never marked"; the feed then uses the device's baseline. */
-const PROJECT_PREFS_DEFAULTS: Omit<ProjectPrefs, 'id' | '_clock'> = { feed_seen_at: 0, reviewed_at: 0 }
+const PROJECT_PREFS_DEFAULTS: Omit<ProjectPrefs, 'id' | '_clock'> = OP_DEFAULTS.project_prefs
 /** user_prefs (date-time-preferences): every preference follows the browser until the user picks one. */
-export const USER_PREFS_DEFAULTS: Omit<UserPrefs, 'id' | '_clock'> = { date_format: 'system', time_format: 'system', week_start: 'system', day_start: '', theme_mode: 'system', theme_accent: 'emerald', sidebar_destinations: '', density: '', row_detail: '', motion: '', favourites: '', first_run: '', language: 'system', welcome: '', method_mode: '',
-  focus_mode: '', focus_auto_start: '', focus_sound: '', focus_work_minutes: 0, focus_short_break_minutes: 0, focus_long_break_minutes: 0, focus_long_break_every: 0,  focus_break_after_minutes: 0, maps: '', disabled_plugins: '' }
+export const USER_PREFS_DEFAULTS: Omit<UserPrefs, 'id' | '_clock'> = OP_DEFAULTS.user_prefs
 /** review (stats-and-review D4, open-loops-method D5): 0 means "never finished", an empty focus date no focus. */
-export const REVIEW_DEFAULTS: Omit<Review, 'id' | '_clock'> = { completed_at: 0, daily_at: 0, monthly_at: 0, focus_date: '', focus: '', closed_at: 0, tomorrow_note: '', carry_over: '' }
+export const REVIEW_DEFAULTS: Omit<Review, 'id' | '_clock'> = OP_DEFAULTS.review
 /** A time entry row before its ops arrive (time-tracking D1); `ended_at` null reads as running. */
-export const TIME_ENTRY_DEFAULTS: Omit<TimeEntry, 'id' | '_clock'> = { task_id: '', user_id: '', started_at: 0, ended_at: null, device_id: '', note: '', created_at: 0, deleted_at: null }
+export const TIME_ENTRY_DEFAULTS: Omit<TimeEntry, 'id' | '_clock'> = OP_DEFAULTS.time_entry
 /** A place (task-locations D1): `geo` null until it has a position. */
-export const PLACE_DEFAULTS: Omit<Place, 'id' | '_clock'> = { name: '', address: '', geo: null, position: 0, created_at: 0, deleted_at: null }
+export const PLACE_DEFAULTS: Omit<Place, 'id' | '_clock'> = OP_DEFAULTS.place
+/** An automation rule (automation-rules D1): off and without a trigger until its ops arrive. */
+export const RULE_DEFAULTS: Omit<Rule, 'id' | '_clock'> = OP_DEFAULTS.rule
+/** A frame (calendar-frames D1): no weekdays, so never drawn, until its ops arrive. */
+export const FRAME_DEFAULTS: Omit<Frame, 'id' | '_clock'> = OP_DEFAULTS.frame
+/** A slot (calendar-slots D1): no date, so never drawn, until its ops arrive. */
+export const SLOT_DEFAULTS: Omit<Slot, 'id' | '_clock'> = OP_DEFAULTS.slot
 /** The row a field op creates when its entity is new; one key per op field (the schema contract in internal/sync/testdata/schema_fixture.json), `fields` holding the `fields.<id>` values. */
 export const DEFAULTS: Record<Entity, Record<string, unknown>> = {
   project: PROJECT_DEFAULTS, task: TASK_DEFAULTS, label: LABEL_DEFAULTS, view: VIEW_DEFAULTS, reminder: REMINDER_DEFAULTS, section: SECTION_DEFAULTS,
   comment: COMMENT_DEFAULTS, project_prefs: PROJECT_PREFS_DEFAULTS, user_prefs: USER_PREFS_DEFAULTS, attachment: ATTACHMENT_DEFAULTS, field: FIELD_DEFAULTS,
-  review: REVIEW_DEFAULTS, time_entry: TIME_ENTRY_DEFAULTS, place: PLACE_DEFAULTS,
+  review: REVIEW_DEFAULTS, time_entry: TIME_ENTRY_DEFAULTS, place: PLACE_DEFAULTS, rule: RULE_DEFAULTS, frame: FRAME_DEFAULTS, slot: SLOT_DEFAULTS,
 }
 
 /**
@@ -110,7 +96,7 @@ export const DEFAULTS: Record<Entity, Record<string, unknown>> = {
  * the op's clock (comments-and-activity D2: mentions are filtered to members). When
  * the server's copy arrives with the clock the row already has, its value is adopted.
  */
-const SERVER_REWRITTEN = new Set(['comment.mentions'])
+const SERVER_REWRITTEN = new Set(['comment.mentions', 'task.note_mentions'])
 
 /**
  * Apply ops to the local store using per-field last-writer-wins. Safe to call with
@@ -124,6 +110,9 @@ export async function applyOps(
   ops: Op[], opts: { actor?: string; local?: boolean; wire?: Map<string, { kind: 'p' | 'c' | 'x'; raw?: string }> } = {},
 ): Promise<void> {
   if (ops.length === 0) return
+  // The clock's receive rule (hlcReceive): a later local edit, including an
+  // encrypt-on-sight rewrite of these very values, is stamped after them.
+  if (!opts.local) hlcReceive(ops.reduce((m, o) => Math.max(m, o.ts), 0))
   // Remote document ops are merged, not just replaced (collaborative-rich-text):
   // load the document code before the transaction, which must not await imports.
   const rt = !opts.local && ops.some((o) => isDocField(o.entity, o.field)) ? await loadRichText() : null
@@ -153,10 +142,11 @@ export async function applyOps(
       for (const op of list) {
         const c = clock[op.field]
         const won = wins(op.ts, op.device, c)
-        // A custom field value `fields.<id>` lives in row.fields[id], its clock
-        // under the op field name (custom-fields D2).
-        const fid = entity === 'task' ? fieldValueId(op.field) : null
-        const current = fid ? (row.fields as Record<string, unknown> | undefined)?.[fid] : row[op.field]
+        // A field family value lives in a map on the row, its clock under the op
+        // field name: `fields.<id>` in row.fields[id] (custom-fields D2),
+        // `reactions.<account>` in row.reactions[account] (editor-everywhere D8).
+        const fam = familyOf(entity, op.field)
+        const current = fam ? (row[fam.key] as Record<string, unknown> | undefined)?.[fam.id] : row[op.field]
         // A losing op still happened: its old value is unknown here, the activity
         // rule takes it from the op before it in timestamp order.
         recorded.push({ op, actor: op.actor ?? opts.actor ?? '', from: won ? current ?? null : undefined, projectKey: '' })
@@ -167,7 +157,7 @@ export async function applyOps(
         }
         const rewritten = !won && c && c.ts === op.ts && c.device === op.device && SERVER_REWRITTEN.has(`${entity}.${op.field}`)
         if (!won && !rewritten) continue
-        if (fid) row.fields = { ...(row.fields as Record<string, unknown> | undefined), [fid]: op.value }
+        if (fam) row[fam.key] = { ...(row[fam.key] as Record<string, unknown> | undefined), [fam.id]: op.value }
         else row[op.field] = op.value
         clock[op.field] = { ts: op.ts, device: op.device }
         changed = true
@@ -213,6 +203,8 @@ export async function applyOps(
     }
     await recordActivity(recorded)
   })
+  // Stored, so a reload (and the service worker) keeps stamping after them.
+  if (!opts.local && hlcLast() > (await getMeta<number>(HLC_META, 0))) await setMeta(HLC_META, hlcLast())
   // Merge-and-republish (design D1): only when the merge grew the winning value.
   if (republish.length) await mutateMany(republish)
 }
@@ -247,7 +239,13 @@ export function reconcileNote(rt: RichText, row: Pick<Task, 'notes_doc' | 'descr
   return { notes_doc: doc, description: rt.projectDoc(doc) }
 }
 
-type Listener = () => void
+/**
+ * When the batch should reach the server (notes-save-cadence D2): 'now' asks for
+ * an exchange shortly after the write (every edit but a note typed into), 'deferred'
+ * waits for the note push cadence (3 s quiet, at most 60 s).
+ */
+export type PushTiming = 'now' | 'deferred'
+type Listener = (info: { push: PushTiming }) => void
 const mutationListeners = new Set<Listener>()
 
 /** Sync engine subscribes here to learn that the outbox has new work. */
@@ -267,6 +265,13 @@ export interface Change {
 export interface MutateOptions {
   /** 'assistant' stamps device assistant:<device-id> (in-app-assistant D1): history labels it "Assistant". */
   origin?: 'assistant'
+  /**
+   * The batch puts back earlier values (Undo, restoring a version or from the
+   * Trash): it adds no default reminder (default-reminders D6).
+   */
+  restore?: boolean
+  /** When to push the batch: 'deferred' only for the note editor's timed save (default 'now'). */
+  push?: PushTiming
 }
 
 /** The op device of a batch with this origin. */
@@ -303,10 +308,30 @@ export function fieldValueId(field: string): string | null {
   return FIELD_ID.test(id) ? id : null
 }
 
-/** A row's value of an op field: `fields.<id>` reads row.fields[id]. */
+/** The op field prefix of a comment's per-account reactions (editor-everywhere D8). */
+export const REACTION_PREFIX = 'reactions.'
+
+/** The account id of a `reactions.<account>` op field, or null for any other field. */
+export function reactionAccount(field: string): string | null {
+  if (!field.startsWith(REACTION_PREFIX)) return null
+  const id = field.slice(REACTION_PREFIX.length)
+  return FIELD_ID.test(id) ? id : null
+}
+
+/** The row map and key a field family op lives under, or null for a plain field. */
+function familyOf(entity: string, field: string): { key: 'fields' | 'reactions'; id: string } | null {
+  const fid = entity === 'task' ? fieldValueId(field) : null
+  if (fid) return { key: 'fields', id: fid }
+  const account = entity === 'comment' ? reactionAccount(field) : null
+  return account ? { key: 'reactions', id: account } : null
+}
+
+/** A row's value of an op field: `fields.<id>` reads row.fields[id], `reactions.<account>` row.reactions[account]. */
 export function readField(row: Record<string, unknown>, field: string): unknown {
   const id = fieldValueId(field)
-  return id ? (row.fields as Record<string, unknown> | undefined)?.[id] : row[field]
+  if (id) return (row.fields as Record<string, unknown> | undefined)?.[id]
+  const account = reactionAccount(field)
+  return account ? (row.reactions as Record<string, unknown> | undefined)?.[account] : row[field]
 }
 
 /**
@@ -342,6 +367,8 @@ export async function mutateMany(changes: Change[], opts: MutateOptions = {}): P
   changes = unfoldFieldPatches(changes)
   checkEncryptedSize(changes)
   const device = await deviceFor(opts)
+  // A task that gets a due date gets the person's default reminder (default-reminders D3).
+  if (!opts.restore) changes = [...changes, ...(await defaultReminderChanges(changes))]
   changes = [...changes, ...(await reminderFollowUps(changes))]
   if (!changes.some((c) => Object.keys(c.patch).length > 0)) return
   const rt = await richTextFor(changes)
@@ -362,18 +389,23 @@ export async function mutateMany(changes: Change[], opts: MutateOptions = {}): P
       }
     }
     await applyOps(ops, { actor, local: true })
-    // One pending document per field (design D3): a newer state supersedes the queued one.
+    // One pending document per field (design D3): a newer state supersedes the queued one,
+    // and its projection in the same batch the queued projection (notes-save-cadence:
+    // a push after a pause would otherwise carry every intermediate projection).
     const docOps = ops.filter((o) => isDocField(o.entity, o.field))
     if (docOps.length) {
+      const pairs = ops.filter((o) => docOps.some((d) => d.entity === o.entity && d.entityId === o.entityId && DOC_FIELDS[`${d.entity}.${d.field}`] === o.field))
+      const superseded = [...docOps, ...pairs]
       const stale = await db.outbox
-        .filter((o) => docOps.some((d) => d.entity === o.entity && d.entityId === o.entityId && d.field === o.field))
+        .filter((o) => superseded.some((d) => d.entity === o.entity && d.entityId === o.entityId && d.field === o.field))
         .primaryKeys()
       if (stale.length) await db.outbox.bulkDelete(stale)
     }
     await db.outbox.bulkAdd(ops)
-    await db.meta.put({ key: 'hlc', value: ts })
+    await db.meta.put({ key: HLC_META, value: ts })
   })
-  for (const fn of mutationListeners) fn()
+  const info = { push: opts.push ?? 'now' }
+  for (const fn of mutationListeners) fn(info)
 }
 
 /**
@@ -472,11 +504,14 @@ export async function foldNote(entityOrTaskId: string, id?: string): Promise<boo
  */
 async function reminderFollowUps(changes: Change[]): Promise<Change[]> {
   const out: Change[] = []
+  // A reminder whose firing time the batch already writes (a default reminder
+  // switching kind, default-reminders D5) keeps that value.
+  const written = new Set(changes.filter((c) => c.entity === 'reminder' && 'fire_at' in c.patch).map((c) => c.entityId))
   for (const { entity, entityId, patch } of changes) {
     if (entity !== 'task' || !('due' in patch || 'deadline' in patch)) continue
     const reminders = await db.reminders.where('task_id').equals(entityId).toArray()
     for (const r of reminders) {
-      if (r.deleted_at) continue
+      if (r.deleted_at || written.has(r.id)) continue
       let fireAt: number | null
       if (r.kind === 'relative' && 'due' in patch) fireAt = relativeFireAt((patch.due ?? null) as Task['due'], r.offset_minutes)
       else if (r.kind === 'deadline' && 'deadline' in patch) fireAt = deadlineFireAt((patch.deadline ?? null) as string | null, r.offset_minutes)
@@ -518,8 +553,8 @@ function checkEncryptedSize(changes: Change[]): void {
 }
 
 /** Record field changes for one entity: apply locally and enqueue for the server. */
-export async function mutate(entity: Entity, entityId: string, patch: Record<string, unknown>): Promise<void> {
-  await mutateMany([{ entity, entityId, patch }])
+export async function mutate(entity: Entity, entityId: string, patch: Record<string, unknown>, opts?: MutateOptions): Promise<void> {
+  await mutateMany([{ entity, entityId, patch }], opts)
 }
 
 /** Every non-deleted project; the tree helpers take the whole set so cycles are handled. */
@@ -546,6 +581,8 @@ export async function createProject(input: { name: string; color?: string; paren
   await mutate('project', id, {
     name: input.name.trim(), color: input.color ?? pickColor(), position: lastAmongProjectSiblings(all, id, parentId),
     archived: false, parent_id: parentId, created_at: now, deleted_at: null,
+    // A top-level project starts in the current workspace; a sub-project follows its parent (workspaces).
+    ...(parentId ? {} : await workspaceFields()),
   })
   return id
 }
@@ -567,7 +604,9 @@ export async function moveProject(id: string, parentId: string | null): Promise<
     if (!parent || parent.archived) throw new Error('parent project not found')
     if (isDescendant(parentId, id, all)) throw new Error(t('parent cannot be a descendant of the project'))
   }
-  await mutate('project', id, { parent_id: parentId, position: lastAmongProjectSiblings(all, id, parentId) })
+  // It stays in the workspace it is in when it becomes a top-level project (issue 544).
+  const ws = await keepProjectWorkspace(id)
+  await mutate('project', id, { parent_id: parentId, position: lastAmongProjectSiblings(all, id, parentId), ...(ws === undefined ? {} : { workspace_id: ws }) })
 }
 
 /** Archiving cascades to every descendant, one op each (design D3); unarchive does not cascade. */
@@ -590,6 +629,10 @@ export type NewTaskInput = {
   /** "someday" or a date (someday-and-evening); only sent when set. */
   start?: string | null
   evening?: boolean
+  /** Morning or Afternoon (day-parts); only sent when set. Evening is `evening`. */
+  day_part?: 'morning' | 'afternoon' | null
+  /** Deep, Medium or Low (task-energy); only sent when set. */
+  energy?: 'deep' | 'medium' | 'low' | null
   /** A recurrence rule (any spelling the grammar accepts; stored canonical). Throws when invalid. */
   recurrence?: string | null
   /** Assignee account id (task-assignment); only sent when set. */
@@ -605,12 +648,26 @@ export type NewTaskInput = {
    * task's final due and written in the same batch as the task.
    */
   reminders?: ReminderPhrase[]
+  /**
+   * Created already done (today-closed-list D6, Log a win): `completed_at` is now and
+   * `completed_by` the signed-in account, in the creating batch.
+   */
+  completed?: boolean
+  /**
+   * Where a top-level task lands in its manual list (add-position D2): 'top' above every
+   * task, 'bottom' (the default) appended. Subtasks always append.
+   */
+  placement?: Placement
 }
 
+/** Where a new task lands in its manual list (add-position). */
+export type Placement = 'top' | 'bottom'
+
 /** The ops of a new task without writing them, for a batch with other changes (a shared file's attachments). */
-export async function planTask(input: NewTaskInput): Promise<{ id: string; change: Change }> {
+export async function planTask(input: NewTaskInput, position?: number): Promise<{ id: string; change: Change }> {
   const id = uuid()
   const now = Date.now()
+  const at = position ?? (input.placement === 'top' && !input.parent_id ? (await topTaskPositions(1))[0] : await nextTaskPosition(now))
   let due = input.due ?? null
   const extra: Record<string, unknown> = {}
   if (input.recurrence) {
@@ -628,13 +685,18 @@ export async function planTask(input: NewTaskInput): Promise<{ id: string; chang
   // Only parked, deferred or evening tasks carry these (someday-and-evening).
   if (input.start) extra.start = input.start
   if (input.evening) extra.evening = true
+  else if (input.day_part) extra.day_part = input.day_part
+  // Only tasks created with an energy carry the field (task-energy).
+  if (input.energy) extra.energy = input.energy
   // Only captured, mailed or imported tasks carry the field (task-origin).
   if (input.origin) extra.origin = input.origin
   if (input.location) extra.location = input.location
+  // A task without a project or parent lands in the current workspace's Inbox (workspaces).
+  if (!input.project_id && !input.parent_id) Object.assign(extra, await workspaceFields())
   return { id, change: { entity: 'task', entityId: id, patch: {
     title: input.title.trim(), description: input.description ?? '', project_id: input.project_id ?? null, parent_id: input.parent_id ?? null,
-    priority: input.priority ?? 4, due, labels: input.labels ?? [], position: await nextTaskPosition(now), created_at: now,
-    completed_at: null, deleted_at: null, estimate_minutes: input.estimate_minutes ?? null, ...extra,
+    priority: input.priority ?? 4, due, labels: input.labels ?? [], position: at, created_at: now,
+    completed_at: input.completed ? now : null, deleted_at: null, estimate_minutes: input.estimate_minutes ?? null, ...extra,
   } } }
 }
 
@@ -652,8 +714,9 @@ export function planReminders(taskId: string, due: Task['due'], phrases: readonl
   })
 }
 
-export async function createTask(input: NewTaskInput, now = new Date()): Promise<string> {
-  const { id, change } = await planTask(input)
+/** A planned task with what quick add asked for alongside it: its reminders and the time already spent. */
+async function withCompanions(input: NewTaskInput, planned: { id: string; change: Change }, now: Date): Promise<Change[]> {
+  const { id, change } = planned
   const changes: Change[] = [change, ...planReminders(id, (change.patch as { due: Task['due'] }).due, input.reminders, now)]
   // Time already spent (quick add `30m/2h`, time-tracking D10): one closed entry ending now.
   const me = input.spent_minutes ? await currentUserId() : null
@@ -663,9 +726,37 @@ export async function createTask(input: NewTaskInput, now = new Date()): Promise
       task_id: id, user_id: me, started_at: end - input.spent_minutes * 60000, ended_at: end, device_id: await getDeviceId(), note: '', created_at: end, deleted_at: null,
     } })
   }
+  return changes
+}
+
+export async function createTask(input: NewTaskInput, now = new Date()): Promise<string> {
+  const planned = await planTask(input)
   // One batch: the task never syncs without its reminders and its time entry.
-  await mutateMany(changes)
-  return id
+  await mutateMany(await withCompanions(input, planned, now))
+  return planned.id
+}
+
+/**
+ * The changes of several new tasks in their given order (paste-to-tasks D3, D4): each
+ * with its quick-add reminders and time entry, positions increasing in input order
+ * (at the top as one block, or appended). Nothing is written.
+ */
+export async function planNewTasks(inputs: readonly NewTaskInput[], placement: Placement = 'bottom', now = new Date()): Promise<{ ids: string[]; changes: Change[] }> {
+  const planned = await planTasks(inputs, placement)
+  const changes: Change[] = []
+  for (const [i, p] of planned.entries()) changes.push(...(await withCompanions(inputs[i], p, now)))
+  return { ids: planned.map((p) => p.id), changes }
+}
+
+/**
+ * Creates several tasks as one batch (a pasted list, paste-to-tasks D3): applied
+ * locally first and uploaded together; a title too long to encrypt refuses the whole
+ * batch before any op exists. Returns the new ids in input order.
+ */
+export async function createTasks(inputs: readonly NewTaskInput[], placement: Placement = 'bottom', now = new Date()): Promise<string[]> {
+  const { ids, changes } = await planNewTasks(inputs, placement, now)
+  if (ids.length) await mutateMany(changes)
+  return ids
 }
 
 /**
@@ -675,7 +766,52 @@ export async function createTask(input: NewTaskInput, now = new Date()): Promise
  */
 async function nextTaskPosition(now: number): Promise<number> {
   const last = await db.tasks.orderBy('position').last()
-  return last && Number.isFinite(last.position) && last.position >= now ? last.position + GAP : now
+  const top = last && Number.isFinite(last.position) ? last.position : -Infinity
+  let position = top >= now ? top + GAP : now
+  // Two tasks created at once (a paste of several lines, a quick double Enter) both
+  // read the table before either is written: the second goes just past the first.
+  // Only a position handed out moments ago and not yet in the table counts.
+  const issued = issuedPositions.get(db)
+  if (issued !== undefined && issued > top && position <= issued && issued - position < GAP) position = issued + 1
+  return remember(position)
+}
+
+/**
+ * Positions above every task (add-position D2): one indexed read of the smallest
+ * position, then a block of `count` increasing positions ending at smallest − GAP, so
+ * several tasks planned together keep their reading order at the top. The smallest
+ * position anywhere is below every task of every list, so the block is first in
+ * whichever manual list (project, section, column, Inbox) the tasks land in.
+ */
+export async function topTaskPositions(count: number): Promise<number[]> {
+  const first = await db.tasks.orderBy('position').first()
+  const low = first && Number.isFinite(first.position) ? first.position : Date.now()
+  let end = low - GAP
+  // Two adds at the top in quick succession both read the table before either is
+  // written: the later one goes above the earlier, as if the first had been stored.
+  const issued = issuedTopPositions.get(db)
+  if (issued !== undefined && issued < low && end >= issued) end = issued - GAP
+  const positions = Array.from({ length: count }, (_, i) => end - (count - 1 - i) * GAP)
+  if (positions.length > 0) issuedTopPositions.set(db, positions[0])
+  return positions
+}
+
+/** Plans several new tasks as one block in their given order (a pasted list), at the top or appended. */
+export async function planTasks(inputs: readonly NewTaskInput[], placement: Placement = 'bottom'): Promise<{ id: string; change: Change }[]> {
+  const top = placement === 'top' ? await topTaskPositions(inputs.length) : []
+  const out: { id: string; change: Change }[] = []
+  for (const [i, input] of inputs.entries()) out.push(await planTask({ ...input, placement: 'bottom' }, input.parent_id ? undefined : top[i]))
+  return out
+}
+
+/** The smallest position handed out at the top per database, not yet necessarily written. */
+const issuedTopPositions = new WeakMap<object, number>()
+
+/** The last position handed out per database, not yet necessarily written. */
+const issuedPositions = new WeakMap<object, number>()
+function remember(position: number): number {
+  issuedPositions.set(db, position)
+  return position
 }
 
 /** A new subtask lives in its parent's project, with default priority and no due date. */
@@ -720,7 +856,7 @@ export async function setTaskParent(id: string, parentId: string | null): Promis
  * different project, and changing a task's project clears its section (board-view).
  */
 // blocked_by stays behind: blockers live in one sharing scope (task-dependencies D5).
-const COPY_FIELDS = ['title', 'description', 'notes_doc', 'priority', 'due', 'labels', 'estimate_minutes', 'deadline', 'start', 'evening', 'recurrence', 'series_id', 'assignee_id', 'completed_at', 'completed_by', 'position', 'created_at', 'origin'] as const
+const COPY_FIELDS = ['title', 'description', 'notes_doc', 'priority', 'due', 'labels', 'estimate_minutes', 'deadline', 'start', 'evening', 'day_part', 'energy', 'recurrence', 'series_id', 'assignee_id', 'completed_at', 'completed_by', 'position', 'created_at', 'origin'] as const
 
 /**
  * Copy tasks into `projectId` under new ids, keeping parent links between copied
@@ -742,6 +878,10 @@ function copyTasks(
     // field existed hold undefined, which must never be sent).
     // A copy carries the note's document only when there is one (collaborative-rich-text).
     if (typeof patch.notes_doc !== 'string' || !patch.notes_doc) delete patch.notes_doc
+    // The copy keeps its part of the day (day-parts); none needs no op.
+    if (typeof patch.day_part !== 'string') delete patch.day_part
+    // And its energy (task-energy); none needs no op.
+    if (typeof patch.energy !== 'string' || !patch.energy) delete patch.energy
     // The copy keeps where the task came from (task-origin); none needs no op.
     if (!patch.origin || typeof patch.origin !== 'object') delete patch.origin
     // Custom field values travel with the copy (custom-fields), one op each.
@@ -766,12 +906,12 @@ function copyTasks(
  * on every original, in one batch, so it works offline and converges by LWW.
  * Returns the id of the copy.
  */
-export async function moveTaskAcrossScopes(id: string, patch: Partial<Omit<Task, 'id' | '_clock'>>): Promise<string> {
+export async function moveTaskAcrossScopes(id: string, patch: Partial<Omit<Task, 'id' | '_clock'>>, opts?: MutateOptions): Promise<string> {
   const task = await db.tasks.get(id)
   if (!task || task.deleted_at) throw new Error('task not found')
   const assignable = assignableIn(patch.project_id ?? null, await membershipMap(), await currentUserId())
-  const plan = planProjectChange(task, await liveTasks(), patch, { assignable })
-  await mutateMany(plan.changes)
+  const plan = planProjectChange(task, await liveTasks(), patch, { assignable }, Date.now(), await keepWorkspaceFor())
+  await mutateMany(plan.changes, opts)
   return plan.id
 }
 
@@ -782,8 +922,13 @@ export async function moveTaskAcrossScopes(id: string, patch: Partial<Omit<Task,
  * (`cross` set): copies in the destination plus tombstones on the originals.
  * Returns the task's id afterwards (the copy's id across scopes).
  */
-export function planProjectChange(task: Task, all: Task[], patch: Partial<Omit<Task, 'id' | '_clock'>>, cross?: { assignable: Set<string> }, now = Date.now()): { changes: Change[]; id: string } {
+export function planProjectChange(task: Task, all: Task[], patch: Partial<Omit<Task, 'id' | '_clock'>>, cross?: { assignable: Set<string> }, now = Date.now(), keep?: KeepWorkspace): { changes: Change[]; id: string } {
   const id = task.id
+  // Leaving its project for the Inbox, a task keeps the workspace it was in (#508).
+  if (keep && !patch.project_id && task.project_id && !('workspace_id' in patch)) {
+    const ws = keep(task)
+    if (ws !== undefined && ws !== (task.workspace_id ?? null)) patch = { ...patch, workspace_id: ws }
+  }
   if (cross) {
     const subtree = [task, ...[...descendants(id, all)].map((d) => all.find((tk) => tk.id === d)).filter((item): item is Task => !!item)]
     const { project_id: projectId = null, parent_id: _parent, ...rest } = patch
@@ -815,7 +960,7 @@ export function planProjectChange(task: Task, all: Task[], patch: Partial<Omit<T
  * stays behind, so a subtask is always in its parent's project. A move into another
  * sharing scope becomes copy + tombstone and returns the copy's id.
  */
-export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | '_clock'>>): Promise<string> {
+export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | '_clock'>>, opts?: MutateOptions): Promise<string> {
   // Scheduling a parked task un-parks it in the same batch (someday-and-evening D3).
   if (!('start' in patch) && patch.due) {
     const task = await db.tasks.get(id)
@@ -831,13 +976,13 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | '_
     if (task && patch.project_id !== task.project_id) {
       const memberships = await membershipMap()
       if (scopeOf(task.project_id, memberships) !== scopeOf(patch.project_id, memberships)) {
-        return moveTaskAcrossScopes(id, patch)
+        return moveTaskAcrossScopes(id, patch, opts)
       }
-      await mutateMany(planProjectChange(task, await liveTasks(), patch).changes)
+      await mutateMany(planProjectChange(task, await liveTasks(), patch, undefined, Date.now(), await keepWorkspaceFor()).changes, opts)
       return id
     }
   }
-  await mutate('task', id, patch)
+  await mutate('task', id, patch, opts)
   return id
 }
 
@@ -1061,7 +1206,7 @@ export async function restoreTask(id: string): Promise<string> {
     const memberships = await membershipMap()
     if (scopeOf(task.project_id, memberships) !== 'personal') {
       const { changes, ids } = copyTasks(subtree, null, assignableIn(null, memberships, await currentUserId()), { [id]: { position: Date.now() } })
-      await mutateMany(changes)
+      await mutateMany(changes, { restore: true })
       return ids.get(id) as string
     }
   }
@@ -1071,7 +1216,7 @@ export async function restoreTask(id: string): Promise<string> {
   // A task whose parent stays in the Trash is restored at the top level.
   const parent = task.parent_id ? all.find((tVar) => tVar.id === task.parent_id) : undefined
   if (projectGone || (parent && parent.deleted_at)) changes[0].patch.parent_id = null
-  await mutateMany(changes)
+  await mutateMany(changes, { restore: true })
   return id
 }
 

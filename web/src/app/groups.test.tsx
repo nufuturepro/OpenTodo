@@ -7,8 +7,9 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { completeTask, createProject, createTask, resetDeviceId } from '../lib/ops'
+import { createLabel } from '../lib/labels'
 import { createSection } from '../lib/sections'
-import { click, flush, render, mockFetch, noPublicLinks, spokenText, visibleText } from '../ui/test-utils'
+import { click, render, mockFetch, noPublicLinks, spokenText, textWithoutBriefing, visibleText, waitFor } from '../ui/test-utils'
 import { isGroupCollapsed, resetCollapsedGroups } from './collapsedGroups'
 import { TaskListView } from './TaskListView'
 
@@ -28,13 +29,8 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   resetCollapsedGroups()
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const headers = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('[data-group-header]')]
 
 describe('generated groups', () => {
@@ -50,8 +46,8 @@ describe('generated groups', () => {
     expect(headers(r.container).every((h) => h.querySelector('h2'))).toBe(true)
 
     await click(headers(r.container)[0].querySelector('[data-group-toggle]')!)
-    await flush(20)
-    expect(r.container.textContent).not.toContain('Dentist')
+    await waitFor(() => headers(r.container)[0].getAttribute('data-collapsed') === 'true' && !textWithoutBriefing(r.container).includes('Dentist'), 'the group collapsed')
+    expect(textWithoutBriefing(r.container)).not.toContain('Dentist')
     expect(r.container.textContent).toContain('Taxes')
     expect(headers(r.container)[0].getAttribute('data-collapsed')).toBe('true')
     expect(isGroupCollapsed('upcoming', '2026-10-15')).toBe(true)
@@ -61,21 +57,53 @@ describe('generated groups', () => {
     // Still collapsed when the view is opened again on this device.
     const again = await render(<TaskListView route={{ view: 'upcoming' }} />)
     await waitFor(() => again.container.textContent!.includes('Taxes'))
-    expect(again.container.textContent).not.toContain('Dentist')
+    expect(textWithoutBriefing(again.container)).not.toContain('Dentist')
     expect(headers(again.container)[0].getAttribute('data-collapsed')).toBe('true')
     await click(headers(again.container)[0].querySelector('[data-group-toggle]')!)
-    await waitFor(() => again.container.textContent!.includes('Dentist'))
+    await waitFor(() => textWithoutBriefing(again.container).includes('Dentist'))
     await again.unmount()
   })
 
-  it('Today keeps the danger tone on Overdue and a folded Blocked group with its count', async () => {
+  it('Earlier is quiet (page-rhythm D5): one group bar, the dates in the danger tone, nothing else red', async () => {
     await createTask({ title: 'Late', due: { date: '2026-10-10' } })
+    await createTask({ title: 'Later still', due: { date: '2026-10-11' } })
+    await createTask({ title: 'Older', due: { date: '2026-10-12' } })
     await createTask({ title: 'Now', due: { date: '2026-10-14' } })
     const r = await render(<TaskListView route={{ view: 'today' }} />)
     await waitFor(() => r.container.textContent!.includes('Now'))
-    const overdue = headers(r.container).find((h) => h.textContent?.includes('Overdue'))!
-    expect(overdue).toBeTruthy()
-    expect(overdue.querySelector('.text-danger')).toBeTruthy()
+    const earlier = headers(r.container).find((h) => h.textContent?.includes('Earlier'))!
+    const label = earlier.querySelector('[data-group-label]')!
+    expect(label.className).toContain('text-default')
+    expect(label.className).not.toContain('uppercase')
+    expect(earlier.className).toContain('bg-raised')
+    // The DOM keeps the word's case for assistive technology.
+    expect(label.textContent).toBe('Earlier')
+    expect(earlier.querySelector('[data-group-count]')!.className).toContain('text-faint')
+    expect(earlier.querySelector('[class*="text-danger"]')).toBeNull()
+    const section = r.container.querySelector('[data-group="earlier"]')!
+    expect([...section.querySelectorAll('[data-date]')].every((d) => d.className.includes('text-danger'))).toBe(true)
+    expect(section.querySelectorAll('[data-date]').length).toBe(3)
+    // The two actions are always visible, not revealed on hover.
+    const actions = earlier.querySelector('[data-group-actions]')!
+    expect(actions.getAttribute('data-group-actions')).toBe('always')
+    expect(actions.className).not.toContain('hover-reveal')
+    expect(actions.textContent).toContain('Move all to today')
+    expect(actions.textContent).toContain('Reschedule…')
+    await r.unmount()
+  })
+
+  it('a generated group is uppercase and a project the user named keeps its case', async () => {
+    const home = await createProject({ name: 'Home chores' })
+    const label = await createLabel({ name: 'errand' })
+    await createTask({ title: 'Stamps', labels: [label] })
+    await createTask({ title: 'Bins', labels: [label], project_id: home })
+    const r = await render(<TaskListView route={{ view: 'label', id: label }} />)
+    await waitFor(() => r.container.textContent!.includes('Bins'))
+    const kinds = Object.fromEntries([...r.container.querySelectorAll('[data-group-label]')].map((l) => [l.textContent, l.getAttribute('data-group-label')]))
+    expect(kinds['Home chores']).toBe('named')
+    expect(kinds.Inbox).toBe('named')
+    const named = r.container.querySelector('[data-group-label="named"]')!
+    expect(named.className).not.toContain('uppercase')
     await r.unmount()
   })
 })

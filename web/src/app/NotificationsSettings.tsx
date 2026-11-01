@@ -1,12 +1,10 @@
-import { Icon, type IconName } from '../ui'
+import { Icon, type IconName, StatusIndicator, toneForHue } from '../ui'
 import { type ReactNode, useEffect, useState } from 'react'
 import { Button } from '../ui'
-import { Badge } from '../ui'
 import { Notice } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
 import { Switch } from '../ui'
 import type { HueName } from '../ui'
-import { relativeTime } from './SecurityPanel'
 import { getDeviceId } from '../lib/ops'
 import {
   disablePush, enablePush, loadPushState, localTestNotification, PushPermissionError, pushChecklist, sendTestPush, setIncludeContent,
@@ -15,6 +13,11 @@ import {
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t, msg, translatedMap } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { has as shellHas } from '../lib/shell'
+import { ShellNotifications } from './ShellNotifications'
+import { useSettingsPending } from './settingsPending'
+import { messageOf } from '../lib/errorText'
+import { relativeTime } from '../lib/dates'
 
 /**
  * Settings → Notifications (OpenSpec change `reminders`): per device, enable or
@@ -22,7 +25,14 @@ import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
  * real test push (OpenSpec change `push-test-delivery`). In-app reminders work regardless.
  */
 export function NotificationsSettings() {
+  // In a native shell with reminders, notifications go through the app, never a push subscription (native-shells).
+  if (shellHas('reminders')) return <ShellNotifications />
+  return <PushNotificationsSettings />
+}
+
+function PushNotificationsSettings() {
   const [state, setState] = useState<PushState | null>(null)
+  useSettingsPending(state === null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ kind: 'error' | 'info'; text: string } | null>(null)
 
@@ -63,7 +73,7 @@ export function NotificationsSettings() {
     } catch (err) {
       const text = err instanceof PushPermissionError
         ? t('Notifications are blocked for this site in your browser settings, so this device cannot receive pushes. Reminders still appear inside the app while it is open.')
-        : err instanceof Error ? err.message : String(err)
+        : messageOf(err)
       setMessage({ kind: 'error', text })
       setState(await loadPushState())
     } finally {
@@ -126,8 +136,8 @@ export function NotificationsView({ state: s, busy, message, onEnable, onInclude
         <>
           <SettingRow {...rowCopy('notifications', 'device')} status={
             <span className="flex flex-wrap items-center gap-2" data-testid="push-summary">
-              <Badge hue={s.enabled ? 'green' : 'slate'}>{s.enabled ? t('On') : t('Off')}</Badge>
-              <Badge hue={PERMISSION[s.permission].hue} tone="solid">{t('Permission: {label}', { label: PERMISSION[s.permission].label })}</Badge>
+              <StatusIndicator tone={toneForHue(s.enabled ? 'green' : 'slate')}>{s.enabled ? t('On') : t('Off')}</StatusIndicator>
+              <StatusIndicator tone={toneForHue(PERMISSION[s.permission].hue)}>{t('Permission: {label}', { label: PERMISSION[s.permission].label })}</StatusIndicator>
               {sub && (
                 <span className="text-muted">
                   {sub.lastOkAt ? t('Last delivered {ago}', { ago: relativeTime(sub.lastOkAt, now) }) : t('Nothing delivered yet')}

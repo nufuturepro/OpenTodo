@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pixari/opentodo/internal/backup"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/backup"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 // Web restore (OpenSpec backup-restore-web, design D8). Every route is owner
@@ -20,10 +20,6 @@ func liftDeadlines(w http.ResponseWriter) {
 	rc := http.NewResponseController(w)
 	_ = rc.SetReadDeadline(time.Time{})
 	_ = rc.SetWriteDeadline(time.Time{})
-}
-
-func invalidField(w http.ResponseWriter, field, msg string) {
-	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_input", "message": msg, "field": field}})
 }
 
 // restoreError maps backup errors to the documented codes.

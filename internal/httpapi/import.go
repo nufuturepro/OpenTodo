@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/importer"
+	"github.com/OpenTodoApp/opentodo/internal/importer"
 )
 
 // ---- handlers: import (OpenSpec `data-import`) ----
@@ -42,7 +42,7 @@ func (s *Server) readImport(w http.ResponseWriter, r *http.Request) ([]byte, imp
 		return nil, opts, false
 	}
 	var data []byte
-	haveFile := false
+	haveFile, fileName := false, ""
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -74,6 +74,7 @@ func (s *Server) readImport(w http.ResponseWriter, r *http.Request) ([]byte, imp
 				return nil, opts, false
 			}
 			haveFile = true
+			fileName = part.FileName()
 		case "options":
 			b, err := readLimited(part, 64<<10)
 			if err != nil {
@@ -103,6 +104,7 @@ func (s *Server) readImport(w http.ResponseWriter, r *http.Request) ([]byte, imp
 		writeError(w, http.StatusBadRequest, "bad_request", "the file part is missing")
 		return nil, opts, false
 	}
+	opts.SetFileName(fileName)
 	return data, opts, true
 }
 
@@ -133,6 +135,8 @@ func setOption(o *importer.Options, name, v string) bool {
 		o.Errors = v
 	case "existing":
 		o.Existing = v
+	case "workspace":
+		o.Workspace = v
 	default:
 		return false
 	}

@@ -4,11 +4,7 @@ import { t } from './i18n'
 // after a few pixels of movement; touch arms after a short long-press so a plain
 // swipe still scrolls the board — moving after the hold lifts the drag, releasing
 // still opens the row's actions menu (task-row-context-menu "Touch: hold and
-// release"). A press on the row's grip skips the wait, because a grip never
-// scrolls: movement lifts the drag at once and the hold itself selects
-// (bulk-actions on touch — the grip owns selection on a touch screen) — and a hold
-// that becomes a drag gives that tick back, so a move never leaves selection behind.
-// A ghost label follows the pointer, the element
+// release"). A ghost label follows the pointer, the element
 // under it carrying `data-drop-target` is the target and gets `data-drop-active`
 // for styling. The primitive knows nothing about tasks: callers decide what a drop
 // means (board-view moves a task to a section; `manual-ordering` will add
@@ -30,40 +26,105 @@ export interface DragOptions {
    * becoming a drag (false, from cleanup) — the pressed element's held feedback.
    */
   onHoldChange?: (held: boolean) => void
-  /** Touch only: a hold completed and the finger lifted without moving: open the row's menu here (task-row-context-menu). Never for a grip press: the grip's hold selects, and its release falls through to its own click. */
+  /** Touch only: a hold completed and the finger lifted without moving: open the row's menu here (task-row-context-menu). Fires for every pointer now — selection lives on the grip, so the row body's hold is only ever the menu. */
   onHoldRelease?: (x: number, y: number) => void
-  /**
-   * Touch: the hold itself means something (bulk-actions on touch — a long press on
-   * the row's grip selects it, the grip owning selection on a touch screen). Called
-   * when the hold elapses instead of lifting; the drag lifts only if the finger then
-   * moves, and a release without moving swallows the click.
-   */
-  onHold?: () => void
-  /**
-   * The hold ticked a row that was not ticked before, and the press has since become
-   * a drag: give that tick back at once (bulk-actions on touch — a hold selects, a
-   * hold that drags moves; only a release that never moved keeps the tick).
-   */
-  onHoldUndo?: () => void
-  /**
-   * The press began on the row's grip, not its body. A grip never scrolls (its own
-   * `touch-action: none`), so any movement past the threshold lifts the drag without
-   * waiting for the hold; the hold still means select, and a release without either
-   * falls through to the grip's own click (a tap ticks the row).
-   */
-  grip?: boolean
   /**
    * Also resolve `data-task-drop` targets (OpenSpec change ux-feedback-2, D4: a
    * task dropped on a sidebar project, the Inbox or a label), reported as
    * `drop:<value>` and preferred over a `data-drop-target` on the same element.
    */
   taskDrops?: boolean
+  /**
+   * Touch: the hold itself means something (phone-v2 D8, long press selects — from the
+   * row's grip since the touch-row rework). It is called when the hold elapses instead
+   * of lifting; the drag lifts only if the finger then moves, and a release without
+   * moving swallows the click (the task does not open).
+   */
+  onHold?: () => void
+  /**
+   * The grip's hold ticked a row that was not ticked before, and the press has since
+   * become a drag or was abandoned: give that tick back at once (bulk-actions on
+   * touch — a hold selects, a hold that drags moves; only a release that never moved
+   * keeps the tick), so a move never leaves selection behind.
+   */
+  onHoldUndo?: () => void
+  /**
+   * The press began on the row's grip, not its body. A grip never scrolls (its own
+   * `touch-action: none`), so any movement past the threshold lifts the drag without
+   * waiting for the hold; the hold still means select, and a release without either
+   * falls through to the grip's own click (a tap ticks).
+   */
+  grip?: boolean
 }
 
 /** Pixels a mouse or pen must travel before a press becomes a drag. */
 export const DRAG_THRESHOLD = 5
 /** Milliseconds a touch must rest before it becomes a drag. */
 export const TOUCH_HOLD_MS = 350
+
+/**
+ * True when the primary pointer is a fine one (a mouse, a trackpad, a precise pen).
+ * The row's hold menu is for a fine pointer only: a coarse one (a phone) keeps its
+ * own long-press meaning — tick the row, or scroll (task-row-context-menu).
+ */
+export function finePointer(): boolean {
+  return typeof window === 'undefined' || window.matchMedia?.('(pointer: fine)').matches !== false
+}
+
+/** The press a shared hold follows (task-row-context-menu). */
+export interface HoldPress {
+  pointerId: number
+  pointerType: string
+  clientX: number
+  clientY: number
+}
+
+export interface HoldOptions {
+  /** The hold elapsed without the press moving: the gesture is armed (its held feedback starts). */
+  onArmed: () => void
+  /** The armed hold ended without a release — `stop()`, called by the caller on movement or a cancel. */
+  onEnd: () => void
+}
+
+export interface Hold {
+  /** The hold elapsed and has not ended since. */
+  armed: () => boolean
+  /** End the hold now: `onEnd` runs once if it was armed, and never again. */
+  stop: () => void
+}
+
+/**
+ * The touch hold both row gestures share (task-row-context-menu, design D1): after
+ * TOUCH_HOLD_MS still it arms (`onArmed`, once), and `stop()` ends it (`onEnd`, once).
+ * The caller owns the rest — movement and release mean something different to a drag
+ * (lift) than to a row without one (end the hold), so each calls `stop()` when its own
+ * move passes DRAG_THRESHOLD. While armed the page must not scroll under the finger.
+ * A press that is not a touch never arms.
+ */
+export function trackHold(e: HoldPress, opts: HoldOptions): Hold {
+  if (e.pointerType !== 'touch') return { armed: () => false, stop: () => undefined }
+  let armed = false
+  let done = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const blockScroll = (ev: TouchEvent) => { if (armed) ev.preventDefault() }
+  const stop = () => {
+    if (done) return
+    done = true
+    clearTimeout(timer)
+    window.removeEventListener('touchmove', blockScroll)
+    if (armed) {
+      armed = false
+      opts.onEnd()
+    }
+  }
+  timer = setTimeout(() => {
+    if (done) return
+    armed = true
+    opts.onArmed()
+  }, TOUCH_HOLD_MS)
+  window.addEventListener('touchmove', blockScroll, { passive: false })
+  return { armed: () => armed, stop }
+}
 
 const ACTIVE = 'data-drop-active'
 
@@ -77,8 +138,18 @@ export function dropTargetAt(x: number, y: number, doc: Document = document, tas
   return hit ? hit.getAttribute('data-drop-target') : null
 }
 
-/** The key an element answers to: its `data-drop-target`, or `drop:` and its `data-task-drop`. */
-const keysOf = (el: Element) => [el.getAttribute('data-drop-target'), el.hasAttribute('data-task-drop') ? `drop:${el.getAttribute('data-task-drop')}` : null]
+/**
+ * The keys an element answers to: its `data-drop-target`, and `drop:` and its
+ * `data-task-drop`. An attribute it lacks gives no key, so a row with only one of
+ * them (a viewer's project row has no task drop) never matches "no target".
+ */
+const keysOf = (el: Element): string[] => {
+  const keys: string[] = []
+  const target = el.getAttribute('data-drop-target')
+  if (target !== null) keys.push(target)
+  if (el.hasAttribute('data-task-drop')) keys.push(`drop:${el.getAttribute('data-task-drop')}`)
+  return keys
+}
 
 function markActive(key: string | null): void {
   for (const el of document.querySelectorAll(`[${ACTIVE}]`)) {
@@ -121,33 +192,40 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   const startX = e.clientX
   const startY = e.clientY
   let lifted = false
-  let held = false
+  /** phone-v2's hold selected this press: it belongs to the selection, not to the menu. */
+  let heldSelected = false
+  // The grip's own hold ticked a row this press did not find ticked; the press
+  // became a drag (or was abandoned), so that tick goes back at once — only a
+  // release that never moved keeps it (bulk-actions on touch).
+  const giveBackHold = () => {
+    if (!opts.grip || !heldSelected) return
+    heldSelected = false
+    opts.onHoldUndo?.()
+  }
   let ghost: HTMLElement | null = null
   let target: string | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let holdFired = false
-  let holdUndone = false
-  // The grip's hold selected a row; the moment the press becomes a drag (or is
-  // abandoned) that tick is given back, so a drag never leaves selection behind.
-  const undoHold = () => {
-    if (!opts.grip || !holdFired || holdUndone || !opts.onHoldUndo) return
-    holdUndone = true
-    opts.onHoldUndo()
-  }
+  // The shared hold (task-row-context-menu): it arms the drag instead of lifting it.
+  const hold = trackHold(e, {
+    onArmed: () => {
+      // The hold arms: phone-v2's hold selects (and is remembered, so the release does
+      // not open the menu); otherwise the release opens the row's menu.
+      opts.onHoldChange?.(true)
+      if (opts.onHold) {
+        heldSelected = true
+        opts.onHold()
+      }
+    },
+    // Armed and not lifted any more: the tint hands over to the drag's own feedback (a lift), or simply ends (cleanup, a cancel).
+    onEnd: () => opts.onHoldChange?.(false),
+  })
 
   const lift = () => {
     if (lifted) return
     lifted = true
-    // The press is a drag now, so the pending hold dies with the wait: a finger that
-    // moved before the hold elapsed must never tick the row (the Android trace had the
-    // hold firing after the lift and leaving "1 selected" behind).
-    clearTimeout(timer)
-    undoHold()
-    // The held tint hands over to the drag's own feedback.
-    if (held) {
-      held = false
-      opts.onHoldChange?.(false)
-    }
+    // A grip's own hold selected the row; the press became a drag, so that tick goes
+    // back at once (only a release that never moved keeps it).
+    giveBackHold()
+    hold.stop()
     ghost = makeGhost(opts.label)
     document.body.style.userSelect = 'none'
     opts.onStart?.()
@@ -162,11 +240,7 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
     opts.onMove?.(target, x, y)
   }
   const cleanup = () => {
-    clearTimeout(timer)
-    if (held) {
-      held = false
-      opts.onHoldChange?.(false)
-    }
+    hold.stop()
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
     window.removeEventListener('pointercancel', cancel)
@@ -180,15 +254,24 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
     if (ev.pointerId !== e.pointerId) return
     if (!lifted) {
       const far = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD
-      if (e.pointerType === 'touch' && !opts.grip) {
-        // Moving before the hold elapses is a scroll, not a drag; after it, the drag.
-        if (!far) return
-        if (!held) {
-          cancel()
+      if (e.pointerType === 'touch') {
+        // A grip never scrolls: any movement past the threshold drags (task-row-context-menu follow-up).
+        if (opts.grip) {
+          if (!far) return
+          lift()
+          ev.preventDefault()
+          place(ev.clientX, ev.clientY)
           return
         }
-      } else if (!far) return
-      // A grip lifts on the first far move: it never scrolls and never waits (bulk-actions on touch).
+        // Moving before the hold elapses is a scroll (or a swipe), not a drag; after a hold that selected, it carries the selection.
+        if (!hold.armed()) { if (far) cancel(); return }
+        if (!far) return
+        lift()
+        ev.preventDefault()
+        place(ev.clientX, ev.clientY)
+        return
+      }
+      if (!far) return
       lift()
     }
     ev.preventDefault()
@@ -197,18 +280,19 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   const up = (ev: PointerEvent) => {
     if (ev.pointerId !== e.pointerId) return
     const wasLifted = lifted
-    const heldStill = held
+    const heldStill = hold.armed()
     const at = wasLifted ? dropTargetAt(ev.clientX, ev.clientY, document, opts.taskDrops) ?? target : null
     cleanup()
     if (!wasLifted) {
-      // A touch held still and released is a long press: the row's actions menu at
-      // the finger (task-row-context-menu "Touch: hold and release") — not a tap,
-      // and nothing was dropped.
+      // A touch held still and released is a long press: not a tap, and nothing was
+      // dropped. On a fine pointer it opens the row's actions menu at the finger
+      // (task-row-context-menu "Touch: hold and release"); a coarse pointer (a phone)
+      // keeps the press as phone-v2 gave it — a selection, or nothing.
       if (heldStill && e.pointerType === 'touch') {
         swallowNextClick()
-        // A grip press is never the menu's: its hold selected, and this release is
-        // swallowed so the grip's own click cannot untick what the hold ticked.
-        if (!opts.grip) opts.onHoldRelease?.(ev.clientX, ev.clientY)
+        // Every pointer (the grip took selection): a held release on the row body opens
+        // its actions menu — on a phone as on a desktop. A grip press is never the menu's.
+        if (!heldSelected && !opts.grip) opts.onHoldRelease?.(ev.clientX, ev.clientY)
       }
       return
     }
@@ -218,7 +302,7 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   }
   const cancel = () => {
     const wasLifted = lifted
-    undoHold()
+    giveBackHold()
     cleanup()
     if (wasLifted) opts.onEnd?.()
   }
@@ -227,7 +311,8 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
     ev.stopPropagation()
     cancel()
   }
-  // While a touch drag is lifted the page must not scroll under the finger.
+  // While a touch drag is lifted the page must not scroll under the finger; while it
+  // is merely armed, trackHold blocks the scroll for both holders of a hold.
   const blockScroll = (ev: TouchEvent) => {
     if (lifted) ev.preventDefault()
   }
@@ -237,16 +322,5 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   window.addEventListener('pointercancel', cancel)
   window.addEventListener('keydown', key, true)
   window.addEventListener('touchmove', blockScroll, { passive: false })
-  if (e.pointerType === 'touch') {
-    // The hold arms the drag instead of lifting it: moving afterwards drags,
-    // releasing still opens the row's menu, so neither gesture steals the other.
-    timer = setTimeout(() => {
-      holdFired = true
-      held = true
-      opts.onHoldChange?.(true)
-      // The hold itself means select — only ever wired from the row's grip.
-      opts.onHold?.()
-    }, TOUCH_HOLD_MS)
-  }
   return cancel
 }

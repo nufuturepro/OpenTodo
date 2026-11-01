@@ -3,7 +3,6 @@ package demo
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -14,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // ---- creation tokens (demo-sandboxes D2) ----
@@ -26,10 +26,8 @@ const tokenKeySetting = "demo.token_key"
 // lets two processes starting together agree on the first key written.
 func (s *Service) loadTokenKey(ctx context.Context) error {
 	db := s.sync.DB()
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
 	if _, err := db.ExecContext(ctx, `INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES(?, ?, ?)`,
-		tokenKeySetting, `"`+hex.EncodeToString(b)+`"`, s.now().UnixMilli()); err != nil {
+		tokenKeySetting, `"`+ids.Hex(32)+`"`, s.now().UnixMilli()); err != nil {
 		return fmt.Errorf("demo token key: %w", err)
 	}
 	var raw string
@@ -56,8 +54,7 @@ func (s *Service) issueToken() string {
 	if s.tokenKey == nil {
 		return ""
 	}
-	payload := make([]byte, 24)
-	_, _ = rand.Read(payload[:16])
+	payload := append(ids.Bytes(16), make([]byte, 8)...)
 	binary.BigEndian.PutUint64(payload[16:], uint64(s.now().Add(TokenTTL).UnixMilli()))
 	enc := base64.RawURLEncoding
 	return enc.EncodeToString(payload) + "." + enc.EncodeToString(s.sign(payload))
@@ -145,6 +142,17 @@ func (s *Service) reserve(ctx context.Context, nonce string, exp int64, addrHash
 	if recent >= PerAddressPerHour {
 		return nil, nil, ErrRateLimited
 	}
+	// A global creation rate bounds how fast sandboxes can be turned over by
+	// many addresses at once (hosted-demo-limits D3). Counted in memory, since
+	// evicted sandboxes leave no row.
+	cut := 0
+	for cut < len(s.createdAt) && now.Sub(s.createdAt[cut]) >= time.Hour {
+		cut++
+	}
+	s.createdAt = s.createdAt[cut:]
+	if len(s.createdAt) >= GlobalPerHourFactor*s.maxSandboxes {
+		return nil, nil, ErrBusy
+	}
 	if err := s.checkSize(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -172,6 +180,7 @@ func (s *Service) reserve(ctx context.Context, nonce string, exp int64, addrHash
 		return nil, nil, err
 	}
 	s.touched.Store(me.ID, now.UnixMilli())
+	s.createdAt = append(s.createdAt, now)
 	return me, collab, nil
 }
 
@@ -218,7 +227,10 @@ func usedBytes(ctx context.Context, db rowQuerier) (int64, error) {
 }
 
 // makeRoom enforces the live cap: at the cap, the least recently active sandbox
-// idle for EvictAfter is deleted; when there is none the demo is busy.
+// idle for EvictAfter is deleted; when there is none, the oldest sandbox
+// created more than EvictAfter ago gives way, so nobody can hold the cap by
+// keeping sandboxes busy (hosted-demo-limits D2). Only when every sandbox is
+// younger than that is the demo busy.
 func (s *Service) makeRoom(ctx context.Context) error {
 	db := s.sync.DB()
 	var live int
@@ -232,6 +244,10 @@ func (s *Service) makeRoom(ctx context.Context) error {
 	err := db.QueryRowContext(ctx, `SELECT user_id FROM demo_sandboxes WHERE last_active_at < ? ORDER BY last_active_at LIMIT 1`,
 		s.now().Add(-EvictAfter).UnixMilli()).Scan(&victim)
 	if errors.Is(err, sql.ErrNoRows) {
+		err = db.QueryRowContext(ctx, `SELECT user_id FROM demo_sandboxes WHERE created_at < ? ORDER BY created_at LIMIT 1`,
+			s.now().Add(-EvictAfter).UnixMilli()).Scan(&victim)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrBusy
 	}
 	if err != nil {
@@ -241,11 +257,7 @@ func (s *Service) makeRoom(ctx context.Context) error {
 	return err
 }
 
-func randomTag() string {
-	b := make([]byte, 10)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
+func randomTag() string { return ids.Hex(10) }
 
 // ---- activity and the write budget (demo-sandboxes D3, D4, D7) ----
 

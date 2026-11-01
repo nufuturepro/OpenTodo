@@ -6,10 +6,12 @@ package webhook
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
+	"strings"
 
-	"github.com/pixari/opentodo/internal/importer"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/importer"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // PayloadVersion is the version of the JSON body documented in docs/webhooks.md.
@@ -22,7 +24,7 @@ const EventPing = "ping"
 var Events = []string{
 	"task.created", "task.updated", "task.completed", "task.reopened", "task.deleted",
 	"project.created", "project.updated", "project.archived", "project.deleted",
-	importer.EventCompleted, importer.EventUndone,
+	importer.EventCompleted, importer.EventUndone, EventRuleFired,
 }
 
 // KnownEvent reports whether name is a subscribable event.
@@ -32,18 +34,18 @@ func KnownEvent(name string) bool { return slices.Contains(Events, name) }
 // precedence: created, deleted, completed, reopened, archived, updated.
 func EventFor(c opsync.Change) string {
 	f := c.Fields
-	if fc, ok := f["created_at"]; ok && isNull(fc.From) && !isNull(fc.To) {
+	if fc, ok := f["created_at"]; ok && opsync.IsNull(fc.From) && !opsync.IsNull(fc.To) {
 		return c.Entity + ".created"
 	}
-	if fc, ok := f["deleted_at"]; ok && isNull(fc.From) && !isNull(fc.To) {
+	if fc, ok := f["deleted_at"]; ok && opsync.IsNull(fc.From) && !opsync.IsNull(fc.To) {
 		return c.Entity + ".deleted"
 	}
 	if c.Entity == "task" {
 		if fc, ok := f["completed_at"]; ok {
 			switch {
-			case isNull(fc.From) && !isNull(fc.To):
+			case opsync.IsNull(fc.From) && !opsync.IsNull(fc.To):
 				return "task.completed"
-			case !isNull(fc.From) && isNull(fc.To):
+			case !opsync.IsNull(fc.From) && opsync.IsNull(fc.To):
 				return "task.reopened"
 			}
 		}
@@ -57,11 +59,15 @@ func EventFor(c opsync.Change) string {
 }
 
 // SourceFor names where a change came from: "server" (REST API), "import",
-// "caldav", or "device" for any syncing client (the device id is sent separately).
+// "caldav", "rule" (an automation rule's batch), or "device" for any syncing
+// client (the device id is sent separately).
 func SourceFor(origin string) string {
 	// The server's device carries a per-process suffix (server:<boot id>).
 	if opsync.IsServerDevice(origin) {
 		return "server"
+	}
+	if strings.HasPrefix(origin, opsync.RuleDevicePrefix) {
+		return "rule"
 	}
 	switch origin {
 	case "import", "caldav":
@@ -102,6 +108,13 @@ func BuildPayload(deliveryID, webhookID, event string, timeMs int64, origin, ent
 				if _, has := e["origin"]; !has {
 					e["origin"] = json.RawMessage("null")
 				}
+			}
+			// workspace_id travels on projects and tasks, null for the default
+			// workspace (OpenSpec change workspaces); a task with a project
+			// belongs to its project's workspace.
+			if _, has := e["workspace_id"]; (entityKind == "task" || entityKind == "project") && !has {
+				e = maps.Clone(e) // never the caller's record
+				e["workspace_id"] = json.RawMessage("null")
 			}
 			data[entityKind] = e
 		}
@@ -167,8 +180,6 @@ func WithDeliveryID(body []byte, id string) ([]byte, error) {
 	p.ID = id
 	return json.Marshal(p)
 }
-
-func isNull(v json.RawMessage) bool { return len(v) == 0 || string(v) == "null" }
 
 func isTrue(v json.RawMessage) bool {
 	var b bool

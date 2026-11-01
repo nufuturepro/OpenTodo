@@ -17,7 +17,7 @@ A task MAY reference a parent task through the existing `parent_id` field, to an
 - **THEN** the subtask is shown at the top level of its project until the parent arrives, then nests beneath it, with no operation written
 
 ### Requirement: Create subtasks
-The user SHALL be able to add a subtask from an "Add subtask" input in the parent's detail panel and by pressing `a` with a task selected in a list. A new subtask SHALL inherit the parent's project, default to priority 4 and no due date, and SHALL appear beneath its parent immediately, including offline.
+The user SHALL be able to add a subtask from an "Add subtask" input in the parent's detail panel, by pressing `a` with a task selected in a list, and from a check-list line in the parent's notes with Make subtask (`rich-text-editing`). A new subtask SHALL inherit the parent's project, default to priority 4 and no due date, and SHALL appear beneath its parent immediately, including offline; one made from a checked line SHALL be created completed.
 
 #### Scenario: Add from the detail panel
 - **WHEN** the user types "Book hotel" in the "Add subtask" input of "Plan trip" and presses Enter
@@ -26,6 +26,10 @@ The user SHALL be able to add a subtask from an "Add subtask" input in the paren
 #### Scenario: Add from the keyboard offline
 - **WHEN** the device is offline, "Plan trip" is selected and the user presses `a`, types a title and presses Enter
 - **THEN** the subtask is shown under "Plan trip", survives a reload and is uploaded when the network returns
+
+#### Scenario: From a checked line
+- **WHEN** the user chooses Make subtask on the checked line "Pack charger" in the notes of "Plan trip"
+- **THEN** "Pack charger" appears under "Plan trip" as a completed subtask and the parent's progress counts it
 
 ### Requirement: Nested display in lists
 Project and Inbox views SHALL render subtasks indented beneath their parent, ordered by position within each level, with a per-device collapse toggle in the row's leading slot on parents (Left collapses, Right expands on the selected row). Every list SHALL reserve the same leading slot, so checkboxes align across tree and flat views.
@@ -111,3 +115,18 @@ Deleting a task SHALL also soft-delete every descendant, one tombstone operation
 #### Scenario: Concurrent delete and edit
 - **WHEN** device A deletes "Plan trip" offline while device B renames its subtask "Hotel" offline, and both sync
 - **THEN** "Hotel" is deleted on both devices and carries the new title in the export
+
+### Requirement: Paste several subtasks
+Pasting text with at least two non-empty lines into an empty "Add subtask" field SHALL offer "Add N subtasks" and "Paste as one line", with the same line cleanup, preview, Escape behaviour and limit of 100 lines as a paste into quick add (`natural-language-capture`). Confirming SHALL create one subtask per line under the task, in the pasted order, each inheriting the parent's project with priority 4 and no due date, without parsing the line. The subtasks SHALL be written as one batch applied locally first, so they appear at once offline, upload together and converge like subtasks added one by one, and one Undo SHALL remove them all. The field SHALL keep the focus afterwards.
+
+#### Scenario: Paste a packing list
+- **WHEN** the user pastes "1. Passport\n2. Charger\n3. Tickets" into the Add subtask field of "Plan trip" and confirms
+- **THEN** "Passport", "Charger" and "Tickets" appear in that order under "Plan trip", the parent's progress counts three open subtasks, and the field stays focused
+
+#### Scenario: Subtask lines are not parsed
+- **WHEN** the user pastes "Pack tomorrow\nBook taxi p1" into the Add subtask field and confirms
+- **THEN** two subtasks are created with the titles "Pack tomorrow" and "Book taxi p1", with no due date and priority 4
+
+#### Scenario: Offline subtasks
+- **WHEN** the device is offline and the user pastes and confirms three lines in the Add subtask field
+- **THEN** the three subtasks are shown under the parent at once, survive a reload and upload together when the network returns

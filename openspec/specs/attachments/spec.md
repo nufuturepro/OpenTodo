@@ -21,7 +21,7 @@ An attachment SHALL belong to one task and optionally to one comment of that tas
 - **THEN** the batch is refused as invalid or the operation is rejected, and nothing is stored
 
 ### Requirement: Link attachments
-An attachment MAY carry a link instead of a file. A link attachment SHALL have an `http` or `https` URL, no stored bytes, size zero, SHALL not count toward any quota, and SHALL be shown as a link that opens in a new tab without referrer. Link metadata syncs and converges like every other attachment field.
+An attachment MAY carry a link instead of a file. A link attachment SHALL have an `http` or `https` URL, no stored bytes, size zero, SHALL not count toward any quota, and SHALL be shown as a link that opens in a new tab without referrer. The app SHALL open a link attachment only when its URL, as the device reads it after any decryption, is `http` or `https`: the server cannot check an encrypted URL. Link metadata syncs and converges like every other attachment field.
 
 #### Scenario: Attach a link
 - **WHEN** a user attaches `https://example.org/spec.pdf` to a task
@@ -30,6 +30,10 @@ An attachment MAY carry a link instead of a file. A link attachment SHALL have a
 #### Scenario: Unsafe scheme
 - **WHEN** a device submits a link attachment whose URL scheme is `javascript`
 - **THEN** the operation is rejected as invalid and nothing is stored
+
+#### Scenario: Unsafe scheme inside an encrypted value
+- **WHEN** an encrypted account's link attachment decrypts on the device to a `javascript:` or `data:` URL
+- **THEN** opening it does nothing, and no page or script runs
 
 ### Requirement: Authorship and permissions
 Any account that can read a task SHALL be able to attach to it, viewers included. The author SHALL be the submitting account, set at creation; the task, comment, size, digest, link and creation time SHALL be immutable after creation; only the author SHALL rename; the author, project admins and the owner SHALL be able to remove. The server SHALL check these rules per operation at receipt, so refused writes change nothing on any device.
@@ -100,11 +104,15 @@ File bytes SHALL be stored as one immutable file per attachment under the data d
 - **THEN** the response is 409 `already_uploaded` and the stored file is unchanged
 
 ### Requirement: Upload confirmation is server-authoritative
-`uploaded_at` SHALL be written only by the server, as an operation with device `server`, once the file is stored, so every device learns through ordinary sync that the bytes are available. `/api/v1/sync` SHALL refuse submitted operations whose device is `server`, and the server SHALL reject any device-written `uploaded_at`. Until it is set, clients show the attachment as uploading and offer no download.
+`uploaded_at` SHALL be written only by the server, as an operation with device `server`, once the file is stored, so every device learns through ordinary sync that the bytes are available. The server's operation SHALL carry a timestamp greater than the field's current winning timestamp, so it wins whatever clock the device that created the row had; an upload whose confirmation could not be recorded SHALL NOT answer success. `/api/v1/sync` SHALL refuse submitted operations whose device is `server`, and the server SHALL reject any device-written `uploaded_at`. Until it is set, clients show the attachment as uploading and offer no download.
 
 #### Scenario: Other device sees availability
 - **WHEN** a phone uploads a file and a laptop syncs afterwards
 - **THEN** the laptop shows the attachment as available and can open it
+
+#### Scenario: Device clock ahead
+- **WHEN** a phone whose clock runs 90 seconds ahead of the server creates an attachment and uploads its bytes
+- **THEN** the response is 204, the attachment is listed as uploaded, and the phone itself receives `uploaded_at` on its next sync
 
 #### Scenario: Forged confirmation
 - **WHEN** a device submits an `uploaded_at` operation, or any operation with device `server`
@@ -153,7 +161,7 @@ File bytes SHALL be stored as one immutable file per attachment under the data d
 - **THEN** the response is 404 `not_found`
 
 ### Requirement: Download
-`GET /api/v1/attachments/{id}/content` SHALL stream the stored bytes of an attachment the caller can read, support range requests, send the stored size, a strong validator derived from the digest and `Cache-Control: private, max-age=31536000, immutable` (the bytes never change). It SHALL require a session or token and SHALL not reveal whether an unreadable id exists.
+`GET /api/v1/attachments/{id}/content` SHALL stream the stored bytes of an attachment the caller can read, support range requests, send the stored size, a strong validator derived from the digest and `Cache-Control: private, no-cache`, so the browser may keep a copy but revalidates it with the server (a 304 while signed in) before every use. Signing out SHALL answer with `Clear-Site-Data: "cache"`, so a browser that honours it drops its cached files and pictures of the site. It SHALL require a session or token and SHALL not reveal whether an unreadable id exists.
 
 #### Scenario: Member downloads
 - **WHEN** a viewer of a shared project requests the content of an uploaded attachment of one of its tasks
@@ -171,6 +179,10 @@ File bytes SHALL be stored as one immutable file per attachment under the data d
 - **WHEN** a video player requests bytes 0–1048575 of a 40 MB attachment
 - **THEN** the response is 206 with exactly that range
 
+#### Scenario: Cached copy after sign-out
+- **WHEN** a user viewed an image attachment, signed out, and someone else opens its address in the same browser
+- **THEN** the browser cannot show the file without revalidating it, and the server answers 401 `unauthorized`
+
 ### Requirement: Downloads are served safely
 Every content response SHALL carry `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and a `Content-Disposition` with the attachment's name. The media type SHALL be the stored type only when it is on the inline allow-list (raster images, PDF, plain text, audio, video); every other type, SVG included, SHALL be served as `application/octet-stream` with disposition `attachment`. Encrypted bytes are always `application/octet-stream`.
 
@@ -187,7 +199,7 @@ Every content response SHALL carry `X-Content-Type-Options: nosniff`, `Content-S
 - **THEN** it is served as `application/octet-stream` with disposition `attachment`
 
 ### Requirement: Per-file and per-account limits
-The server SHALL enforce a per-file limit (default 25 MB, 1–2048) and a per-account quota (default 1024 MB, 0 for unlimited), set by the owner and optionally preset once with `OPENTODO_ATTACHMENTS_MAX_FILE_MB` and `OPENTODO_ATTACHMENTS_QUOTA_MB`. The quota counts the stored bytes of the account's non-removed attachments. A creation whose size exceeds the per-file limit SHALL be rejected at receipt so no device ever shows it.
+The server SHALL enforce a per-file limit (default 25 MB, 1–2048) and a per-account quota (default 1024 MB, 0 for unlimited), set by the owner and optionally preset once with `OPENTODO_ATTACHMENTS_MAX_FILE_MB` and `OPENTODO_ATTACHMENTS_QUOTA_MB`. The quota counts the stored bytes of the account's non-removed attachments. A creation whose size exceeds the per-file limit SHALL be rejected at receipt so no device ever shows it. An upload in progress SHALL hold its size against the quota until it ends, so parallel uploads cannot together go over it. Restoring a removed attachment whose file is stored SHALL be rejected with reason `quota_exceeded` when it would take its author over the quota; the device reverts the restore and shows the reason, and devices converge on the attachment staying removed.
 
 #### Scenario: Over the per-file limit
 - **WHEN** a device syncs an attachment whose size is 30 MB and the limit is 25 MB
@@ -200,6 +212,14 @@ The server SHALL enforce a per-file limit (default 25 MB, 1–2048) and a per-ac
 #### Scenario: Removal frees quota
 - **WHEN** the account removes a 100 MB attachment
 - **THEN** its usage drops by 100 MB at once, even though the file stays for the retention period
+
+#### Scenario: Restore over the quota
+- **WHEN** an account removes a 100 MB attachment, fills the freed space with new uploads, and then restores the removed one
+- **THEN** the restore is rejected with reason `quota_exceeded` and the attachment stays removed on every device
+
+#### Scenario: Parallel uploads
+- **WHEN** an account with room for one more 10 MB file starts two 10 MB uploads at the same time
+- **THEN** one is stored and the other answers 403 `quota_exceeded`
 
 #### Scenario: Invalid preset
 - **WHEN** `OPENTODO_ATTACHMENTS_MAX_FILE_MB=huge` is set
@@ -315,3 +335,18 @@ Server-side assistants (the MCP endpoint and the in-app assistant) SHALL see an 
 #### Scenario: Encrypted account
 - **WHEN** an assistant asks for a task of an encrypted account with an attachment
 - **THEN** the attachment appears with the placeholder for its name and type and its size
+
+### Requirement: Embedded attachments
+An image attachment of a task MAY be embedded in that task's notes or in a comment of the task by reference to its id; the reference carries no bytes and does not change the attachment's quota, permissions or lifecycle. Removing an attachment that a note on this device embeds SHALL ask for confirmation naming the note; after removal, references render as "Removed image". An embed SHALL only ever name an attachment of the same task; a reference to another task's attachment or an unknown id SHALL render as "Removed image" and SHALL load nothing.
+
+#### Scenario: Remove an embedded image
+- **WHEN** the user removes an attachment that the task's notes embed
+- **THEN** a confirmation names the notes, and after confirming the attachment is removed and the note shows "Removed image" in its place
+
+#### Scenario: Reference to another task's file
+- **WHEN** a comment body contains `![x](attachment:<id of a file on another task>)`
+- **THEN** the app renders "Removed image" and requests nothing for that id
+
+#### Scenario: Bytes stay where they are
+- **WHEN** a 3 MB photo is embedded in a note
+- **THEN** the note's document grows by the reference only, the quota is unchanged, and the bytes are still served solely by the attachment content route

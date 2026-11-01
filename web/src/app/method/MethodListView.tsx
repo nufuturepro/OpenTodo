@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { blockedMap } from '../../lib/dependencies'
 import { t } from '../../lib/i18n'
 import { resolveLabels } from '../../lib/labels'
+import { hasTimeColumn } from '../../lib/rowTime'
 import { useAllLabels } from '../../lib/localData'
 import { nextGroups, waitingGroups, type MethodGroup } from '../../lib/method/groups'
 import { setTaskCompleted } from '../../lib/ops'
@@ -15,6 +16,7 @@ import { useBulkList } from '../bulk/useBulkList'
 import { useWithMethod } from '../help/MethodLink'
 import { LabelPicker } from '../LabelPicker'
 import { setPanelTaskId, usePanelTaskId } from '../panel'
+import { openFromRow } from '../sidePanel'
 import { keysOf } from '../../lib/shortcuts'
 import { navigate } from '../router'
 import { TaskRow } from '../TaskRow'
@@ -59,11 +61,13 @@ function MethodList({ title, icon, move, help, groups, empty }: Props) {
   const projectMap = useMemo(() => new Map((input?.projects ?? []).map((p) => [p.id, p])), [input])
   const blocked = useMemo(() => blockedMap(input?.tasks ?? []), [input])
   const rows = useMemo(() => (groups ?? []).flatMap((g) => g.tasks.map((task) => ({ key: `${g.key}:${task.id}`, task }))), [groups])
+  // The time column (rows-v2 D2): one fact of the whole list.
+  const timeColumn = useMemo(() => hasTimeColumn(rows.map((r) => r.task)), [rows])
   const [selected, setSelected] = useState<string | null>(null)
   const [pickerFor, setPickerFor] = useState<string | null>(null)
   const openId = usePanelTaskId()
   const bulk = useBulkList(useMemo(() => rows.map((r) => r.task), [rows]))
-  useListKeys({ rows, selected, setSelected, openId, setOpenId: setPanelTaskId, pickerFor, setPickerFor, bulk, onIdleEscape: () => setSelected(null) })
+  useListKeys({ rows, selected, setSelected, openId, setOpenId: setPanelTaskId, pickerFor, setPickerFor, bulk, onIdleEscape: () => setSelected(null), sidePanel: true })
   // A completed or moved task leaves the list: keep a selection only while its row exists.
   useEffect(() => { if (selected && !rows.some((r) => r.key === selected)) setSelected(null) }, [rows, selected])
   const count = rows.length ? new Set(rows.map((r) => r.task.id)).size : undefined
@@ -89,11 +93,12 @@ function MethodList({ title, icon, move, help, groups, empty }: Props) {
                     const key = `${g.key}:${task.id}`
                     return (
                       <TaskRow key={key} task={task} project={task.project_id ? projectMap.get(task.project_id) : undefined}
-                        labels={resolveLabels(task.labels, labelMap)} showProject selected={key === selected}
+                        labels={resolveLabels(task.labels, labelMap)} showProject selected={key === selected} timeColumn={timeColumn}
+                        onMore={(from) => { setSelected(key); bulk.openActions(null, from) }}
                         blockedBy={blocked.get(task.id)} breadcrumb={g.notes?.get(task.id) ?? null}
                         onToggle={() => act(setTaskCompleted(task.id, !task.completed_at))}
-                        onOpen={() => { setSelected(key); setPanelTaskId(task.id) }}
-                        {...bulk.rowProps(task.id)} />
+                        onOpen={(e) => { setSelected(key); openFromRow(task.id, e) }}
+                        {...bulk.rowProps(task)} />
                     )
                   })}
                 </ul>

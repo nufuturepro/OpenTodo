@@ -4,9 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"time"
 
-	opsync "github.com/pixari/opentodo/internal/sync"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // The sync endpoint: devices push ops and pull what changed since their cursor.
@@ -96,6 +95,12 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
+	// Additive (workspaces D8): the caller's workspaces with members and groups.
+	workspaces, err := s.sync.Workspaces(r.Context(), uid)
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
 	rejected := res.Rejected
 	if rejected == nil {
 		rejected = []opsync.Rejection{}
@@ -111,12 +116,13 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		"ops":        ops,
 		"cursor":     cursor,
 		"hasMore":    more,
-		"serverTime": time.Now().UnixMilli(),
+		"serverTime": s.now().UnixMilli(),
 		// generation changes only when the server is restored from a backup (additive field).
 		"generation": gen,
 		// Additive (project-sharing): refused ops and the caller's shared projects.
 		"rejected":    rejected,
 		"memberships": memberships,
+		"workspaces":  workspaces,
 		// Additive (trash-and-history): entities purged since the cursor, which
 		// devices delete locally, and the Trash retention in days (0 = never).
 		"purged":             purged,

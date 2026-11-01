@@ -8,8 +8,9 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
 )
 
 // Single sign-on accounts (OpenSpec change `oidc-login`): mapping provider
@@ -106,7 +107,7 @@ func (s *Service) MatchOrProvision(ctx context.Context, id ExternalIdentity, all
 	}
 	email := normalizeEmail(id.Email)
 	if u != nil {
-		if _, err := tx.ExecContext(ctx, "UPDATE identities SET last_login_at = ?, email = ? WHERE id = ?", now, truncate(email, 320), identityID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identities SET last_login_at = ?, email = ? WHERE id = ?", now, textutil.Truncate(email, 320), identityID); err != nil {
 			return nil, false, false, err
 		}
 		return u, false, false, tx.Commit()
@@ -129,6 +130,15 @@ func (s *Service) MatchOrProvision(ctx context.Context, id ExternalIdentity, all
 		if guarded {
 			return nil, false, false, ErrLinkRequiresSession
 		}
+		// An address nobody has confirmed may have been typed by someone else
+		// to catch the real holder's first sign-on (sso-email-verified D2).
+		var verifiedAt sql.NullInt64
+		if err := tx.QueryRowContext(ctx, "SELECT email_verified_at FROM users WHERE id = ?", existing.ID).Scan(&verifiedAt); err != nil {
+			return nil, false, false, err
+		}
+		if !verifiedAt.Valid {
+			return nil, false, false, ErrLinkRequiresSession
+		}
 		u = &existing
 	case errors.Is(err, sql.ErrNoRows):
 		if !s.allowSignup && !allowProvision {
@@ -138,11 +148,10 @@ func (s *Service) MatchOrProvision(ctx context.Context, id ExternalIdentity, all
 			return nil, false, false, err
 		}
 		name := strings.TrimSpace(id.Name)
-		u = &User{ID: ids.New(), Email: email, Name: truncate(name, 100), Role: "member", CreatedAt: now}
+		u = &User{ID: ids.New(), Email: email, Name: textutil.Truncate(name, 100), Role: "member", CreatedAt: now}
 		// No password: the account signs in through the provider (an empty hash
 		// never verifies). It can add a passkey later.
-		if _, err := tx.ExecContext(ctx, "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-			u.ID, u.Email, u.Name, "", u.Role, u.CreatedAt); err != nil {
+		if err := insertUser(ctx, tx, u, ""); err != nil {
 			if strings.Contains(err.Error(), "UNIQUE") {
 				return nil, false, false, ErrEmailTaken
 			}
@@ -186,11 +195,19 @@ func (s *Service) HasLocalMFA(ctx context.Context, userID string) (bool, error) 
 
 func (s *Service) insertIdentity(ctx context.Context, tx *sql.Tx, userID string, id ExternalIdentity, now int64, provider string) error {
 	if _, err := tx.ExecContext(ctx, `INSERT INTO identities(id,user_id,issuer,subject,email,created_at,last_login_at)
-		VALUES(?,?,?,?,?,?,?)`, ids.New(), userID, id.Issuer, id.Subject, truncate(normalizeEmail(id.Email), 320), now, now); err != nil {
+		VALUES(?,?,?,?,?,?,?)`, ids.New(), userID, id.Issuer, id.Subject, textutil.Truncate(normalizeEmail(id.Email), 320), now, now); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return ErrIdentityTaken
 		}
 		return err
+	}
+	// A provider's verified address equal to the account's confirms it
+	// (sso-email-verified D1).
+	if email := normalizeEmail(id.Email); id.EmailVerified && email != "" {
+		if _, err := tx.ExecContext(ctx, "UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ? AND email = ?",
+			now, userID, email); err != nil {
+			return err
+		}
 	}
 	return s.audit.RecordTx(ctx, tx, audit.IdentityLinked(userID, provider))
 }
@@ -223,6 +240,27 @@ func (s *Service) LinkIdentity(ctx context.Context, userID string, id ExternalId
 		return false, err
 	}
 	return false, tx.Commit()
+}
+
+// ConfirmLinkedIdentity is the sign-in half of LinkIdentity: when id is
+// already linked to userID it records the use and reports true; an identity
+// linked to another account is ErrIdentityTaken; an unlinked identity reports
+// false and links nothing. A session that is not fresh may only re-confirm an
+// identity it already has (credential-freshness).
+func (s *Service) ConfirmLinkedIdentity(ctx context.Context, userID string, id ExternalIdentity) (bool, error) {
+	u, identityID, err := identityUser(ctx, s.db, id.Issuer, id.Subject)
+	switch {
+	case err != nil:
+		return false, err
+	case u == nil:
+		return false, nil
+	case u.ID != userID:
+		return false, ErrIdentityTaken
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE identities SET last_login_at = ? WHERE id = ?", s.clock().UnixMilli(), identityID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ListIdentities returns the identities linked to an account.

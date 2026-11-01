@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"time"
 )
@@ -216,17 +215,25 @@ func locate(ctx context.Context, q querier, acc *access, entity, id string) (sco
 		return "", false, false, err
 	}
 	defer rows.Close()
-	bestRank := 99
+	deletedIn := map[string]bool{}
+	var holders []string
 	for rows.Next() {
 		var sc, del string
 		if err := rows.Scan(&sc, &del); err != nil {
 			return "", false, false, err
 		}
-		if r := acc.rank(sc); r < bestRank {
-			scope, deleted, bestRank = sc, del != "null", r
-		}
+		deletedIn[sc] = del != "null"
+		holders = append(holders, sc)
 	}
-	return scope, deleted, bestRank != 99, rows.Err()
+	if err := rows.Err(); err != nil || len(holders) == 0 {
+		return "", false, false, err
+	}
+	rows.Close()
+	// One holder is the rule; several visible ones predate entity-id-ownership.
+	if scope, err = homeScope(ctx, q, acc, entity, id, holders); err != nil {
+		return "", false, false, err
+	}
+	return scope, deletedIn[scope], true, nil
 }
 
 // Purge permanently removes trashed tasks or projects the user may delete
@@ -369,9 +376,6 @@ func (s *Service) SweepOrphans(ctx context.Context) (int, error) {
 	return len(orphans), nil
 }
 
-// RetentionInterval is how often the retention job runs after its startup pass.
-const RetentionInterval = 24 * time.Hour
-
 // RetentionPass purges everything that has been in the Trash for more than days
 // (design D7) and wakes the devices that could see it. days <= 0 does nothing.
 func (s *Service) RetentionPass(ctx context.Context, days int) (PurgeResult, error) {
@@ -387,37 +391,6 @@ func (s *Service) RetentionPass(ctx context.Context, days int) (PurgeResult, err
 		return res, err
 	}
 	return res, nil
-}
-
-// RunRetention runs RetentionPass at startup and every RetentionInterval until
-// ctx is done. days <= 0 (OPENTODO_TRASH_RETENTION_DAYS=0) returns immediately.
-func (s *Service) RunRetention(ctx context.Context, days int, log *slog.Logger) {
-	if days <= 0 {
-		return
-	}
-	pass := func() {
-		res, err := s.RetentionPass(ctx, days)
-		if err != nil {
-			if ctx.Err() == nil {
-				log.Error("trash retention failed", "err", err)
-			}
-			return
-		}
-		if res.Tasks+res.Projects+res.Attachments+res.Orphans > 0 {
-			log.Info("trash retention purged items", "tasks", res.Tasks, "projects", res.Projects, "attachments", res.Attachments, "orphan_files", res.Orphans, "days", days)
-		}
-	}
-	pass()
-	t := time.NewTicker(RetentionInterval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			pass()
-		}
-	}
 }
 
 type trashedEntity struct {
@@ -510,6 +483,14 @@ func (s *Service) purgeTx(ctx context.Context, actor string, pick func(tx *sql.T
 	// CalDAV resource names of purged tasks go in the same transaction
 	// (harden-server-edges), unless the task id still lives in another scope.
 	for _, t := range all {
+		// A purged project's "Keep away from AI assistants" switch goes with it
+		// (agent-planning-fields D9).
+		if t.entity == "project" {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM project_agent_exclusions WHERE project_id = ?
+				AND NOT EXISTS (SELECT 1 FROM scope_fields WHERE entity = 'project' AND entity_id = ?)`, t.id, t.id); err != nil {
+				return res, fmt.Errorf("purge agent exclusion: %w", err)
+			}
+		}
 		if t.entity != "task" {
 			continue
 		}
@@ -622,8 +603,11 @@ func expandPurge(ctx context.Context, tx *sql.Tx, targets []purgeTarget) ([]purg
 		}
 	}
 	for _, t := range tasks {
-		rows, err := tx.QueryContext(ctx, `SELECT scope_id, entity_id FROM scope_fields WHERE entity = 'reminder' AND field = 'task_id' AND value = ?`,
-			QuoteJSON(t.id))
+		// A reminder belongs to the purged task unless its own scope holds
+		// another task with that id (a copy that predates entity-id-ownership).
+		rows, err := tx.QueryContext(ctx, `SELECT r.scope_id, r.entity_id FROM scope_fields r WHERE r.entity = 'reminder' AND r.field = 'task_id' AND r.value = ?
+			AND (r.scope_id = ? OR NOT EXISTS (SELECT 1 FROM scope_fields o WHERE o.scope_id = r.scope_id AND o.entity = 'task' AND o.entity_id = ?))`,
+			QuoteJSON(t.id), t.scope, t.id)
 		if err != nil {
 			return nil, err
 		}

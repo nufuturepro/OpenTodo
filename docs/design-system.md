@@ -9,23 +9,23 @@ order: 30
 ---
 # Design system
 
-OpenTodo's interface is friendly and roomy, in the spirit of TickTick, Todoist and Any.do, and keeps its own identity: the emerald accent, slate neutrals, white cards in light and a slate-950 canvas in dark. Every colour, size, radius, shadow and duration comes from a design token, and every shared building block is developed and checked in a workbench. The contract lives in the `design-system` OpenSpec capability; this page is the how-to. How a screen is put together (the page template, the panel, settings, rows and the interface budget) is in the [Interface guide](interface-guide.md).
+OpenTodo's interface follows the "Precision" direction: dense, near-monochrome and dark first, with the emerald accent as the only colour that isn't state. A flat cool slate canvas holds one inset content surface; rows are one line, hairlines separate instead of boxes, and colour appears only where it means something (late, a deadline, now, done, the primary action). Dark surfaces separate by lightness, a step at a time. Every colour, size, radius, shadow and duration comes from a design token, and every shared building block is developed and checked in a workbench. The contract lives in the `design-system` OpenSpec capability; this page is the how-to. How a screen is put together (the page template, the panel, settings, rows and the interface budget) is in the [Interface guide](interface-guide.md).
 
 ## Principles
 
 1. **Content first.** Chrome is neutral, and colour is reserved for meaning: priority, project and label colours, status.
-2. **Roomy, not sparse.** Generous padding, one idea per row, state before forms.
+2. **Dense, not noisy.** Compact rows and small precise type; calm comes from restraint, not space.
 3. **One way to do a thing.** Every control comes from a primitive and every value from a token.
 4. **Accessible by construction.** AA contrast, a visible focus ring, 44 px touch targets and reduced motion are enforced by tests, not left to review. A phrase for screen readers ("3 comments" for a chip showing "3") is visually hidden text inside the element (`ReadAs` in `web/src/ui/Chips.tsx`), never an `aria-label` on a `span` or `div` without a role, which screen readers ignore; `npm run lint` refuses that.
 5. **Calm motion.** Short transitions, nothing bouncing in the way.
 
 | | Keep (identity) | Evolve (craft) |
 |---|---|---|
-| Colour | emerald accent, slate neutrals, white / slate-950 | formal tokens, soft tints, canvas vs card surfaces |
-| Mood | calm, honest, a little technical | roomier and friendlier |
-| Space | | 4 px grid, 44–48 px rows, 16/24 px section gaps |
-| Surfaces | | cards with soft elevation instead of bare sections and thin borders |
-| Type | | bundled Inter, 15 px body, clear heading scale |
+| Colour | emerald accent, slate neutrals | a flatter, darker slate; colour only for state; the sidebar on the canvas |
+| Mood | calm, honest, a little technical | precise, quiet, fast |
+| Space | | 4 px grid, 36 px rows (44 px on touch), 16/24 px section gaps |
+| Surfaces | | one inset content surface, hairlines, flat cards; shadows only on overlays |
+| Type | | bundled Inter, 13 px list text (one token), 15 px prose, clear heading scale |
 | Delight | | gentle motion and a satisfying completion state, respecting reduced motion |
 
 ## Tokens
@@ -38,17 +38,17 @@ Tokens are defined once in `web/src/index.css`:
 
 | Group | Utilities | Notes |
 |---|---|---|
-| Surfaces | `bg-canvas`, `bg-surface`, `bg-raised`, `bg-sunken` | app background, cards and rows, popovers and dialogs, wells |
-| Text | `text-strong`, `text-default`, `text-muted`, `text-faint`, `text-accent`, `text-on-accent` | each meets 4.5:1 on every surface it is allowed on |
-| Borders | `border-default`, `border-input` | `input` meets 3:1 for control boundaries |
+| Surfaces | `bg-canvas`, `bg-surface`, `bg-raised`, `bg-sunken`, `bg-pop`, `bg-hover`, `bg-selected`, `bg-selected-row` | window and sidebar, the inset content surface, group bars and inputs, wells and board columns, popovers and menus, hover, the selected nav item or active tool, a selected row |
+| Text | `text-strong`, `text-default`, `text-muted`, `text-faint`, `text-accent`, `text-on-accent` | the four tones; each meets 4.5:1 on every surface it is allowed on |
+| Borders | `border-default`, `border-soft`, `border-input`, `border-strong` | a container edge, a softer divider, a control edge (3:1), a popover or selected-card edge; the first two stay at 1.1:1 or more on every surface |
 | Accent | `bg-accent`, `bg-accent-hover`, `bg-accent-soft`, `text-on-accent-soft`, `ring-focus`, `outline-focus` | emerald-700; focus ring 2 px with offset |
 | Priority | `border-p1` … `border-p4`, `bg-p1-soft` … `bg-p4-soft` | red, orange, blue, slate |
 | Status | `text-success`, `bg-warning-soft`, `text-on-danger-soft`, … | success, warning, danger, info, each with a soft step |
 | Palette | `bg-hue-solid`, `bg-hue-soft`, `text-hue` under `data-hue="<name>"` | 12 hues for projects and labels |
-| Type | `text-hint`, `text-meta`, `text-body`, `text-h3`, `text-h2`, `text-h1` | 11, 13, 15, 17, 20, 24 px; rem-based |
-| Radius | `rounded-chip`, `rounded-control`, `rounded-card` | 6, 10, 14 px |
-| Elevation | `shadow-1`, `shadow-2`, `shadow-3` | cards, popovers, dialogs; pair with a border in dark |
-| Motion | `duration-(--duration-ui)`, `duration-(--duration-emphasis)`, `ease-calm` | 120 and 250 ms; reduced motion keeps only colour and opacity fades |
+| Type | `text-hint`, `text-meta`, `text-body`, `text-prose`, `text-h3`, `text-h2`, `text-h1`, `text-display` | 11.5 (weight 500), 12.5, 13, 15, 14, 20, 22, 28 px; rem-based. `text-body` is the list and control step, one token (`--ot-text-list`): set it to `0.875rem` for 14 px. `text-prose` is for running text (notes, help, the briefing). Headings are weight 600, the display step 650, with tracking −0.01em (h2), −0.015em (h1) and −0.025em (display) |
+| Radius | `rounded-chip`, `rounded-control`, `rounded-card`, `rounded-surface`, `rounded-popover` | 6 (rows, chips), 7, 8, 10 (the inset surface), 12 px |
+| Elevation | `shadow-1`, `shadow-2`, `shadow-3` | `shadow-1` is no shadow (lists and cards are flat); popovers and dialogs keep `shadow-2` and `shadow-3` |
+| Motion | `duration-(--duration-ui)`, `duration-(--duration-emphasis)`, `duration-(--duration-moment)`, `ease-calm`, `ease-spring` | Three durations: 120 ms for interface feedback, 250 ms for emphasis and the 400 ms moment, reserved for the completion sequence, list reflow and overlay entrances; nothing lasts longer and an exit takes about three quarters of its entrance. `ease-spring` is an ease-out that settles without overshoot (nothing bounces). Reduced motion keeps only colour and opacity fades of at most 120 ms and skips view transitions; `data-motion="none"` zeroes all three, so everything is instant |
 
 Rules for code under `web/src/ui/`:
 
@@ -57,13 +57,18 @@ Rules for code under `web/src/ui/`:
 
 | Meaning | Tokens |
 | --- | --- |
-| Card, panel, input background | `bg-surface` |
-| Page background | `bg-canvas` |
-| Well, inset, hover tint | `bg-sunken` (dark hovers `dark:hover:bg-raised`) |
+| Content surface, card, panel, input background | `bg-surface` |
+| Window and sidebar background | `bg-canvas` |
+| Group bar, raised card, composer | `bg-raised` |
+| Well, board column | `bg-sunken` |
+| Popover, menu, tooltip, sheet, palette | `bg-pop` with `border-strong` |
+| Hover tint (rows, nav, buttons) | `bg-hover` |
+| Selected nav item, active tab or tool | `bg-selected` (never with `text-faint`) |
+| Selected row | `bg-selected-row` |
 | Body text, headings | `text-default`, `text-strong` |
 | Secondary text | `text-muted` |
 | Hints, placeholders | `text-faint`, `placeholder-faint` |
-| Dividers and card borders, input borders | `border-default`, `border-input` |
+| Card and container edges, dividers between groups, input borders | `border-default`, `border-soft`, `border-input` |
 | Actions, links, selection, focus, current navigation | `bg-accent`, `text-accent`, `bg-accent-soft` with `text-on-accent-soft`, `ring-focus`, `text-on-accent` on the accent |
 | Done, saved, connected | `text-success`, `bg-success-soft` with `text-on-success-soft` |
 | Errors, destructive actions | `text-danger`, `border-danger`, `bg-danger-soft` with `text-on-danger-soft` |
@@ -73,14 +78,35 @@ Rules for code under `web/src/ui/`:
 | Overlay scrim, search highlight | `bg-scrim`, `bg-highlight` |
 
 A token switches between light and dark by itself, so a screen needs no `dark:` partner for colour.
-- Before using a new foreground and background combination, add it to `src/ui/tokens/pairs.ts`. `contrast.test.ts` recomputes every pair from `index.css` in both themes and fails with the pair, theme and ratio.
+- Before using a new foreground and background combination, add it to `src/ui/tokens/pairs.ts`. `contrast.test.ts` recomputes every pair from `index.css` in both themes and every accent and fails with the pair, theme and ratio.
+- **Tones, not opacity.** To make text or an icon quieter, step down one tone: `text-strong`, `text-default`, `text-muted`, `text-faint`. An icon takes the tone of its text (`currentColor`). An `opacity-*` utility or an alpha suffix (`text-default/70`, `border-soft/50`) on text or a border fails the lint; show and hide (`opacity-0`, `opacity-100`) and disabled states are fine, and a dragged ghost, a fading row or the scrim carry `tone-lint-allow` on the line with the reason. Every number (a time, a count, a duration) goes through a primitive that sets `tabular-nums`.
+
+### Colour in OKLCH
+
+Every colour token is written in OKLCH: an `oklch(L C H)` literal inside the sRGB gamut, or a `color-mix()` over other tokens. A hex, `rgb()`, `hsl()` or named colour inside a token block fails the lint with the stylesheet line. The browser resolves everything; the tests resolve the same values with `src/ui/tokens/resolve.ts` (OKLCH, mixes and alpha composited over the real surface) and measure what is drawn.
+
+- **Neutrals** are a flat cool slate with low chroma, the same in every theme (precision-tokens D1). Light: canvas `oklch(0.9542 0.0034 248)`, surface and popover white, raised `oklch(0.9757 0 0)`. Dark: canvas `oklch(0.1635 0.0045 264)`, surface `oklch(0.1959 0.0062 271)`, raised `oklch(0.2184 0.0079 275)`, popover `oklch(0.2271 0.0079 275)`, selected `oklch(0.2728 0.0097 268)`. Borders are opaque hairlines a step from the surface. The sidebar sits on the canvas: the old accent tint is retired.
+- **An accent theme declares three values** in its `[data-accent]` block: `--ot-al-accent` (the light accent, also the browser bar colour), `--ot-ad-accent-text` (the bright accent for dark text, focus and the chart) and `--ot-a-on-accent` (text on the accent). Hover, soft, soft text and focus derive from them. A derived step that misses its minimum may be overridden in the accent block next to a comment naming the pair; `theme.test.ts` counts the overrides (today one: graphite's dark buttons).
+- **A palette hue declares one solid per mode**; its soft and text steps derive.
+- **The ratios** are `--ot-mix-*` custom properties in the `:root` block, read back by the tests:
+
+| Step | Light | Dark |
+| --- | --- | --- |
+| Accent hover | 86 % accent toward black | same |
+| Accent soft | 10 % accent into the surface | 14 % bright accent into the surface |
+| Accent soft text | 80 % accent toward black | 80 % bright accent toward white |
+| Focus | 85 % accent toward white | the bright accent |
+| Hue soft | 14 % solid into the surface | 22 % solid into the canvas |
+| Hue text | 68 % solid toward black | 78 % solid toward white |
+
+Steps toward black or white mix `in oklch`, which keeps the hue; steps into a surface mix `in oklab`, because the dark surfaces are slightly blue and an OKLCH mix would turn the hue toward them. A browser without OKLCH gets six plain surface and text values from an `@supports` fallback: readable, not themed.
 
 ### High contrast and no motion
 
 Two root attributes change the presentation for screens that ask for them (OpenSpec `display-mode`, design-system "High-contrast and no-motion presentation"):
 
 - `data-contrast="high"` on `<html>` overrides the `--ot-*` tokens: every surface is pure white (light) or pure black (dark), text is black or white with secondary text still at 7:1 or more, soft tints become the surface (an outline keeps their shape), borders and the focus ring are full black or white, and the priority and status hues are darkened (light) or lightened (dark) to 7:1 as text and 3:1 as marks. The blocks are `html:root[data-contrast="high"]`, the system-dark branch and `[data-theme="dark"]`; their selectors outrank the mode and accent blocks, so the override combines with any mode and accent. The two dark blocks must stay identical.
-- `data-motion="none"` sets `--duration-ui` and `--duration-emphasis` to `0ms` and makes every transition and animation instant, stricter than the reduced-motion query (colour and opacity do not fade either).
+- `data-motion="none"` sets `--duration-ui`, `--duration-emphasis` and `--duration-moment` to `0ms` and makes every transition and animation instant, stricter than the reduced-motion query (colour and opacity do not fade either).
 
 Only the display routes set them, on mount, and remove them on unmount (`useRootPresentation` in `web/src/app/display/displayHooks.ts`); they never touch the user's theme or preferences. `OVERRIDE_PAIRS` in `src/ui/tokens/pairs.ts` holds the override's pairs with raised minimums (7:1 for text and chips, 3:1 for the rest), and `contrast.test.ts` measures them in both modes and names the pair, the override and the ratio when one fails. The workbench shows the override in **Foundations → Colours → High Contrast Override**. The display's large type is not a token: `.display-root` multiplies the type tokens by `--display-scale` (1.35, 1.6 and 2.15 for the `m`, `l` and `xl` sizes), so it still follows the browser's font size.
 
@@ -92,15 +118,14 @@ Projects, labels and views store a free hex string in their ops. At render time 
 
 ## Typeface
 
-Inter 4.1 is bundled as `web/src/assets/fonts/InterVariable-latin.woff2` (54 KB, weight axis only, Latin subset, licence in `OFL.txt`). It is served from the app's own origin, hashed by Vite and precached by the service worker; no font is ever requested from another host. The family is named `OpenTodo Inter`, so a locally installed Inter is never used instead, and `font-display: swap` shows the system font until it loads.
+Inter 4.1 is bundled as `web/src/assets/fonts/InterVariable-latin.woff2` (84 KB, weight and optical-size axes, Latin subset, licence in `OFL.txt`). `font-optical-sizing: auto` lets text at the display size use Inter's Display cut. It is served from the app's own origin, hashed by Vite and precached by the service worker; no font is ever requested from another host. The family is named `OpenTodo Inter`, so a locally installed Inter is never used instead, and `font-display: swap` shows the system font until it loads.
 
 To regenerate it (fonttools 4.60.1):
 
 ```sh
 python3 -m venv venv && ./venv/bin/pip install fonttools==4.60.1 brotli==1.1.0
 curl -LO https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip && unzip Inter-4.1.zip
-./venv/bin/fonttools varLib.instancer InterVariable.ttf opsz=14 -o inter-wght.ttf
-./venv/bin/pyftsubset inter-wght.ttf \
+./venv/bin/pyftsubset InterVariable.ttf \
   --unicodes="U+0000-00FF,U+0100-017F,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20A0-20CF,U+2122,U+2190-21FF,U+2212,U+2215,U+FEFF,U+FFFD" \
   --layout-features='kern,liga,calt,ccmp,locl,mark,mkmk,tnum,cv11' \
   --flavor=woff2 --output-file=InterVariable-latin.woff2
@@ -127,15 +152,41 @@ node scripts/icons-sync.mjs ./package
 
 The script is idempotent. A unit test fails when a vendored icon is used nowhere (or listed as reserved for a planned screen change), so the set doesn't grow unnoticed.
 
+### Brand
+
+The mark is an open loop whose free end turns into a tick: the loop centred at (12, 13) with radius 8 on a 24-unit grid, a 2-unit stroke with round caps, the opening at the top right (70°) so the tick escapes through it and the two never touch at 16 px. It never sits in a square or a checkbox, and the wordmark is never part of it.
+
+- **Source**: `web/src/ui/icons/brand.svg`, under 2 KB, two symbols: `mono` and `colour`. Every other brand file is generated from it.
+- **In the interface**: `<BrandMark size={24} />` (sizes 16, 20, 24, 32) draws `mono`, in `currentColor` with the tick's short stroke in `--ot-accent-text`, so it takes the tone of its row and the theme's accent. `<BrandWordmark />` is the text "OpenTodo" in the strong tone, set in the bundled Inter; it is never translated. Both come from the `ui` barrel; no screen uses an image of the icon.
+- **Elsewhere**: `colour` is the mark in emerald on a slate rounded square, the same in every theme, because it sits on other people's surfaces: the favicon, the manifest icons (192 and 512 px, a 512 px maskable icon that fills its square), the Apple touch icon, the browser extension's icons and `brand/` in the site bundle.
+- **Regenerating**: `make brand-icons` (`scripts/brand-icons.mjs`) renders every raster in the Chromium that Playwright brings, with no image dependency, and writes `web/src/ui/icons/brand-icons.json` with the hash of the source and of each file. `scripts/brand-icons.test.mjs` (in `make repo-check` and `make test-extension`) fails when the source changed without regenerating or a raster was edited by hand.
+
+The `Foundations/Brand` story shows the mono mark at every size beside a row's checkbox in two accent themes; its 16 px baseline is the legibility check.
+
 ### Illustrations
 
 Empty and finished states may show one calm line drawing above their sentence (the first is Inbox zero). Each lives in its own file in `web/src/ui/illustrations/` as inline SVG and follows one style, so later ones match:
 
-- strokes in `currentColor` (the wrapper sets the muted text colour), `strokeWidth="1.5"` at 160 × 120 px, round caps and joins;
-- the sunken surface (`var(--color-sunken)`) as the only shape fill, plus at most one accent shape at 15 % opacity (`var(--color-accent)`);
+- one stage for all: 160 × 120 px, the brand mark's open loop in the fine line (centre 80, 54, radius 40, its opening at the upper right), drawn first so the object hides it, and one ground line `M40 100h80` with short dashes at its ends;
+- two stroke weights in `currentColor` (the wrapper sets the muted text colour): the main line `1.75` for the object and the fine line `1` for the loop, details, steam, rays and trails; round caps and joins;
+- the object filled with the surface (`var(--color-surface)`), so it stands above the canvas in both themes; the sunken surface (`var(--color-sunken)`) only for ground shapes;
+- one accent shape, in or leaving through the loop's opening, filled `var(--color-accent)` at 20 % and outlined in `var(--text-color-accent)` (the bright accent in the dark theme), the mark's tick escaping its loop;
 - no hex or `rgb()` colours, gradients, filters, shadows, text, raster or external images, and no animation;
 - decorative: hidden from assistive technology, since the sentence beside it says everything;
 - at most 4 KB per file.
+
+The set, each a brief for the next drawing as much as a list:
+
+| Name | Where | Motif | Accent shape |
+| --- | --- | --- | --- |
+| `inbox-zero` | Empty Inbox, end of Process the Inbox | An empty tray, a dashed trail rising from it | a paper plane leaving |
+| `today-clear` | Empty Today | A mug from the side with three steam lines | the sun, with fine rays |
+| `week-clear` | Empty Upcoming | A desk calendar with two rings and seven open days | a kite on a dashed string |
+| `project-new` | A project with no open task | An open box, flaps out, a sprout growing from it | the sprout's leaf |
+| `day-done` | Done for today (Close the day) | A closed notebook lying flat, page edges and its ribbon, two small stars | a crescent moon |
+| `trash-empty` | Empty Trash | A bin with its lid on and its handle | a leaf drifting out |
+
+No faces, people or mascots: each motif names the state in one glance and needs no translation of tone; a little character comes from objects (a paper plane, a kite, a sprout). Settings and error pages have no illustration. `make ui-lint` also refuses a third stroke width, a fill other than the surface, the sunken surface and the accent, and a second accent shape (illustrations-v2).
 
 Name it in `Illustration.tsx` and pass that name to the empty-state pattern (`<EmptyState illustration="inbox-zero" …/>`); add it to `Illustrations.stories.tsx` so the workbench checks it in light and dark. `make ui-lint` fails on a file that breaks the colour, image, text or size rules.
 
@@ -145,7 +196,7 @@ Name it in `Illustration.tsx` and pass that name to the empty-state pattern (`<E
 
 ### Form controls
 
-Wrap a control in `<Field label description error>`: the label, the description and the error are wired to the control (`aria-describedby`, `aria-invalid`). `Input`, `Textarea` and `Select` are styled native elements; use `Select` for small fixed sets (role, sort order) and the Combobox for choosing an entity. A setting that applies immediately is a `Switch` (`role="switch"`); a choice submitted with a form is a `Checkbox` (with an indeterminate state).
+Wrap a control in `<Field label description error>`: the label, the description and the error are wired to the control (`aria-describedby`, `aria-invalid`). `Input`, `Textarea` and `Select` are styled native elements; use `Select` for small fixed sets (role, sort order) and the Combobox for choosing an entity. A setting that applies immediately is a `Switch` (`role="switch"`): a 32 × 18 px track, accent when on, whose hit area grows to 44 px on a touch screen. A choice submitted with a form is a `Checkbox` (with an indeterminate state). A `Select` draws its own chevron, two gradients in the muted text colour, instead of the platform's arrow (precision-settings).
 
 ### Menus
 
@@ -162,7 +213,21 @@ Action menus use the overlay `Menu` with `kind="menu"` and contain `MenuItem`, `
 
 ### Surfaces and patterns
 
-`Card`, `Badge` (soft or solid, any palette hue or stored colour), `Avatar` (initials on a colour derived from the account id, the same on every device), `Tabs` (arrow keys, Home/End), `EmptyState` and `Timeline` (events and comment threads). For settings: `SettingsSection` (a titled card with one line that may end with a **Learn more** link, `learnMore`, opening the card's guide section; never a header action) and `SettingRow` (label and state beside the control, stacked on phones), both fed by the settings copy table (`web/src/lib/settingsCopy.ts`; limits in the [interface guide](interface-guide.md#copy)). `ConfirmDialog` replaces `window.confirm` (focus starts on Cancel; a destructive one ignores taps outside); the app never uses the browser's `confirm()` or `prompt()`, and code never finds elements by translated text (use a `data-*` attribute), and `ListRow` is the focusable row for lists with a trailing menu.
+`Card`, `Badge` (soft or solid, any palette hue or stored colour; for a category such as a role or a scope), `StatusIndicator` (a 6 px dot in a tone, `ok`, `warn`, `danger`, `busy` or `off`, followed by the word that states it; for state such as On, Working or Failing; `busy` pulses unless motion is reduced), `Avatar` (initials on a colour derived from the account id, the same on every device), `Tabs` (arrow keys, Home/End), `EmptyState` and `Timeline` (events and comment threads). For settings: `SettingsSection` (a flat titled section with one line that may end with a **Learn more** link, `learnMore`, opening the card's guide section; never a header action) and `SettingRow` (label and state beside the control, stacked on phones), both fed by the settings copy table (`web/src/lib/settingsCopy.ts`; limits in the [interface guide](interface-guide.md#copy)). `ConfirmDialog` replaces `window.confirm` (focus starts on Cancel; a destructive one ignores taps outside); the app never uses the browser's `confirm()` or `prompt()`, and code never finds elements by translated text (use a `data-*` attribute), and `ListRow` is the focusable row for lists with a trailing menu.
+
+Five surface styles, each a class in `@layer components` built from tokens (`Foundations/Surfaces` in the workbench):
+
+| Style | Class | Used for |
+|---|---|---|
+| Card | `surface-card` | statistics tiles |
+| Flat section | `ui-section-flat`, `ui-settings-section` | statistics panels; settings sections (rows between hairlines, no card) |
+| Column | `ui-column`, `ui-cards--lift`, `ui-drop-placeholder` | board columns, lifting cards, where a dragged card lands |
+| Block | `ui-block` (`--row`, `--dashed`, `--past`, `--late`) | calendar blocks, Month and Plan rows, timeline bars |
+| Event | `ui-block--event`, `ui-block-dot` | events from other calendars |
+
+Text cut with an ellipsis outside a control uses `TruncatedText` (`web/src/ui/TruncatedText.tsx`): while it is cut it takes keyboard focus and shows its whole text in the Tooltip on hover and focus; while it fits it is plain text. A control named by its content (a button, a link) cuts its own text instead.
+
+A block reads `data-hue`: the soft hue as fill, a 3 px solid edge, `text-strong`. `--past` mixes the fill toward the surface and uses `text-faint` (measured per hue in the contrast pairs); `--late` takes the danger pair whatever the hue.
 
 ## The workbench
 
@@ -170,19 +235,23 @@ Storybook is a development tool only: it adds nothing to `internal/web/dist`, th
 
 - `make storybook` (or `npm run storybook` in `web/`) opens it on http://localhost:6006. The toolbar switches the theme (light, dark, side by side) and the frame width (375 or 1280 px). A third switch picks the interface language: a story then renders with that language's catalog (loaded the way the app loads it) and `lang` set on the frame, which shows where a longer German or French label wraps. The accessibility gate and the visual baselines always run in English.
 - `npm run build-storybook` writes the static build to `web/storybook-static/` (not committed).
-- **Foundations** shows the colour tokens with their live contrast ratios, the palette, type, spacing, radius, elevation, motion and the component classes.
+- **Foundations** shows the colour tokens with their live contrast ratios, the palette, type, spacing, radius, elevation and the component classes. **Foundations → Motion** plays each sequence with a Play control over seeded rows: the completion on a row and on a card, the repeating completion, a list reflow, the dialog, the phone sheet, the task panel and the toast (OpenSpec `motion-v2`).
 
 ### Adding a story
 
 Put a `*.stories.tsx` file next to the component, in Component Story Format; `make check` fails when a component in `web/src/ui` has no stories file importing it. Interaction tests opt into a DOM with `// @vitest-environment happy-dom` and use the helpers in `web/src/ui/test-utils.tsx`. Stories render with fixture data only, never Dexie or the network. Cover the states that matter (default, disabled, error, long text) and check them in both themes and at 375 px.
 
+Every entry of the screen inventory, rare ones included, names the story that shows it. Screen stories seed the local database through `withSeed` in `web/src/app/stories/fixtures.tsx`. A screen that reads one answer from the server by a token (a reset or invitation preview, a public list) gets it from `answerRequests`, which answers listed paths with a fixture and every other request with 404, so the whole screen renders as a visitor sees it.
+
 ## Checks
 
 | Check | Runs in | Fails on |
 |---|---|---|
-| Token contrast, token lint, workbench exclusion | `npm test`, `make check` | a pair under its minimum; a raw colour in `web/src/ui`; Storybook code in the production build |
-| Accessibility | `make ui-check`, CI job "UI check" | any serious or critical axe-core (WCAG 2.2 AA) violation in a story, light or dark |
+| Token contrast, token lint, workbench exclusion | `npm test`, `make check` | a pair under its minimum; a raw colour in `web/src/ui`; a focus ring cancelled by `outline-none` (Tailwind 4 reads the outline style from it, so `focus-visible:outline-2` beside it needs `focus-visible:outline-solid`); `cursor-default` or `cursor-auto` without `cursor-lint-allow` and a reason on that line or the one above (one base rule in `index.css` gives every enabled button, menu item, tab, option, summary, `label[for]`, link and task row the pointing hand; a utility such as `cursor-grab` still wins); Storybook code in the production build |
+| Accessibility | `make ui-check`, CI job "UI check" | any serious or critical axe-core (WCAG 2.2 AA) violation in a story, light or dark; on a `Screens/*` story, an element that shows no focus ring when tabbed to (an element is skipped only when `scripts/ux-audit/focus-exempt.json` lists it with a written reason; the list is empty) |
+| Story coverage | `make ui-lint` (`scripts/ux-audit/stories.mjs`) | a core screen of the inventory without its story; rare screens are listed, not failed |
 | Visual regression | `make ui-check`, CI job "UI check" | a story × theme × width screenshot that differs from its baseline by more than 0.2% |
+| Motion | `make ui-check` (`scripts/ui-check/motion.mjs`) | a Foundations → Motion story that, with reduced motion emulated, runs an animation changing `transform`, `translate`, `scale`, `height`, `block-size`, `width` or `inline-size`, or that runs any animation under `data-motion="none"`; it names the story and the property |
 
 `make ui-check` needs Playwright and `@playwright/test` 1.56.1 installed globally, as CI does (`npm i -g playwright@1.56.1 @playwright/test@1.56.1 && playwright install chromium`). Set `PLAYWRIGHT_NODE_PATH` to use another install. Failures leave actual, expected and diff images in `web/test-results/ui-visual`, and CI uploads them as the `ui-check-report-<shard>` artifact of the visual regression shard that failed.
 
@@ -194,3 +263,25 @@ Font rendering differs between operating systems, so baselines are only generate
 - Without Docker: run the **UI baselines** workflow on GitHub (Actions → UI baselines → Run workflow), download the `ui-baselines` artifact and commit its PNGs. For a story that has no baseline yet, the CI "UI check (visual regression)" job also writes one and fails; its `ui-check-report-<shard>` artifact contains it under `web/src/ui/__screenshots__`.
 
 Update baselines only for intended visual changes, in the same pull request as the change.
+
+## The interface audit
+
+The workbench checks stories; the audit checks the built app. `make ux-audit` starts a throwaway server, seeds it the way the layout check does, and opens every entry of the screen inventory (`scripts/ux-audit/screens.json`: every route, settings section, signed-out screen, display route and the main overlays) at 360, 768 (both with touch) and 1280 px, light and dark, in English and German. It writes `ux-audit-report/index.html`, a contact sheet with a screenshot of each capture and the findings ranked, and `report.json`. CI runs it nightly on `main`, and on demand on any branch (Actions → Interface audit → Run workflow), in its own workflow (`.github/workflows/ux-audit.yml`) and uploads the report; it never blocks a pull request or delays publishing an image.
+
+| Id | Measures | Limit |
+| --- | --- | --- |
+| M1, M9 | axe-core, WCAG 2.2 AA; contrast reported apart | no serious or critical issue |
+| M2 to M5 | the interface budget: chrome rows, a row's metadata, primary destinations, vertical scrollers | `web/src/app/budget.json` |
+| M6 | an element or the page wider than the viewport, outside `data-scroll-x` | none |
+| M7 | target size | 44 px on touch; 24 px, or 24 px of space around it, with a mouse |
+| M8 | focus: Tab through the screen at 1280 px | a ring on every focusable element |
+| M10 | text cut with an ellipsis | its full text in the accessible name, the tooltip (`data-tip`) or an `sr-only` neighbour |
+| M11 | two controls overlapping | at most 4 px |
+| M12 | layout shift from navigation to idle | 0.1 |
+| M13 | the first task row on a second visit with the server stopped | reported |
+| M14 | story coverage of the core screens | none missing |
+| M15 | movement under reduced motion, watched from before the action until it settles: every overlay as it opens (1280 px with a mouse, 360 px on touch), completing a task in Today, and dragging a board card, a Plan task and a Week block | none |
+
+German captures cover every screen; overlays are opened in English, because their openers find controls by name. A finding seen only in German is marked so (M16). Each finding is scored by severity (4 blocks a task, 3 slows it, 2 breaks a guideline, 1 is cosmetic) times how often the screen is used (3 daily, 2 weekly, 1 rare), and the report lists the highest first.
+
+`ONLY` (inventory ids), `WIDTHS`, `THEMES`, `LANGS`, `CONCURRENCY` and `OUT_DIR` narrow a local run. With `UX_AUDIT_STRICT=1` the audit exits non-zero on budget, overflow, story-coverage and reduced-motion findings; in CI the repository variable `UX_AUDIT_STRICT` turns that on. The measurements have fixture tests in `scripts/ux-audit/measure.test.mjs` (one passing and one failing case each), and `scripts/ux-audit/ux-audit.test.mjs` keeps the inventory in step with the router and the layout check.

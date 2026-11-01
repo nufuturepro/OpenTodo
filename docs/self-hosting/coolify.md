@@ -10,9 +10,9 @@ order: 20
 
 OpenTodo is built to be a one-click Coolify resource: one service, one volume, no required variables.
 
-## One-click template (pending in Coolify's service list)
+## One-click template (not yet in Coolify's service list)
 
-[`deploy/coolify/opentodo.yaml`](https://github.com/pixari/opentodo/blob/main/deploy/coolify/opentodo.yaml) is a Coolify service template. It is prepared for Coolify's built-in service list and pending upstream review; Coolify only lists services whose repository has at least 1,000 GitHub stars, so it may take a while. Until **OpenTodo** shows up under **+ New Resource**, paste the template:
+[`deploy/coolify/opentodo.yaml`](https://github.com/OpenTodoApp/OpenTodo/blob/main/deploy/coolify/opentodo.yaml) is a Coolify service template. It is prepared for Coolify's built-in service list and will be submitted once the repository has the 1,000 GitHub stars Coolify asks for. Until **OpenTodo** shows up under **+ New Resource**, paste the template:
 
 1. In your project choose **+ New → Docker Compose** (the option *without* a Git repository; older Coolify versions call it **Docker Compose Empty**).
 2. Paste the contents of `deploy/coolify/opentodo.yaml` and save.
@@ -24,7 +24,7 @@ The template pulls the `stable` image, which every release moves, so each new re
 ## Option A: Docker Compose from the repository
 
 1. In your Coolify project choose **+ New Resource → Public Repository** (or your fork via the GitHub app).
-2. Repository URL: `https://github.com/pixari/opentodo`, branch `main`.
+2. Repository URL: `https://github.com/OpenTodoApp/OpenTodo`, branch `main`.
 3. **Build pack: Docker Compose**. Leave *Base directory* as `/` and *Docker Compose location* as `/docker-compose.yml`.
 4. Coolify reads the compose file and shows the `opentodo` service. Under **Domains** assign your domain to it, for example `https://todo.example.com`. The compose file already declares `SERVICE_FQDN_OPENTODO_8080`, so the proxy targets container port 8080 and HTTPS is provisioned automatically.
 5. Click **Deploy**. Open the domain and create the owner account.
@@ -37,7 +37,7 @@ What the compose file does for you:
 - The health check uses the binary itself, so Coolify shows the service as healthy or unhealthy correctly.
 - `ports:` is ignored by Coolify's proxy routing and only matters for plain Docker.
 
-The compose file pulls the published image `ghcr.io/pixari/opentodo:stable`, which every release moves. Use a release line (`:0.9`) to take only its fixes, or `:latest` to follow `main` with unreleased changes. To build from your fork instead, change `image:` to `build: .` in the compose file; Coolify will build the multi-stage Dockerfile on the server. A build from source reports version `dev`; with the Dockerfile build pack, set **Advanced → Source commit availability** to *Available during build* and it reports `dev+<commit>`.
+The compose file pulls the published image `ghcr.io/opentodoapp/opentodo:stable`, which every release moves. Use a release line (`:0.18`) to take only its fixes, or `:latest` to follow `main` with unreleased changes. To build from your fork instead, change `image:` to `build: .` in the compose file; Coolify will build the multi-stage Dockerfile on the server. A build from source reports version `dev`; with the Dockerfile build pack, set **Advanced → Source commit availability** to *Available during build* and it reports `dev+<commit>`.
 
 ## Option B: Dockerfile build pack
 
@@ -51,7 +51,7 @@ If you prefer not to use compose:
 
 ## Option C: Docker image
 
-**+ New Resource → Docker Image**, image `ghcr.io/pixari/opentodo:stable`, port `8080`, volume at `/data`.
+**+ New Resource → Docker Image**, image `ghcr.io/opentodoapp/opentodo:stable`, port `8080`, volume at `/data`.
 
 ## Environment variables
 
@@ -79,7 +79,7 @@ None is required. With a Compose resource (the one-click template or Option A), 
 
 ## Passkeys
 
-Users can add passkeys in **Settings → Account → Passkeys** once the domain is https, which Coolify provisions when the domain starts with `https://`. Passkeys are tied to the domain's host. If you later change the domain assigned to the service, existing passkeys stop working: users sign in with their password and register new ones. Passwords are never disabled by passkeys. Details in [Running with Docker](docker.md#passkeys-need-an-https-base-url).
+Users can add passkeys in **Settings → Account → Security → Passkeys** once the domain is https, which Coolify provisions when the domain starts with `https://`. Passkeys are tied to the domain's host. If you later change the domain assigned to the service, existing passkeys stop working: users sign in with their password and register new ones. Passwords are never disabled by passkeys. Details in [Running with Docker](docker.md#passkeys-need-an-https-base-url).
 
 ## First visit
 
@@ -93,7 +93,7 @@ Coolify gives the app the **first** domain of the service as `OPENTODO_BASE_URL`
 
 ## Adding people
 
-Leave `OPENTODO_ALLOW_SIGNUP` unset. In the app, open **Settings → People → Members**, create an invitation (optionally bound to an email, expiring in 1 hour to 30 days) and send the link. It creates one account and then stops working; pending links can be revoked. Links use `OPENTODO_BASE_URL`, which the compose file sets from Coolify's domain. See [Adding people](../../README.md#adding-people). **Settings → People → Users** manages accounts afterwards: admins, deactivation, reset links, deletion and owner transfer. If the owner forgot their password, open the service's terminal in Coolify and run `/opentodo reset-owner-password` (see [Recovering owner access](docker.md#recovering-owner-access)).
+Leave `OPENTODO_ALLOW_SIGNUP` unset. In the app, open **Settings → People → Users and invitations**, create an invitation (optionally bound to an email, expiring in 1 hour to 30 days) and send the link. It creates one account and then stops working; pending links can be revoked. Links use `OPENTODO_BASE_URL`, which the compose file sets from Coolify's domain. See [Adding people](../../README.md#adding-people). **Settings → People → Users and invitations** manages accounts afterwards: admins, deactivation, reset links, deletion and owner transfer. If the owner forgot their password, open the service's terminal in Coolify and run `/opentodo reset-owner-password` (see [Recovering owner access](docker.md#recovering-owner-access)).
 
 ## Backups
 
@@ -101,7 +101,7 @@ Everything is in the `/data` volume (one file, `opentodo.db`, plus its WAL files
 
 ## Audit log
 
-**Settings → Account → Audit log** (owner only) lists sign-ins, failed sign-ins, credentials, invitations, user administration, exports, backups and setting changes, with filters and an NDJSON export. It lives in the `/data` volume with everything else and needs no configuration: retention defaults to 90 days, client addresses are off by default. If you enable address logging, the address is the hop Traefik appended to `X-Forwarded-For`, which Coolify sets for you; the header is believed only because Traefik connects from Coolify's private Docker network, so a client that reaches the container port directly is recorded with its own address. Expect roughly 200 bytes per event. Details in [Running with Docker](docker.md#audit-log).
+**Settings → Server → Audit log** (owner only) lists sign-ins, failed sign-ins, credentials, invitations, user administration, exports, backups and setting changes, with filters and an NDJSON export. It lives in the `/data` volume with everything else and needs no configuration: retention defaults to 90 days, client addresses are off by default. If you enable address logging, the address is the hop Traefik appended to `X-Forwarded-For`, which Coolify sets for you; the header is believed only because Traefik connects from Coolify's private Docker network, so a client that reaches the container port directly is recorded with its own address. Expect roughly 200 bytes per event. Details in [Running with Docker](docker.md#audit-log).
 
 ## Updating
 
@@ -111,11 +111,11 @@ Click **Deploy**. The new version applies database migrations on startup, and yo
 - **New releases.** With `stable`, **Deploy** installs the newest release, minor versions included; migrations run on start and there are no down-migrations, so keep backups on. A service created before the template used `stable` keeps its tag (Coolify does not change the compose file of an existing service): change it to `stable` once in **Edit Compose file** and click **Deploy**.
 - **Downtime.** Compose resources are recreated: Coolify stops the old container and starts the new one (`docker compose up --force-recreate`), a few seconds without service. The Dockerfile and Docker Image build packs (Options B and C) roll: Coolify starts the new container while the old one still serves, waits for its health check, then stops the old one. Both may serve the same volume for those few seconds; background jobs (reminder push, webhooks, backups, email, Trash cleanup) stay with the old container until it stops, then the new one takes them over. Migrations are additive, so the old version keeps working on the upgraded database until it is replaced. The image's health check reports healthy about 2 seconds after start, so a rolling update waits only a few seconds.
 
-**Upgrading from 0.1.0 to 0.2.0:** 0.1.0 locked the volume exclusively, so its replacement cannot start beside it ("data directory is in use by another opentodo process", and Coolify rolls back). For this one upgrade, click **Stop**, then **Deploy** (a minute of downtime while the new image starts). From 0.2.0 on, updates roll without stopping. If you pinned the image tag (for example `ghcr.io/pixari/opentodo:0.1` in [`deploy/coolify/opentodo.yaml`](https://github.com/pixari/opentodo/blob/main/deploy/coolify/opentodo.yaml)), change it to `0.2` first.
+**Upgrading from 0.1.0 to 0.2.0:** 0.1.0 locked the volume exclusively, so its replacement cannot start beside it ("data directory is in use by another opentodo process", and Coolify rolls back). For this one upgrade, click **Stop**, then **Deploy** (a minute of downtime while the new image starts). From 0.2.0 on, updates roll without stopping. If you pinned the image tag (for example `ghcr.io/opentodoapp/opentodo:0.1` in [`deploy/coolify/opentodo.yaml`](https://github.com/OpenTodoApp/OpenTodo/blob/main/deploy/coolify/opentodo.yaml)), change it to `0.2` first.
 
 ## Behind Cloudflare
 
-When the domain's DNS record is proxied by Cloudflare (orange cloud), every request reaches Coolify's proxy from a Cloudflare address. Set `OPENTODO_TRUSTED_PROXIES=cloudflare` in the environment tab and redeploy, so rate limits and the audit log see visitors' addresses (from `CF-Connecting-IP`) instead of one shared Cloudflare address. With a Cloudflare Tunnel instead, requests arrive from the `cloudflared` container on Coolify's Docker network, a private address that OpenTodo trusts by default, so nothing needs setting; check **Settings → Account → Audit log** with addresses enabled to confirm it shows your own address. See [Behind a reverse proxy](docker.md#behind-a-reverse-proxy).
+When the domain's DNS record is proxied by Cloudflare (orange cloud), every request reaches Coolify's proxy from a Cloudflare address. Set `OPENTODO_TRUSTED_PROXIES=cloudflare` in the environment tab and redeploy, so rate limits and the audit log see visitors' addresses (from `CF-Connecting-IP`) instead of one shared Cloudflare address. With a Cloudflare Tunnel instead, requests arrive from the `cloudflared` container on Coolify's Docker network, a private address that OpenTodo trusts by default, so nothing needs setting; check **Settings → Server → Audit log** with addresses enabled to confirm it shows your own address. See [Behind a reverse proxy](docker.md#behind-a-reverse-proxy).
 
 The server sends the service worker with `Cache-Control: no-store`, so phones pick up a new version on their next visit. Keep Cloudflare's **Caching → Configuration → Browser Cache TTL** at *Respect Existing Headers*, and do not add a Cache Rule that caches everything, or Cloudflare may serve an old app shell for hours.
 

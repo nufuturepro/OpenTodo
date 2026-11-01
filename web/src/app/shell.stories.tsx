@@ -1,6 +1,8 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
+import { useEffect } from 'react'
 import { Shell } from './Shell'
 import { openTask } from './signals'
+import { forceMinimisedForStory } from './useScrollDirection'
 import { seedInbox, seedTracking, seeded, storyUser, withSeed } from './stories/fixtures'
 
 // Core screen: the shell (OpenSpec change ux-overhaul, task 8.7; app-shell "Three
@@ -24,12 +26,12 @@ export const ListOnly: StoryObj = {
   render: () => <Viewport><Shell user={storyUser} onLogout={noop} /></Viewport>,
 }
 
-/** The same Inbox with a task open in the panel: three columns, three scrollers. */
-export const ListWithPanel: StoryObj = {
+/** A task of the same Inbox opened as its page (task-full-page): breadcrumb, 1 / n, content and facts. */
+export const TaskPage: StoryObj = {
   ...withSeed(async () => {
     await seedInbox()
-    // A pending "open this task" request, as a notification click leaves it: the list
-    // takes it when it mounts, selects the row and opens the panel (openTaskInList).
+    // A pending "open this task" request: the list takes it when it mounts, selects the
+    // row and opens the task as its page, remembering the list for 1 / n and Esc.
     openTask.set(seeded.inboxTask)
   }),
   render: () => <Viewport><Shell user={storyUser} onLogout={noop} /></Viewport>,
@@ -38,5 +40,14 @@ export const ListWithPanel: StoryObj = {
 /** An entry running for 1 h 5 min (time-tracking D6): the sidebar footer's indicator, the phone bar's pill below 768 px. */
 export const Tracking: StoryObj = {
   ...withSeed(seedTracking),
+  render: () => <Viewport><Shell user={storyUser} onLogout={noop} /></Viewport>,
+}
+
+/** Below 768 px while the list scrolls down (phone-v2 D6): the tab bar as 40 px of icons, the add button slid out. */
+const minimisedSeed = withSeed(async () => { await seedInbox(); forceMinimisedForStory(true) })
+export const PhoneScrolling: StoryObj = {
+  ...minimisedSeed,
+  // The override ends with the story, so the next story shows the full bar.
+  decorators: [...(minimisedSeed.decorators as Decorator[]), (Story) => { useEffect(() => () => forceMinimisedForStory(false), []); return <Story /> }],
   render: () => <Viewport><Shell user={storyUser} onLogout={noop} /></Viewport>,
 }

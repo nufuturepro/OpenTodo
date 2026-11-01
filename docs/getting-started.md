@@ -28,7 +28,7 @@ In the sandbox, one line at the top says so: **Details** shows the full text, **
 
 ### Set up your own server
 
-The first person to open a new OpenTodo server creates the owner account: enter your name, email and a password of at least 10 characters, then select **Create owner account**. From outside its network, the form also asks for the **Setup code** from `docker logs opentodo` ([details](self-hosting/docker.md#the-setup-code)). After that, sign-up is closed: other people join with an invitation from you (see [Sharing and comments](sharing.md#invite-someone-new)).
+The first person to open a new OpenTodo server creates the owner account: enter your name, email and a password of at least 10 characters, then select **Create owner account**. On a public server, finish setup right after starting it, or turn on the [setup code](self-hosting/docker.md#the-setup-code). After that, sign-up is closed: other people join with an invitation from you (see [Sharing and comments](sharing.md#invite-someone-new)).
 
 <picture><source srcset="images/setup-owner-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/setup-owner-light.webp" alt="The Create the owner account form with Name, Email and Password fields."></picture>
 
@@ -40,10 +40,10 @@ Once you're signed in, the app is stored on your device. You can keep using it w
 
 ## Find your way around
 
-The sidebar on the left lists your views and projects; its groups fold with a click on their name. The magnifier by the OpenTodo name searches everything (<kbd>Ctrl+K</kbd>); the one by **Projects** finds a project, label or filter. On a phone, a bar at the bottom goes to **Today**, **Inbox** and **Upcoming**, opens **Search**, and **More** opens the sidebar as a drawer; the round **+** adds a task from any page with the page's defaults (today's date in Today, the project in a project).
+The sidebar on the left lists your views and projects; its groups fold with a click on their name. The magnifier by the OpenTodo name searches everything (<kbd>Ctrl+K</kbd>); the one by **Projects** finds a project, label or filter. On a phone, the bottom bar goes to **Inbox**, **Today** and **Upcoming** and opens **Search**; the menu at the top left opens a drawer with everything else; the round **+** adds a task from any page with the page's defaults (today's date in Today, the project in a project).
 
 - **Inbox** collects tasks that don't belong to a project yet.
-- **Today** shows what's due today, with anything overdue at the top.
+- **Today** shows what's due today, earlier days first.
 - **Upcoming** shows the days ahead, grouped by date.
 - **Projects** are your own lists, like "Home renovation" or "Work".
 

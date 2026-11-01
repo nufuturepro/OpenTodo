@@ -16,7 +16,7 @@ The **Data** group of [Settings](settings.md) connects OpenTodo to other tools a
 
 ## Integrations
 
-These cards connect OpenTodo to other tools. Some appear only when the person running your server has switched the feature on.
+One page per tool, each row with its state (**Webhooks · 2**). Some work only when the person running your server has switched the feature on.
 
 - **Calendar apps (CalDAV)**: see your tasks in calendar and reminder apps such as Apple Reminders, Thunderbird or Nextcloud Tasks, with an app password. Each project is a list, and the Inbox is its own list. On a plain `http://` address app passwords would travel unencrypted, so use HTTPS outside your home network. See [Calendar apps](caldav.md).
 - **Calendar feeds**: show your Google, Outlook or Apple calendars in Day and Week, and get a private address that lets calendar apps show your tasks. The server owner turns it on here. See [Calendar feeds](calendar-feeds.md).
@@ -28,6 +28,6 @@ These cards connect OpenTodo to other tools. Some appear only when the person ru
 
 ## Data
 
-**Download export (JSON)** saves everything you can see in one file, the Trash included, as a personal copy or to move to another server; and **Download export with files (ZIP)** adds your attached files. **Import data…** brings in tasks from a file. See [Import and export](import-export.md). **Attachments** shows how much of your total your files use and how large one file may be (see [Attachments](attachments.md)). The sync status of this device is shown too.
+**Download export (JSON)** saves everything you can see in one file, the Trash included, as a personal copy or to move to another server; and **Download export with files (ZIP)** adds your attached files. **Import data** brings in tasks from a file. See [Import and export](import-export.md). **Attachments** shows how much of your total your files use and how large one file may be (see [Attachments](attachments.md)). The sync status of this device is shown too.
 
 **Projects**: archive projects automatically after 30 days without open tasks. **Show archived projects** opens the Projects page at its archived projects, where **Restore** brings one back. See [Archived projects](archived-projects.md#bring-back-an-archived-project).

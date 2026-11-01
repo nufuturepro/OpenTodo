@@ -4,7 +4,8 @@
 // project walk's queue; the Daily check's focus and the Monthly look's areas;
 // and the synced personal `review` row and per-project review stamps that record
 // them. Pure apart from the writers at the end, each one op set.
-import { bulkLabel, mergeChanges, planDue, toProposed } from './bulk'
+import { bulkLabel, mergeChanges, planComplete, planDue, toProposed } from './bulk'
+import { projectFlowOf } from './flow'
 import { todayList } from './dayLists'
 import { addDaysISO, currentDayStart, daysBetweenISO, logicalDay } from './dates'
 import { mutate, type Change } from './ops'
@@ -16,6 +17,7 @@ import { MethodRules, waitingTasks, type MethodInput } from './method/rules'
 import { qualifies } from './triage'
 import type { Membership, Project, Review, Task } from './types'
 import { isSomeday, isStarted } from './views'
+import { inMaintenance, reviewEveryOf, reviewIsDue, type ReviewEvery } from './reviewCadence'
 import { t, msg, translatedMap } from './i18n'
 
 export const REVIEW_ID = 'me'
@@ -24,8 +26,6 @@ const DAY_MS = 86_400_000
 export const REVIEW_INTERVAL_MS = 7 * DAY_MS
 /** The Monthly look is due after thirty days. */
 export const MONTHLY_INTERVAL_MS = 30 * DAY_MS
-/** A project counts as reviewed in the walk for this long. */
-export const WALK_FRESH_MS = 7 * DAY_MS
 /** Today's focus holds at most this many tasks. */
 export const FOCUS_MAX = 3
 
@@ -57,6 +57,12 @@ export interface WalkProject {
   reviewedAt: number
   /** The user may archive it (owner or admin of a shared project, always for their own). */
   canArchive: boolean
+  /** This user's review interval for it (project-review-cadence). */
+  every: ReviewEvery
+  /** Due for review for this user (weekly-review "Review interval per project"). */
+  due: boolean
+  /** In maintenance (project-organization "Maintenance status"). */
+  maintenance: boolean
 }
 
 export interface ReviewSteps {
@@ -66,8 +72,10 @@ export interface ReviewSteps {
   completedThisWeek: number
   overdue: Task[]
   waiting: Task[]
-  /** Working projects, least recently reviewed first. */
+  /** Working projects due for review, least recently reviewed first. */
   walk: WalkProject[]
+  /** Working projects not due yet or paused, in the same order ("Review them too"). */
+  notDue: WalkProject[]
   /** Open tasks due today and in the next six days, by due date. */
   ahead: Task[]
   /** Someday tasks, oldest first. */
@@ -82,26 +90,43 @@ export interface ReviewInput extends MethodInput {
   completedThisWeek: number
   /** The user's review stamp per project id (project_prefs.reviewed_at). */
   reviewedAt: ReadonlyMap<string, number>
+  /** The user's stored review interval per project id (project_prefs.review_every); missing reads as weekly. */
+  reviewEvery?: ReadonlyMap<string, string>
   now: number
+  /** The day start in minutes (day-boundary), for the logical day of a stamp; the device's by default. */
+  dayStart?: number
 }
 
-/** The walk's projects: every working project, never reviewed first, then the oldest stamp, then sidebar order. */
-export function walkProjects(input: ReviewInput, rules = new MethodRules(input)): WalkProject[] {
+/** Every working project as a walk card, never reviewed first, then the oldest stamp, then sidebar order; due or not. */
+export function walkCandidates(input: ReviewInput, rules = new MethodRules(input)): WalkProject[] {
   const memberships = input.memberships as Map<string, Membership>
-  return rules.working.map((project) => ({
-    project,
-    nextAction: rules.nextActionOf(project.id),
-    waiting: rules.waitingIn(project.id).length,
-    deferred: rules.deferredIn(project.id).length,
-    stalled: rules.stalled(project.id, input.now),
-    needsNext: rules.needsNextAction(project.id),
-    reviewedAt: input.reviewedAt.get(project.id) ?? 0,
-    canArchive: canEditProject(roleOf(project.id, memberships)),
-  })).sort((a, b) => a.reviewedAt - b.reviewedAt || a.project.position - b.project.position || a.project.name.localeCompare(b.project.name))
+  const dayStart = input.dayStart ?? currentDayStart()
+  return rules.working.map((project) => {
+    const reviewedAt = input.reviewedAt.get(project.id) ?? 0
+    const every = reviewEveryOf(input.reviewEvery?.get(project.id))
+    return {
+      project,
+      nextAction: rules.nextActionOf(project.id),
+      waiting: rules.waitingIn(project.id).length,
+      deferred: rules.deferredIn(project.id).length,
+      stalled: rules.stalled(project.id, input.now),
+      needsNext: rules.needsNextAction(project.id),
+      reviewedAt,
+      canArchive: canEditProject(roleOf(project.id, memberships)),
+      every,
+      due: reviewIsDue(reviewedAt, every, input.today, dayStart),
+      maintenance: inMaintenance(project),
+    }
+  }).sort((a, b) => a.reviewedAt - b.reviewedAt || a.project.position - b.project.position || a.project.name.localeCompare(b.project.name))
 }
 
-/** Reviewed in the walk: stamped in the last seven days. */
-export const freshlyReviewed = (w: Pick<WalkProject, 'reviewedAt'>, now: number): boolean => w.reviewedAt > 0 && now - w.reviewedAt <= WALK_FRESH_MS
+/** The walk's projects (weekly-review "Project walk"): the working projects due for review for this user. */
+export function walkProjects(input: ReviewInput, rules = new MethodRules(input)): WalkProject[] {
+  return walkCandidates(input, rules).filter((w) => w.due)
+}
+
+/** Reviewed in the walk: stamped and not due again yet under its interval. */
+export const freshlyReviewed = (w: Pick<WalkProject, 'reviewedAt' | 'due'>): boolean => w.reviewedAt > 0 && !w.due
 
 export function reviewSteps(input: ReviewInput): ReviewSteps {
   const shared = new Set((input.memberships as Map<string, Membership>).keys())
@@ -117,11 +142,14 @@ export function reviewSteps(input: ReviewInput): ReviewSteps {
   const someday = input.tasks
     .filter((task) => !task.deleted_at && !task.completed_at && isSomeday(task) && !(task.project_id && archived.has(task.project_id)))
     .sort((a, b) => a.created_at - b.created_at)
-  const walk = walkProjects(input)
-  const projectsLeft = walk.filter((w) => w.needsNext || !freshlyReviewed(w, input.now)).length
+  const all = walkCandidates(input)
+  const walk = all.filter((w) => w.due)
+  const notDue = all.filter((w) => !w.due)
+  // Done when nothing is due and nothing is without a next action (a paused project is out of the walk entirely).
+  const projectsLeft = all.filter((w) => w.due || (w.needsNext && w.every !== 'paused')).length
   const left: Record<StepId, number> = { clear: inbox.length, sweep: 0, back: overdue.length, waiting: 0, projects: projectsLeft, ahead: 0, someday: 0 }
   const done = Object.fromEntries(STEP_IDS.map((s) => [s, left[s] === 0])) as Record<StepId, boolean>
-  return { inbox, completedThisWeek: input.completedThisWeek, overdue, waiting: waitingTasks(input), walk, ahead, someday, done, left }
+  return { inbox, completedThisWeek: input.completedThisWeek, overdue, waiting: waitingTasks(input), walk, notDue, ahead, someday, done, left }
 }
 
 /** The step the screen opens on: the first that is not done, else Look ahead. */
@@ -187,13 +215,13 @@ export interface Area {
   attention: WalkProject[]
 }
 
-/** Areas (open-loops-method "Monthly look"): live top-level projects with live child projects, in sidebar order. */
+/** Areas (open-loops-method "Monthly look"): live top-level projects with live child projects, and top-level projects whose flow is Area (project-flow-modes), in sidebar order. */
 export function areasOf(input: ReviewInput): Area[] {
-  const walk = new Map(walkProjects(input).map((w) => [w.project.id, w]))
+  const walk = new Map(walkCandidates(input).map((w) => [w.project.id, w]))
   const live = input.projects.filter((p) => !p.deleted_at && !p.archived)
   return live.filter((p) => !p.parent_id).sort((a, b) => a.position - b.position).flatMap((project) => {
     const children = live.filter((c) => c.parent_id === project.id).sort((a, b) => a.position - b.position)
-    if (!children.length) return []
+    if (!children.length && projectFlowOf(project) !== 'area') return []
     const attention = children.map((c) => walk.get(c.id)).filter((w): w is WalkProject => !!w && (w.needsNext || w.stalled))
     return [{ project, children, attention }]
   })
@@ -219,38 +247,60 @@ export function markProjectReviewed(projectId: string, now = Date.now()): Promis
   return mutate('project_prefs', projectId, { reviewed_at: now })
 }
 
+/** How many of the not-due projects are paused, for the end of the walk. */
+export function pausedCount(notDue: readonly Pick<WalkProject, 'every'>[]): number {
+  return notDue.filter((w) => w.every === 'paused').length
+}
+
 // ---- Close the day (OpenSpec change close-the-day, design D3–D5, D8) ----
 
 export type CloseStepId = 'summary' | 'carry' | 'note'
 export const CLOSE_STEP_IDS: readonly CloseStepId[] = ['summary', 'carry', 'note']
-export const CLOSE_STEP_TITLES = translatedMap<CloseStepId>({ summary: msg('How the day went'), carry: msg('Carry over'), note: msg('A line for tomorrow') })
+export const CLOSE_STEP_TITLES = translatedMap<CloseStepId>({ summary: msg('How the day went'), carry: msg('Carry over'), note: msg('A note for tomorrow morning') })
 /** Close the day has one phase. */
 export const CLOSE_PHASE_TITLES = translatedMap<'close'>({ close: msg('Close the day') })
 /** The longest line for tomorrow, in characters. */
 export const TOMORROW_NOTE_MAX = 500
 
+type CloseStamp = Pick<Review, 'closed_at'> & Partial<Pick<Review, 'closed_day'>>
+
 /**
- * Whether the day was closed on the user's logical `today` (weekly-review "Rhythm
- * markers", "Close the day is reachable"): derived from the stamp, so every device
- * gives the same answer for the same local date.
+ * The logical date the latest close closed (close-the-day-v2 D1): the stored
+ * `closed_day`, else the logical day of `closed_at` for a close written before that
+ * field existed; null when the day was never closed (or was reopened).
  */
-export function dayClosed(closedAt: number | null | undefined, today: string): boolean {
-  return !!closedAt && logicalDay(closedAt, currentDayStart()) === today
+export function closedDayOf(review: CloseStamp | null | undefined): string | null {
+  if (!review?.closed_at) return null
+  return /^\d{4}-\d{2}-\d{2}$/.test(review.closed_day ?? '') ? review.closed_day! : logicalDay(review.closed_at, currentDayStart())
+}
+
+/**
+ * Whether the user's logical `today` is closed (weekly-review "Rhythm markers",
+ * "Close the day is reachable"): derived from the stored close, so every device
+ * gives the same answer for the same day.
+ */
+export function dayClosed(review: CloseStamp | null | undefined, today: string): boolean {
+  return closedDayOf(review) === today
 }
 
 /**
  * Yesterday's line for tomorrow (weekly-review "Daily check"): the note of the latest
- * close when that close was on an earlier local day; null when there is none, it is
- * empty, or the day is already closed again. Needs no write to show or to hide.
+ * close when that close closed an earlier day; null when there is none, it is empty,
+ * or the day is already closed again. Needs no write to show or to hide.
  */
-export function yesterdaysNote(review: Pick<Review, 'closed_at' | 'tomorrow_note'> | null | undefined, today: string): string | null {
-  if (!review?.closed_at || logicalDay(review.closed_at, currentDayStart()) >= today) return null
-  return review.tomorrow_note?.trim() || null
+export function yesterdaysNote(review: (CloseStamp & Pick<Review, 'tomorrow_note'>) | null | undefined, today: string): string | null {
+  const day = closedDayOf(review)
+  if (!day || day >= today) return null
+  return review!.tomorrow_note?.trim() || null
 }
 
-/** Records a close (weekly-review "Closing the day"): the time and the trimmed note, one op pair through the outbox. */
-export function closeDay(note: string, now = Date.now()): Promise<void> {
-  return mutate('review', REVIEW_ID, { closed_at: now, tomorrow_note: note.trim().slice(0, TOMORROW_NOTE_MAX) })
+/**
+ * Records a close (weekly-review "Closing the day"): the time, the day being closed
+ * (captured when the screen opened, close-the-day-v2 D1) and the trimmed note, as one
+ * op triple through the outbox.
+ */
+export function closeDay(note: string, day: string, now = Date.now()): Promise<void> {
+  return mutate('review', REVIEW_ID, { closed_at: now, closed_day: day, tomorrow_note: note.trim().slice(0, TOMORROW_NOTE_MAX) })
 }
 
 /** One unfinished task of Today and whether the user may change it (a viewer gets Keep only). */
@@ -288,21 +338,26 @@ export function daySummary(input: MethodInput, review: Pick<Review, 'focus' | 'f
   return { planned: unfinished.length + done, done, focusDone: focus.filter((x) => x.completed_at).length, focusTotal: focus.length, unfinished }
 }
 
-/** One carry-over decision; nothing is stored until Apply (design D4). */
-export type CarryDecision = { kind: 'tomorrow' } | { kind: 'day'; date: string } | { kind: 'someday' } | { kind: 'keep' }
+/** One carry-over decision; nothing is stored until the user moves on from the step (close-the-day-v2 D3). */
+export type CarryDecision = { kind: 'tomorrow' } | { kind: 'day'; date: string } | { kind: 'someday' } | { kind: 'keep' } | { kind: 'done' }
 
 /**
  * The carry-over as one list of changes (weekly-review "Carry-over is one batch"):
  * Tomorrow and a day are the bulk reschedule (a time of day kept, a parked task
  * un-parked), and a task in Today only because its start date came gets its start
- * cleared so it leaves Today; Someday is the patch parking writes; Keep writes
- * nothing. Read-only tasks write nothing whatever their decision.
+ * cleared so it leaves Today; Someday is the patch parking writes; Done already is
+ * the bulk complete (a series rolls, subtasks complete; `all` is every task, for
+ * them); Keep writes nothing. Read-only tasks write nothing whatever their decision.
  */
-export function planCarryOver(decisions: ReadonlyMap<string, CarryDecision>, tasks: readonly CarryTask[], today: string): Change[] {
+export function planCarryOver(decisions: ReadonlyMap<string, CarryDecision>, tasks: readonly CarryTask[], today: string, all: Task[] = tasks.map((x) => x.task), now = Date.now()): Change[] {
   const out: Change[] = []
   for (const { task, editable } of tasks) {
     const d = decisions.get(task.id) ?? { kind: 'tomorrow' }
     if (!editable || d.kind === 'keep') continue
+    if (d.kind === 'done') {
+      out.push(...planComplete([task], all, now, today))
+      continue
+    }
     if (d.kind === 'someday') {
       const patch: Record<string, unknown> = { start: 'someday' }
       if (task.due) patch.due = null
@@ -354,24 +409,38 @@ export function carryOverOf(review: Pick<Review, 'carry_over'> | null | undefine
  * Applies the carry-over as ONE undoable batch through the bulk path; null when
  * nothing is written. The same batch records what it changed on the review row
  * (weekly-review "Reopen the day"), so its Undo also restores the previous record.
+ * A record of the same day is extended, not replaced (close-the-day-v2 D3): a field
+ * changed by both batches keeps its value before the first and after the latest.
  */
-export async function applyCarryOver(decisions: ReadonlyMap<string, CarryDecision>, tasks: readonly CarryTask[], today: string): Promise<{ entry: AssistantUndo | null; label: string; count: number }> {
-  const changes = planCarryOver(decisions, tasks, today)
+export async function applyCarryOver(decisions: ReadonlyMap<string, CarryDecision>, tasks: readonly CarryTask[], today: string, all?: Task[]): Promise<{ entry: AssistantUndo | null; label: string; count: number }> {
+  const changes = planCarryOver(decisions, tasks, today, all)
   const applied = tasks.filter((x) => changes.some((c) => c.entityId === x.task.id)).map((x) => decisions.get(x.task.id) ?? { kind: 'tomorrow' as const })
   const label = carryOverLabel(applied)
   const proposed = await toProposed(changes)
   if (proposed.length === 0) return { entry: null, label, count: 0 }
   const items: CarryOverItem[] = proposed.flatMap((c) => Object.entries(c.patch).map(([field, after]) => ({ id: c.entityId, field, before: c.base?.[field] ?? null, after: after ?? null })))
   const current = await db.review.get(REVIEW_ID)
-  const record: CarryOverRecord = { date: today, items }
+  const previous = carryOverOf(current)
+  const record: CarryOverRecord = { date: today, items: previous?.date === today ? joinItems(previous.items, items) : items }
   proposed.push({ entity: 'review', entityId: REVIEW_ID, patch: { carry_over: JSON.stringify(record) }, base: { carry_over: current?.carry_over ?? '' } })
   const entry = await applyBatch(proposed, { source: 'bulk', label })
   return { entry, label, count: changes.length }
 }
 
-/** Whether "Reopen the day" is offered: the day was closed on the user's logical `today`. */
-export function canReopenDay(review: Pick<Review, 'closed_at'> | null | undefined, today: string): boolean {
-  return dayClosed(review?.closed_at, today)
+/** Two batches' items as one record: a field in both keeps the first value before and the latest value after. */
+function joinItems(first: readonly CarryOverItem[], later: readonly CarryOverItem[]): CarryOverItem[] {
+  const out = first.map((it) => ({ ...it }))
+  for (const it of later) {
+    const seen = out.find((x) => x.id === it.id && x.field === it.field)
+    if (seen) seen.after = it.after
+    else out.push(it)
+  }
+  return out
+}
+
+/** Whether "Reopen the day" is offered: the user's logical `today` is closed. */
+export function canReopenDay(review: CloseStamp | null | undefined, today: string): boolean {
+  return dayClosed(review, today)
 }
 
 export interface ReopenResult {
@@ -389,7 +458,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
  * Reopens a day closed today (weekly-review "Reopen the day", ux-feedback-2 D1):
  * ONE undoable batch writes each recorded field back to its value before the
  * carry-over where the task still holds the value the carry-over wrote (others
- * are left alone and named), clears `closed_at` and empties `carry_over`, and
+ * are left alone and named), clears `closed_at` and `closed_day`, empties `carry_over`, and
  * keeps the line for tomorrow. A record from another day restores only the stamp.
  */
 export async function reopenDay(today: string): Promise<ReopenResult> {
@@ -417,7 +486,7 @@ export async function reopenDay(today: string): Promise<ReopenResult> {
     ? t('{n, plural, one {Day reopened, # task back in Today} other {Day reopened, # tasks back in Today}}', { n: restored })
     : t('Day reopened')
   const proposed = await toProposed(changes)
-  proposed.push({ entity: 'review', entityId: REVIEW_ID, patch: { closed_at: 0, carry_over: '' }, base: { closed_at: review?.closed_at ?? 0, carry_over: review?.carry_over ?? '' } })
+  proposed.push({ entity: 'review', entityId: REVIEW_ID, patch: { closed_at: 0, closed_day: '', carry_over: '' }, base: { closed_at: review?.closed_at ?? 0, closed_day: review?.closed_day ?? '', carry_over: review?.carry_over ?? '' } })
   const entry = await applyBatch(proposed, { source: 'bulk', label })
   return { entry, label, restored, skipped }
 }

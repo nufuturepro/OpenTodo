@@ -2,35 +2,60 @@
 // actions, the layout switch, the duration filter, empty views, the "complete the
 // parent too?" prompt and the label and assignee dialogs. Each is a small
 // component with props only; TaskListView decides when they show.
+import type { ReactNode } from 'react'
 import { DURATION_FILTERS, type DurationFilter } from '../../lib/filters'
 import { msg, t, translatedMap } from '../../lib/i18n'
-import { isPlannedWithoutProject } from '../../lib/inbox'
-import { useOpenTasks } from '../../lib/liveTasks'
 import type { ProjectViewMode } from '../../lib/sections'
 import { keysOf } from '../../lib/shortcuts'
 import type { AccountRole, Label, Place, Project, Task } from '../../lib/types'
-import { Button, EmptyState as EmptyStatePattern, type EmptyStateAction, type EmptyStateLink, Icon, IconButton, MenuItem, MenuSeparator, Tooltip } from '../../ui'
-import { TodayAskAction } from '../assistant/AskEntry'
+import { Button, DESKTOP_HEADER_QUERY, EmptyState as EmptyStatePattern, type EmptyStateAction, type EmptyStateLink, Icon, type IconName, type IllustrationName, IconButton, MenuGroup, MenuItem, MenuSeparator, Tooltip, useMediaQuery } from '../../ui'
+import { TodayAskAction, useTodayAsk } from '../assistant/AskEntry'
 import { AssigneePicker } from '../AssigneePicker'
 import { DEFAULT_DISPLAY_OPTIONS } from '../display/displayOptions'
 import { LabelPicker } from '../LabelPicker'
+import type { ActionGroup, ActionItem } from '../menus/ActionMenu'
 import { Dialog, Menu } from '../../ui'
 import { navigate } from '../router'
+import { requestProjectNote } from '../ProjectNote'
+import { FilterQueryChip } from '../calendar/queryFilter'
+import { RowScheduleHost } from './RowSwipe'
 import { Kbd } from '../shortcuts/Kbd'
 import type { ListRoute } from './useListModel'
 
 /** The project layouts, in `v` order (month-and-timeline-views). */
-const LAYOUT_LABEL = translatedMap<ProjectViewMode>({ list: msg('List'), board: msg('Board'), timeline: msg('Timeline') })
+export const LAYOUT_LABEL = translatedMap<ProjectViewMode>({ list: msg('List'), board: msg('Board'), timeline: msg('Timeline'), calendar: msg('Calendar') })
+const LAYOUT_ICON: Record<ProjectViewMode, IconName> = { list: 'list', board: 'kanban', timeline: 'calendar-range', calendar: 'calendar-days' }
+/** The layouts in `v` order; Calendar since calendar-clarity D5. */
+export const LAYOUTS = ['list', 'board', 'timeline', 'calendar'] as const
 
-/** The project header's List / Board / Timeline switch. */
+/** Upcoming's query filter in the header (calendar-clarity D4): the active query, Filter…, clear. */
+export interface QueryFilterControl {
+  query: string
+  onOpen: () => void
+  onClear: () => void
+}
+
+/**
+ * Touch screens from 768 to 1023 px: four 44 px layout buttons do not fit beside Share
+ * and the page's actions (calendar-clarity), so the layouts move into the project menu.
+ */
+export const COMPACT_LAYOUT_QUERY = '(min-width: 48rem) and (max-width: 63.99rem) and (pointer: coarse)'
+
+/** The layouts as a group of the project menu (COMPACT_LAYOUT_QUERY). */
+export function layoutGroup(mode: ProjectViewMode, onChoose: (m: ProjectViewMode) => void): ActionGroup {
+  return { label: t('Layout'), items: LAYOUTS.map((m) => ({ kind: 'check' as const, id: `layout-${m}`, label: LAYOUT_LABEL[m], checked: mode === m, onSelect: () => onChoose(m) })) }
+}
+
+/** The project header's List / Board / Timeline / Calendar switch. */
 export function LayoutSwitch({ mode, onChoose }: { mode: ProjectViewMode; onChoose: (m: ProjectViewMode) => void }) {
   return (
-    <span className="flex rounded-control border border-default text-meta" role="group" aria-label={t('Project layout')}>
-      {(['list', 'board', 'timeline'] as const).map((m) => (
+    <span className="flex rounded-control border border-default text-meta md:max-lg:pointer-coarse:hidden" role="group" aria-label={t('Project layout')}>
+      {LAYOUTS.map((m) => (
         <Tooltip key={m} label={LAYOUT_LABEL[m]} shortcut={keysOf('project.view-mode')}>
-          <button type="button" aria-pressed={mode === m} onClick={() => onChoose(m)}
-            className={`${m === 'list' ? 'rounded-l-control' : m === 'timeline' ? 'rounded-r-control' : ''} px-2 py-1 ${mode === m ? 'bg-sunken font-medium dark:bg-raised' : 'text-muted hover:bg-sunken dark:hover:bg-raised'}`}>
-            {LAYOUT_LABEL[m]}
+          <button type="button" aria-pressed={mode === m} onClick={() => onChoose(m)} data-layout={m}
+            className={`${m === 'list' ? 'rounded-l-control' : m === 'calendar' ? 'rounded-r-control' : ''} touch-target flex items-center px-2 py-1 max-lg:px-1.5 ${mode === m ? 'bg-sunken font-medium dark:bg-raised' : 'text-muted hover:bg-sunken dark:hover:bg-raised'}`}>
+            {/* Below 1024 px the four layouts are icons (named by the hidden word and the tooltip), so the header fits at 768 px. */}
+            <Icon name={LAYOUT_ICON[m]} className="hidden max-lg:inline-block" /><span className="max-lg:sr-only">{LAYOUT_LABEL[m]}</span>
           </button>
         </Tooltip>
       ))}
@@ -39,51 +64,33 @@ export function LayoutSwitch({ mode, onChoose }: { mode: ProjectViewMode; onChoo
 }
 
 /**
- * "N planned tasks without a project" next to the Inbox title (inbox-means-unplaced
- * D4): where scheduled tasks without a project went, opening Filter with `no project`.
- * Hidden at zero; it sits in the header's meta, so it adds no row of chrome.
- */
-export function usePlannedWithoutProject(on: boolean): number {
-  const open = useOpenTasks()
-  return on ? open.filter(isPlannedWithoutProject).length : 0
-}
-
-export function PlannedWithoutProject({ count }: { count: number }) {
-  return (
-    <button type="button" className="text-meta text-muted underline-offset-2 hover:text-default hover:underline" data-planned-line
-      onClick={() => navigate({ view: 'filter', q: 'no project' })}>
-      {t('{n, plural, one {# planned task without a project} other {# planned tasks without a project}}', { n: count })}
-    </button>
-  )
-}
-
-/**
  * Page actions (ux-overhaul, task-list-presentation): the header row holds them, so
  * nothing sits between the quick add and the first task. Touch screens have no
  * hover: the Select button shows every checkbox (bulk-edit D3).
  */
-export function ListPageActions({ route, userRole, rowCount, topLevelCount, selectMode, onSelectMode, filterKey, duration, onDuration, planned = 0 }: {
+export function ListPageActions({ route, userRole, rowCount, selectMode, onSelectMode, filterKey, duration, onDuration, extra, queryFilter }: {
   route: ListRoute
+  /** The page's own last action: a project's or label's display options (list-display-options). */
+  extra?: ReactNode
   userRole?: AccountRole
   rowCount: number
-  topLevelCount: number
   selectMode: boolean
   onSelectMode: () => void
   filterKey: string | null
   duration: DurationFilter | null
   onDuration: (kind: DurationFilter | null) => void
-  /** Planned tasks without a project: shown here below 768 px, where the header's meta is not. */
-  planned?: number
+  /** Upcoming's query filter (calendar-clarity D4). */
+  queryFilter?: QueryFilterControl | null
 }) {
   return (
     <>
       {route.view === 'today' && <TodayAskAction role={userRole} />}
-      {route.view === 'inbox' && planned > 0 && <span className="w-full md:hidden"><PlannedWithoutProject count={planned} /></span>}
       {route.view === 'inbox' && rowCount > 0 && (
-        // Process the Inbox one task at a time (inbox-triage); g then p.
-        <Tooltip label={t('Process the Inbox')} shortcut="g p">
-          <Button variant="secondary" size="sm" icon="inbox" onClick={() => navigate({ view: 'triage' })} data-triage-start>
-            {t.rich('Process {count}', { count: <span className="tabular-nums text-muted">{topLevelCount}</span> })}
+        // Process the Inbox one task at a time (inbox-triage): the page's primary action, P (inbox-split D3).
+        <Tooltip label={t('Process the Inbox one task at a time')} shortcut={keysOf('inbox.process')}>
+          <Button variant="primary" size="sm" icon="inbox" onClick={() => navigate({ view: 'triage' })} data-triage-start aria-keyshortcuts="p">
+            {/* A phone with a large text size keeps the icon, so the page title still fits beside it. */}
+            <span className="max-[21rem]:sr-only">{t('Process')}</span> <kbd className="ui-kbd ml-1 max-[21rem]:hidden" aria-hidden="true">P</kbd>
           </Button>
         </Tooltip>
       )}
@@ -92,13 +99,116 @@ export function ListPageActions({ route, userRole, rowCount, topLevelCount, sele
           {selectMode ? t('Done') : t('Select')}
         </button>
       )}
-      {filterKey && <DurationFilterControl active={duration} onChange={onDuration} />}
+      {queryFilter?.query && <FilterQueryChip query={queryFilter.query} onOpen={queryFilter.onOpen} onClear={queryFilter.onClear} />}
+      {filterKey && <DurationFilterControl active={duration} onChange={onDuration} onQuery={queryFilter?.onOpen} />}
       {(route.view === 'today' || route.view === 'upcoming') && (
         // Display mode (display-mode D6): this view in large type, for a tablet or an e-ink panel.
         <IconButton size="sm" icon="monitor" label={t('Display mode')} data-display-mode
           onClick={() => navigate({ view: 'display', target: { kind: route.view as 'today' | 'upcoming' }, options: { ...DEFAULT_DISPLAY_OPTIONS } })} />
       )}
+      {extra}
     </>
+  )
+}
+
+/** One overflow item of the phone bar (phone-v2 D1): plain data, so a Menu and an ActionMenu can both show it. */
+export interface PhoneItem { id: string; label: string; icon?: IconName; checked?: boolean; group?: string; onSelect: () => void }
+
+/**
+ * A list's actions on a phone (phone-v2 D1): two visible slots in the shell's bar
+ * (Process the Inbox or Ask in Today first, then the duration filter) and the rest
+ * as overflow items: Select tasks, Display mode, and the duration filter when it
+ * had no slot (its active choice then shows as a chip in the bar).
+ */
+export function usePhoneListActions({ route, userRole, rowCount, topLevelCount, onSelectMode, filterKey, duration, onDuration, project, extraSlot, queryFilter }: {
+  route: ListRoute
+  /** A last slot of the bar: a project's or label's display options (list-display-options). */
+  extraSlot?: ReactNode
+  userRole?: AccountRole
+  rowCount: number
+  topLevelCount: number
+  onSelectMode: () => void
+  filterKey: string | null
+  duration: DurationFilter | null
+  onDuration: (kind: DurationFilter | null) => void
+  /** Upcoming's query filter (calendar-clarity D4). */
+  queryFilter?: QueryFilterControl | null
+  /** A project page: its layout choice and, when empty, "Add a note" join the project menu. */
+  project?: { row: Project; editable: boolean; viewMode: ProjectViewMode; onViewMode: (m: ProjectViewMode) => void }
+}): { phone: boolean; slots: ReactNode; items: PhoneItem[]; projectItems: PhoneItem[] } {
+  const phone = !useMediaQuery(DESKTOP_HEADER_QUERY)
+  const ask = useTodayAsk(userRole) && route.view === 'today'
+  const process = route.view === 'inbox' && rowCount > 0
+  const filterSlot = !!filterKey && !ask && !process
+  const items: PhoneItem[] = []
+  if (route.view !== 'completed' && rowCount > 0) items.push({ id: 'select', label: t('Select tasks'), icon: 'list-checks', onSelect: onSelectMode })
+  if (route.view === 'today' || route.view === 'upcoming') {
+    const target = { kind: route.view }
+    items.push({ id: 'display', label: t('Display mode'), icon: 'monitor', onSelect: () => navigate({ view: 'display', target, options: { ...DEFAULT_DISPLAY_OPTIONS } }) })
+  }
+  if (filterKey && !filterSlot) {
+    for (const f of DURATION_FILTERS) items.push({ id: `duration-${f.kind}`, label: f.label, checked: duration === f.kind, group: t('Filter by duration'), onSelect: () => onDuration(duration === f.kind ? null : f.kind) })
+  }
+  if (queryFilter && !filterSlot) items.push({ id: 'query-filter', label: t('Filter…'), icon: 'filter', onSelect: queryFilter.onOpen })
+  const current = DURATION_FILTERS.find((f) => f.kind === duration)
+  const slots = (
+    <>
+      {ask && <TodayAskAction role={userRole} />}
+      {process && (
+        <Button variant="secondary" size="sm" icon="inbox" onClick={() => navigate({ view: 'triage' })} data-triage-start>
+          {/* As on the desktop header: a phone with a large text size keeps the icon, so the title fits. */}
+          <span className="max-[21rem]:sr-only">{t.rich('Process {count}', { count: <span className="tabular-nums text-muted">{topLevelCount}</span> })}</span>
+        </Button>
+      )}
+      {queryFilter?.query && <FilterQueryChip query={queryFilter.query} onOpen={queryFilter.onOpen} onClear={queryFilter.onClear} />}
+      {filterSlot && <DurationFilterControl active={duration} onChange={onDuration} onQuery={queryFilter?.onOpen} />}
+      {!filterSlot && current && <DurationChip label={current.label} onClear={() => onDuration(null)} />}
+      {extraSlot}
+    </>
+  )
+  const projectItems: PhoneItem[] = project ? [
+    ...LAYOUTS.map((mode) => ({ id: `layout-${mode}`, label: LAYOUT_LABEL[mode], checked: project.viewMode === mode, group: t('Layout'), onSelect: () => project.onViewMode(mode) })),
+    ...(project.editable && !project.row.description?.trim() ? [{ id: 'note', label: t('Add a note'), icon: 'pencil' as const, onSelect: () => requestProjectNote(project.row.id) }] : []),
+    ...items,
+  ] : items
+  return { phone, slots, items, projectItems }
+}
+
+/** The phone overflow items as ActionMenu groups (the project and label menus). */
+export function phoneGroups(items: PhoneItem[]): ActionGroup[] {
+  const toItem = (i: PhoneItem): ActionItem => (i.checked === undefined
+    ? { kind: 'action', id: i.id, label: i.label, icon: i.icon, onSelect: i.onSelect }
+    : { kind: 'check', id: i.id, label: i.label, checked: i.checked, onSelect: i.onSelect })
+  const plain = items.filter((i) => !i.group)
+  const named = [...new Set(items.filter((i) => i.group).map((i) => i.group!))]
+  return [...(plain.length ? [{ items: plain.map(toItem) }] : []), ...named.map((g) => ({ label: g, items: items.filter((i) => i.group === g).map(toItem) }))]
+}
+
+/** The phone overflow items as menu items, grouped where they carry a group name. */
+export function PhoneMenuItems({ items }: { items: PhoneItem[] }) {
+  const plain = items.filter((i) => !i.group)
+  const groups = [...new Set(items.filter((i) => i.group).map((i) => i.group!))]
+  return (
+    <>
+      {plain.map((i) => <MenuItem key={i.id} label={i.label} icon={i.icon} onSelect={i.onSelect} data-phone-item={i.id} />)}
+      {groups.map((g) => (
+        <MenuGroup key={g} label={g}>
+          {items.filter((i) => i.group === g).map((i) => <MenuItem key={i.id} label={i.label} checked={i.checked} onSelect={i.onSelect} data-phone-item={i.id} />)}
+        </MenuGroup>
+      ))}
+    </>
+  )
+}
+
+/** The active duration filter as one chip with its clear control. */
+function DurationChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-accent bg-accent-soft py-0.5 pl-2.5 pr-1 text-meta font-medium text-on-accent-soft" data-duration-active>
+      {label}
+      <button type="button" className="touch-target flex h-5 w-5 items-center justify-center rounded-full hover:bg-accent/10" aria-label={t('Clear filter')} onClick={onClear} data-clear-duration>
+        <Icon name="x" size="xs" />
+      </button>
+    </span>
   )
 }
 
@@ -106,30 +216,26 @@ export function ListPageActions({ route, userRole, rowCount, topLevelCount, sele
  * The duration filter as a page action (ux-overhaul, time-blocking "Duration filter"):
  * a Filter menu in the header, and one chip with a clear control while a filter is on.
  */
-function DurationFilterControl({ active, onChange }: { active: DurationFilter | null; onChange: (kind: DurationFilter | null) => void }) {
+function DurationFilterControl({ active, onChange, onQuery }: { active: DurationFilter | null; onChange: (kind: DurationFilter | null) => void; onQuery?: () => void }) {
   const current = DURATION_FILTERS.find((f) => f.kind === active)
   return (
     <span className="flex items-center gap-1" data-duration-filter>
-      {current && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-accent bg-accent-soft py-0.5 pl-2.5 pr-1 text-meta font-medium text-on-accent-soft" data-duration-active>
-          {current.label}
-          <button type="button" className="touch-target flex h-5 w-5 items-center justify-center rounded-full hover:bg-accent/10" aria-label={t('Clear filter')} onClick={() => onChange(null)} data-clear-duration>
-            <Icon name="x" size="xs" />
-          </button>
-        </span>
-      )}
+      {current && <DurationChip label={current.label} onClear={() => onChange(null)} />}
       <Menu kind="menu" label={t('Filter')} title={t('Filter by duration')} trigger={<Icon name="filter" />} triggerClassName={`ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1 ${active ? 'text-accent' : ''}`} width="sm:w-56">
         {DURATION_FILTERS.map((f) => (
           <MenuItem key={f.kind} label={f.label} description={f.title} checked={active === f.kind} onSelect={() => onChange(active === f.kind ? null : f.kind)} />
         ))}
         {active && <MenuSeparator />}
         {active && <MenuItem label={t('Clear filter')} icon="x" onSelect={() => onChange(null)} />}
+        {/* Upcoming's query filter sits under the duration filter (calendar-clarity D4). */}
+        {onQuery && <MenuSeparator />}
+        {onQuery && <MenuItem label={t('Filter…')} icon="filter" description={t('Show only the tasks a query matches')} data-query-filter-open onSelect={onQuery} />}
       </Menu>
     </span>
   )
 }
 
-export function placeholderFor(route: ListRoute, project?: Project, label?: Label, place?: Place): string {
+export function placeholderFor(route: ListRoute, project?: Project, label?: Label, place?: Place, workspace?: string): string {
   switch (route.view) {
     case 'today':
       return t('Add a task for today…')
@@ -148,36 +254,46 @@ export function placeholderFor(route: ListRoute, project?: Project, label?: Labe
     case 'assigned':
       return t('Add a task assigned to you…')
     default:
-      return t('Add a task to your Inbox…')
+      // With more than one workspace the Inbox names its workspace (workspaces "Quick add").
+      return workspace ? t('Add to {workspace}…', { workspace }) : t('Add a task to your Inbox…')
   }
 }
 
 // Empty views (OpenSpec change lean-chrome D7, task-list-presentation "Empty views"):
-// one sentence, one primary action, at most one secondary link, rendered through the
+// one sentence, at most one primary action (none where the view has its own quick add,
+// row-and-cursor D3), at most one secondary link, rendered through the
 // EmptyState primitive; the action's key is in its tooltip on fine pointers only.
 type EmptyView = ListRoute['view']
-interface EmptyCopy { title: string; action: 'add' | 'inbox' | 'today' }
+interface EmptyCopy { title: string; action?: 'inbox' | 'today' }
 const EMPTY_COPY: Record<EmptyView, EmptyCopy> = {
-  inbox: { get title() { return t('Inbox zero: every task has a place.') }, action: 'add' },
-  today: { get title() { return t('Nothing due today.') }, action: 'add' },
-  upcoming: { get title() { return t('Nothing scheduled yet.') }, action: 'add' },
-  anytime: { get title() { return t('Nothing waiting for a free moment.') }, action: 'add' },
-  someday: { get title() { return t('Nothing parked for later.') }, action: 'add' },
+  inbox: { get title() { return t('Inbox zero: every task has a place.') } },
+  today: { get title() { return t('Nothing due today.') } },
+  upcoming: { get title() { return t('Nothing scheduled yet.') } },
+  anytime: { get title() { return t('Nothing waiting for a free moment.') } },
+  someday: { get title() { return t('Nothing parked for later.') } },
   assigned: { get title() { return t('Nothing is assigned to you.') }, action: 'inbox' },
-  project: { get title() { return t('This project has no open tasks.') }, action: 'add' },
-  label: { get title() { return t('No open task carries this label.') }, action: 'add' },
-  place: { get title() { return t('No open task happens at this location.') }, action: 'add' },
+  project: { get title() { return t('This project has no open tasks.') } },
+  label: { get title() { return t('No open task carries this label.') } },
+  place: { get title() { return t('No open task happens at this location.') } },
   completed: { get title() { return t('Nothing completed yet.') }, action: 'today' },
 }
 
-/** The primary action of an empty view: add a task (the view's quick add), or open Inbox or Today. */
-function emptyAction(kind: EmptyCopy['action'], onAdd: () => void): EmptyStateAction {
-  if (kind === 'today') return { label: t('Open Today'), onClick: () => navigate({ view: 'today' }), shortcut: keysOf('go.today') }
-  if (kind === 'inbox') return { label: t('Open Inbox'), onClick: () => navigate({ view: 'inbox' }), shortcut: keysOf('go.inbox') }
-  return { label: t('Add a task'), onClick: onAdd, shortcut: keysOf('list.quick-add') }
+// The illustration set (moments-and-onboarding D1): the views with a drawing of their own.
+const EMPTY_ILLUSTRATION: Partial<Record<EmptyView, IllustrationName>> = {
+  inbox: 'inbox-zero', today: 'today-clear', upcoming: 'week-clear', project: 'project-new',
 }
 
-export function EmptyState({ view, waiting = 0, readOnly = false, completed = 0, onShowCompleted, onAdd }: {
+/**
+ * The primary action of an empty view: open Inbox or Today. A view with its own quick add
+ * has none (row-and-cursor D3): the field above is the way to add, and `q` focuses it.
+ */
+function emptyAction(kind: EmptyCopy['action']): EmptyStateAction | undefined {
+  if (kind === 'today') return { label: t('Open Today'), onClick: () => navigate({ view: 'today' }), shortcut: keysOf('go.today') }
+  if (kind === 'inbox') return { label: t('Open Inbox'), onClick: () => navigate({ view: 'inbox' }), shortcut: keysOf('go.inbox') }
+  return undefined
+}
+
+export function EmptyState({ view, waiting = 0, readOnly = false, completed = 0, onShowCompleted, compact = false }: {
   view: EmptyView
   /** Today: tasks due today that all wait for other tasks (task-dependencies). */
   waiting?: number
@@ -186,11 +302,12 @@ export function EmptyState({ view, waiting = 0, readOnly = false, completed = 0,
   /** A project's completed tasks while its Completed group is off. */
   completed?: number
   onShowCompleted?: () => void
-  onAdd: () => void
+  /** The Inbox above its "Planned, no project" group: one quiet line, no illustration (inbox-zero-quiet). */
+  compact?: boolean
 }) {
   const copy = EMPTY_COPY[view]
   const blocked = view === 'today' && waiting > 0
-  const action = emptyAction(view === 'project' && readOnly ? 'inbox' : copy.action, onAdd)
+  const action = emptyAction(view === 'project' && readOnly ? 'inbox' : copy.action)
   const secondary: EmptyStateLink | undefined = blocked
     ? { label: t('{n, plural, one {# waiting for other tasks} other {# waiting for other tasks}}', { n: waiting }), onClick: () => navigate({ view: 'waiting' }) }
     : view === 'today'
@@ -201,8 +318,21 @@ export function EmptyState({ view, waiting = 0, readOnly = false, completed = 0,
   return (
     <div data-empty-state={view}>
       <EmptyStatePattern title={blocked ? t('Nothing is ready to start today.') : copy.title} action={action} secondary={secondary}
-        illustration={view === 'inbox' ? 'inbox-zero' : undefined} />
+        illustration={compact ? undefined : EMPTY_ILLUSTRATION[view]} compact={compact} />
     </div>
+  )
+}
+
+/**
+ * The line after a project's list while its completed tasks are hidden (precision-rows
+ * D6): how many there are and one link that turns "Show completed tasks" on.
+ */
+export function HiddenNote({ count, onShow }: { count: number; onShow: () => void }) {
+  return (
+    <p className="flex flex-wrap items-center justify-center gap-x-2 pt-4 pb-2 text-meta text-muted" data-hidden-note>
+      <span>{t('{n, plural, one {# completed task hidden by display options} other {# completed tasks hidden by display options}}', { n: count })}</span>
+      <button type="button" onClick={onShow} className="rounded-chip text-default underline decoration-(--ot-line-strong) underline-offset-3 hover:decoration-current">{t('Show')}</button>
+    </p>
   )
 }
 
@@ -261,6 +391,8 @@ export function RowPickerDialogs({ assignFor, pickerFor, userId, onCloseAssign, 
 }) {
   return (
     <>
+      {/* The Schedule sheet of a left swipe or the touch row menu (phone-v2 D3). */}
+      <RowScheduleHost />
       {assignFor && userId && (
         <Dialog title={t('Assign')} label={t('Assign task')} onClose={onCloseAssign}>
           <AssigneePicker taskId={assignFor} userId={userId} onClose={onCloseAssign} />

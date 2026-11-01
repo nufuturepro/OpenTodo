@@ -8,6 +8,7 @@ import { oidcErrorMessage, ssoLayout, takeQueryParam } from './sso'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { navigate } from './router'
 import { t } from '../lib/i18n'
+import { InstanceMark, InstanceWordmark, PoweredBy } from './InstanceBrand'
 import { roleName } from '../lib/roleNames'
 
 /** When set, the screen is the acceptance form of an invitation (OpenSpec `invitations`). */
@@ -33,7 +34,7 @@ export function AuthScreen({ status, invite, notice, onAuthenticated }: {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   // First-run setup guarded by OPENTODO_SETUP_TOKEN (OpenSpec `owner-bootstrap`).
-  // Without a token, setup from outside the local network asks for the code the
+  // Without a token, setup from another machine asks for the code the
   // server printed in its log, in the same field (trusted-client-identity).
   const needsSetupCode = !!status.setupRequired && !status.setupTokenRequired && !!status.setupCodeRequired && !invite
   const needsSetupToken = (!!status.setupRequired && !!status.setupTokenRequired && !invite) || needsSetupCode
@@ -222,14 +223,14 @@ export function AuthScreen({ status, invite, notice, onAuthenticated }: {
           <p className="mb-4 rounded-control bg-accent-soft p-3 text-body text-on-accent-soft" data-testid="project-invite-banner">
             {t.rich('<strong>{inviterName}</strong> invited you to <strong2>{name}</strong2> as {role}. Create your account to join.', { inviterName: invite.preview.inviterName, name: invite.project.name, role: roleName(invite.project.role), strong: (chunks) => <strong>{chunks}</strong>, strong2: (chunks) => <strong className="user-text">{chunks}</strong> })}
             {invite.preview.email && <>{' '}{t.rich('This link is for <strong>{email}</strong>.', { email: invite.preview.email, strong: (chunks) => <strong>{chunks}</strong> })}</>}
-            <span className="mt-1 block text-meta opacity-80">{t('The link expires {instant} and works once.', { instant: dt.formatInstant(invite.preview.expiresAt, 'datetime') })}</span>
+            <span className="mt-1 block text-meta">{t('The link expires {instant} and works once.', { instant: dt.formatInstant(invite.preview.expiresAt, 'datetime') })}</span>
           </p>
         )}
         {invite && !invite.project && (
           <p className="mb-4 rounded-control bg-accent-soft p-3 text-body text-on-accent-soft">
             {t.rich('<strong>{inviterName}</strong> invited you to join this server. Create your account below.', { inviterName: invite.preview.inviterName, strong: (chunks) => <strong>{chunks}</strong> })}
             {invite.preview.email && <>{' '}{t.rich('This invitation is for <strong>{email}</strong>.', { email: invite.preview.email, strong: (chunks) => <strong>{chunks}</strong> })}</>}
-            <span className="mt-1 block text-meta opacity-80">{t('The link expires {instant} and works once.', { instant: dt.formatInstant(invite.preview.expiresAt, 'datetime') })}</span>
+            <span className="mt-1 block text-meta">{t('The link expires {instant} and works once.', { instant: dt.formatInstant(invite.preview.expiresAt, 'datetime') })}</span>
           </p>
         )}
 
@@ -288,7 +289,7 @@ export function AuthScreen({ status, invite, notice, onAuthenticated }: {
                 autoComplete="off" spellCheck={false} aria-describedby="setup-token-help" />
               <span id="setup-token-help" className="mt-1 block text-meta text-muted">
                 {needsSetupCode
-                  ? t.rich('You are setting up this server from outside its local network, so it asks for the one-time code it printed in its log. Run {command} on the server, or open the logs in your hosting panel.', { command: <code>docker logs opentodo</code> })
+                  ? t.rich('You are setting up this server from another machine, so it asks for the one-time code it printed in its log. Run {command} on the server, or open the logs in your hosting panel.', { command: <code>docker logs opentodo</code> })
                   : status.hosted
                   ? t('Your provider sent this token with the address of your new server.')
                   : t.rich('This server asks for the token its operator configured. Find it in your hosting panel, for example Coolify, this service, Environment Variables, {variable}.', { variable: <code>OPENTODO_SETUP_TOKEN</code> })}
@@ -370,14 +371,14 @@ export function AuthCard({ version, children }: { version: string; children: Rea
     <div className="flex min-h-full items-center justify-center bg-canvas p-6">
       <div className="w-full max-w-sm rounded-card border border-default bg-surface p-6 shadow-1">
         <div className="mb-6 flex items-center gap-3">
-          <img src="/favicon.svg" alt="" className="h-9 w-9" />
+          <InstanceMark size={32} />
           <div>
-            <h1 className="text-h3 font-semibold">{t('OpenTaskKit')}</h1>
+            <h1 className="text-h3 font-semibold"><InstanceWordmark /></h1>
             <p className="text-meta text-muted">{t('Your tasks, your server.')}</p>
           </div>
         </div>
         {children}
-        <p className="mt-6 text-center text-meta text-faint">{t('OpenTaskKit {version} · AGPL-3.0 · no tracking, no telemetry', { version })}</p>
+        <PoweredBy version={version} />
       </div>
     </div>
   )

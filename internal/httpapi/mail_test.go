@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/mail"
-	"github.com/pixari/opentodo/internal/mail/smtptest"
-	"github.com/pixari/opentodo/internal/oidc"
-	"github.com/pixari/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/mail"
+	"github.com/OpenTodoApp/opentodo/internal/mail/smtptest"
+	"github.com/OpenTodoApp/opentodo/internal/oidc"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
 )
 
 // withTestMail wires a mail service whose transport trusts srv's certificate.
@@ -225,8 +225,11 @@ func TestSMTPManagedByEnvironment(t *testing.T) {
 }
 
 func TestOutgoingEmailOffOnDemoAndUnwired(t *testing.T) {
-	e := ownerEnv(t)
-	resp, out := e.do("GET", "/api/v1/auth/status", nil)
+	// services.Build leaves outgoing email unwired on a demo instance only.
+	e := newEnvWith(t, false, func(s *Server) { s.mail = nil })
+	resp, out := e.do("POST", "/api/v1/auth/register", map[string]string{"email": "owner@example.com", "name": "Owner", "password": "correct horse battery"})
+	e.mustStatus(resp, 201, out)
+	resp, out = e.do("GET", "/api/v1/auth/status", nil)
 	e.mustStatus(resp, 200, out)
 	if out["outgoingEmail"].(map[string]any)["enabled"] != false {
 		t.Fatalf("unwired status = %v", out)
@@ -396,17 +399,55 @@ func TestPasswordResetTiming(t *testing.T) {
 	e, srv := mailEnv(t, false)
 	e.configureMail(srv)
 	timed := func(ip, email string) time.Duration {
+		c := newClientAt(e, ip)
+		c.server = nil // time the answer, not the mail sent after it
 		start := time.Now()
-		resp, out := newClientAt(e, ip).do("POST", "/api/v1/auth/password-reset", map[string]string{"email": email})
+		resp, out := c.do("POST", "/api/v1/auth/password-reset", map[string]string{"email": email})
 		e.mustStatus(resp, 202, out)
 		return time.Since(start)
 	}
 	known, unknown := timed("10.3.0.1", "owner@example.com"), timed("10.3.0.2", "nobody@example.com")
+	e.server.background.Wait()
 	if known < resetMinDuration || unknown < resetMinDuration {
 		t.Fatalf("answered before the minimum: known %v unknown %v", known, unknown)
 	}
 	if d := known - unknown; d > 150*time.Millisecond || d < -150*time.Millisecond {
 		t.Fatalf("timing differs: known %v unknown %v", known, unknown)
+	}
+}
+
+// password-reset-timing: the answer does not wait for the mail server, so a
+// slow delivery to an existing account cannot be told apart from no account.
+func TestPasswordResetAnswersBeforeSending(t *testing.T) {
+	e, _ := mailEnv(t, false)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { <-release; c.Close() }()
+		}
+	}()
+	resp, out := e.do("PUT", "/api/v1/settings/smtp", map[string]any{"host": "127.0.0.1", "port": ln.Addr().(*net.TCPAddr).Port,
+		"security": "starttls", "username": "todo", "password": "hunter2", "from": "OpenTaskKit <todo@example.com>"})
+	e.mustStatus(resp, 200, out)
+	c := newClientAt(e, "10.3.1.1")
+	c.server = nil
+	start := time.Now()
+	resp, out = c.do("POST", "/api/v1/auth/password-reset", map[string]string{"email": "owner@example.com"})
+	elapsed := time.Since(start)
+	close(release)
+	e.server.background.Wait()
+	ln.Close()
+	c.mustStatus(resp, 202, out)
+	if elapsed > 2*time.Second {
+		t.Fatalf("the answer waited for the mail server: %v", elapsed)
 	}
 }
 
@@ -417,6 +458,7 @@ func TestPasswordResetSSOOnlySendsNothing(t *testing.T) {
 	srv := smtptest.New(t, smtptest.Options{User: "todo", Pass: "hunter2"})
 	e := newEnvWith(t, false, withTestMail(srv), withBaseURL(testBaseURL), func(s *Server) {
 		s.oidc = oidc.New(settings.New(s.sync.DB()), s.cfg.DataDir, oidc.Options{Env: oidc.Env{Issuer: "https://idp.example", ClientID: "c", SSOOnly: &ssoOnly}})
+		s.auth.SetSSOOnly(s.oidc.SSOOnly)
 	})
 	resp, out := e.do("POST", "/api/v1/auth/register", map[string]string{"email": "owner@example.com", "name": "Owner", "password": "correct horse battery"})
 	e.mustStatus(resp, 201, out)

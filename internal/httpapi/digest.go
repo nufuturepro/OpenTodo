@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/digest"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/digest"
 )
 
 // The weekly email digest settings (OpenSpec change `stats-and-review`, design
@@ -18,8 +18,8 @@ import (
 // operator configures it.
 
 func (s *Server) registerDigestRoutes(mux *routes) {
-	mux.handle("GET /api/v1/me/email-digest", signedIn.fullTokens(), s.handleGetDigest)
-	mux.handle("PUT /api/v1/me/email-digest", signedIn.fullTokens().demoDenied(), s.handlePutDigest)
+	mux.handle("GET /api/v1/me/email-digest", signedIn.FullTokens(), s.handleGetDigest)
+	mux.handle("PUT /api/v1/me/email-digest", signedIn.FullTokens().DemoDenied(), s.handlePutDigest)
 }
 
 func (s *Server) digestStore() *digest.Store { return digest.NewStore(s.sync.DB(), s.auth.Now) }

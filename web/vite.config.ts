@@ -2,6 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -42,7 +43,7 @@ export default defineConfig({
       filename: 'sw.ts',
       registerType: 'autoUpdate',
       injectRegister: 'script-defer',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-maskable-512.png'],
       manifest: {
         name: 'OpenTodo',
         short_name: 'OpenTodo',
@@ -64,10 +65,15 @@ export default defineConfig({
             files: [{ name: 'files', accept: ['image/*', 'application/pdf', 'text/*', 'audio/*', 'video/*', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip'] }],
           },
         },
+        // Rendered from web/src/ui/icons/brand.svg by scripts/brand-icons.mjs (sidebar-v2
+        // D3). The paths stay, so installed apps pick up a new mark by content; the
+        // maskable icon fills its square, the mark inside the safe zone.
         icons: [
           { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+          { src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
       },
       injectManifest: {
@@ -117,7 +123,18 @@ export default defineConfig({
     // waitFor (ui/test-utils, 10 s), so the cap only has to catch a hang
     // (web-lint-and-test-hygiene).
     testTimeout: 30_000,
+    // After-hooks run in the order they are declared: the shared teardown of
+    // test-setup.ts first, while a file's own mocks still answer, then the file's.
+    sequence: { hooks: 'list' },
+    // Floating and zoned dates are pinned in UTC, as CI runs (planView's zoned due,
+    // the "Calendars as of" time): a developer's own zone must not change results.
+    env: { TZ: 'UTC' },
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
+    // Scale tests (2,000 rows) run alone in their own run, `npm run test:perf`
+    // (vitest.perf.config.ts): inside the parallel pool they raced every other file
+    // for the CPU and timed out under load (test audit F4). Contract tests need the
+    // server binary: `npm run test:contract` (vitest.contract.config.ts).
+    exclude: [...configDefaults.exclude, 'src/**/*.perf.test.{ts,tsx}', 'src/**/*.contract.test.ts'],
     // Token tests read index.css as text (src/ui/tokens); other CSS stays stubbed.
     css: { include: [/index\.css/] },
   },

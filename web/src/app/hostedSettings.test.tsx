@@ -6,7 +6,7 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setHosted } from '../lib/hosted'
 import type { User } from '../lib/types'
-import { click, flush, render } from '../ui/test-utils'
+import { click, render, waitFor } from '../ui/test-utils'
 import { ServerArchiveView } from './ServerArchivePanel'
 import { visibleEntries } from './settingsIndex'
 import { SettingsView } from './SettingsView'
@@ -19,7 +19,6 @@ beforeEach(() => {
 })
 afterEach(() => {
   setHosted(false)
-  document.body.innerHTML = ''
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -39,19 +38,27 @@ describe('hosted settings', () => {
   it('shows the archive download instead of the operator panels', async () => {
     setHosted(true)
     const r = await render(<SettingsView user={owner} onLogout={() => {}} section="server" />)
-    await flush(20)
-    expect(r.container.querySelector('[data-testid="server-archive"]')).not.toBeNull()
-    expect(r.container.querySelector('#backups-heading')).toBeNull()
-    expect(r.container.querySelector('#outgoing-email-heading')).toBeNull()
-    expect(r.container.querySelector('#attachments-settings-heading')).toBeNull()
+    await waitFor(() => r.container.querySelectorAll('[data-settings-subpage]').length > 0, 'the overview')
+    // The overview lists Download your data and none of the operator's pages.
+    expect([...r.container.querySelectorAll('[data-settings-subpage]')].map((a) => a.getAttribute('data-settings-subpage')))
+      .toEqual(['download', 'branding', 'maps', 'automations', 'audit'])
     await r.unmount()
+    const download = await render(<SettingsView user={owner} onLogout={() => {}} section="server" page="download" />)
+    await waitFor(() => !!download.container.querySelector('[data-testid="server-archive"]'), 'the archive download')
+    await download.unmount()
+    for (const page of ['backups', 'outgoing-email', 'attachments']) {
+      const p = await render(<SettingsView user={owner} onLogout={() => {}} section="server" page={page} />)
+      // Either the operator's page (wrong) or the overview in its place.
+      await waitFor(() => !!p.container.querySelector('[data-settings-subpage], [data-settings-page]'), 'a page or the overview')
+      expect(p.container.querySelector('[data-settings-page]')).toBeNull()
+      await p.unmount()
+    }
   })
 
   it('keeps a self-hosted server exactly as before', async () => {
-    const r = await render(<SettingsView user={owner} onLogout={() => {}} section="server" />)
-    await flush(20)
+    const r = await render(<SettingsView user={owner} onLogout={() => {}} section="server" page="attachments" />)
+    await waitFor(() => !!r.container.querySelector('#attachments-settings-heading'), 'the attachments page')
     expect(r.container.querySelector('[data-testid="server-archive"]')).toBeNull()
-    expect(r.container.querySelector('#attachments-settings-heading')).not.toBeNull()
     await r.unmount()
   })
 

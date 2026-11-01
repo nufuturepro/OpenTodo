@@ -3,7 +3,7 @@ title: Project templates
 summary: Start a project from the template library or from a template file, with dates counted from your start day; save your own templates; contribute one to the library.
 audience: user
 section: Guides
-specs: [project-templates]
+specs: [project-templates, template-library]
 screens: [templates#save-a-template]
 order: 122
 ---
@@ -33,7 +33,7 @@ The downloads on [open-todo.app/templates](https://open-todo.app/templates) are 
 
 ## Contribute a template
 
-The library lives in the `templates/` folder of the [OpenTodo repository](https://github.com/pixari/opentodo/tree/main/templates): one folder per template, written by hand in a short YAML format, with optional translations. Propose a new one with a pull request; [the format and the bar for the library](https://github.com/pixari/opentodo/blob/main/templates/README.md) are on GitHub. Templates are shared under CC BY 4.0.
+The library lives in the `templates/` folder of the [OpenTodo repository](https://github.com/OpenTodoApp/OpenTodo/tree/main/templates): one folder per template, written by hand in a short YAML format, with optional translations. Propose a new one with a pull request; [the format and the bar for the library](https://github.com/OpenTodoApp/OpenTodo/blob/main/templates/README.md) are on GitHub. Templates are shared under CC BY 4.0.
 
 ## From a template or Import?
 

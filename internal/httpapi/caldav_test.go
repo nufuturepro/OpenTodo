@@ -114,6 +114,21 @@ func (e *env) caldavOps(id string) map[string]int {
 	return out
 }
 
+// reminders lists a task's live reminders through the REST API.
+func (e *env) reminders(taskID string) []map[string]any {
+	e.t.Helper()
+	resp, out := e.do("GET", "/api/v1/reminders", nil)
+	e.mustStatus(resp, 200, out)
+	var list []map[string]any
+	for _, r := range out["reminders"].([]any) {
+		m := r.(map[string]any)
+		if m["task_id"] == taskID && m["deleted_at"] == nil {
+			list = append(list, m)
+		}
+	}
+	return list
+}
+
 var etagRe = regexp.MustCompile(`<d:getetag>([^<]*)</d:getetag>`)
 
 func TestAppPasswordRoutesRequireAuth(t *testing.T) {
@@ -189,8 +204,65 @@ func TestDavDisabledIs404(t *testing.T) {
 	// Enabling takes effect without a restart; the well-known address redirects.
 	e.do("PUT", "/api/v1/settings/caldav", map[string]any{"enabled": true})
 	resp2, _ := c.req("PROPFIND", "/.well-known/caldav", "")
-	if resp2.StatusCode != 301 || resp2.Header.Get("Location") != "/dav/" {
+	if resp2.StatusCode != 301 || resp2.Header.Get("Location") != e.srv.URL+"/dav/" {
 		t.Fatalf("well-known: %d %v", resp2.StatusCode, resp2.Header)
+	}
+}
+
+// TestDavRootDiscovery: Apple's clients probe the host root and /principals/
+// with WebDAV methods and need an absolute Location on every redirect (issue
+// #249). Without CalDAV the root answers as the web app did and /principals/
+// is unknown, so nothing reveals the endpoint.
+func TestDavRootDiscovery(t *testing.T) {
+	e, c := davSetup(t)
+	// A redirect carries the absolute address the client asked for.
+	resp, _ := c.req("PROPFIND", "/", "")
+	if resp.StatusCode != 301 || resp.Header.Get("Location") != e.srv.URL+"/dav/" {
+		t.Fatalf("root PROPFIND: %d %v", resp.StatusCode, resp.Header)
+	}
+	resp, _ = c.req("PROPFIND", "/principals/"+c.uid+"/", "")
+	if resp.StatusCode != 301 || resp.Header.Get("Location") != e.srv.URL+"/dav/principals/"+c.uid+"/" {
+		t.Fatalf("principals: %d %v", resp.StatusCode, resp.Header)
+	}
+	// OPTIONS on the root reports the DAV capabilities without credentials.
+	req, _ := http.NewRequest("OPTIONS", e.srv.URL+"/", nil)
+	resp, err := e.srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("DAV") != "1, 3, calendar-access" || !strings.Contains(resp.Header.Get("Allow"), "PROPFIND") {
+		t.Fatalf("root OPTIONS: %d %v", resp.StatusCode, resp.Header)
+	}
+	// Behind a trusted proxy the Location follows the forwarded host and scheme.
+	// (The test client is a loopback peer, which OPENTODO_TRUSTED_PROXIES trusts by default.)
+	resp, _ = c.req("PROPFIND", "/.well-known/caldav", "", "X-Forwarded-Host", "tasks.example.com", "X-Forwarded-Proto", "https")
+	if resp.StatusCode != 301 || resp.Header.Get("Location") != "https://tasks.example.com/dav/" {
+		t.Fatalf("forwarded: %d %v", resp.StatusCode, resp.Header)
+	}
+	// Disabled: the root is the web app's 405 again and /principals/ is 404.
+	e.do("PUT", "/api/v1/settings/caldav", map[string]any{"enabled": false})
+	if resp, _ = c.req("PROPFIND", "/", ""); resp.StatusCode != 405 || resp.Header.Get("DAV") != "" {
+		t.Fatalf("disabled root: %d %v", resp.StatusCode, resp.Header)
+	}
+	if resp, _ = c.req("PROPFIND", "/principals/"+c.uid+"/", ""); resp.StatusCode != 404 {
+		t.Fatalf("disabled principals: %d", resp.StatusCode)
+	}
+}
+
+// TestDavWellKnownUsesBaseURL: with OPENTODO_BASE_URL the redirect names the
+// public address, whatever host the request carried.
+func TestDavWellKnownUsesBaseURL(t *testing.T) {
+	e := newEnvWithBase(t, "https://tasks.example.com", true)
+	resp, out := e.do("POST", "/api/v1/auth/register", map[string]string{"email": "owner@example.com", "name": "Owner", "password": davPassword})
+	e.mustStatus(resp, 201, out)
+	uid := out["user"].(map[string]any)["id"].(string)
+	resp, out = e.do("PUT", "/api/v1/settings/caldav", map[string]any{"enabled": true})
+	e.mustStatus(resp, 200, out)
+	c := newDavClient(e, "owner@example.com", uid)
+	resp, _ = c.req("PROPFIND", "/.well-known/caldav", "")
+	if resp.StatusCode != 301 || resp.Header.Get("Location") != "https://tasks.example.com/dav/" {
+		t.Fatalf("well-known: %d %v", resp.StatusCode, resp.Header)
 	}
 }
 
@@ -334,8 +406,12 @@ func TestPutCreatesTaskViaOps(t *testing.T) {
 	if d := task["due"].(map[string]any); d["date"] != "2026-10-11" || d["time"] != "09:30" || d["tz"] != nil {
 		t.Fatalf("due %v", d)
 	}
-	if !strings.Contains(task["ical_extra"].(string), "BEGIN:VALARM") || len(task["labels"].([]any)) != 2 {
+	// The display alarm became a reminder (caldav-interop), not client data.
+	if task["ical_extra"] != nil || len(task["labels"].([]any)) != 2 {
 		t.Fatalf("extra/labels %v", task)
+	}
+	if rems := e.reminders(uid); len(rems) != 1 || rems[0]["kind"] != "relative" || rems[0]["offset_minutes"].(float64) != -15 {
+		t.Fatalf("reminders %v", rems)
 	}
 	// Every field came from an op written by the caldav device.
 	ops := e.caldavOps(uid)
@@ -537,7 +613,11 @@ func TestRecurringCompletionMovesSeries(t *testing.T) {
 func TestInvalidCalendarData(t *testing.T) {
 	e, c := davSetup(t)
 	c.must("PUT", c.cal("inbox")+"x.ics", "BEGIN:VCALENDAR\r\nnot really", 415)
-	c.must("PUT", c.cal("inbox")+"x.ics", "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", 403)
+	// A VEVENT becomes a task (caldav-events-as-tasks, TestEventsBecomeTasks); a journal is still refused.
+	_, journal := c.must("PUT", c.cal("inbox")+"x.ics", "BEGIN:VCALENDAR\r\nBEGIN:VJOURNAL\r\nUID:x\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n", 403)
+	if !strings.Contains(journal, "supported-calendar-component") {
+		t.Fatalf("precondition element missing: %s", journal)
+	}
 	_, body := c.must("PUT", c.cal("inbox")+"x.ics", "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nSUMMARY:x\r\nEND:VTODO\r\nEND:VCALENDAR\r\n", 403)
 	if !strings.Contains(body, "valid-calendar-object-resource") {
 		t.Fatalf("precondition element missing: %s", body)

@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Badge, Button, Card, ConfirmDialog, Icon, Menu, MenuItem, Notice, SettingRow, SettingsSection, Switch, type HueName } from '../ui'
-import { api, ApiError, isNetworkError } from '../lib/api'
+import { useState } from 'react'
+import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, Notice, SettingRow, SettingsSection, Switch, type HueName, StatusIndicator, toneForHue } from '../ui'
+import { api, ApiError } from '../lib/api'
 import { cachedIssueConnections, cacheIssueConnections, useProjects } from '../lib/localData'
 import { useEncryption } from '../lib/e2ee'
-import { useOnline } from '../lib/online'
-import { formatClock } from '../lib/dates'
+import { useServerList } from '../lib/useServerList'
+import { fieldErrorOf } from '../lib/errorText'
+import { formatClock, ago } from '../lib/dates'
 import type { IssueConnection, Project } from '../lib/types'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
-import { ago } from './CalendarFeedsPanel'
 import { draftBody, draftError, draftOf, IssueEditor, intervalLabel, newDraft, type FieldErrorState, type IssueDraft } from './IssueEditor'
+import { useSettingsPending } from './settingsPending'
 
 // Settings → Integrations → Issues (OpenSpec change issue-import, design D13): the
 // owner's switch and the user's GitHub and GitLab connections as cards that lead with
@@ -109,7 +110,7 @@ function ConnectionCard({ c, p, disabled, onDelete }: { c: IssueConnection; p: I
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge hue={STATE[state].hue}>{STATE[state].label()}</Badge>
+            <StatusIndicator tone={toneForHue(STATE[state].hue)}>{STATE[state].label()}</StatusIndicator>
             <span className="text-body font-medium text-default">{c.name}</span>
           </div>
           <p className="text-meta text-default" data-issue-state>{stateLine(c, now)}</p>
@@ -143,7 +144,7 @@ export function IssuesView(p: IssuesViewProps) {
       {p.enabled !== null && (
         <SettingRow label={rowCopy('issues', 'server', { variant: 'owner' }).label}
           description={p.isOwner || !on ? rowCopy('issues', 'server', { variant: p.isOwner ? 'owner' : 'member' }).description : undefined}
-          status={<Badge hue={on ? 'green' : 'slate'}>{on ? t('On') : t('Off')}</Badge>}
+          status={<StatusIndicator tone={toneForHue(on ? 'green' : 'slate')}>{on ? t('On') : t('Off')}</StatusIndicator>}
           control={p.isOwner && <Switch checked={on} disabled={disabled} onChange={p.onToggle} label={t('Allow issue connections on this server')} hideLabel />} />
       )}
       {p.error && !p.draft && <Notice tone="danger">{p.error}</Notice>}
@@ -162,7 +163,8 @@ export function IssuesView(p: IssuesViewProps) {
       )}
       {p.draft && (
         <IssueEditor draft={p.draft} projects={p.projects} busy={p.busy} connected={p.connected} error={p.fieldError} general={p.fieldError ? null : p.error}
-          onChange={(d) => p.onDraftChange(d)} onSave={p.onSave} onClose={() => p.onDraftChange(null)} />
+          onChange={(d) => p.onDraftChange(d)} onSave={p.onSave} onClose={() => p.onDraftChange(null)}
+          onTest={() => { const c = p.connections?.find((x) => x.id === p.draft?.id); if (c) p.onTest(c) }} />
       )}
       {deleting && (
         <ConfirmDialog title={t('Delete {name}?', { name: deleting.name })} confirmLabel={t('Delete')}
@@ -173,91 +175,37 @@ export function IssuesView(p: IssuesViewProps) {
   )
 }
 
-function describe(err: unknown): string {
-  if (err instanceof ApiError) return err.message.charAt(0).toUpperCase() + err.message.slice(1)
-  if (isNetworkError(err)) return t('The server could not be reached.')
-  return t('Something went wrong.')
-}
-
 /** A server answer naming a field, as the editor shows it beside that field. */
-function fieldErrorOf(err: unknown): FieldErrorState | null {
-  if (!(err instanceof ApiError)) return null
-  if (err.field) return { field: err.field, message: err.serverMessage.replace(new RegExp(`^${err.field}: `), '') }
-  if (err.code === 'private_target') return { field: 'host', message: err.message }
-  return null
+function issueFieldError(err: unknown): FieldErrorState | null {
+  if (err instanceof ApiError && !err.field && err.code === 'private_target') return { field: 'host', message: err.message }
+  return fieldErrorOf(err)
 }
 
 export function IssuesPanel({ isOwner }: { isOwner: boolean }) {
-  const online = useOnline()
   const projects = useProjects()
   const { enabled: encrypted } = useEncryption()
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [connections, setConnections] = useState<IssueConnection[] | null>(null)
-  const [unreachable, setUnreachable] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [polling, setPolling] = useState<ReadonlySet<string>>(new Set())
-  const [error, setError] = useState<string | null>(null)
   const [fieldError, setFieldError] = useState<FieldErrorState | null>(null)
+  const server = useServerList({
+    setting: api.issuesSwitch.get,
+    list: async () => (await api.listIssueConnections()).connections,
+    cached: cachedIssueConnections,
+    cache: cacheIssueConnections,
+    action: { onStart: () => setFieldError(null), onError: (err) => setFieldError(issueFieldError(err)) },
+  })
+  const { enabled, setEnabled, rows: connections, upsert, connected, load, busy, error, setError, run, act } = server
+  useSettingsPending(enabled === null || connections === null)
   const [draft, setDraft] = useState<IssueDraft | null>(null)
-
-  const keep = useCallback((list: IssueConnection[]) => {
-    setConnections(list)
-    void cacheIssueConnections(list).catch(() => undefined)
-  }, [])
-  const load = useCallback(async () => {
-    try {
-      const { enabled: on } = await api.getIssuesSetting()
-      setEnabled(on)
-      setUnreachable(false)
-      if (on) keep((await api.listIssueConnections()).connections)
-    } catch (err) {
-      if (isNetworkError(err)) setUnreachable(true)
-      else setError(describe(err))
-    }
-  }, [keep])
-  useEffect(() => {
-    void cachedIssueConnections().then((cached) => {
-      if (cached.length) {
-        setConnections((cur) => cur ?? cached)
-        setEnabled((cur) => cur ?? true)
-      }
-    }).catch(() => undefined)
-  }, [])
-  useEffect(() => {
-    if (online) void load()
-  }, [online, load])
-
-  const connected = online && !unreachable
-  const upsert = (c: IssueConnection) => {
-    const list = connections ?? []
-    keep(list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c])
-  }
-  async function act(action: () => Promise<void>) {
-    setError(null)
-    setFieldError(null)
-    setBusy(true)
-    try {
-      await action()
-    } catch (err) {
-      if (isNetworkError(err)) setUnreachable(true)
-      setError(describe(err))
-      setFieldError(fieldErrorOf(err))
-      throw err
-    } finally {
-      setBusy(false)
-    }
-  }
-  const quiet = (action: () => Promise<void>) => act(action).catch(() => undefined)
   const poll = (c: IssueConnection, action: () => Promise<void>) => {
     setPolling((s) => new Set(s).add(c.id))
-    void quiet(action).finally(() => setPolling((s) => { const n = new Set(s); n.delete(c.id); return n }))
+    void run(action).finally(() => setPolling((s) => { const n = new Set(s); n.delete(c.id); return n }))
   }
 
   return (
     <IssuesView isOwner={isOwner} enabled={enabled} connected={connected} encrypted={encrypted} connections={connections} projects={projects}
       busy={busy} polling={polling} error={error} draft={draft} fieldError={fieldError}
-      onToggle={(on) => void quiet(async () => {
-        await api.putIssuesSetting(on)
+      onToggle={(on) => void run(async () => {
+        await api.issuesSwitch.put(on)
         setEnabled(on)
         if (on) await load()
       })}
@@ -270,7 +218,7 @@ export function IssuesPanel({ isOwner }: { isOwner: boolean }) {
           setError(local.message)
           return
         }
-        void quiet(async () => {
+        void run(async () => {
           const body = draftBody(draft)
           const res = draft.id ? await api.patchIssueConnection(draft.id, body) : await api.createIssueConnection(body)
           upsert(res.connection)
@@ -285,10 +233,10 @@ export function IssuesPanel({ isOwner }: { isOwner: boolean }) {
         const res = await api.testIssueConnection(c.id)
         if (res.connection) upsert(res.connection)
       })}
-      onSetEnabled={(c, on) => void quiet(async () => { upsert((await api.patchIssueConnection(c.id, { enabled: on })).connection) })}
+      onSetEnabled={(c, on) => void run(async () => { upsert((await api.patchIssueConnection(c.id, { enabled: on })).connection) })}
       onDelete={(c) => act(async () => {
         await api.deleteIssueConnection(c.id)
-        keep((connections ?? []).filter((x) => x.id !== c.id))
+        server.remove(c.id)
       })} />
   )
 }

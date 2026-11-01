@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Public links (OpenSpec change `public-links`): owners and admins publish one
@@ -31,11 +31,11 @@ func (s *Server) registerPublicLinkRoutes(mux *routes) {
 		tick:   newRateLimiter(60, time.Minute),
 		addr:   newRateLimiter(120, time.Minute),
 	}
-	mux.handle("GET /api/v1/projects/{id}/public-links", signedIn.demoDenied(), s.handleListPublicLinks)
-	mux.handle("POST /api/v1/projects/{id}/public-links", signedIn.recent().demoDenied(), s.handleCreatePublicLink)
-	mux.handle("DELETE /api/v1/projects/{id}/public-links/{linkId}", signedIn.demoDenied(), s.handleRevokePublicLink)
-	mux.handle("GET /api/v1/public/{token}", public("anyone with the link reads the list; the secret in the address is the credential").demoDenied(), s.handlePublicList)
-	mux.handle("POST /api/v1/public/{token}/tick", public("anyone with a tick-enabled link may tick; the secret in the address is the credential").demoDenied(), s.handlePublicTick)
+	mux.handle("GET /api/v1/projects/{id}/public-links", signedIn.DemoDenied(), s.handleListPublicLinks)
+	mux.handle("POST /api/v1/projects/{id}/public-links", signedIn.Recent().DemoDenied(), s.handleCreatePublicLink)
+	mux.handle("DELETE /api/v1/projects/{id}/public-links/{linkId}", signedIn.DemoDenied(), s.handleRevokePublicLink)
+	mux.handle("GET /api/v1/public/{token}", public("anyone with the link reads the list; the secret in the address is the credential").DemoDenied(), s.handlePublicList)
+	mux.handle("POST /api/v1/public/{token}/tick", public("anyone with a tick-enabled link may tick; the secret in the address is the credential").DemoDenied(), s.handlePublicTick)
 }
 
 // publicHeaders keep a public list out of search engines, referrers and caches.
@@ -157,7 +157,7 @@ func (s *Server) usablePublicLink(ctx context.Context, l *auth.ResolvedPublicLin
 			return opsync.PublicProject{}, false, err
 		}
 	}
-	pp, ok, err := s.sync.PublicProject(ctx, l.CreatedBy, l.ProjectID, time.Now())
+	pp, ok, err := s.sync.PublicProject(ctx, l.CreatedBy, l.ProjectID, s.now())
 	if err != nil || !ok {
 		return opsync.PublicProject{}, false, err
 	}
@@ -256,7 +256,7 @@ func (s *Server) handlePublicList(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(pp.Project["name"], &name)
 	_ = json.Unmarshal(pp.Project["color"], &color)
 	writeJSON(w, http.StatusOK, map[string]any{"projectName": name, "projectColor": color, "rights": l.Rights,
-		"sections": sections, "tasks": tasks, "serverTime": time.Now().UnixMilli()})
+		"sections": sections, "tasks": tasks, "serverTime": s.now().UnixMilli()})
 }
 
 // handlePublicTick completes or reopens one task of a tick link's project, as
@@ -291,7 +291,7 @@ func (s *Server) handlePublicTick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	now := time.Now()
+	now := s.now()
 	// An anonymous visitor completed it: completed_by stays null
 	// (completed-date-filters D5), instead of naming the link's creator.
 	body := map[string]json.RawMessage{"completed_at": json.RawMessage("null"), "completed_by": json.RawMessage("null")}
@@ -313,16 +313,12 @@ func (s *Server) handlePublicTick(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ops = append(ops, deviceOps("task", in.TaskID, body, ts, device)...)
-	res, err := s.sync.ApplyStrict(ctx, l.CreatedBy, ops)
-	if err != nil {
+	if _, err := s.applyAs(ctx, l.CreatedBy, device, ops); err != nil {
 		// The checks above guarantee the creator may write; a refusal means
 		// they and the resolver disagree.
 		s.log.Error("public tick refused", "link", l.ID, "err", err)
 		s.internal(w, err)
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, device)
 	}
 	got, err := s.sync.Get(ctx, l.CreatedBy, "task", in.TaskID)
 	if err != nil {

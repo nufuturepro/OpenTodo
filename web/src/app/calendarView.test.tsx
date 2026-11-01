@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readCalendarMode } from '../lib/calendarMode'
 import { db, setMeta } from '../lib/db'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
-import { click, flush, key, render } from '../ui/test-utils'
+import { click, flush, key, render, minWidthPx, waitFor } from '../ui/test-utils'
 import { CalendarView } from './CalendarView'
 import { panelOccupant, resetPanel } from './panel'
 import { PanelHost } from './PanelHost'
@@ -27,18 +27,13 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   resetPanel()
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 describe('one Calendar destination', () => {
   it('remembers Day or Week for /calendar and renders the range controls in the page header', async () => {
     const r = await render(<CalendarView mode="week" />)
-    await flush(50)
+    await waitFor(() => localStorage.getItem('ot.calendar.mode') === 'week', 'the mode remembered')
     expect(localStorage.getItem('ot.calendar.mode')).toBe('week')
     expect(readCalendarMode()).toBe('week')
     expect(parseRoute('/calendar')).toEqual({ view: 'week' })
@@ -52,36 +47,36 @@ describe('one Calendar destination', () => {
     expect(header.querySelector('[data-help-screen="calendar"]')).toBeTruthy()
 
     await r.rerender(<CalendarView mode="day" />)
-    await flush(20)
+    await waitFor(() => readCalendarMode() === 'day', 'Day remembered')
     expect(readCalendarMode()).toBe('day')
     expect(parseRoute('/calendar')).toEqual({ view: 'day' })
     await r.unmount()
   })
 
-  it('Plan from a list opens the planning list in the panel slot, with a menu for its source', async () => {
+  it('Plan from a list opens the planning list in the panel slot, with a picker for its source', async () => {
     await createTask({ title: 'Renew passport' })
     const home = await createProject({ name: 'Home' })
     await createTask({ title: 'Paint the fence', project_id: home })
     const r = await render(<><CalendarView mode="day" /><PanelHost /></>)
-    await flush(50)
+    await waitFor(() => !!r.container.querySelector('[data-page-header] button[aria-label="More actions"]'), 'the page header')
     expect(document.querySelector('[data-panel-frame]')).toBeNull()
 
     await click(r.container.querySelector('[data-page-header] button[aria-label="More actions"]')!)
-    await flush(30)
+    await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')].some((e) => e.textContent?.includes('Plan from a list')), 'the actions menu')
     const plan = [...document.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent?.includes('Plan from a list'))!
     expect(plan).toBeTruthy()
     await click(plan)
-    await flush(30)
+    await waitFor(() => { const o = panelOccupant(); return o?.kind === 'custom' && o.key === 'calendar-plan' }, 'the planning list in the panel')
     expect(panelOccupant()).toMatchObject({ kind: 'custom', key: 'calendar-plan' })
     await waitFor(() => document.querySelector('[data-panel-frame="calendar-plan"] [data-tray-task]') !== null)
     const frame = document.querySelector('[data-panel-frame="calendar-plan"]')!
-    // Inbox is the default source; the picker is a design-system menu.
+    // Inbox is the default source; the picker is the design-system Combobox.
     expect([...frame.querySelectorAll('[data-tray-task]')].map((b) => b.textContent)).toEqual(['Renew passport'])
     const source = frame.querySelector('button[aria-label="Plan from"]')!
     expect(source.textContent).toContain('Inbox')
     await click(source)
-    await flush(30)
-    await click([...document.querySelectorAll('[role="menuitemcheckbox"]')].find((e) => e.textContent?.trim() === 'Home')!)
+    await waitFor(() => document.querySelector('[role="option"]') !== null)
+    await click([...document.querySelectorAll('[role="option"]')].find((e) => e.textContent?.trim() === 'Home')!)
     await waitFor(() => [...frame.querySelectorAll('[data-tray-task]')].map((b) => b.textContent).join() === 'Paint the fence')
     expect(localStorage.getItem('opentodo.calendar.tray')).toBe(`project:${home}`)
 
@@ -131,6 +126,7 @@ describe('calendar events', () => {
     ev.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientY: 10 }))
     window.dispatchEvent(new PointerEvent('pointermove', { clientY: 200 }))
     window.dispatchEvent(new PointerEvent('pointerup', { clientY: 200 }))
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- it proves that nothing is written, and no event marks "no write"
     await flush(30)
     expect(await db.outbox.count()).toBe(before)
     expect(ev.tabIndex).toBe(0)
@@ -190,7 +186,7 @@ describe('Week on a phone (ux-overhaul, time-blocking "Week on a phone")', () =>
   afterEach(() => { window.matchMedia = original })
   it('lists the days vertically with their tasks and renders no seven-column grid below 640 px', async () => {
     window.matchMedia = ((q: string) => ({
-      matches: Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0) <= 390, media: q, onchange: null,
+      matches: minWidthPx(q) <= 390, media: q, onchange: null,
       addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
     })) as typeof window.matchMedia
     await createTask({ title: 'Timed one', due: { date: '2026-10-15', time: '09:30' }, estimate_minutes: 30 })
@@ -204,12 +200,63 @@ describe('Week on a phone (ux-overhaul, time-blocking "Week on a phone")', () =>
     expect(rows[0]).toContain('Loose one')
     expect(rows[1]).toContain('Timed one')
     expect(rows[1]).toMatch(/9:30|09:30/)
-    // Tapping selects, Enter opens the task in the panel.
+    // Tapping selects, Enter opens the task as its page.
     const timed = r.container.querySelector<HTMLButtonElement>('[data-agenda-day="2026-10-15"] [data-agenda-task]:last-child')!
     await click(timed)
     expect(timed.className).toContain('ring-accent')
     await key(timed, 'Enter')
-    await waitFor(() => panelOccupant()?.kind === 'task')
+    await waitFor(() => location.pathname.startsWith('/task/'))
+    await r.unmount()
+  })
+})
+
+describe('surfaces (surfaces-v2, time-blocking "Filled blocks")', () => {
+  it('dims blocks and lane rows of days before today, and a past block still moves with the arrows', async () => {
+    const past = await createTask({ title: 'Yesterday call', due: { date: '2026-10-13', time: '10:00' }, estimate_minutes: 30 })
+    const now = await createTask({ title: 'Today call', due: { date: '2026-10-14', time: '10:00' }, estimate_minutes: 30 })
+    const loose = await createTask({ title: 'Yesterday loose', due: { date: '2026-10-13' } })
+    const r = await render(<CalendarView mode="week" />)
+    await waitFor(() => r.container.querySelector(`[data-block="${past}"]`) !== null && r.container.querySelector(`[data-lane-task="${loose}"]`) !== null)
+    const block = r.container.querySelector<HTMLElement>(`[data-block="${past}"]`)!
+    expect(block.className).toContain('ui-block')
+    expect(block.className).toContain('ui-block--past')
+    expect(r.container.querySelector(`[data-block="${now}"]`)!.className).not.toContain('ui-block--past')
+    expect(r.container.querySelector(`[data-lane-task="${loose}"]`)!.className).toContain('ui-block--past')
+    // Dimmed is not disabled: the selected past block moves fifteen minutes with Down.
+    await click(block)
+    await key(document.body, 'ArrowDown')
+    await waitFor(async () => (await db.tasks.get(past))?.due?.time === '10:15', 'moved fifteen minutes')
+    expect((await db.tasks.get(past))!.due).toEqual({ date: '2026-10-13', time: '10:15' })
+    await r.unmount()
+  })
+
+  it('shows three all-day events then "+2"; expanding shows all five, survives a reload and leaves other days alone', async () => {
+    await db.calendarSubscriptions.put({ id: 'sub1', name: 'Work', color: '#2563eb', enabled: true, lastSuccessAt: Date.now() })
+    const allDay = (i: number, date: string) => ({ id: `ad${date}${i}`, subscriptionId: 'sub1', uid: `u${date}${i}`, summary: `Holiday ${i}`, location: '', start: { date }, end: { date: date === '2026-10-15' ? '2026-10-16' : '2026-10-17' }, allDay: true, free: false })
+    await db.calendarEvents.bulkPut([...[0, 1, 2, 3, 4].map((i) => allDay(i, '2026-10-15')), ...[0, 1, 2, 3].map((i) => allDay(i, '2026-10-16'))])
+    await setMeta('calendar.events.window', { from: '2026-09-01', to: '2026-11-30', fetchedAt: Date.now() })
+    const chips = (root: ParentNode, d: string) => root.querySelectorAll(`[data-all-day="${d}"] [data-event-chip]`).length
+    let r = await render(<CalendarView mode="week" />)
+    await waitFor(() => chips(r.container, '2026-10-15') === 3)
+    expect(r.container.querySelector('[data-all-day-more="2026-10-15"]')!.textContent).toBe('+2')
+    await click(r.container.querySelector('[data-all-day-more="2026-10-15"]')!)
+    await waitFor(() => chips(r.container, '2026-10-15') === 5)
+    expect(r.container.querySelector('[data-all-day-more="2026-10-15"]')!.getAttribute('aria-expanded')).toBe('true')
+    // The sixteenth keeps its own cap.
+    expect(chips(r.container, '2026-10-16')).toBe(3)
+    await r.unmount()
+    r = await render(<CalendarView mode="week" />)
+    await waitFor(() => chips(r.container, '2026-10-15') === 5)
+    expect(chips(r.container, '2026-10-16')).toBe(3)
+    await r.unmount()
+  })
+
+  it('the Week draws one now line, in today\'s column', async () => {
+    const r = await render(<CalendarView mode="week" />)
+    await waitFor(() => r.container.querySelector('[data-now-line]') !== null)
+    const lines = r.container.querySelectorAll('[data-now-line]')
+    expect(lines).toHaveLength(1)
+    expect(lines[0].closest('[data-drop-day]')!.getAttribute('data-drop-day')).toBe('2026-10-14')
     await r.unmount()
   })
 })

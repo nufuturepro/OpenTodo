@@ -1,8 +1,7 @@
-import { Skeleton, Dialog, Menu } from '../ui'
+import { Skeleton, Dialog, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Tooltip } from '../ui'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { Button } from '../ui'
-import { Badge } from '../ui'
 import { Field, Input, Select } from '../ui'
 import { Icon } from '../ui'
 import { MenuGroup, MenuItem, MenuSeparator } from '../ui'
@@ -15,6 +14,7 @@ import { Checkbox, Switch } from '../ui'
 import type { HueName } from '../ui'
 import { SecretReveal } from './TokensSection'
 import { api, isNetworkError } from '../lib/api'
+import { useAction } from '../lib/useAction'
 import { useProjects } from '../lib/localData'
 import { useOnline } from '../lib/online'
 import type { Webhook, WebhookDelivery, WebhookEvent } from '../lib/types'
@@ -25,6 +25,7 @@ import {
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { useSettingsPending } from './settingsPending'
 
 export interface WebhookDraft {
   /** null when creating a new webhook. */
@@ -99,7 +100,7 @@ export function WebhooksView(p: WebhooksViewProps) {
               <ListRow leading={<Icon name="link" size="md" />} ariaLabel={h.url}
                 label={<Tooltip label={h.url}><span className="block truncate font-mono text-meta">{h.url}</span></Tooltip>}
                 meta={`${h.events.join(', ')} · ${projectName(h.projectId)}`}
-                badges={<Badge hue={TONE[st.tone]}>{st.label}</Badge>}
+                badges={<StatusIndicator tone={toneForHue(TONE[st.tone])}>{st.label}</StatusIndicator>}
                 menu={(
                   <Menu label={t('Actions for webhook {url}', { url: h.url })} trigger={<Icon name="ellipsis" />} kind="menu" triggerClassName="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon">
                     <MenuGroup>
@@ -126,7 +127,7 @@ export function WebhooksView(p: WebhooksViewProps) {
                   <ul className="space-y-2">
                     {p.log.deliveries?.map((d) => (
                       <li key={d.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
-                        <Badge hue={DELIVERY_TONE[d.status]}>{d.status}</Badge>
+                        <StatusIndicator tone={toneForHue(DELIVERY_TONE[d.status])}>{d.status}</StatusIndicator>
                         <code className="text-default">{d.event}</code>
                         <span className="text-faint">{dt.formatInstant(d.createdAt, 'datetime')}</span>
                         <span className="text-muted">
@@ -137,7 +138,7 @@ export function WebhooksView(p: WebhooksViewProps) {
                         )}
                         {d.responseExcerpt && (
                           <details className="w-full">
-                            <summary className="cursor-pointer text-faint">{t('Response')}</summary>
+                            <summary className="text-faint">{t('Response')}</summary>
                             <pre className="whitespace-pre-wrap break-all text-muted">{d.responseExcerpt}</pre>
                           </details>
                         )}
@@ -209,8 +210,11 @@ export function WebhooksPanel({ isOwner }: { isOwner: boolean }) {
   const [webhooks, setWebhooks] = useState<Webhook[] | null>(null)
   const [unreachable, setUnreachable] = useState(false)
   const [allowPrivate, setAllowPrivate] = useState<boolean | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  useSettingsPending(webhooks === null)
+  const { busy, error, setError, run } = useAction({
+    describe: describeWebhookError,
+    onError: (err) => { if (isNetworkError(err)) setUnreachable(true) },
+  })
   const [draft, setDraft] = useState<WebhookDraft | null>(null)
   const [secret, setSecret] = useState<{ webhookId: string; value: string } | null>(null)
   const [deleting, setDeleting] = useState<Webhook | null>(null)
@@ -221,7 +225,7 @@ export function WebhooksPanel({ isOwner }: { isOwner: boolean }) {
   const fail = useCallback((err: unknown) => {
     if (isNetworkError(err)) setUnreachable(true)
     setError(describeWebhookError(err))
-  }, [])
+  }, [setError])
 
   const load = useCallback(async () => {
     try {
@@ -234,7 +238,7 @@ export function WebhooksPanel({ isOwner }: { isOwner: boolean }) {
       if (isNetworkError(err)) setUnreachable(true)
       else setError(describeWebhookError(err))
     }
-  }, [isOwner])
+  }, [isOwner, setError])
 
   useEffect(() => {
     void loadCachedWebhooks().then((cached) => setWebhooks((cur) => cur ?? cached))
@@ -244,18 +248,6 @@ export function WebhooksPanel({ isOwner }: { isOwner: boolean }) {
   }, [online, load])
 
   const connected = online && !unreachable
-
-  async function run(action: () => Promise<void>) {
-    setError(null)
-    setBusy(true)
-    try {
-      await action()
-    } catch (err) {
-      fail(err)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function loadLog(webhookId: string) {
     setLog({ webhookId, deliveries: null })

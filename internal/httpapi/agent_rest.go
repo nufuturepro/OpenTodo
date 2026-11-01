@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/auth"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Agent content routes (OpenSpec change `agent-ready-cli`, design D8).
@@ -96,6 +96,10 @@ func (s *Server) handleAgentWrite(w http.ResponseWriter, r *http.Request, u *aut
 		if key, keyed, handled = idempotencyKey(w, r); handled {
 			return
 		}
+	}
+	// The same answer as a full token's write (task-energy D7).
+	if (route == agentCreateTask || route == agentPatchTask) && !energyOK(w, body) {
+		return
 	}
 	id := r.PathValue("id")
 	var calls []agenttools.ToolCall
@@ -300,7 +304,11 @@ var taskCreateFields = map[string]bool{"title": true, "description": true, "proj
 	"priority": true, "due": true, "labels": true, "estimate_minutes": true, "recurrence": true,
 	// The task's origin object (OpenSpec change task-origin), validated by the
 	// planner exactly as the sync path validates it.
-	"origin": true}
+	"origin": true,
+	// Planning fields (OpenSpec change agent-planning-fields, design D5).
+	"deadline": true, "start": true, "evening": true, "day_part": true, "blocked_by": true, "location": true,
+	// The task's energy (OpenSpec change task-energy).
+	"energy": true}
 
 func agentCreateTaskCalls(body map[string]json.RawMessage) ([]agenttools.ToolCall, string) {
 	item := map[string]json.RawMessage{}
@@ -330,7 +338,8 @@ func agentPatchTaskCalls(id string, body map[string]json.RawMessage, existing op
 	var move map[string]any
 	for k, v := range body {
 		switch k {
-		case "title", "description", "priority", "labels", "estimate_minutes", "recurrence", "origin":
+		case "title", "description", "priority", "labels", "estimate_minutes", "recurrence", "origin",
+			"deadline", "start", "evening", "day_part", "blocked_by", "location", "energy":
 			update[k] = v
 		case "project_id", "section_id":
 			if move == nil {
@@ -426,11 +435,7 @@ func (s *Server) writeAgentError(w http.ResponseWriter, err error) {
 				w.Header().Set("Retry-After", strconv.Itoa(n))
 			}
 		}
-		e := map[string]any{"code": code, "message": te.Message}
-		for k, v := range te.Data {
-			e[k] = v
-		}
-		writeJSON(w, status, map[string]any{"error": e})
+		writeErrorWith(w, status, code, te.Message, te.Data)
 	default:
 		s.internal(w, err)
 	}

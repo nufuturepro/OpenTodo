@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, useDatabase } from '../lib/db'
 import { setDateTime } from '../lib/dates'
 import { createTask, resetDeviceId } from '../lib/ops'
-import { flush, key, render, type } from '../ui/test-utils'
+import { key, render, type, waitFor } from '../ui/test-utils'
 import { PanelHost } from './PanelHost'
 import { TaskListView } from './TaskListView'
 import { hideBulkToast } from './bulk/toastStore'
@@ -29,11 +29,6 @@ afterEach(async () => {
   hideBulkToast()
   document.body.innerHTML = ''
 })
-
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 async function inbox(...titles: string[]) {
   const ids: string[] = []

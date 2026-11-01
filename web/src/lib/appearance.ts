@@ -9,21 +9,19 @@ import { mutate } from './ops'
 import { applyMotion, syncRootMotion } from './rootMotion'
 import type { ThemeModePref, UserPrefs } from './types'
 import { USER_PREFS_ID } from './userPrefs'
-import { useUserPrefsRow } from './localData'
+import { writeJSON } from './deviceStorage'
 
 export const THEME_MODES: readonly ThemeModePref[] = ['system', 'light', 'dark']
 
 /** Destinations the user may promote from the sidebar's More group to its primary items (app-shell "Sidebar structure"). */
-export const PROMOTABLE = ['loop', 'next', 'waiting', 'anytime', 'someday', 'assigned', 'completed', 'feed', 'trash', 'filter'] as const
+export const PROMOTABLE = ['loop', 'next', 'waiting', 'anytime', 'someday', 'assigned', 'completed', 'feed', 'trash', 'filter', 'focus'] as const
 export type Promotable = (typeof PROMOTABLE)[number]
 
 /** Row density (appearance-preferences "Density preference"); unknown stored values read as comfortable. */
 export const DENSITIES = ['comfortable', 'compact'] as const
 export type Density = (typeof DENSITIES)[number]
-
-/** Row detail (appearance-preferences "Row detail preference", calm-rows D1); unknown stored values read as calm. */
-export const DETAILS = ['calm', 'detailed'] as const
-export type RowDetail = (typeof DETAILS)[number]
+/** Row detail (calm-rows D8): read from the retired `row_detail` field, which an older client may still write. */
+export type RowDetail = 'calm' | 'detailed'
 
 export interface Appearance {
   mode: ThemeModePref
@@ -48,7 +46,8 @@ export function readAppearance(row: Partial<UserPrefs> | null | undefined): Appe
     mode,
     accent: isAccent(row?.theme_accent) ? row!.theme_accent as AccentId : DEFAULT_ACCENT,
     density: row?.density === 'compact' ? 'compact' : 'comfortable',
-    detail: row?.row_detail === 'detailed' ? 'detailed' : 'calm',
+    // rows-v2 D1: `row_detail` is retired — stored and exported with the row, never applied.
+    detail: 'calm',
     // Anything but `none` (including an unknown value from a newer client) is on,
     // and the stored value is left alone (task-menu-refinement "Motion preference").
     motion: row?.motion === 'none' ? 'off' : 'on',
@@ -56,19 +55,15 @@ export function readAppearance(row: Partial<UserPrefs> | null | undefined): Appe
   }
 }
 
-/** Changes the mode, the accent, the density, the row detail or the motion preference through the op log (offline-safe, synced). */
-export function setAppearance(field: 'theme_mode' | 'theme_accent' | 'density' | 'row_detail' | 'motion', value: string): Promise<void> {
-  return mutate('user_prefs', USER_PREFS_ID, { [field]: value })
-}
-
 export { syncRootMotion }
 
 /**
- * The row detail of this user (calm-rows D2): one shared live read of the prefs
- * row, so every row subscribes to one store and re-renders only when it changes.
+ * Changes the mode, the accent, the density or the motion preference through the op
+ * log (offline-safe, synced). `row_detail` is retired (rows-v2 D1): kept in the
+ * schema, never written — the row's layout lives in `row_layout`.
  */
-export function useRowDetail(): RowDetail {
-  return useUserPrefsRow()?.row_detail === 'detailed' ? 'detailed' : 'calm'
+export function setAppearance(field: 'theme_mode' | 'theme_accent' | 'density' | 'motion', value: string): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { [field]: value })
 }
 
 /** Promotes or demotes one destination; the stored list keeps entries this client does not know. */
@@ -76,6 +71,68 @@ export async function setPromoted(row: Partial<UserPrefs> | null | undefined, id
   const current = (row?.sidebar_destinations ?? '').split(',').map((s) => s.trim()).filter(Boolean)
   const next = on ? (current.includes(id) ? current : [...current, id]) : current.filter((x) => x !== id)
   await mutate('user_prefs', USER_PREFS_ID, { sidebar_destinations: next.join(',') })
+}
+
+/**
+ * Sidebar counts (sidebar-polish D1, appearance-preferences "Sidebar counts
+ * preference"): `today` shows numbers at rest on Inbox and Today only (the quiet
+ * sidebar, stored as ''), `all` on every project, label and saved-view row.
+ */
+export const SIDEBAR_COUNTS = ['today', 'all'] as const
+export type SidebarCounts = (typeof SIDEBAR_COUNTS)[number]
+
+/** Reads the stored choice; an empty or unknown value (from a newer client) is the default. The row is not changed. */
+export function readSidebarCounts(row: Partial<UserPrefs> | null | undefined): SidebarCounts {
+  return row?.sidebar_counts === 'all' ? 'all' : 'today'
+}
+
+/** Writes the choice through the op log (offline-safe, synced); the default is stored as ''. */
+export function setSidebarCounts(value: SidebarCounts): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { sidebar_counts: value === 'all' ? 'all' : '' })
+}
+
+/** The destinations that are always primary outside Open Loops first, in the default order (app-shell "Sidebar structure"). */
+export const FIXED_DESTINATIONS = ['inbox', 'today', 'upcoming', 'calendar'] as const
+export type DestinationId = (typeof FIXED_DESTINATIONS)[number] | Promotable
+
+const splitIds = (s: string | null | undefined) => (s ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+
+/**
+ * The primary destinations in the user's order (sidebar-polish D3): the ids of the
+ * stored order that are in `primary` come first, in the stored order; the others
+ * follow in their order in `primary` (the default order). Unknown stored ids are
+ * ignored here and kept in the row.
+ */
+export function orderDestinations<T extends string>(primary: readonly T[], stored: string | null | undefined): T[] {
+  const present = new Set<string>(primary)
+  const seen = new Set<string>()
+  const first: T[] = []
+  for (const id of splitIds(stored)) {
+    if (present.has(id) && !seen.has(id)) { seen.add(id); first.push(id as T) }
+  }
+  return [...first, ...primary.filter((id) => !seen.has(id))]
+}
+
+/** Every destination that can be primary, in the user's order: the fixed four and the promotable ones. */
+export function destinationOrder(row: Partial<UserPrefs> | null | undefined): DestinationId[] {
+  return orderDestinations<DestinationId>([...FIXED_DESTINATIONS, ...PROMOTABLE], row?.sidebar_order)
+}
+
+/**
+ * Moves one destination by `delta` places in the full order and stores it whole
+ * (last-writer-wins on the order). Ids this client does not know stay at the end.
+ * Resolves to false when the destination is already at that edge.
+ */
+export async function moveDestination(row: Partial<UserPrefs> | null | undefined, id: DestinationId, delta: number): Promise<boolean> {
+  const order = destinationOrder(row)
+  const from = order.indexOf(id)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= order.length) return false
+  order.splice(to, 0, ...order.splice(from, 1))
+  const known = new Set<string>(order)
+  const unknown = splitIds(row?.sidebar_order).filter((x) => !known.has(x))
+  await mutate('user_prefs', USER_PREFS_ID, { sidebar_order: [...order, ...unknown].join(',') })
+  return true
 }
 
 /** The light-mode bar colour of an accent. */
@@ -116,11 +173,8 @@ export function applyAppearance(a: Appearance, doc: Document = document): void {
     add(lightBar(a.accent), '(prefers-color-scheme: light)')
     add(DARK_BAR, '(prefers-color-scheme: dark)')
   } else add(a.mode === 'dark' ? DARK_BAR : lightBar(a.accent))
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ mode: a.mode, accent: a.accent, bar: lightBar(a.accent) }))
-  } catch {
-    // Private mode or blocked storage: the next start shows the defaults until the row is read.
-  }
+  // Private mode or blocked storage: the next start shows the defaults until the row is read.
+  writeJSON(CACHE_KEY, { mode: a.mode, accent: a.accent, bar: lightBar(a.accent) })
 }
 
 function setMeta(doc: Document, name: string, content: string) {

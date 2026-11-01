@@ -50,9 +50,19 @@ const (
 	IssueConnectionCreatedName Name = "issue_connection.created"
 	IssueConnectionUpdatedName Name = "issue_connection.updated"
 	IssueConnectionDeletedName Name = "issue_connection.deleted"
-	InvitationCreatedName      Name = "invitation.created"
-	InvitationAcceptedName     Name = "invitation.accepted"
-	InvitationRevokedName      Name = "invitation.revoked"
+	// Calendar sync connections (OpenSpec change calendar-two-way): never the
+	// server address, username, password, token or a calendar's name.
+	CalendarConnectionCreatedName Name = "calendar_connection.created"
+	CalendarConnectionUpdatedName Name = "calendar_connection.updated"
+	CalendarConnectionDeletedName Name = "calendar_connection.deleted"
+	// Notification delivery channels (OpenSpec change notification-channels):
+	// created, deleted, and changed settings or secrets by name.
+	NotificationChannelCreatedName Name = "notification_channel.created"
+	NotificationChannelUpdatedName Name = "notification_channel.updated"
+	NotificationChannelDeletedName Name = "notification_channel.deleted"
+	InvitationCreatedName          Name = "invitation.created"
+	InvitationAcceptedName         Name = "invitation.accepted"
+	InvitationRevokedName          Name = "invitation.revoked"
 	// Project invite links (OpenSpec `project-invite-links`).
 	ProjectInviteCreatedName  Name = "project_invite.created"
 	ProjectInviteRevokedName  Name = "project_invite.revoked"
@@ -60,6 +70,9 @@ const (
 	// Public links (OpenSpec `public-links`).
 	PublicLinkCreatedName Name = "public_link.created"
 	PublicLinkRevokedName Name = "public_link.revoked"
+	// A project kept away from AI assistants or allowed again (OpenSpec change
+	// agent-planning-fields).
+	ProjectAgentAccessName Name = "project.agent_access"
 	// Task pages (OpenSpec `task-pages`).
 	TaskPagePublishedName Name = "task_page.published"
 	TaskPageRevokedName   Name = "task_page.revoked"
@@ -96,6 +109,39 @@ const (
 	// opted out (mcp-device-relay): never a relayed value.
 	RelayEnabledName  Name = "relay.enabled"
 	RelayDisabledName Name = "relay.disabled"
+	// Profile changes (settings-refresh D10): never the old or new name, email
+	// or picture.
+	NameChangedName          Name = "account.name_changed"
+	EmailChangeRequestedName Name = "account.email_change_requested"
+	EmailChangedName         Name = "account.email_changed"
+	AvatarChangedName        Name = "account.avatar_changed"
+	// Workspaces, their members and groups, and group grants on projects
+	// (OpenSpec change workspaces, design D9): ids only, never a name.
+	WorkspaceCreatedName            Name = "workspace.created"
+	WorkspaceRenamedName            Name = "workspace.renamed"
+	WorkspaceDeletedName            Name = "workspace.deleted"
+	WorkspaceTransferredName        Name = "workspace.transferred"
+	WorkspaceMemberAddedName        Name = "workspace.member_added"
+	WorkspaceMemberRoleChangedName  Name = "workspace.member_role_changed"
+	WorkspaceMemberRemovedName      Name = "workspace.member_removed"
+	WorkspaceGroupCreatedName       Name = "workspace.group_created"
+	WorkspaceGroupDeletedName       Name = "workspace.group_deleted"
+	WorkspaceGroupMemberAddedName   Name = "workspace.group_member_added"
+	WorkspaceGroupMemberRemovedName Name = "workspace.group_member_removed"
+	// A person added to a shared project by its owner or an admin (ids only).
+	ProjectMemberAddedName      Name = "project.member_added"
+	ProjectGrantAddedName       Name = "project.grant_added"
+	ProjectGrantChangedName     Name = "project.grant_changed"
+	ProjectGrantRemovedName     Name = "project.grant_removed"
+	WorkspaceInviteCreatedName  Name = "workspace_invite.created"
+	WorkspaceInviteAcceptedName Name = "workspace_invite.accepted"
+	WorkspaceInviteRevokedName  Name = "workspace_invite.revoked"
+	// Membership invitations (OpenSpec change member-add-consent): ids and
+	// roles only, never the invited address or a name.
+	MemberInvitationCreatedName   Name = "member_invitation.created"
+	MemberInvitationAcceptedName  Name = "member_invitation.accepted"
+	MemberInvitationDeclinedName  Name = "member_invitation.declined"
+	MemberInvitationCancelledName Name = "member_invitation.cancelled"
 )
 
 // Names lists the whole catalogue in a stable order (used by the API docs, the
@@ -109,9 +155,12 @@ var Names = []Name{
 	CalendarFeedCreatedName, CalendarFeedRotatedName, CalendarFeedRevokedName,
 	EmailInboxCreatedName, EmailInboxRotatedName, EmailInboxUpdatedName,
 	IssueConnectionCreatedName, IssueConnectionUpdatedName, IssueConnectionDeletedName,
+	CalendarConnectionCreatedName, CalendarConnectionUpdatedName, CalendarConnectionDeletedName,
+	NotificationChannelCreatedName, NotificationChannelUpdatedName, NotificationChannelDeletedName,
 	InvitationCreatedName, InvitationAcceptedName, InvitationRevokedName,
 	ProjectInviteCreatedName, ProjectInviteRevokedName, ProjectInviteAcceptedName,
 	PublicLinkCreatedName, PublicLinkRevokedName,
+	ProjectAgentAccessName,
 	TaskPagePublishedName, TaskPageRevokedName,
 	RoleChangedName, SettingsChangedName,
 	IdentityLinkedName, IdentityUnlinkedName,
@@ -125,6 +174,14 @@ var Names = []Name{
 	AgentWriteName,
 	EmailSentName, EmailFailedName,
 	RelayEnabledName, RelayDisabledName,
+	NameChangedName, EmailChangeRequestedName, EmailChangedName, AvatarChangedName,
+	WorkspaceCreatedName, WorkspaceRenamedName, WorkspaceDeletedName, WorkspaceTransferredName,
+	WorkspaceMemberAddedName, WorkspaceMemberRoleChangedName, WorkspaceMemberRemovedName,
+	WorkspaceGroupCreatedName, WorkspaceGroupDeletedName, WorkspaceGroupMemberAddedName, WorkspaceGroupMemberRemovedName,
+	ProjectMemberAddedName,
+	ProjectGrantAddedName, ProjectGrantChangedName, ProjectGrantRemovedName,
+	WorkspaceInviteCreatedName, WorkspaceInviteAcceptedName, WorkspaceInviteRevokedName,
+	MemberInvitationCreatedName, MemberInvitationAcceptedName, MemberInvitationDeclinedName, MemberInvitationCancelledName,
 }
 
 // PersonalNames are the events a user sees about themselves in
@@ -138,11 +195,14 @@ var PersonalNames = []Name{
 	CalendarFeedCreatedName, CalendarFeedRotatedName, CalendarFeedRevokedName,
 	EmailInboxCreatedName, EmailInboxRotatedName, EmailInboxUpdatedName,
 	IssueConnectionCreatedName, IssueConnectionUpdatedName, IssueConnectionDeletedName,
+	CalendarConnectionCreatedName, CalendarConnectionUpdatedName, CalendarConnectionDeletedName,
+	NotificationChannelCreatedName, NotificationChannelUpdatedName, NotificationChannelDeletedName,
 	IdentityLinkedName, IdentityUnlinkedName,
 	PasswordResetCompletedName, PasswordChangedName,
 	SignedOutEverywhereName,
 	AgentWriteName,
 	RelayEnabledName, RelayDisabledName,
+	NameChangedName, EmailChangeRequestedName, EmailChangedName, AvatarChangedName,
 }
 
 // Known reports whether n is in the catalogue.
@@ -201,16 +261,22 @@ var allowedDetailKeys = map[string]bool{
 	"from":              true, // previous value of a setting or role
 	"to":                true, // new value of a setting or role
 	"provider":          true, // identity provider name, or github | gitlab for an issue connection
-	"connection_id":     true, // id of an issue connection (never its host or token)
-	"format":            true, // export format
-	"count":             true, // number of exported events, or entities an assistant changed
-	"backup_id":         true,
-	"source":            true, // restore source: archive, upload or safety-copy
-	"reset_id":          true, // id of a password reset link (never its secret)
-	"email_kind":        true, // kind of an outgoing message: verify_signup, password_reset, invitation, project_invite, test
-	"public_link_id":    true, // id of a public link (never its secret)
-	"link_rights":       true, // view | tick; view | reply | tick for a task page
-	"task_page_id":      true, // id of a task page (never its secret, label or share key)
+	"connection_id":     true, // id of an issue or calendar connection (never its host, username or secret)
+	// A notification channel's id and kind (ntfy, pushover, gotify, webhook),
+	// never its address, topic, token or user key.
+	"notification_channel_id": true,
+	"channel_kind":            true,
+	"format":                  true, // export format
+	"count":                   true, // number of exported events, or entities an assistant changed
+	"backup_id":               true,
+	"source":                  true, // restore source: archive, upload or safety-copy
+	"reset_id":                true, // id of a password reset link (never its secret)
+	"email_kind":              true, // kind of an outgoing message: verify_signup, password_reset, invitation, project_invite, test
+	"public_link_id":          true, // id of a public link (never its secret)
+	"link_rights":             true, // view | tick; view | reply | tick for a task page
+	"task_page_id":            true, // id of a task page (never its secret, label or share key)
+	// The project whose "Keep away from AI assistants" switch changed (never its name).
+	"access_project_id": true,
 	// Sign out everywhere (route-authorization-policy): how much it ended.
 	"session_count":      true,
 	"device_count":       true,
@@ -220,6 +286,14 @@ var allowedDetailKeys = map[string]bool{
 	// Not "device_id", which is an op field name.
 	"relay_device_id":    true,
 	"relay_device_label": true,
+	// Workspaces (OpenSpec change workspaces): ids and roles only. Not
+	// "workspace_id", which is an op field name.
+	"workspace":           true,
+	"group":               true,
+	"workspace_role":      true,
+	"workspace_invite_id": true,
+	// Membership invitations (member-add-consent): the invitation's id.
+	"member_invitation_id": true,
 }
 
 // Event is one security-relevant occurrence. Build it with a constructor.
@@ -416,6 +490,45 @@ func IssueConnectionDeleted(userID, connID, provider string) Event {
 	return ev(IssueConnectionDeletedName, Success, userID, "", "connection_id", connID, "provider", provider)
 }
 
+// ---- calendar sync connections ----
+
+// CalendarConnectionCreated records a new calendar connection: its id and
+// provider (caldav | google), never the address, username or secret.
+func CalendarConnectionCreated(userID, connID, provider string) Event {
+	return ev(CalendarConnectionCreatedName, Success, userID, "", "connection_id", connID, "provider", provider)
+}
+
+// CalendarConnectionUpdated records a change of a calendar connection: setting
+// names what changed (password, calendars, name, enabled, options,
+// reconnected; a comma-separated list when several did), never a value.
+func CalendarConnectionUpdated(userID, connID, provider, setting string) Event {
+	return ev(CalendarConnectionUpdatedName, Success, userID, "", "connection_id", connID, "provider", provider, "setting", setting)
+}
+
+// CalendarConnectionDeleted records a deleted calendar connection (its secret removed).
+func CalendarConnectionDeleted(userID, connID, provider string) Event {
+	return ev(CalendarConnectionDeletedName, Success, userID, "", "connection_id", connID, "provider", provider)
+}
+
+// ---- notification channels ----
+
+// NotificationChannelCreated records a new delivery channel: its id and kind.
+func NotificationChannelCreated(userID, channelID, kind string) Event {
+	return ev(NotificationChannelCreatedName, Success, userID, "", "notification_channel_id", channelID, "channel_kind", kind)
+}
+
+// NotificationChannelUpdated records a change of a channel: setting names what
+// changed (name, url, topic, events, include_titles, enabled, token, user_key,
+// secret; comma-separated when several did), never a value.
+func NotificationChannelUpdated(userID, channelID, kind, setting string) Event {
+	return ev(NotificationChannelUpdatedName, Success, userID, "", "notification_channel_id", channelID, "channel_kind", kind, "setting", setting)
+}
+
+// NotificationChannelDeleted records a deleted channel (its secrets removed).
+func NotificationChannelDeleted(userID, channelID, kind string) Event {
+	return ev(NotificationChannelDeletedName, Success, userID, "", "notification_channel_id", channelID, "channel_kind", kind)
+}
+
 // ---- invitations ----
 
 // InvitationCreated records an invitation; boundEmail is empty for an open link.
@@ -451,6 +564,12 @@ func ProjectInviteAccepted(userID, creatorID, inviteID, projectID, role string) 
 // InvitationRevoked records a revoked invitation.
 func InvitationRevoked(ownerID, invitationID string) Event {
 	return ev(InvitationRevokedName, Success, ownerID, "", "invitation_id", invitationID)
+}
+
+// ProjectAgentAccess records a project's "Keep away from AI assistants" switch
+// changing (agent-planning-fields): from and to are allowed or kept_away.
+func ProjectAgentAccess(actorID, projectID, from, to string) Event {
+	return ev(ProjectAgentAccessName, Success, actorID, "", "access_project_id", projectID, "from", from, "to", to)
 }
 
 // ---- roles and settings ----
@@ -605,4 +724,156 @@ func TaskPagePublished(actorID, pageID, rights string) Event {
 // TaskPageRevoked records a task page being revoked (or replaced by a new one).
 func TaskPageRevoked(actorID, pageID string) Event {
 	return ev(TaskPageRevokedName, Success, actorID, "", "task_page_id", pageID)
+}
+
+// ---- profile (settings-refresh D10) ----
+
+// NameChanged records a user changing their display name (never the name).
+func NameChanged(userID string) Event {
+	return ev(NameChangedName, Success, userID, "")
+}
+
+// EmailChangeRequested records a request to change the account's email that
+// waits for the link sent to the new address (never either address).
+func EmailChangeRequested(userID string) Event {
+	return ev(EmailChangeRequestedName, Success, userID, "")
+}
+
+// EmailChanged records the account's email changing, by the link or at once on
+// a server without outgoing email (never either address).
+func EmailChanged(userID string) Event {
+	return ev(EmailChangedName, Success, userID, "")
+}
+
+// AvatarChanged records a profile picture being set or removed (never the picture).
+func AvatarChanged(userID string) Event {
+	return ev(AvatarChangedName, Success, userID, "")
+}
+
+// ---- workspaces (OpenSpec change workspaces, design D9) ----
+
+// WorkspaceCreated records a new workspace.
+func WorkspaceCreated(actorID, workspaceID string) Event {
+	return ev(WorkspaceCreatedName, Success, actorID, "", "workspace", workspaceID)
+}
+
+// WorkspaceRenamed records a change of a workspace's name, icon or colour (never the values).
+func WorkspaceRenamed(actorID, workspaceID string) Event {
+	return ev(WorkspaceRenamedName, Success, actorID, "", "workspace", workspaceID)
+}
+
+// WorkspaceDeleted records a deleted workspace.
+func WorkspaceDeleted(actorID, workspaceID string) Event {
+	return ev(WorkspaceDeletedName, Success, actorID, "", "workspace", workspaceID)
+}
+
+// WorkspaceTransferred records a new owner of a workspace (targetID); the
+// actor is the previous owner, or the server owner's account for a handover
+// at account deletion.
+func WorkspaceTransferred(actorID, targetID, workspaceID string) Event {
+	return ev(WorkspaceTransferredName, Success, actorID, targetID, "workspace", workspaceID)
+}
+
+// WorkspaceMemberAdded records an account added to a workspace with role.
+func WorkspaceMemberAdded(actorID, targetID, workspaceID, role string) Event {
+	return ev(WorkspaceMemberAddedName, Success, actorID, targetID, "workspace", workspaceID, "workspace_role", role)
+}
+
+// WorkspaceMemberRoleChanged records a member's new role.
+func WorkspaceMemberRoleChanged(actorID, targetID, workspaceID, from, to string) Event {
+	return ev(WorkspaceMemberRoleChangedName, Success, actorID, targetID, "workspace", workspaceID, "from", from, "to", to)
+}
+
+// WorkspaceMemberRemoved records a member removed from a workspace, or leaving it (actor = target).
+func WorkspaceMemberRemoved(actorID, targetID, workspaceID string) Event {
+	return ev(WorkspaceMemberRemovedName, Success, actorID, targetID, "workspace", workspaceID)
+}
+
+// WorkspaceGroupCreated records a new group.
+func WorkspaceGroupCreated(actorID, workspaceID, groupID string) Event {
+	return ev(WorkspaceGroupCreatedName, Success, actorID, "", "workspace", workspaceID, "group", groupID)
+}
+
+// WorkspaceGroupDeleted records a deleted group.
+func WorkspaceGroupDeleted(actorID, workspaceID, groupID string) Event {
+	return ev(WorkspaceGroupDeletedName, Success, actorID, "", "workspace", workspaceID, "group", groupID)
+}
+
+// WorkspaceGroupMemberAdded records an account added to a group.
+func WorkspaceGroupMemberAdded(actorID, targetID, workspaceID, groupID string) Event {
+	return ev(WorkspaceGroupMemberAddedName, Success, actorID, targetID, "workspace", workspaceID, "group", groupID)
+}
+
+// WorkspaceGroupMemberRemoved records an account removed from a group.
+func WorkspaceGroupMemberRemoved(actorID, targetID, workspaceID, groupID string) Event {
+	return ev(WorkspaceGroupMemberRemovedName, Success, actorID, targetID, "workspace", workspaceID, "group", groupID)
+}
+
+// ProjectMemberAdded records an account added to a project with role.
+func ProjectMemberAdded(actorID, targetID, projectID, role string) Event {
+	return ev(ProjectMemberAddedName, Success, actorID, targetID, "shared_project_id", projectID, "project_role", role)
+}
+
+// ProjectGrantAdded records a group granted a role on a project.
+func ProjectGrantAdded(actorID, projectID, groupID, role string) Event {
+	return ev(ProjectGrantAddedName, Success, actorID, "", "shared_project_id", projectID, "group", groupID, "project_role", role)
+}
+
+// ProjectGrantChanged records a group grant's new role.
+func ProjectGrantChanged(actorID, projectID, groupID, from, to string) Event {
+	return ev(ProjectGrantChangedName, Success, actorID, "", "shared_project_id", projectID, "group", groupID, "from", from, "to", to)
+}
+
+// ProjectGrantRemoved records a group grant taken off a project.
+func ProjectGrantRemoved(actorID, projectID, groupID string) Event {
+	return ev(ProjectGrantRemovedName, Success, actorID, "", "shared_project_id", projectID, "group", groupID)
+}
+
+// WorkspaceInviteCreated records a new workspace invite link (never its secret).
+func WorkspaceInviteCreated(actorID, inviteID, workspaceID, role, boundEmail string) Event {
+	return ev(WorkspaceInviteCreatedName, Success, actorID, "", "workspace_invite_id", inviteID, "workspace", workspaceID,
+		"workspace_role", role, "invited_email", boundEmail)
+}
+
+// WorkspaceInviteAccepted records the account that joined through a link;
+// creatorID is the link's creator, recorded as the target.
+func WorkspaceInviteAccepted(userID, creatorID, inviteID, workspaceID, role string) Event {
+	return ev(WorkspaceInviteAcceptedName, Success, userID, creatorID, "workspace_invite_id", inviteID, "workspace", workspaceID, "workspace_role", role)
+}
+
+// WorkspaceInviteRevoked records a revoked workspace invite link.
+func WorkspaceInviteRevoked(actorID, inviteID, workspaceID string) Event {
+	return ev(WorkspaceInviteRevokedName, Success, actorID, "", "workspace_invite_id", inviteID, "workspace", workspaceID)
+}
+
+// memberInvitationDetails are the details of a membership invitation event:
+// its id, the project or workspace id and the role, under the same keys as
+// the membership events.
+func memberInvitationDetails(id, kind, targetID, role string) []string {
+	if kind == "workspace" {
+		return []string{"member_invitation_id", id, "workspace", targetID, "workspace_role", role}
+	}
+	return []string{"member_invitation_id", id, "shared_project_id", targetID, "project_role", role}
+}
+
+// MemberInvitationCreated records an add by email that became an invitation;
+// inviteeID is empty for an address without an account.
+func MemberInvitationCreated(actorID, inviteeID, id, kind, targetID, role string) Event {
+	return ev(MemberInvitationCreatedName, Success, actorID, inviteeID, memberInvitationDetails(id, kind, targetID, role)...)
+}
+
+// MemberInvitationAccepted records the invitee joining; the inviter is the target.
+func MemberInvitationAccepted(inviteeID, inviterID, id, kind, targetID, role string) Event {
+	return ev(MemberInvitationAcceptedName, Success, inviteeID, inviterID, memberInvitationDetails(id, kind, targetID, role)...)
+}
+
+// MemberInvitationDeclined records the invitee saying no; the inviter is the target.
+func MemberInvitationDeclined(inviteeID, inviterID, id, kind, targetID, role string) Event {
+	return ev(MemberInvitationDeclinedName, Success, inviteeID, inviterID, memberInvitationDetails(id, kind, targetID, role)...)
+}
+
+// MemberInvitationCancelled records an owner or admin withdrawing an
+// invitation; the invitee, if any, is the target.
+func MemberInvitationCancelled(actorID, inviteeID, id, kind, targetID, role string) Event {
+	return ev(MemberInvitationCancelledName, Success, actorID, inviteeID, memberInvitationDetails(id, kind, targetID, role)...)
 }

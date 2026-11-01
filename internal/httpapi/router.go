@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 )
 
@@ -31,7 +30,7 @@ func (s *Server) registerRoutes(mux *routes, web http.Handler) {
 func (s *Server) registerAccountRoutes(mux *routes) {
 	mux.handle("GET /healthz", public("health check for the container and load balancers"), s.handleHealth)
 	mux.handle("GET /api/v1/auth/status", public("sign-in screen bootstrap: tells the app what the server offers"), s.handleAuthStatus)
-	mux.handle("POST /api/v1/auth/register", public("first-run owner setup and sign-up").demoDenied(), s.handleRegister)
+	mux.handle("POST /api/v1/auth/register", public("first-run owner setup and sign-up").DemoDenied(), s.handleRegister)
 	mux.handle("POST /api/v1/auth/login", public("password sign-in, rate limited per address"), s.handleLogin)
 	mux.handle("POST /api/v1/auth/logout", public("signing out must work with an expired session too"), s.handleLogout)
 	// Passwordless sign-in: anonymous by design. Finishing shares the login
@@ -53,13 +52,13 @@ func (s *Server) registerAccountRoutes(mux *routes) {
 
 	mux.handle("GET /api/v1/me", signedIn, s.handleMe)
 	mux.handle("GET /api/v1/tokens", signedIn, s.handleListTokens)
-	mux.handle("POST /api/v1/tokens", signedIn.sensitive().demoDenied(), s.handleCreateToken)
-	mux.handle("DELETE /api/v1/tokens/{id}", signedIn.demoDenied(), s.handleDeleteToken)
-	mux.handle("POST /api/v1/passkeys/register/options", signedIn.credential().demoDenied(), s.handlePasskeyRegisterOptions)
-	mux.handle("POST /api/v1/passkeys/register", signedIn.credential().demoDenied(), s.handlePasskeyRegister)
+	mux.handle("POST /api/v1/tokens", signedIn.Sensitive().DemoDenied(), s.handleCreateToken)
+	mux.handle("DELETE /api/v1/tokens/{id}", signedIn.DemoDenied(), s.handleDeleteToken)
+	mux.handle("POST /api/v1/passkeys/register/options", signedIn.Sensitive().DemoDenied(), s.handlePasskeyRegisterOptions)
+	mux.handle("POST /api/v1/passkeys/register", signedIn.Sensitive().DemoDenied(), s.handlePasskeyRegister)
 	mux.handle("GET /api/v1/passkeys", signedIn, s.handleListPasskeys)
-	mux.handle("PATCH /api/v1/passkeys/{id}", signedIn.credential().demoDenied(), s.handleRenamePasskey)
-	mux.handle("DELETE /api/v1/passkeys/{id}", signedIn.credential().demoDenied(), s.handleDeletePasskey)
+	mux.handle("PATCH /api/v1/passkeys/{id}", signedIn.Credential().DemoDenied(), s.handleRenamePasskey)
+	mux.handle("DELETE /api/v1/passkeys/{id}", signedIn.Credential().DemoDenied(), s.handleDeletePasskey)
 }
 
 // registerAdminRoutes: invitations, user administration, the audit log,
@@ -68,17 +67,18 @@ func (s *Server) registerAdminRoutes(mux *routes) {
 	// Invitations: owner-only management plus the one public preview route the
 	// spec defines (the invitee has no account yet).
 	mux.handle("GET /api/v1/invitations", adminsOnly("manage invitations"), s.handleListInvitations)
-	mux.handle("POST /api/v1/invitations", adminsOnly("manage invitations").sensitive().demoDenied(), s.handleCreateInvitation)
-	mux.handle("DELETE /api/v1/invitations/{id}", adminsOnly("manage invitations").credential().demoDenied(), s.handleRevokeInvitation)
+	mux.handle("POST /api/v1/invitations", adminsOnly("manage invitations").Sensitive().DemoDenied(), s.handleCreateInvitation)
+	mux.handle("DELETE /api/v1/invitations/{id}", adminsOnly("manage invitations").Credential().DemoDenied(), s.handleRevokeInvitation)
 	mux.handle("GET /api/v1/invitations/{token}", public("the invitee previews the invitation before having an account"), s.handlePreviewInvitation)
 	// User administration (OpenSpec `user-management`).
 	s.registerUserRoutes(mux)
+	s.registerProfileRoutes(mux)
 	// Audit log: owner-only reads, export and settings; personal activity for
 	// everyone.
 	mux.handle("GET /api/v1/audit", ownerOnly("access the audit log"), s.handleAuditList)
 	mux.handle("GET /api/v1/audit/export", ownerOnly("access the audit log"), s.handleAuditExport)
 	mux.handle("GET /api/v1/settings/audit", ownerOnly("access the audit log"), s.handleGetAuditSettings)
-	mux.handle("PUT /api/v1/settings/audit", ownerOnly("access the audit log").demoDenied(), s.handlePutAuditSettings)
+	mux.handle("PUT /api/v1/settings/audit", ownerOnly("access the audit log").Credential().DemoDenied(), s.handlePutAuditSettings)
 	mux.handle("GET /api/v1/me/activity", signedIn, s.handleMyActivity)
 	// Webhooks (OpenSpec `webhooks`): /api/v1/webhooks* and /api/v1/settings/webhooks,
 	// all behind requireAuth.
@@ -86,18 +86,18 @@ func (s *Server) registerAdminRoutes(mux *routes) {
 	// Backups: owner only (OpenSpec `backups`).
 	mux.handle("GET /api/v1/backups", ownerOnly("manage backups"), s.handleBackupStatus)
 	mux.handle("GET /api/v1/backups/settings", ownerOnly("manage backups"), s.handleGetBackupSettings)
-	mux.handle("PUT /api/v1/backups/settings", ownerOnly("manage backups").credential().demoDenied(), s.handlePutBackupSettings)
-	mux.handle("POST /api/v1/backups/run", ownerOnly("manage backups").demoDenied(), s.handleBackupRun)
-	mux.handle("POST /api/v1/backups/test", ownerOnly("manage backups").demoDenied(), s.handleBackupTest)
+	mux.handle("PUT /api/v1/backups/settings", ownerOnly("manage backups").Credential().DemoDenied(), s.handlePutBackupSettings)
+	mux.handle("POST /api/v1/backups/run", ownerOnly("manage backups").DemoDenied(), s.handleBackupRun)
+	mux.handle("POST /api/v1/backups/test", ownerOnly("manage backups").DemoDenied(), s.handleBackupTest)
 	// Web restore (backup-restore-web): owner only; confirm and safety-copy
 	// delete also need a fresh session and refuse API tokens (in the handlers).
-	mux.handle("GET /api/v1/backups/archives", ownerOnly("manage backups").demoDenied(), s.handleBackupArchives)
-	mux.handle("GET /api/v1/backups/restore", ownerOnly("manage backups").demoDenied(), s.handleRestoreState)
-	mux.handle("POST /api/v1/backups/restore", ownerOnly("manage backups").sessionOnly().recent().demoDenied(), s.handleRestoreConfirm)
-	mux.handle("POST /api/v1/backups/restore/uploads", ownerOnly("manage backups").demoDenied(), s.handleRestoreUpload)
-	mux.handle("POST /api/v1/backups/restore/prepare", ownerOnly("manage backups").demoDenied(), s.handleRestorePrepare)
-	mux.handle("DELETE /api/v1/backups/restore/safety-copies/{name}", ownerOnly("manage backups").sessionOnly().recent().demoDenied(), s.handleDeleteSafetyCopy)
-	mux.handle("DELETE /api/v1/backups/restore/{id}", ownerOnly("manage backups").demoDenied(), s.handleRestoreCancel)
+	mux.handle("GET /api/v1/backups/archives", ownerOnly("manage backups").DemoDenied(), s.handleBackupArchives)
+	mux.handle("GET /api/v1/backups/restore", ownerOnly("manage backups").DemoDenied(), s.handleRestoreState)
+	mux.handle("POST /api/v1/backups/restore", ownerOnly("manage backups").SessionOnly().Recent().DemoDenied(), s.handleRestoreConfirm)
+	mux.handle("POST /api/v1/backups/restore/uploads", ownerOnly("manage backups").DemoDenied(), s.handleRestoreUpload)
+	mux.handle("POST /api/v1/backups/restore/prepare", ownerOnly("manage backups").DemoDenied(), s.handleRestorePrepare)
+	mux.handle("DELETE /api/v1/backups/restore/safety-copies/{name}", ownerOnly("manage backups").SessionOnly().Recent().DemoDenied(), s.handleDeleteSafetyCopy)
+	mux.handle("DELETE /api/v1/backups/restore/{id}", ownerOnly("manage backups").DemoDenied(), s.handleRestoreCancel)
 }
 
 // registerFeatureRoutes: sharing, push, notifications, trash, CalDAV and
@@ -108,20 +108,38 @@ func (s *Server) registerFeatureRoutes(mux *routes) {
 	s.registerSharingRoutes(mux)
 	// Project invite links (OpenSpec `project-invite-links`).
 	s.registerProjectInviteRoutes(mux)
+	s.registerWorkspaceRoutes(mux)
+	// Membership invitations (OpenSpec change member-add-consent).
+	s.registerMemberInvitationRoutes(mux)
+	s.registerBrandingRoutes(mux)
+	// Database storage and notes compaction (OpenSpec `op-log-compaction`).
+	s.registerStorageRoutes(mux)
 	// Web push (OpenSpec `reminders`): registered only while push is enabled.
 	s.registerPushRoutes(mux)
 	// Notifications (OpenSpec `task-assignment`).
 	s.registerNotificationRoutes(mux)
+	// Delivery channels: ntfy, Pushover, Gotify, a webhook (OpenSpec `notification-channels`).
+	s.registerChannelRoutes(mux)
 	// Trash and history (OpenSpec `trash-and-history`).
 	s.registerTrashRoutes(mux)
 	// CalDAV (OpenSpec `caldav`): app passwords, the owner toggle and /dav/.
-	s.seedCaldav(context.Background())
 	s.registerCaldavRoutes(mux)
 	s.registerCalendarFeedRoutes(mux)
 	// Issue import (OpenSpec `issue-connections`); before MCP, whose resource reads it.
 	s.registerIssueRoutes(mux)
+	// Calendar sync (OpenSpec change calendar-two-way), after calendar feeds, whose event store it shares.
+	s.registerCalendarSyncRoutes(mux)
+	s.speech.Register(mux)
 	// Map proxy and its switches (OpenSpec `task-locations`).
-	s.registerMapRoutes(mux)
+	s.mapRoutes.Register(mux)
+	s.registerPlaceRoutes(mux)
+	// Calendar frames (OpenSpec change calendar-frames).
+	s.registerFrameRoutes(mux)
+	// Calendar slots (OpenSpec change calendar-slots).
+	s.registerSlotRoutes(mux)
+	s.registerQuickAddRoutes(mux)
+	// Automation rules (OpenSpec `automation-rules`).
+	s.registerRuleRoutes(mux)
 	// Comments and activity (OpenSpec `comments-and-activity`).
 	s.registerCommentRoutes(mux)
 	s.registerTimeEntryRoutes(mux)
@@ -149,25 +167,28 @@ func (s *Server) registerDataRoutes(mux *routes) {
 	mux.handle("GET /api/v1/sync/events", signedIn, s.handleEvents)
 	mux.handle("GET /api/v1/export", signedIn, s.handleExport)
 	// Import (OpenSpec `data-import`).
-	mux.handle("POST /api/v1/import/preview", signedIn.demoDenied(), s.handleImportPreview)
-	mux.handle("POST /api/v1/import", signedIn.demoDenied(), s.handleImportStart)
+	mux.handle("POST /api/v1/import/preview", signedIn.DemoDenied(), s.handleImportPreview)
+	mux.handle("POST /api/v1/import", signedIn.DemoDenied(), s.handleImportStart)
 	mux.handle("GET /api/v1/import/jobs", signedIn, s.handleImportJobs)
 	mux.handle("GET /api/v1/import/jobs/{id}", signedIn, s.handleImportJob)
-	mux.handle("POST /api/v1/import/jobs/{id}/undo", signedIn.demoDenied(), s.handleImportUndo)
+	mux.handle("POST /api/v1/import/jobs/{id}/undo", signedIn.DemoDenied(), s.handleImportUndo)
 	mux.handle("GET /api/v1/{collection}", signedIn, s.handleList)
 	mux.handle("POST /api/v1/{collection}", signedIn, s.handleCreate)
 	mux.handle("GET /api/v1/{collection}/{id}", signedIn, s.handleGet)
 	mux.handle("PATCH /api/v1/{collection}/{id}", signedIn, s.handlePatch)
 	mux.handle("DELETE /api/v1/{collection}/{id}", signedIn, s.handleDelete)
-	mux.handle("/api/", public("unknown API routes answer 404 not_found"), func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, http.StatusNotFound, "not_found", "unknown API route")
-	})
+	// A known path asked with another method is a 405, anything else a 404
+	// naming the method and path (api-method-not-allowed).
+	mux.handle("/api/", public("unknown API routes answer 404 not_found, a known path with another method 405"), mux.unknownAPIRoute)
 }
 
 // registerWebAppRoutes serves the embedded web app; web is nil when only the
 // API is wanted (tests).
 func (s *Server) registerWebAppRoutes(mux *routes, web http.Handler) {
 	if web != nil {
+		// A branded instance (instance-branding) gets its name and icons in the
+		// page and the manifest on the way out.
+		web = s.brandedWeb(web)
 		// The share sheet POSTs here when the service worker is not active yet.
 		mux.handle("POST /share", public("the share sheet posts here before the service worker runs; it only redirects into the app"), s.handleSharePost)
 		mux.handler("/", public("the web app; it signs in through the API"), web)

@@ -6,13 +6,13 @@ import { act, createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, setMeta, useDatabase } from '../../lib/db'
 import { setDemo } from '../../lib/demo'
-import { applyOps, createTask, resetDeviceId } from '../../lib/ops'
+import { applyOps, createTask, resetDeviceId, updateTask } from '../../lib/ops'
 import type { Op } from '../../lib/types'
-import { click, flush, key, render, spokenText, visibleText } from '../../ui/test-utils'
+import { click, flush, key, render, spokenText, visibleText, waitFor } from '../../ui/test-utils'
 import { hideBulkToast } from '../bulk/toastStore'
 import { TaskRow } from '../TaskRow'
 import { requestAttach } from './attachRequest'
-import { AttachmentsRow, pastedName, typeLabel } from './AttachmentsRow'
+import { AttachMenu, AttachmentsRow, pastedName, typeLabel } from './AttachmentsRow'
 
 let n = 0
 let task = ''
@@ -30,13 +30,8 @@ afterEach(async () => {
   vi.restoreAllMocks()
   hideBulkToast()
   setDemo(null)
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 async function mount(props: Partial<Parameters<typeof AttachmentsRow>[0]> = {}) {
   const r = await render(<AttachmentsRow taskId={task} userId="me" role="owner" {...props} />)
@@ -83,10 +78,10 @@ describe('AttachmentsRow', () => {
     expect(item('Q3 report.pdf').tabIndex).toBe(-1)
     first.focus()
     await key(first, 'ArrowDown')
-    await flush(30)
+    await waitFor(() => document.activeElement === item('Q3 report.pdf'), 'focus on the next file')
     expect(document.activeElement).toBe(item('Q3 report.pdf'))
     await key(document.activeElement!, 'ArrowUp')
-    await flush(30)
+    await waitFor(() => document.activeElement === first, 'focus back on the first file')
     expect(document.activeElement).toBe(first)
     await click(first)
     await waitFor(() => open.mock.calls.length > 0)
@@ -140,12 +135,25 @@ describe('AttachmentsRow', () => {
     expect((await db.attachments.toArray())[0].deleted_at).not.toBeNull()
   })
 
+  it('Remove an embedded image: the confirmation names the note that shows it (editor-everywhere 4.4)', async () => {
+    await remoteFile('att-wall', 'wall.png', 'image/png')
+    await updateTask(task, { description: 'Before:\n\n![wall](attachment:att-wall)' })
+    await mount()
+    await waitFor(() => names().includes('wall.png'))
+    await key(item('wall.png'), 'Delete')
+    const dialog = () => document.querySelector('[data-testid="confirm-dialog"]')
+    await waitFor(() => !!dialog())
+    expect(dialog()!.textContent).toContain('“wall.png” is shown in the notes of “Report” and is removed from them too.')
+    await click([...dialog()!.querySelectorAll('button')].find((b) => b.textContent === 'Remove')!)
+    await waitFor(() => names().length === 0)
+  })
+
   it('lists but offers no Add when attachments are off, and nothing for a viewer of someone else’s file to remove', async () => {
     await setMeta('attachmentLimits', { enabled: false, max_file_bytes: 1 << 20, quota_bytes: 0, used_bytes: 0 })
     await remoteFile('a-ana', 'Ana.pdf')
     const v = await mount({ role: 'viewer' })
-    await waitFor(() => names().includes('Ana.pdf'))
-    expect(v.container.querySelector('button[aria-label="Attach"]')).toBeNull()
+    // Attach shows until the limits are read from the device: wait for them to apply.
+    await waitFor(() => names().includes('Ana.pdf') && !v.container.querySelector('button[aria-label="Attach"]'), 'the file listed without Attach')
     expect(v.container.querySelector('[aria-label="Remove Ana.pdf"]')).toBeNull()
     expect(v.container.querySelector('[aria-label="Rename Ana.pdf"]')).toBeNull()
   })
@@ -168,6 +176,19 @@ describe('AttachmentsRow', () => {
     await act(async () => { requestAttach(task, 'link') })
     await flush()
     expect(v.container.querySelector('form input')).toBeTruthy()
+  })
+
+  it('the paperclip offers a link on a task without attachments (issue #342)', async () => {
+    const v = await render(<><AttachMenu taskId={task} /><AttachmentsRow taskId={task} userId="me" role="owner" /></>)
+    await flush()
+    await click(v.container.querySelector('[data-attach-menu]')!)
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent ?? '')
+    expect(items.some((x) => x.includes('Choose files…'))).toBe(true)
+    const link = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) => el.textContent?.includes('Add a link…'))!
+    await click(link)
+    await flush()
+    expect(v.container.querySelector('form input[type="url"]')).toBeTruthy()
+    await v.unmount()
   })
 
   it('shows the drop zone only while files are dragged over the panel', async () => {

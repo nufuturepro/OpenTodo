@@ -2,7 +2,6 @@
 // until both sides are quiet. Runs on mutation, reconnect, tab focus, a timer and
 // on live wake-ups from the server's event stream (which carries no data; it only
 // tells us to run the exchange now).
-import { useSyncExternalStore } from 'react'
 import { forgetActivity } from './activity'
 import { api, ApiError } from './api'
 import { isTransientNetworkError } from './http'
@@ -14,9 +13,11 @@ import { applyOps, getDeviceId, onLocalMutation } from './ops'
 import { followSharedDueChanges } from './reminders'
 import { refreshNotifications } from './notifications'
 import { dropUnconfirmed, forgetRejected, storeMemberships, type RejectedNotice } from './sharing'
+import { storeWorkspacesFromSync } from './workspaces'
 import { flushPendingPurges, removeLocally, RETENTION_KEY } from './trash'
 import { onUploadRequest, refreshLimits, resumeFileMigration, runUploader } from './attachments'
 import { refreshMapsAvailable } from './locations'
+import { refreshAgentExclusions } from './agentAccess'
 import { sweepInbox } from './shareInbox'
 import { refreshEvents } from './calendarFeeds'
 import { ENTITIES, type Clock, type Op, type RowEncryption, type SyncResponse, type SyncState } from './types'
@@ -25,6 +26,10 @@ import { HELD_RETRY_MS, heldCount, holdOps, limitMessage, requeueHeld, splitReje
 import { decryptIncoming, LockedError, markSent, normalizeOnSight, prepareOutgoing, reconcileMode, runMigration } from './e2eeSync'
 import { t } from './i18n'
 import { uuid } from './ids'
+import { onTestTeardown } from './testTeardown'
+import { resettable } from './moduleState'
+import { messageOf } from './errorText'
+import { createStore } from './store'
 
 const BATCH = 500
 /** Poll interval while the live channel is disconnected (the historical default). */
@@ -48,8 +53,8 @@ interface Snapshot {
   rejected: RejectedNotice | null
 }
 
-let snapshot: Snapshot = { state: 'idle', pending: 0, lastSyncedAt: null, error: null, live: false, rejected: null }
-const listeners = new Set<() => void>()
+const IDLE: Snapshot = { state: 'idle', pending: 0, lastSyncedAt: null, error: null, live: false, rejected: null }
+const status = createStore<Snapshot>('syncStatus', IDLE)
 let running = false
 let again = false
 let debounce: ReturnType<typeof setTimeout> | null = null
@@ -82,27 +87,15 @@ let openTimer: ReturnType<typeof setTimeout> | null = null
 let attempts = 0
 
 function publish(patch: Partial<Snapshot>) {
-  snapshot = { ...snapshot, ...patch }
-  for (const fn of listeners) fn()
+  status.update((cur) => ({ ...cur, ...patch }))
   // The tabs that do not sync show the leader's status (one tab syncs).
-  if (leader && channel) post({ type: 'status', snapshot })
+  if (leader && channel) post({ type: 'status', snapshot: status.get() })
 }
 
-export function useSyncStatus(): Snapshot {
-  return useSyncExternalStore(
-    (fn) => {
-      listeners.add(fn)
-      return () => listeners.delete(fn)
-    },
-    () => snapshot,
-    () => snapshot,
-  )
-}
+export const useSyncStatus = status.use
 
 /** The current sync status outside React (tests, one-off reads). */
-export function syncSnapshot(): Snapshot {
-  return snapshot
-}
+export const syncSnapshot = status.get
 
 /** Hide the "changes were not accepted" notice. */
 export function dismissRejected(): void {
@@ -110,7 +103,7 @@ export function dismissRejected(): void {
 }
 
 function addRejected(n: RejectedNotice): void {
-  const prev = snapshot.rejected
+  const prev = status.get().rejected
   const merge = (a: string[], b: string[]) => [...new Set([...a, ...b])]
   publish({
     rejected: prev
@@ -120,6 +113,42 @@ function addRejected(n: RejectedNotice): void {
       }
       : n,
   })
+}
+
+// ---- note push cadence (notes-save-cadence D2) ----
+
+/** A note saved while typing is pushed after this long without a further save. */
+export const NOTE_QUIET_MS = 3_000
+/** ...and at least this often while the person keeps typing. */
+export const NOTE_MAX_WAIT_MS = 60_000
+let noteQuiet: ReturnType<typeof setTimeout> | null = null
+let noteMaxWait: ReturnType<typeof setTimeout> | null = null
+
+function clearNotePush(): void {
+  if (noteQuiet) clearTimeout(noteQuiet)
+  if (noteMaxWait) clearTimeout(noteMaxWait)
+  noteQuiet = null
+  noteMaxWait = null
+}
+
+function fireNotePush(): void {
+  clearNotePush()
+  requestSync(0)
+}
+
+/** A deferred save: restart the quiet timer; start the max-wait timer if none runs. */
+function deferNotePush(): void {
+  if (noteQuiet) clearTimeout(noteQuiet)
+  noteQuiet = setTimeout(fireNotePush, NOTE_QUIET_MS)
+  noteMaxWait ??= setTimeout(fireNotePush, NOTE_MAX_WAIT_MS)
+}
+
+/**
+ * Push a note document waiting for its pause at once (the editor was left: blur,
+ * close, hide, unload). Nothing to do when no deferred push is pending.
+ */
+export function pushPendingNotes(): void {
+  if (noteQuiet || noteMaxWait) fireNotePush()
 }
 
 export function requestSync(delay = 250): void {
@@ -166,7 +195,7 @@ function isSyncResponse(v: unknown): v is SyncResponse {
     && typeof r.cursor === 'number' && Number.isFinite(r.cursor) && typeof r.hasMore === 'boolean'
     && (r.serverTime === undefined || typeof r.serverTime === 'number')
     && (r.backfillSeq === undefined || typeof r.backfillSeq === 'number')
-    && list(r.rejected) && list(r.memberships) && list(r.purged)
+    && list(r.rejected) && list(r.memberships) && list(r.purged) && list(r.workspaces)
     && ((r.rejected ?? []) as unknown[]).every((x) => typeof x === 'object' && x !== null && typeof (x as { id?: unknown }).id === 'string' && typeof (x as { reason?: unknown }).reason === 'string')
 }
 
@@ -175,6 +204,8 @@ async function runOnce(): Promise<void> {
   // writes nothing, so the previous account's data never lands in the cleared
   // database (client-sync-robustness). Checked after every await that precedes a write.
   const epoch = localEpoch()
+  // This exchange uploads the whole outbox, a deferred note document included.
+  clearNotePush()
   const signal = (controller ??= new AbortController()).signal
   const alive = () => {
     if (localEpoch() !== epoch) throw new SessionEnded()
@@ -281,6 +312,9 @@ async function exchange(alive: () => void, signal: AbortSignal): Promise<void> {
       alive()
       if (res.memberships) await storeMemberships(res.memberships)
       alive()
+      // The workspace directory (workspaces D8): replaced on every exchange.
+      if (res.workspaces) await storeWorkspacesFromSync(res.workspaces)
+      alive()
       // Purged on the server (trash-and-history D5): drop the rows and queued ops.
       if (res.purged?.length) await removeLocally(res.purged)
       alive()
@@ -339,7 +373,8 @@ async function exchange(alive: () => void, signal: AbortSignal): Promise<void> {
     alive()
     // Encrypted task pages (task-pages D3, D4): a new snapshot after a change, and the
     // guests' replies imported. Loaded on demand; it skips itself when there is nothing.
-    void import('./taskPages').then((m) => m.maintainTaskPages()).catch(() => undefined)
+    // Not once the session ended (sign-out, stopSync) while the module loaded.
+    void import('./taskPages').then((m) => { alive(); return m.maintainTaskPages() }).catch(() => undefined)
     failures = 0
     const held = await heldCount()
     alive()
@@ -386,7 +421,7 @@ async function exchange(alive: () => void, signal: AbortSignal): Promise<void> {
       scheduleRetry()
       return
     }
-    publish({ state: 'error', error: err instanceof Error ? err.message : String(err) })
+    publish({ state: 'error', error: messageOf(err) })
   }
 }
 
@@ -478,11 +513,11 @@ function scheduleRetry(): void {
 function armTimer(): void {
   if (!leader) return
   if (timer) clearInterval(timer)
-  timer = setInterval(() => void syncNow(), snapshot.live ? LIVE_INTERVAL_MS : INTERVAL_MS)
+  timer = setInterval(() => void syncNow(), status.get().live ? LIVE_INTERVAL_MS : INTERVAL_MS)
 }
 
 function setLive(live: boolean): void {
-  if (snapshot.live === live) return
+  if (status.get().live === live) return
   publish({ live })
   if (started) armTimer()
 }
@@ -582,6 +617,11 @@ async function onWakeUp(data: string): Promise<void> {
   if (Number.isFinite(cursor)) {
     const stored = await getMeta<number>('cursor', 0)
     if (cursor <= stored) return
+  } else {
+    // A wake-up without a cursor is about membership: someone added, removed or
+    // invited this account (member-add-consent D5), so read the notifications
+    // too, even when the exchange brings no ops.
+    needNotifications = true
   }
   requestSync(0)
 }
@@ -600,12 +640,19 @@ export function startSync(): void {
   void refreshLimits()
   // Whether the server shows maps (task-locations D6); offline keeps the last answer.
   void refreshMapsAvailable()
+  // Projects kept away from AI assistants (agent-planning-fields D9).
+  void refreshAgentExclusions()
   // Shares abandoned on the capture screen leave the hand-over store (attachments D9).
   void sweepInbox().catch(() => undefined)
-  const offMutation = onLocalMutation(() => {
+  const offMutation = onLocalMutation(({ push }) => {
     // Reflect the pending edit immediately so the indicator never claims "Synced"
-    // while an op is still waiting in the debounce window.
-    if (snapshot.state === 'idle') publish({ state: 'syncing', pending: snapshot.pending + 1 })
+    // while an op is still waiting in the debounce window (or the note's pause).
+    if (status.get().state === 'idle') publish({ state: 'syncing', pending: status.get().pending + 1 })
+    if (push === 'deferred') {
+      deferNotePush()
+      return
+    }
+    clearNotePush()
     requestSync()
   })
   const offs: (() => void)[] = [offMutation, () => onUploadRequest(null)]
@@ -677,6 +724,7 @@ export function stopSync(): void {
   timer = null
   if (debounce) clearTimeout(debounce)
   debounce = null
+  clearNotePush()
   if (retryTimer) clearTimeout(retryTimer)
   retryTimer = null
   failures = 0
@@ -693,6 +741,19 @@ export function stopSync(): void {
 }
 
 /**
+ * Test hook (resetModuleState): stops a running loop and forgets the session's
+ * status, refusal notice and held-ops retry, as after a fresh import.
+ */
+resettable('sync', () => {
+  if (started) stopSync()
+  lastHeldRetry = 0
+  heldReason = null
+  needNotifications = true
+  failures = 0
+  attempts = 0
+})
+
+/**
  * stopSync, then wait until the exchange that was running has stopped. Sign-out
  * awaits this before clearing the local data.
  */
@@ -701,6 +762,9 @@ export async function stopSyncAndWait(): Promise<void> {
   stopSync()
   await running?.catch(() => undefined)
 }
+
+// A debounced exchange a test's write scheduled never fires into the next test.
+onTestTeardown(stopSyncAndWait)
 
 // ---- one tab syncs (client-sync-robustness) ----
 //
@@ -758,14 +822,13 @@ function onMessage(ev: MessageEvent<Message>): void {
       }
       // The key may have been entered in the asking tab: read it again from the
       // shared database before syncing for it (end-to-end encryption).
-      if (snapshot.state === 'locked') void loadEncryptionState().then(run, run)
+      if (status.get().state === 'locked') void loadEncryptionState().then(run, run)
       else run()
     }
     return
   }
   if (msg.type === 'status') {
-    snapshot = msg.snapshot
-    for (const fn of listeners) fn()
+    status.set(msg.snapshot)
   } else if (msg.type === 'done') {
     waiting.get(msg.id)?.()
   }

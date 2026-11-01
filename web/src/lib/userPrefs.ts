@@ -2,7 +2,9 @@
 // one synced `user_prefs` row with the id "me" in the personal scope. Written
 // through ops like any other data, so a change works offline, reaches the user's
 // other devices and converges per field by last-writer-wins.
+import { db } from './db'
 import { mutate, USER_PREFS_DEFAULTS } from './ops'
+import { formatDefaultReminder, MAX_DEFAULT_OFFSET } from './defaultReminder'
 import type { DateFormatPref, LanguagePref, TimeFormatPref, UserPrefs, WeekStartPref } from './types'
 
 export const USER_PREFS_ID = 'me'
@@ -78,4 +80,74 @@ export function welcomeSeen(row: Partial<UserPrefs> | null | undefined): boolean
 /** Marks the welcome note seen; an ordinary op, so it never shows again on the account's other devices. */
 export function setWelcomeSeen(): Promise<void> {
   return mutate('user_prefs', USER_PREFS_ID, { welcome: 'seen' })
+}
+
+/** The first-day checklist (OpenSpec change moments-and-onboarding, D5): its sidebar entry was hidden on any device. */
+export function startChecklistHidden(row: Partial<UserPrefs> | null | undefined): boolean {
+  return row?.start_checklist === 'hidden'
+}
+
+/** Hides the first-day checklist's sidebar entry; an ordinary op, so no device of the account shows it again. */
+export function hideStartChecklist(): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { start_checklist: 'hidden' })
+}
+
+/** The day pages' briefing (OpenSpec change briefing-links, D4): hidden on any device of the account. */
+export function briefingHidden(row: Partial<UserPrefs> | null | undefined): boolean {
+  return row?.briefing === 'hidden'
+}
+
+/** Shows or hides the briefing on Today and Upcoming; an ordinary op, so it syncs to the account's other devices. */
+export function setBriefingShown(shown: boolean): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { briefing: shown ? 'shown' : 'hidden' })
+}
+
+/** Today's agenda of calendar events (OpenSpec change today-agenda, D1): off unless the account chose "shown". */
+export function todayEventsShown(row: Partial<UserPrefs> | null | undefined): boolean {
+  return row?.today_events === 'shown'
+}
+
+/** Shows or hides the calendar events on Today; an ordinary op, so it works offline and syncs to the account's other devices. */
+export function setTodayEventsShown(shown: boolean): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { today_events: shown ? 'shown' : 'hidden' })
+}
+
+/** How a task opens from a list (OpenSpec change task-side-panel, D1): its page, or a side panel beside the list. */
+export type TaskOpenPref = 'page' | 'panel'
+
+/** The stored choice; empty or unknown (a newer client) reads as 'page' without rewriting the row. */
+export function readTaskOpen(row: Partial<UserPrefs> | null | undefined): TaskOpenPref {
+  return row?.task_open === 'panel' ? 'panel' : 'page'
+}
+
+/** Chooses how tasks open; an ordinary op, so it works offline and reaches the account's other devices. */
+export function setTaskOpen(value: TaskOpenPref): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { task_open: value })
+}
+
+/** Where new tasks are added from a list's quick add (OpenSpec change add-position, D1). */
+export type AddPositionPref = 'bottom' | 'top'
+
+/** The stored choice; empty or unknown (a newer client) reads as 'bottom' without rewriting the row. */
+export function readAddPosition(row: Partial<UserPrefs> | null | undefined): AddPositionPref {
+  return row?.add_position === 'top' ? 'top' : 'bottom'
+}
+
+/** Chooses where new tasks go; an ordinary op, so it works offline and reaches the account's other devices. */
+export function setAddPosition(value: AddPositionPref): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { add_position: value })
+}
+
+/** The account's choice read at the moment of an add (one keyed read), for the list entry points (add-position D3). */
+export async function preferredPlacement(): Promise<AddPositionPref> {
+  return readAddPosition(await db.userPrefs.get(USER_PREFS_ID))
+}
+
+/** The two default reminders (OpenSpec change default-reminders, D1); empty, malformed or out of range reads as none. */
+export { readDefaultReminders, type DefaultReminders } from './defaultReminder'
+
+/** Sets one default reminder (minutes from the due time, null for none); an ordinary op, so it works offline and syncs. */
+export function setDefaultReminder(kind: 'timed' | 'dated', minutes: number | null): Promise<void> {
+  if (minutes !== null && (!Number.isInteger(minutes) || Math.abs(minutes) > MAX_DEFAULT_OFFSET)) return Promise.reject(new Error('reminder offset out of range'))
+  return mutate('user_prefs', USER_PREFS_ID, { [kind === 'timed' ? 'reminder_default_timed' : 'reminder_default_dated']: formatDefaultReminder(minutes) })
 }

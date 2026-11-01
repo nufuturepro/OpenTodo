@@ -1,6 +1,8 @@
 import Dexie, { type Table } from 'dexie'
 import type { FocusState } from './focus/timer'
-import { ENTITIES, type Attachment, type Clock, type Entity, type FieldDef, type CalendarEvent, type CalendarSubscription, type ActivityEntry, type AppNotification, type Comment, type Label, type Membership, type Op, type Place, type Project, type ProjectPrefs, type Reminder, type Review, type RowEncryption, type Section, type Task, type TimeEntry, type UserPrefs, type View } from './types'
+import { forgetShellData } from './shell'
+import { ENTITIES, type Attachment, type Clock, type Entity, type FieldDef, type CalendarEvent, type CalendarSubscription, type ActivityEntry, type AppNotification, type Comment, type Label, type Membership, type Op, type Place, type Project, type Rule, type Frame, type ProjectPrefs, type Reminder, type Review, type RowEncryption, type Section, type Slot, type Task, type TimeEntry, type UserPrefs, type View, type Workspace, type WorkspaceGroup, type WorkspaceMember } from './types'
+import { createStore } from './store'
 
 export interface OutboxOp extends Op {
   /** Local insertion order; used to acknowledge sent ops. */
@@ -47,7 +49,7 @@ export interface AssistantUndo {
   /** How many changes were applied, for the summary. */
   count: number
   /** Field values to restore, per entity. */
-  inverse: { entity: string; entityId: string; patch: Record<string, unknown>; created?: boolean }[]
+  inverse: { entity: string; entityId: string; patch: Record<string, unknown>; created?: boolean; /** A default reminder the batch added (default-reminders): undone with it, not counted. */ followUp?: boolean }[]
   /** The clock each applied field got, to skip fields changed again since. */
   clocks: { entity: string; entityId: string; field: string; ts: number; device: string }[]
   undone_at?: number
@@ -128,8 +130,18 @@ class OpenTaskKitDB extends Dexie {
   timeEntries!: Table<TimeEntry, string>
   /** Saved places (OpenSpec task-locations): a synced entity, ordered by position. */
   places!: Table<Place, string>
+  /** Automation rules (OpenSpec automation-rules): a synced entity, ordered by position. */
+  rules!: Table<Rule, string>
+  /** Calendar frames (OpenSpec calendar-frames): a synced entity, ordered by position. */
+  frames!: Table<Frame, string>
+  /** Calendar slots (OpenSpec calendar-slots): a synced entity, by date. */
+  slots!: Table<Slot, string>
   /** The focus timer's state (focus-mode D2): one row "current" on this device, never synced, cleared at sign-out. */
   focus!: Table<FocusState, string>
+  /** The account's workspaces, their members and groups (workspaces D8): replaced from every sync response, never ops. */
+  workspaces!: Table<Workspace, string>
+  workspaceMembers!: Table<WorkspaceMember, string>
+  groups!: Table<WorkspaceGroup, string>
 
   constructor(name = 'opentodo') {
     super(name)
@@ -413,8 +425,12 @@ class OpenTaskKitDB extends Dexie {
     this.version(20).stores({ timeEntries: 'id, task_id, user_id, started_at' })
     // v21 (focus-mode D2): the focus timer's one device-local row; never an op, never exported.
     this.version(21).stores({ focus: 'id' })
-    // v22 (task-locations): the synced `place` entity.
-    this.version(22).stores({ places: 'id, position' })
+    this.version(22).stores({ places: 'id, position' }) // v22 (task-locations): the synced `place` entity.
+    this.version(23).stores({ rules: 'id, position' }) // v23 (automation-rules): the synced `rule` entity.
+    // v24 (workspaces D8): the cached directory, and a workspace_id index on the four entities that carry the field.
+    this.version(24).stores({ projects: 'id, position, workspace_id', tasks: 'id, project_id, parent_id, completed_at, position, assignee_id, section_id, workspace_id', labels: 'id, position, workspace_id', views: 'id, position, workspace_id', workspaces: 'id', workspaceMembers: 'id, workspaceId', groups: 'id, workspaceId' })
+    this.version(25).stores({ frames: 'id, position' }) // v25 (calendar-frames): the synced `frame` entity.
+    this.version(26).stores({ slots: 'id, date' }) // v26 (calendar-slots): the synced `slot` entity.
   }
 }
 
@@ -428,8 +444,7 @@ export function useDatabase(name: string): OpenTaskKitDB {
 
 // ---- a newer release in another tab (client-sync-robustness) ----
 
-let outdated = false
-const outdatedListeners = new Set<() => void>()
+const outdated = createStore('databaseOutdated', false)
 
 /**
  * Another tab opened the database with a newer schema: this tab closes its
@@ -439,23 +454,17 @@ const outdatedListeners = new Set<() => void>()
 function watchVersionChange(d: OpenTaskKitDB): OpenTaskKitDB {
   d.on('versionchange', () => {
     d.close()
-    outdated = true
-    for (const fn of outdatedListeners) fn()
+    outdated.set(true)
     return false
   })
   return d
 }
 
 /** True once a newer version of the app took over the local database in another tab. */
-export function databaseOutdated(): boolean {
-  return outdated
-}
+export const databaseOutdated = outdated.get
 
 /** Subscribes to {@link databaseOutdated}; returns an unsubscribe function. */
-export function onDatabaseOutdated(fn: () => void): () => void {
-  outdatedListeners.add(fn)
-  return () => outdatedListeners.delete(fn)
-}
+export const onDatabaseOutdated = outdated.subscribe
 
 /**
  * Asks the browser to keep this site's storage under pressure (Safari evicts
@@ -500,7 +509,7 @@ function tableMap(d: OpenTaskKitDB) {
   return {
     project: d.projects, task: d.tasks, label: d.labels, view: d.views, reminder: d.reminders, section: d.sections,
     field: d.fields, comment: d.comments, project_prefs: d.prefs, user_prefs: d.userPrefs, attachment: d.attachments, review: d.review,
-    time_entry: d.timeEntries, place: d.places,
+    time_entry: d.timeEntries, place: d.places, rule: d.rules, frame: d.frames, slot: d.slots,
   } satisfies Record<Entity, Table<unknown, string>>
 }
 
@@ -539,11 +548,14 @@ export async function setMeta(key: string, value: unknown): Promise<void> {
 /** Wipe every local table; used on logout so the next account starts clean. */
 export async function clearLocalData(): Promise<void> {
   bumpLocalEpoch()
-  await db.transaction('rw', [...entityTables(), db.outbox, db.meta, db.memberships, db.notifications, db.assistantThreads, db.assistantUndo, db.pickHistory, db.attachmentBlobs, db.calendarEvents, db.calendarSubscriptions, db.focus], async () => {
+  // Sign-out in a native shell: its schedule and the key behind the biometrics go too (native-shells).
+  forgetShellData()
+  await db.transaction('rw', [...entityTables(), db.outbox, db.meta, db.memberships, db.notifications, db.assistantThreads, db.assistantUndo, db.pickHistory, db.attachmentBlobs, db.calendarEvents, db.calendarSubscriptions, db.focus, db.workspaces, db.workspaceMembers, db.groups], async () => {
     await Promise.all([
       ...entityTables().map((t) => t.clear()), db.outbox.clear(), db.meta.clear(), db.memberships.clear(), db.attachmentBlobs.clear(),
       db.calendarEvents.clear(), db.calendarSubscriptions.clear(),
       db.notifications.clear(), db.assistantThreads.clear(), db.assistantUndo.clear(), db.pickHistory.clear(), db.focus.clear(),
+      db.workspaces.clear(), db.workspaceMembers.clear(), db.groups.clear(),
     ])
   })
 }

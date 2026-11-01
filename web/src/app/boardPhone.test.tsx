@@ -4,18 +4,18 @@
 // follows the scroll and names the current column, which also goes to the page bar.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Project, Section, Task } from '../lib/types'
-import { click, flush, render } from '../ui/test-utils'
+import { click, flush, render, minWidthPx } from '../ui/test-utils'
 import { BoardView, type BoardColumn } from './BoardView'
 
 const original = window.matchMedia
 let width = 390
 beforeEach(() => {
   window.matchMedia = ((q: string) => ({
-    matches: Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0) <= width, media: q, onchange: null,
+    matches: minWidthPx(q) <= width, media: q, onchange: null,
     addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
   })) as typeof window.matchMedia
 })
-afterEach(() => { window.matchMedia = original; document.body.innerHTML = '' })
+afterEach(() => { window.matchMedia = original })
 
 const project = { id: 'p1', name: 'Garden', color: '#0f0', parent_id: null, position: 0, archived: false, created_at: 0, deleted_at: null, _clock: {} } as unknown as Project
 const section = (id: string, name: string, position: number): Section => ({ id, project_id: 'p1', name, position, created_at: 0, deleted_at: null, _clock: {} } as unknown as Section)

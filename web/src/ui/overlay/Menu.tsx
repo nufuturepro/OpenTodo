@@ -1,4 +1,5 @@
-import { type ButtonHTMLAttributes, type ReactNode, useRef, useState } from 'react'
+import { type ButtonHTMLAttributes, type ReactNode, type RefObject, isValidElement, useRef, useState } from 'react'
+import { Icon } from '../Icon'
 import { MenuCloseContext, useRovingMenu } from '../Menu'
 import { Tooltip } from '../Tooltip'
 import { Popover } from './Popover'
@@ -13,7 +14,7 @@ import { Popover } from './Popover'
  * type-ahead, and an item closes the menu. kind="dialog" (default) stays for
  * panels with form controls (label colours, the project "Move to" select).
  */
-export function Menu({ label, title, trigger, triggerClassName = '', triggerProps, tip, tipSide, align = 'end', width, className = 'p-1', open: openProp, onOpenChange, kind = 'dialog', namedByContent = false, children }: {
+export function Menu({ label, title, trigger, triggerClassName = '', triggerProps, tip, tipSide, tipShortcut, align = 'end', width, className = 'p-1', open: openProp, onOpenChange, kind = 'dialog', namedByContent = false, anchor, children }: {
   /** Accessible name of the trigger. */
   label: string
   /** The trigger shows its whole name as text (with a badge, say): it is named by that text, not by `label`. */
@@ -24,15 +25,19 @@ export function Menu({ label, title, trigger, triggerClassName = '', triggerProp
   triggerClassName?: string
   /** Extra attributes for the trigger (`aria-current`, test hooks). */
   triggerProps?: ButtonHTMLAttributes<HTMLButtonElement> & Record<`data-${string}`, string | boolean | undefined>
-  /** A tooltip on the trigger (a truncated name, the icon rail). */
+  /** A tooltip on the trigger (a truncated name, the icon rail); an icon-only trigger shows `label` without it. */
   tip?: string
   tipSide?: 'top' | 'bottom' | 'right'
+  /** The keys shown in the trigger's tooltip (rows-v2 D7: "Priority · 1 / 2 / 3 / 4"). */
+  tipShortcut?: string
   align?: 'start' | 'end'
   width?: string
   className?: string
   open?: boolean
   onOpenChange?: (open: boolean) => void
   kind?: 'menu' | 'dialog'
+  /** Places the panel at this element instead of the trigger (a row's More button for a menu whose trigger is hidden). */
+  anchor?: RefObject<HTMLElement | null>
   children: ReactNode | ((close: () => void) => ReactNode)
 }) {
   const [own, setOwn] = useState(false)
@@ -46,10 +51,12 @@ export function Menu({ label, title, trigger, triggerClassName = '', triggerProp
     <button ref={ref} type="button" {...triggerProps} className={triggerClassName} aria-label={namedByContent ? undefined : label} aria-haspopup={kind} aria-expanded={open}
       onClick={() => set(!open)}>{trigger}</button>
   )
+  // An icon-only trigger is named by its tooltip, like IconButton (issue 528).
+  const tipText = tip ?? (isValidElement(trigger) && trigger.type === Icon ? label : undefined)
   return (
     <>
-      {tip ? <Tooltip label={tip} side={tipSide}>{button}</Tooltip> : button}
-      <Popover open={open} onClose={close} anchor={ref} label={title ?? label} align={align} width={width} className={className} role={kind}>
+      {tipText ? <Tooltip label={tipText} side={tipSide} shortcut={tipShortcut}>{button}</Tooltip> : button}
+      <Popover open={open} onClose={close} anchor={anchor?.current ? anchor : ref} label={title ?? label} align={align} width={width} className={className} role={kind}>
         {kind === 'menu'
           ? <MenuCloseContext.Provider value={close}><div role="none" onKeyDown={roving}>{content}</div></MenuCloseContext.Provider>
           : content}

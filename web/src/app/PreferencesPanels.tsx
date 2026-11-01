@@ -1,6 +1,7 @@
 // Settings → General panels (OpenSpec settings-navigation, settings-redesign D3).
 import { useUserPrefsRow } from '../lib/localData'
-import { readLanguage, setUserPref } from '../lib/userPrefs'
+import { dayPartsOn, setDayParts } from '../lib/dayParts'
+import { briefingHidden, readLanguage, setBriefingShown, setUserPref } from '../lib/userPrefs'
 import type { LanguagePref } from '../lib/types'
 import { SHIPPED, nativeName } from '../locales'
 import { Notice } from '../ui'
@@ -77,7 +78,7 @@ export function StartViewView({ views, startView, onChange }: { views: View[]; s
             <option value="today">{t('Today')}</option>
             <option value="upcoming">{t('Upcoming')}</option>
             <option value="completed">{t('Completed')}</option>
-            <option value="filter">{t('Filter')}</option>
+            <option value="filter">{t('New view')}</option>
             <option value="loop">{t('Loop home')}</option>
             <option value="next">{t('Next', { context: 'method' })}</option>
             <option value="waiting">{t('Waiting', { context: 'method' })}</option>
@@ -94,6 +95,36 @@ export function StartViewView({ views, startView, onChange }: { views: View[]; s
           </optgroup>
         </Select>
       } />
+    </SettingsSection>
+  )
+}
+
+/** Settings → General → Briefing (precision-polish-2): the synced user_prefs.briefing, as in the day pages' menu. */
+export function BriefingSection() {
+  const row = useUserPrefsRow()
+  return <BriefingView shown={!briefingHidden(row)} onChange={(on) => act(setBriefingShown(on))} />
+}
+
+export function BriefingView({ shown, onChange }: { shown: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <SettingsSection {...cardCopy('briefing')}>
+      <SettingRow {...rowCopy('briefing', 'show')} id="briefing-show" htmlFor="briefing-show-switch"
+        control={<span data-briefing-switch><Switch id="briefing-show-switch" checked={shown} onChange={onChange} label={t('Show the briefing')} hideLabel /></span>} />
+    </SettingsSection>
+  )
+}
+
+/** Settings → General → Today (day-parts D4): the synced user_prefs.day_parts, as in Today's menu. */
+export function DayPartsSection() {
+  const row = useUserPrefsRow()
+  return <DayPartsView on={dayPartsOn(row)} onChange={(on) => act(setDayParts(on))} />
+}
+
+export function DayPartsView({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <SettingsSection {...cardCopy('day-parts')}>
+      <SettingRow {...rowCopy('day-parts', 'group')} id="day-parts" htmlFor="day-parts-switch"
+        control={<span data-day-parts-switch><Switch id="day-parts-switch" checked={on} onChange={onChange} label={t('Group Today by part of the day')} hideLabel /></span>} />
     </SettingsSection>
   )
 }

@@ -1,10 +1,11 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { RestoreSection } from './RestoreSection'
-import { api, ApiError, isNetworkError } from '../lib/api'
+import { api, isNetworkError } from '../lib/api'
+import { errorText } from '../lib/errorText'
 import { cacheBackupStatus, cachedBackupStatus, defaultBackupSettings, formatBytes, runSummary, scheduleLabel, weekdayName, WEEKDAYS } from '../lib/backups'
 import { useOnline } from '../lib/online'
 import type { BackupDestination, BackupRun, BackupSecretFlags, BackupSecretUpdate, BackupSettings, BackupStatus } from '../lib/types'
-import { Button } from '../ui'
+import { Button, StatusIndicator, toneForHue } from '../ui'
 import { Badge } from '../ui'
 import { Field, Input, Select } from '../ui'
 import { Icon, type IconName } from '../ui'
@@ -16,6 +17,7 @@ import type { HueName } from '../ui'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t, msg, translatedMap } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { useSettingsPending } from './settingsPending'
 
 const POLL_MS = 1000
 
@@ -110,11 +112,11 @@ export function BackupsPanelView(p: BackupsPanelViewProps) {
               {status.encrypted && <Badge hue="slate" title={t('Archives are encrypted with your passphrase')}><Icon name="lock" size="xs" /> {t('encrypted')}</Badge>}
             </p>
             {status.nextRunAt !== null && <p><span className="font-medium">{t('Next run:')}</span> <span className="text-muted">{dt.formatInstant(status.nextRunAt, 'datetime')}</span></p>}
-            {running && <p data-testid="backups-running"><Badge hue="blue">{t('Backup in progress…')}</Badge></p>}
+            {running && <p data-testid="backups-running"><StatusIndicator tone="busy">{t('Backup in progress…')}</StatusIndicator></p>}
             {status.lastRun && (
               <p className="flex flex-wrap items-center gap-2" data-testid="backups-last">
                 <span className="font-medium">{t('Last run:')}</span>
-                <Badge hue={RUN[status.lastRun.status].hue} tone={status.lastRun.status === 'failed' ? 'solid' : 'soft'}>{RUN[status.lastRun.status].label}</Badge>
+                <StatusIndicator tone={toneForHue(RUN[status.lastRun.status].hue)}>{RUN[status.lastRun.status].label}</StatusIndicator>
                 <span className={status.lastRun.status === 'failed' ? 'text-danger' : 'text-muted'}>{runSummary(status.lastRun)}</span>
               </p>
             )}
@@ -139,7 +141,7 @@ export function BackupsPanelView(p: BackupsPanelViewProps) {
             control={<Button variant="secondary" icon="pencil" disabled={offline} onClick={() => setEditing(true)}>{t('Change settings')}</Button>} />
           <SettingRow {...rowCopy('backups', 'schedule')} status={schedule} />
           <SettingRow {...rowCopy('backups', 'retention')} status={retention} />
-          <SettingRow {...rowCopy('backups', 'encryption')} status={flags.hasPassphrase ? <Badge hue="green"><Icon name="lock" size="xs" /> {t('Encrypted with your passphrase')}</Badge> : t('Not encrypted')} />
+          <SettingRow {...rowCopy('backups', 'encryption')} status={flags.hasPassphrase ? <StatusIndicator tone="ok"><Icon name="lock" size="xs" /> {t('Encrypted with your passphrase')}</StatusIndicator> : t('Not encrypted')} />
         </>
       )}
 
@@ -265,7 +267,7 @@ export function BackupsPanelView(p: BackupsPanelViewProps) {
                   label={`${dt.formatInstant(r.startedAt, 'datetime')} · ${r.kind}`}
                   ariaLabel={t('{label} backup, {instant}, {kind}', { label: RUN[r.status].label, instant: dt.formatInstant(r.startedAt, 'datetime'), kind: r.kind })}
                   meta={r.error || (r.status === 'succeeded' ? `${formatBytes(r.bytes)}${r.destination ? ` · ${r.destination}` : ''}` : undefined)}
-                  badges={<Badge hue={RUN[r.status].hue}>{RUN[r.status].label}</Badge>}
+                  badges={<StatusIndicator tone={toneForHue(RUN[r.status].hue)}>{RUN[r.status].label}</StatusIndicator>}
                 />
               </li>
             ))}
@@ -277,11 +279,11 @@ export function BackupsPanelView(p: BackupsPanelViewProps) {
 }
 
 function describe(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'conflict') return t('A backup is already running.')
-    return err.message
-  }
-  return t('The server is unreachable. Backups need a connection.')
+  return errorText(err, {
+    capitalise: false,
+    offline: t('The server is unreachable. Backups need a connection.'),
+    codes: { conflict: t('A backup is already running.') },
+  })
 }
 
 function secretUpdate(s: SecretInputs, destination: BackupDestination): BackupSecretUpdate {
@@ -299,6 +301,7 @@ export function BackupsPanel() {
   const [draft, setDraft] = useState<BackupSettings>(defaultBackupSettings)
   const [flags, setFlags] = useState<BackupSecretFlags>({ hasS3SecretKey: false, hasWebdavPassword: false, hasPassphrase: false })
   const [status, setStatus] = useState<BackupStatus | null>(null)
+  useSettingsPending(status === null)
   const [secrets, setSecrets] = useState<SecretInputs>(EMPTY_SECRETS)
   const [unreachable, setUnreachable] = useState(false)
   const [busy, setBusy] = useState<Busy>(null)

@@ -10,12 +10,12 @@ order: 24
 
 OpenTodo is one container with one volume and no required settings. On [Easypanel](https://easypanel.io) it is one **App** service; Easypanel puts its domain behind https for you.
 
-An OpenTodo template has been prepared for Easypanel's template list but is not listed yet. Until it is, set the service up by hand as below; the result is the same.
+An OpenTodo template has been submitted to Easypanel's template list ([easypanel-io/templates#1702](https://github.com/easypanel-io/templates/pull/1702)) but is not listed yet. Until it is, set the service up by hand as below; the result is the same.
 
 ## Install as an app service
 
 1. In a project, click **+ Service → App** and name it `opentodo`.
-2. **Source**: choose **Docker Image** and enter `ghcr.io/pixari/opentodo:0.9.0`.
+2. **Source**: choose **Docker Image** and enter `ghcr.io/opentodoapp/opentodo:0.18.1`.
 3. **Environment**: add
 
    ```
@@ -43,10 +43,10 @@ Once OpenTodo is listed: in a project, choose **+ Service → Templates**, searc
 | `OPENTODO_ALLOW_SIGNUP` | `false` | `true` lets anyone who can reach the server create an account. |
 | `OPENTODO_TRUSTED_PROXIES` | empty | The reverse proxies whose `X-Forwarded-For` is trusted, or `cloudflare` when the domain is behind Cloudflare's proxy. |
 
-Every other `OPENTODO_*` variable from the [configuration table](https://github.com/pixari/opentodo#configuration) can be added in **Environment**. Installing the app, offline use, push notifications, passkeys and end-to-end encryption need https; Easypanel's domains have it. If you open OpenTodo by plain http instead (the server's address and a published port), empty `OPENTODO_BASE_URL`, because an https base URL over plain http breaks signing in. More on proxies in [Running with Docker](docker.md#behind-a-reverse-proxy).
+Every other `OPENTODO_*` variable from the [configuration table](https://github.com/OpenTodoApp/OpenTodo#configuration) can be added in **Environment**. Installing the app, offline use, push notifications, passkeys and end-to-end encryption need https; Easypanel's domains have it. If you open OpenTodo by plain http instead (the server's address and a published port), empty `OPENTODO_BASE_URL`, because an https base URL over plain http breaks signing in. More on proxies in [Running with Docker](docker.md#behind-a-reverse-proxy).
 
 ## Updates and backups
 
-The service names one release (`0.9.0`), never a moving tag, so it changes only when you change it: set the image to the new release under **Source** and **Deploy**. Migrations run on start and there are no down-migrations, so back up first.
+The service names one release (`0.18.1`), never a moving tag, so it changes only when you change it: set the image to the new release under **Source** and **Deploy**. Migrations run on start and there are no down-migrations, so back up first.
 
 Everything OpenTodo stores is in the `data` volume. Turn on scheduled backups in **Settings → Server** (written to `backups/` in the same volume, or to S3 or WebDAV) to get copies off the server. See [Backups](../backups.md).

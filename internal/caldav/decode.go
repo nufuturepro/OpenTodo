@@ -6,23 +6,32 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/recurrence"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // Decode reads a client's VCALENDAR body and maps its VTODO onto task fields.
+// A VEVENT a calendar app sent is read the same way and becomes a task too
+// (caldav-events-as-tasks D1): its start is the task's date and time, its
+// length the estimate.
 func Decode(body []byte) (*Inbound, error) {
 	cal, err := Parse(body)
 	if err != nil {
 		return nil, err
 	}
-	master, uid, err := masterVTODO(cal)
+	master, uid, err := masterTask(cal)
 	if err != nil {
 		return nil, err
 	}
-	d := &decoder{in: &Inbound{UID: uid, Priority: 4}}
+	d := &decoder{in: &Inbound{UID: uid, Priority: 4, CompletedOccurrences: completedOccurrences(cal)}, event: master.Name == "VEVENT"}
 	for i := range master.Props {
 		d.prop(master, i)
+	}
+	if d.err != nil {
+		return nil, d.err
+	}
+	if d.event {
+		d.eventTiming()
 	}
 	in := d.in
 	in.Completed = d.status == "COMPLETED" || d.status == "CANCELLED" || (d.status == "" && in.CompletedAt != nil)
@@ -31,30 +40,42 @@ func Decode(body []byte) (*Inbound, error) {
 	}
 	d.dates()
 	for _, ch := range master.Children {
+		if ch.Name == "VALARM" {
+			// Alarms are decided by the caller (caldav-interop D4): a mapped
+			// one becomes a reminder, any other is kept as client data there.
+			in.Alarms = append(in.Alarms, decodeAlarm(ch))
+			continue
+		}
 		d.extra = append(d.extra, ch.Lines()...)
 	}
 	in.Extra = strings.Join(d.extra, "\r\n")
 	return in, nil
 }
 
-// masterVTODO finds the calendar's one UID and the VTODO that carries the
-// task. Per-occurrence overrides (RECURRENCE-ID) are not modelled.
-func masterVTODO(cal *Component) (*Component, string, error) {
+// masterTask finds the calendar's one UID and the component that carries the
+// task: a VTODO, or a VEVENT a calendar app sent (caldav-events-as-tasks D1).
+// One object holds one kind; VTODO and VEVENT mixed is not a valid object.
+// Per-occurrence overrides (RECURRENCE-ID) are not modelled.
+func masterTask(cal *Component) (*Component, string, error) {
 	var master *Component
-	uid := ""
+	uid, kind := "", ""
 	for _, c := range cal.Children {
 		switch c.Name {
 		case "VTIMEZONE":
 			continue
-		case "VTODO":
-		case "VEVENT", "VJOURNAL", "VFREEBUSY":
+		case "VTODO", "VEVENT":
+		case "VJOURNAL", "VFREEBUSY":
 			return nil, "", ErrUnsupportedComponent
 		default:
 			continue
 		}
+		if kind != "" && c.Name != kind {
+			return nil, "", fmt.Errorf("%w: VTODO and VEVENT in one object", ErrInvalidObject)
+		}
+		kind = c.Name
 		u := c.Prop("UID")
 		if u == nil || strings.TrimSpace(UnescapeText(u.Value)) == "" {
-			return nil, "", fmt.Errorf("%w: VTODO without UID", ErrInvalidObject)
+			return nil, "", fmt.Errorf("%w: %s without UID", ErrInvalidObject, c.Name)
 		}
 		if uid != "" && strings.TrimSpace(UnescapeText(u.Value)) != uid {
 			return nil, "", fmt.Errorf("%w: more than one UID", ErrInvalidObject)
@@ -66,12 +87,35 @@ func masterVTODO(cal *Component) (*Component, string, error) {
 		}
 	}
 	if uid == "" {
-		return nil, "", fmt.Errorf("%w: no VTODO", ErrInvalidObject)
+		return nil, "", fmt.Errorf("%w: no VTODO or VEVENT", ErrInvalidObject)
 	}
 	if master == nil {
-		return nil, "", fmt.Errorf("%w: only occurrence overrides, no master VTODO", ErrInvalidObject)
+		return nil, "", fmt.Errorf("%w: only occurrence overrides, no master %s", ErrInvalidObject, kind)
 	}
 	return master, uid, nil
+}
+
+// completedOccurrences lists the dates of the RECURRENCE-ID overrides that are
+// completed (STATUS:COMPLETED, or a COMPLETED time without another status).
+func completedOccurrences(cal *Component) []string {
+	var out []string
+	for _, c := range cal.Children {
+		rid := c.Prop("RECURRENCE-ID")
+		if c.Name != "VTODO" || rid == nil {
+			continue
+		}
+		status := ""
+		if p := c.Prop("STATUS"); p != nil {
+			status = strings.ToUpper(strings.TrimSpace(p.Value))
+		}
+		if status != "COMPLETED" && (status != "" || c.Prop("COMPLETED") == nil) {
+			continue
+		}
+		if due, err := parseDue(*rid); err == nil {
+			out = append(out, due.Date)
+		}
+	}
+	return out
 }
 
 // decoder is the state of one Decode call: the task fields read so far, the
@@ -82,6 +126,12 @@ type decoder struct {
 	dtstart *Prop
 	rrule   *Prop
 	status  string
+	err     error
+	// event: the object is a VEVENT (caldav-events-as-tasks); dtend and
+	// eventSeconds are its end and its DURATION, read for the estimate.
+	event        bool
+	dtend        *Prop
+	eventSeconds int64
 }
 
 // keep stores a property the task fields do not model as client data.
@@ -143,10 +193,69 @@ func (d *decoder) prop(master *Component, i int) {
 		if ms, err := instantOf(p); err == nil {
 			in.CreatedAt = &ms
 		}
-	case "X-OPENTODO-START", "X-OPENTODO-EVENING":
+	case "X-OPENTODO-START", "X-OPENTODO-EVENING", "X-OPENTODO-DAY-PART", "X-OPENTODO-ENERGY":
 		d.opentodoProp(p)
+	case "ESTIMATED-DURATION":
+		d.estimate(p)
+	case "DURATION":
+		if d.event {
+			// An event's length: read for the estimate (eventTiming), not kept.
+			if sec, err := ParseDuration(p.Value); err == nil {
+				d.eventSeconds = sec
+			}
+			return
+		}
+		// A scheduled block: it makes a DTSTART without DUE a due time, and is
+		// kept as client data (caldav-interop D2).
+		d.in.HasDuration = true
+		d.keep(p)
+	case "DTEND", "TRANSP":
+		if !d.event {
+			d.keep(p)
+			return
+		}
+		// VEVENT only: DTEND gives the estimate; TRANSP means nothing on a
+		// task and is not valid in the VTODO this server serves back.
+		if p.Name == "DTEND" {
+			d.dtend = &master.Props[i]
+		}
+	case "X-OPENTODO-ALARMS":
+		// The count this server served, echoed back; consumed, never stored.
+		if n, err := strconv.Atoi(strings.TrimSpace(p.Value)); err == nil && n >= 0 {
+			d.in.ServedAlarms = &n
+		}
 	default:
 		d.keep(p)
+	}
+}
+
+// eventTiming maps a VEVENT's timing (caldav-events-as-tasks D2): the
+// DTSTART is the task's date, with its time when the event is timed, so the
+// object reads like a scheduled block. A timed event's length, from DTEND or
+// DURATION, is the estimate when it is positive and at most one week; an
+// all-day event gets no estimate.
+func (d *decoder) eventTiming() {
+	if d.dtstart == nil {
+		return
+	}
+	d.in.HasDuration = true
+	start, err := parseDue(*d.dtstart)
+	if err != nil || start.Time == nil || d.in.EstimateMinutes != nil {
+		return
+	}
+	sec := d.eventSeconds
+	if d.dtend != nil {
+		if end, err := parseDue(*d.dtend); err == nil && end.Time != nil {
+			a, errA := instantOf(*d.dtstart)
+			b, errB := instantOf(*d.dtend)
+			if errA == nil && errB == nil {
+				sec = (b - a) / 1000
+			}
+		}
+	}
+	minutes := int((sec + 59) / 60)
+	if sec > 0 && minutes <= MaxEstimateMinutes {
+		d.in.EstimateMinutes = &minutes
 	}
 }
 
@@ -166,10 +275,44 @@ func (d *decoder) relatedTo(p Prop) {
 	d.keep(p)
 }
 
-// opentodoProp reads this server's own X-OPENTODO-START and X-OPENTODO-EVENING.
+// estimate reads ESTIMATED-DURATION (RFC 9253) into whole minutes, rounding
+// seconds up; a negative, zero, unparseable or too long value refuses the
+// whole object (caldav-interop "Estimate mapping").
+func (d *decoder) estimate(p Prop) {
+	sec, err := ParseDuration(p.Value)
+	minutes := int((sec + 59) / 60)
+	if err != nil || sec <= 0 || minutes > MaxEstimateMinutes {
+		d.err = fmt.Errorf("%w: ESTIMATED-DURATION %q", ErrInvalidValue, p.Value)
+		return
+	}
+	d.in.EstimateMinutes = &minutes
+	d.in.HasDuration = true
+}
+
+// opentodoProp reads this server's own X-OPENTODO-START, X-OPENTODO-EVENING,
+// X-OPENTODO-DAY-PART and X-OPENTODO-ENERGY; a value it does not know is kept in ical_extra.
 func (d *decoder) opentodoProp(p Prop) {
 	in := d.in
 	v := strings.ToUpper(strings.TrimSpace(p.Value))
+	// X-OPENTODO-ENERGY (task-energy D7): a level, case ignored; any other value
+	// is kept in ical_extra and leaves the energy alone.
+	if p.Name == "X-OPENTODO-ENERGY" {
+		in.EnergySent = true
+		if e := strings.ToLower(v); e == "deep" || e == "medium" || e == "low" {
+			in.Energy = &e
+		} else {
+			d.keep(p)
+		}
+		return
+	}
+	if p.Name == "X-OPENTODO-DAY-PART" {
+		if part := strings.ToLower(v); part == "morning" || part == "afternoon" {
+			in.DayPart = &part
+		} else {
+			d.keep(p)
+		}
+		return
+	}
 	if p.Name == "X-OPENTODO-START" {
 		if v == "SOMEDAY" {
 			s := "someday"
@@ -193,24 +336,38 @@ func (d *decoder) opentodoProp(p Prop) {
 	}
 }
 
-// dates maps DTSTART, DUE and RRULE (design D6): differing DTSTART and DUE are
-// the planned day and the deadline (the date of DUE, any time dropped). Equal
-// ones set the due date only; the DTSTART is the anchor this server writes on
-// recurring tasks (Encode) and is kept as client data only when the rule stays
-// unmapped. A DTSTART without a DUE, or one that does not parse, is client data.
+// dates maps DTSTART, DUE and RRULE to a shape (design D6, caldav-interop
+// D1): differing DTSTART and DUE are the planned day and the deadline (the date
+// of DUE, any time dropped). Equal ones set the due date only; the DTSTART is
+// the anchor this server writes on recurring tasks (Encode) and is kept as
+// client data only when the rule stays unmapped. A DTSTART with a duration and
+// no DUE is a scheduled time: Due is the DTSTART. A DTSTART without a DUE and
+// without a duration, or one that does not parse, is client data.
 func (d *decoder) dates() {
 	in, dtstart, rrule := d.in, d.dtstart, d.rrule
-	in.DueOnly = in.Due != nil && dtstart == nil
-	startEqual := false
-	if dtstart != nil && in.Due != nil {
-		if start, err := parseDue(*dtstart); err == nil {
-			if sameDue(start, in.Due) {
-				startEqual = true
-			} else {
-				in.Deadline = in.Due.Date
-				in.Due = start
-			}
+	var start *Due
+	if dtstart != nil {
+		if st, err := parseDue(*dtstart); err == nil {
+			start = st
 		}
+	}
+	in.SentDue = in.Due
+	switch {
+	case in.Due != nil && start != nil && sameDue(start, in.Due):
+		in.Shape = ShapeStartDueEqual
+	case in.Due != nil && start != nil:
+		in.Deadline = in.Due.Date
+		in.Due = start
+		in.Shape = ShapeStartDue
+	case in.Due != nil:
+		in.Shape = ShapeDueOnly
+	case start != nil && in.HasDuration:
+		in.Due = start
+		in.Shape = ShapeStartDuration
+	case start != nil:
+		in.Shape = ShapeStartAlone
+	default:
+		in.Shape = ShapeNone
 	}
 	if rrule != nil {
 		in.RRULE = strings.TrimSpace(rrule.Value)
@@ -224,7 +381,14 @@ func (d *decoder) dates() {
 			d.extra = append(d.extra, rrule.Line())
 		}
 	}
-	if dtstart != nil && in.Deadline == "" && !(startEqual && in.Rule != "") {
+	// A DTSTART equal to a timed DUE is what this server serves for a scheduled
+	// time (Encode); echoed back it is not client data, or the copy would go
+	// stale when a device moves the task. An equal DTSTART on a date-only DUE
+	// (a "started" task in Thunderbird) is the client's and stays.
+	servedStart := in.Shape == ShapeStartDueEqual && in.Due.Time != nil
+	keepStart := in.Shape == ShapeStartAlone || (dtstart != nil && start == nil) ||
+		(in.Shape == ShapeStartDueEqual && in.Rule == "" && !servedStart) || (in.Shape == ShapeDueOnly && dtstart != nil)
+	if keepStart {
 		d.extra = append([]string{dtstart.Line()}, d.extra...)
 	}
 }

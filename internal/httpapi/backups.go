@@ -4,19 +4,13 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/backup"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/backup"
 )
 
-// backupsReady answers 503 when the backup service is not wired and otherwise
-// returns the signed-in user (the route policy admits only the owner).
+// backupsReady returns the signed-in user (the route policy admits only the owner).
 func (s *Server) backupsReady(w http.ResponseWriter, r *http.Request) *auth.User {
-	u := userFrom(r.Context())
-	if s.backups == nil {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "backups are not available on this server")
-		return nil
-	}
-	return u
+	return userFrom(r.Context())
 }
 
 type backupSettingsResponse struct {
@@ -61,13 +55,13 @@ func (s *Server) handlePutBackupSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if in.Settings == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_input", "message": "settings: required", "field": "settings"}})
+		invalidField(w, "settings", "settings: required")
 		return
 	}
 	set, err := s.backups.SaveSettings(r.Context(), *in.Settings, in.Secrets)
 	var fe *backup.FieldError
 	if errors.As(err, &fe) {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_input", "message": fe.Error(), "field": fe.Field}})
+		invalidField(w, fe.Field, fe.Error())
 		return
 	}
 	if err != nil {
@@ -153,7 +147,7 @@ func (s *Server) handleBackupTest(w http.ResponseWriter, r *http.Request) {
 	var fe *backup.FieldError
 	switch {
 	case errors.As(err, &fe):
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_input", "message": fe.Error(), "field": fe.Field}})
+		invalidField(w, fe.Field, fe.Error())
 	case err != nil:
 		writeError(w, http.StatusBadGateway, "destination_error", err.Error())
 	default:

@@ -26,6 +26,7 @@ OpenTodo can notify other systems when your tasks and projects change: switch on
 | `project.deleted` | the project gets a tombstone |
 | `import.completed` | an [import](import.md) job finished (done or failed): one summary for the whole job, see [Imports](#imports) |
 | `import.undone` | an import was undone: one summary, see [Imports](#imports) |
+| `rule.fired` | an [automation rule](automations.md) with a webhook action changed a task: sent only to the webhook the rule names, with `data.task`, `data.rule` (`id`, `name` as stored, ciphertext for an encrypted account) and the rule's changes |
 | `ping` | you pressed **Send test** (not subscribable, always sent on request) |
 
 Task and project events are derived on the server from the operation log, whatever wrote the change: a phone or browser syncing, the REST API, the `ot` CLI and CalDAV. Imports are the exception: they are reported once per job (see [Imports](#imports)). Rules:
@@ -69,12 +70,14 @@ Every delivery is a `POST` with a JSON body:
 | `event` | event name, also in `X-OpenTodo-Event` |
 | `time` | when the server derived the event, Unix milliseconds |
 | `webhook_id` | the webhook that matched, also in `X-OpenTodo-Webhook` |
-| `source` | `device` (a syncing app), `server` (REST API / CLI), `import` or `caldav`. Lets a receiver ignore changes it caused itself |
+| `source` | `device` (a syncing app), `server` (REST API / CLI), `import`, `caldav` or `rule` (an [automation rule](automations.md)). Lets a receiver ignore changes it caused itself |
 | `device` | the device id when `source` is `device` |
 | `data.task` / `data.project` | the entity's current state with the same fields as the [REST API](api.md#task-fields), except the opaque note document `notes_doc` (the note's text is `description`). `ping` carries `data: {}` |
 | `changes` | the fields that changed in this batch with their previous (`from`) and new (`to`) values; `from` is `null` when the field had no value before. `notes_doc` is never listed, and a change that only touched it (a merged note republished with the same text) sends no event |
 
 A task's `origin` (where it came from, `null` when unset; see [Where a task came from](capture.md#where-a-task-came-from)) travels like every field: a task created from a shared GitHub issue page arrives as `task.created` with `"origin": {"kind": "issue", "provider": "github", "id": "o/r#7", "url": "https://github.com/o/r/issues/7", "title": "…"}` in `data.task` and `"origin": {"from": null, "to": {…}}` in `changes`, so a receiver can link the task back to the issue without a second request.
+
+Projects and tasks carry `workspace_id`, the [workspace](workspaces.md) they belong to (`null` for the default workspace). A task with a project belongs to its project's workspace, so look the project up for those. Subscriptions keep their project filter; there is no workspace filter.
 
 A task's [custom field](custom-fields.md) values are in `data.task.fields`, an object keyed by field definition id like the REST API's; a changed value is listed in `changes` as `fields.<id>` (for example `"fields.f1": {"from": 120, "to": 150}`), with the `task.updated` event.
 
@@ -226,7 +229,9 @@ How it is enforced:
 
 ### Allowing receivers on your LAN
 
-Home Assistant, n8n or Node-RED often run on the same network as OpenTodo. The **owner** can switch on **Settings → Integrations → Webhooks → Allow private network targets** (or `PUT /api/v1/settings/webhooks` with `{"allowPrivate": true}`). This applies to every account on the server, and to [calendar subscriptions](api.md#calendar-feeds) and [issue connections](issue-import.md) too, so leave it off on a public multi-user server. The scheme restriction and the no-redirect rule stay in force.
+Home Assistant, n8n or Node-RED often run on the same network as OpenTodo. The **owner** can switch on **Settings → Integrations → Webhooks → Allow private network targets** (or `PUT /api/v1/settings/webhooks` with `{"allowPrivate": true}`). This applies to every account on the server, and to [calendar subscriptions](api.md#calendar-feeds) and [issue connections](issue-import.md) too, so leave it off on a public multi-user server. The scheme restriction and the no-redirect rule stay in force, and so does the refusal of unspecified and "this network" addresses (`0.0.0.0/8`, `::`), link-local addresses (`169.254.0.0/16`, `fe80::/10`) and cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`): no LAN receiver lives there.
+
+**Test** and **Redeliver** share a limit of 30 per account per hour; beyond it they answer `429 rate_limited`.
 
 For deployments managed as code, the optional `OPENTODO_WEBHOOKS_ALLOW_PRIVATE=true` presets the toggle on the first start. After that the value in Settings wins, so the owner can still turn it off.
 
@@ -239,6 +244,8 @@ Settings warns when a target uses plain `http://` outside this machine: the payl
 ## Receiver recipes
 
 ### Home Assistant
+
+The [Home Assistant integration](home-assistant.md) sets up a signed webhook like this for you, checks the signature, and turns every change into an `opentodo_task_*` event, next to to-do lists, counts and a calendar. The recipe below is for a single automation without the integration.
 
 1. In Home Assistant, create an automation with a **Webhook** trigger. Note the webhook id, for example `opentodo-plants`. Leave "Only accessible from the local network" on if OpenTodo runs on your LAN.
 2. As the owner, enable **Allow private network targets** in OpenTodo (Home Assistant usually lives at `http://192.168.x.x:8123`).
@@ -264,6 +271,8 @@ actions:
 Home Assistant's webhook trigger does not check signatures; the long random webhook id acts as the shared secret, so keep it unguessable and keep `local_only` on. Use n8n (below) in front of Home Assistant if you want signature verification.
 
 ### n8n
+
+The [OpenTodo nodes for n8n](n8n.md) include a trigger that creates a signed webhook like this for you, checks the signature and removes the webhook when the workflow is turned off, next to nodes that create and change tasks. The recipe below uses n8n's plain Webhook node instead.
 
 1. Add a **Webhook** node, method `POST`, and under *Options* enable **Raw Body** so the exact bytes are available for verification. Copy the production URL.
 2. In OpenTodo, add a webhook with that URL and the events you need. If n8n runs on your LAN, the owner enables private network targets first.

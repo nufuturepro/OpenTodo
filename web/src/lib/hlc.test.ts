@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_FUTURE_SKEW_MS, hlcClockRefused, hlcLast, hlcNow, hlcObserveServerTime, hlcReset, hlcSeed, wins } from './hlc'
+import { MAX_FUTURE_SKEW_MS, hlcClockRefused, hlcReceive, hlcLast, hlcNow, hlcObserveServerTime, hlcReset, hlcSeed, wins } from './hlc'
 
 // Unit tests of the hybrid logical clock (test-integrity); the sync behaviour
 // around it (clock_skew refusals, restamping) is in clockSkew.test.ts.
@@ -13,6 +13,22 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('hlcReceive', () => {
+  it('moves the clock past a received timestamp, never back', () => {
+    hlcReceive(T + 5000)
+    expect(hlcNow()).toBe(T + 5001)
+    hlcReceive(T)
+    expect(hlcNow()).toBe(T + 5002)
+    hlcReceive(Number.NaN)
+    expect(hlcNow()).toBe(T + 5003)
+  })
+
+  it('breaks a tie with the received op by moving one past it', () => {
+    hlcReceive(T)
+    expect(hlcNow()).toBe(T + 1)
+  })
 })
 
 describe('hlcNow', () => {
@@ -75,6 +91,18 @@ describe('server time', () => {
     hlcClockRefused(T)
     expect(hlcLast()).toBe(T)
     expect(hlcNow()).toBe(T + 1)
+  })
+
+  it('keeps the stamps of an earlier refusal in order when a later batch is refused too (#651)', () => {
+    vi.setSystemTime(T + 2 * 3_600_000) // two hours fast
+    hlcNow() // an edit, refused in the first request
+    hlcNow() // a later edit, refused in the second
+    hlcClockRefused(T)
+    const first = hlcNow()
+    hlcClockRefused(T)
+    const second = hlcNow()
+    expect(first).toBeLessThanOrEqual(T + MAX_FUTURE_SKEW_MS)
+    expect(second).toBeGreaterThan(first)
   })
 })
 

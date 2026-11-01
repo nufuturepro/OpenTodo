@@ -26,6 +26,7 @@ import { startFakeLLM } from './fake-llm.mjs'
 
 const OUT = 'docs/images'
 let eisenhowerPath = null
+let completedCalendarFixture = null
 const BIN = process.env.OPENTODO_BIN ?? 'bin/opentodo'
 const only = process.argv[2] ? new Set(process.argv[2].split(',')) : null
 const want = (name) => !only || only.has(name)
@@ -89,20 +90,41 @@ async function context(theme, opts = {}) {
   const c = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1.25, colorScheme: theme, timezoneId: 'UTC', locale: 'en-GB', ...opts })
   await c.addInitScript((css) => { addEventListener('DOMContentLoaded', () => { const s = document.createElement('style'); s.textContent = css; document.head.append(s) }) }, HIDE)
   // A click on a title edits it in place (inline-task-editing); the scenes open the panel.
-  await c.addInitScript(() => { try { localStorage.setItem('opentodo.rowClick', 'open') } catch { /* no storage */ } })
+  await c.addInitScript(() => { try { localStorage.setItem('opentodo.rowClick', 'open'); localStorage.setItem('opentodo.swipe-cue', '1') } catch { /* no storage */ } })
   return c
 }
 const settle = (p, ms = 600) => p.waitForTimeout(ms)
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const row = (p, title) => p.getByRole('button', { name: new RegExp('^' + esc(title)) }).first()
-const detail = (p) => p.locator('aside[data-detail-for]')
+const detail = (p) => p.locator('[data-detail-for]')
 const sidebar = (p) => p.locator('aside').first()
 async function go(p, base, path, ready) { await p.goto(base + path); if (ready) await ready(); await settle(p, 800) }
 async function unfold(p, button) { if ((await button.getAttribute('aria-expanded')) === 'false') { await button.click(); await settle(p, 300) } }
 async function openProject(p, name) {
-  const link = sidebar(p).getByRole('button', { name: new RegExp('^' + esc(name)) }).first()
+  const link = sidebar(p).getByRole('button', { name: new RegExp('^' + esc(name) + '\\b') }).first()
   if (!(await link.isVisible())) for (const b of await sidebar(p).getByRole('button', { name: /^Expand / }).all()) await b.click()
   await link.click(); await p.getByRole('heading', { level: 1, name }).waitFor(); await settle(p)
+}
+/** One subscribed calendar's events for today (UTC, the contexts' zone), as the events route answers. */
+function agendaDay() {
+  const day = new Date().toISOString().slice(0, 10)
+  const next = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const ev = (id, summary, start, end, more = {}) => ({ id, subscriptionId: 'work', uid: id, summary, location: '', allDay: false, free: false, start: { date: day, time: start }, end: { date: day, time: end }, ...more })
+  return {
+    subscriptions: [{ id: 'work', name: 'Work', color: '#2563eb', enabled: true, lastSuccessAt: Date.now() }],
+    events: [
+      ev('birthday', 'Mia’s birthday', '', '', { allDay: true, free: true, start: { date: day }, end: { date: next } }),
+      ev('standup', 'Standup', '09:00', '09:15'),
+      ev('dentist', 'Dentist', '11:30', '12:15', { location: 'Via Roma 4' }),
+      ev('review', 'Design review', '15:00', '16:00', { location: 'Room 4' }),
+      ev('focus', 'Focus time', '16:30', '18:00', { free: true }),
+    ],
+  }
+}
+/** Today's menu item that shows or hides the agenda. */
+async function toggleTodayEvents(p) {
+  await p.locator('[data-page-header] button[aria-label="More actions"]').first().click()
+  await p.locator('[data-today-events-toggle]').click(); await settle(p, 300)
 }
 async function openTask(p, title) { await row(p, title).click(); await detail(p).waitFor(); await settle(p, 500) }
 /** Clip around one element, with padding, clamped to the viewport. */
@@ -152,10 +174,12 @@ async function plainSetup() {
   const { link } = await api('POST', '/api/v1/invitations', { email: 'bob@example.com' })
   const bc = await browser.newContext()
   await api('POST', '/api/v1/auth/register', { email: 'bob@example.com', name: 'Bob Okafor', password: PASSWORD, invitation: link.split('/invite/')[1] }, bc)
-  await bc.close()
   await api('POST', '/api/v1/invitations', { email: 'chen@example.com' })
   const home = await api('POST', '/api/v1/projects', { name: 'Home renovation', color: '#f59e0b' })
   await api('POST', `/api/v1/projects/${home.id}/members`, { email: 'bob@example.com', role: 'editor' })
+  // Bob shares nothing with Ada yet, so the add is an invitation he accepts (member-add-consent).
+  for (const inv of (await api('GET', '/api/v1/me/member-invitations', undefined, bc)).invitations) await api('POST', `/api/v1/me/member-invitations/${inv.id}/accept`, {}, bc)
+  await bc.close()
   for (const title of ['Get three quotes for the kitchen', 'Pick paint colours', 'Order new taps']) await api('POST', '/api/v1/tasks', { title, project_id: home.id })
   // Archived projects for Settings → Projects (unarchive-projects).
   const trip = await api('POST', '/api/v1/projects', { name: 'Trip to Lisbon', color: '#0ea5e9' })
@@ -173,6 +197,11 @@ async function plainSetup() {
   const page = await api('POST', `/api/v1/tasks/${fence.id}/page`, { rights: 'tick', label: 'paint-the-fence' })
   const secret = page.link.split('/t/')[1].split('/')[0]
   await api('POST', `/api/v1/pages/${secret}/replies`, { name: 'Marco', body: 'Bought the primer, starting tomorrow morning.' })
+  // Automation rules (automation-rules): a label rule, a Sunday sweep and one turned off.
+  const waiting = await api('POST', '/api/v1/labels', { name: 'waiting' })
+  await api('POST', '/api/v1/rules', { name: 'Waiting for others', trigger: { kind: 'label.added', label_id: waiting.id }, actions: { priority: 3 } })
+  await api('POST', '/api/v1/rules', { name: 'Sunday sweep', trigger: { kind: 'schedule', at: '18:00', weekdays: [7] }, condition: { due: 'overdue' }, actions: { due: 'tomorrow' } })
+  await api('POST', '/api/v1/rules', { name: 'Due today means urgent', trigger: { kind: 'due.reached' }, actions: { priority: 1, notify: true }, enabled: false })
   await p.reload(); await settle(p, 1500)
   const state = await c.storageState(); await c.close(); return { state, home, pageLink: page.link }
 }
@@ -226,9 +255,30 @@ const shots = [
     await p.goto(setupBase); await p.getByText('Create the owner account').waitFor(); await settle(p)
     return clipOf(p, p.locator('div[class*="rounded"]').filter({ has: p.locator('form') }).first(), 32)
   } },
-  { name: 'today', server: D, card: true, async run(p) { await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor()) } },
+  { name: 'today', server: D, card: true, async run(p) { await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor()) } },
+  // Today's agenda of calendar events (today-agenda): the demo has no calendar feeds, so the
+  // events route is answered in the browser with one subscribed calendar's day.
+  { name: 'today-agenda', server: D, async run(p) {
+    await p.route('**/api/v1/calendar-feeds/events**', (r) => r.fulfill({ json: agendaDay() }))
+    // The Day view fills the device's cache of calendars, as it would after subscribing.
+    await go(p, demoBase, '/day', () => p.getByRole('button', { name: 'Day' }).first().waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
+    if (!(await p.locator('[data-today-agenda]').count())) await toggleTodayEvents(p)
+    await p.locator('[data-today-agenda]').waitFor(); await settle(p, 400)
+  }, async after(p) { await toggleTodayEvents(p) } },
+  // The day's schedule in the sidebar (sidebar-schedule): opened, with the calendar's day from today-agenda.
+  { name: 'sidebar-schedule', server: D, async run(p) {
+    await p.route('**/api/v1/calendar-feeds/events**', (r) => r.fulfill({ json: agendaDay() }))
+    await go(p, demoBase, '/day', () => p.getByRole('button', { name: 'Day' }).first().waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
+    if (!(await p.locator('[data-schedule-body]').count())) await p.locator('[data-sidebar-schedule] button[aria-expanded]').click()
+    await p.locator('[data-schedule-body]').waitFor(); await p.mouse.move(900, 300); await settle(p, 400)
+    // The sidebar alone: the demo's reminder card sits over the list.
+    const s = await p.locator('[data-sidebar-schedule]').boundingBox()
+    return { x: 0, y: 0, width: s.x + s.width, height: s.y + s.height + 64 }
+  } },
   { name: 'quick-add', server: D, card: true, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
     const qa = p.getByRole('combobox', { name: 'Add a task' }); await qa.click()
     await qa.pressSequentially('Call Sam about the tiles tomorrow at 4pm #Home @call p2 +15m', { delay: 5 }); await settle(p, 500)
     const main = p.locator('main'); const b = await main.boundingBox()
@@ -252,14 +302,14 @@ const shots = [
   { name: 'review', server: D, async run(p) { await go(p, demoBase, '/review', () => p.locator('#review-step-title').waitFor()); await settle(p, 300) } },
   // Open Loops (open-loops-method): the Loop home with the sidebar by the Places, Next, and the project walk.
   { name: 'loop', server: D, async run(p) {
-    await go(p, demoBase, '/settings/account', () => p.locator('[data-method-mode="first"]').waitFor())
+    await go(p, demoBase, '/settings/account/profile', () => p.locator('[data-method-mode="first"]').waitFor())
     await p.locator('[data-method-mode="first"]').click()
     await p.locator('[data-offer="start"]').getByRole('button', { name: 'Keep my start view' }).click()
     const contexts = p.locator('[data-offer="contexts"]')
     if (await contexts.count()) await contexts.getByRole('button', { name: 'Create them' }).click()
     await go(p, demoBase, '/loop', () => p.locator('[data-loop-tile="do"]').waitFor()); await settle(p, 300)
   }, async after(p) {
-    await go(p, demoBase, '/settings/account', () => p.locator('[data-method-mode="lists"]').waitFor())
+    await go(p, demoBase, '/settings/account/profile', () => p.locator('[data-method-mode="lists"]').waitFor())
     await p.locator('[data-method-mode="lists"]').click(); await settle(p, 300)
   } },
   { name: 'next', server: D, async run(p) { await go(p, demoBase, '/next', () => p.locator('[data-group]').first().waitFor()); await settle(p, 300) } },
@@ -283,7 +333,7 @@ const shots = [
     await p.locator('[data-columns-toggle]').click(); await p.getByRole('table', { name: 'Tasks and fields' }).waitFor(); await p.mouse.move(700, 700); await settle(p, 800)
   }, async after(p) { await p.locator('[data-columns-toggle]').click().catch(() => {}) } },
   { name: 'sidebar', server: D, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
     return clipOf(p, sidebar(p), 0)
   } },
   { name: 'labels', server: D, card: true, async run(p) {
@@ -296,14 +346,43 @@ const shots = [
     await p.locator('main').getByRole('button', { name: 'Menu for label errand' }).click(); await settle(p, 500)
   }, async after(p) { await p.keyboard.press('Escape') } },
   { name: 'view-menu', server: D, async run(p) {
-    await go(p, demoBase, '/views', () => p.getByRole('button', { name: 'New filter' }).waitFor())
+    await go(p, demoBase, '/views', () => p.getByRole('button', { name: 'New view' }).waitFor())
     await p.locator('main').getByRole('button', { name: /^Menu for view Deep work/ }).first().click(); await settle(p, 500)
   }, async after(p) { await p.keyboard.press('Escape') } },
+  // A project grouped by priority with its display options open (list-display-options); the choice syncs, so the scene puts it back.
+  { name: 'group-and-order', server: D, async run(p) {
+    await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation')
+    await p.locator('main [data-display-trigger]').first().click(); await p.locator('[data-display-panel]').waitFor()
+    await p.locator('[data-display-panel] select[aria-label="Group by"]').selectOption('priority')
+    await p.locator('[data-group-label]').first().waitFor(); await settle(p, 500)
+  }, async after(p) {
+    await p.locator('[data-display-panel] select[aria-label="Group by"]').selectOption('section').catch(() => {})
+    await p.keyboard.press('Escape')
+  } },
+  // Detailed rows (row-layouts): the project's own choice in Display options; the choice syncs, so the scene puts it back.
+  { name: 'row-layouts', server: D, async run(p) {
+    await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation')
+    await p.locator('main [data-display-trigger]').first().click(); await p.locator('[data-display-panel]').waitFor()
+    await p.locator('[data-display-row-layout] [data-row-layout="detailed"]').click()
+    await p.locator('li[data-row-layout="detailed"]').first().waitFor(); await p.keyboard.press('Escape'); await p.mouse.move(700, 40)
+    await p.locator('body').evaluate(() => (document.activeElement)?.blur()); await settle(p, 500)
+  }, async after(p) {
+    await p.locator('main [data-display-trigger]').first().click().catch(() => {})
+    await p.locator('[data-display-row-layout] [data-row-layout="line"]').click().catch(() => {})
+    await p.keyboard.press('Escape')
+  } },
+  // An expanded row (row-expand): Today with the kitchen quotes' details open under the row, as Show details opens them.
+  { name: 'expand-a-row', server: D, async run(p) {
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { level: 1, name: 'Today' }).waitFor())
+    const li = p.locator('li[data-task-id]', { has: p.locator('[data-row-title]', { hasText: 'Get three quotes for the kitchen' }) }).first()
+    await li.hover(); await li.locator('[data-row-action="details"]').click(); await p.locator('[data-row-details] [data-subtasks]').waitFor()
+    await p.mouse.move(700, 40); await p.locator('body').evaluate(() => (document.activeElement)?.blur()); await settle(p, 500)
+  } },
   // Completed tasks kept in the project (project-completed-section): the switch is per device, so the scene turns it on and off again.
   { name: 'project-completed', server: D, async run(p) {
     await go(p, demoBase, '/inbox'); await openProject(p, 'Work')
     await p.getByRole('button', { name: 'Project menu' }).click(); await p.locator('[data-menu-label="Show completed tasks"]').click()
-    await p.locator('[data-completed-group] button[aria-expanded]').click(); await p.locator('[data-completed-group] [data-task-id]').first().waitFor(); await p.mouse.move(700, 120); await settle(p, 500)
+    await unfold(p, p.locator('[data-completed-group] button[aria-expanded]').first()); await p.locator('[data-completed-group] [data-task-id]').first().waitFor(); await p.mouse.move(700, 120); await settle(p, 500)
   }, async after(p) {
     await p.getByRole('button', { name: 'Project menu' }).click(); await p.locator('[data-menu-label="Show completed tasks"]').click().catch(() => {})
   } },
@@ -312,7 +391,7 @@ const shots = [
     await p.keyboard.press('m'); await p.locator('[data-picker-step]').waitFor(); await settle(p, 500)
   }, async after(p) { await p.keyboard.press('Escape'); await p.keyboard.press('Escape') } },
   { name: 'filter', server: D, card: true, async run(p) {
-    await go(p, demoBase, '/filter', () => p.getByLabel('Filter query').waitFor())
+    await go(p, demoBase, '/views/new', () => p.getByLabel('Filter query').waitFor())
     await p.getByLabel('Filter query').fill('(@call | @errand) & due <= 7 days'); await p.getByLabel('Filter query').press('Enter'); await settle(p, 800)
   } },
   { name: 'dashboard', server: D, card: true, async run(p) {
@@ -330,13 +409,13 @@ const shots = [
   } },
   { name: 'repeat', server: D, async run(p) {
     // Dated tasks are not in the Inbox (inbox-means-unplaced): Run club is in Today.
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor()); await openTask(p, 'Run club')
-    await detail(p).getByRole('button', { name: /^When: every/ }).click(); const editor = p.getByRole('dialog', { name: 'When' }); await editor.waitFor(); await settle(p, 400)
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor()); await openTask(p, 'Run club')
+    await detail(p).getByRole('button', { name: /^Repeat: every/ }).click(); const editor = p.getByRole('dialog', { name: 'When' }); await editor.waitFor(); await settle(p, 400)
     return clipOf(p, editor, 16)
   }, async after(p) { await p.keyboard.press('Escape') } },
   { name: 'reminders', server: D, async run(p) {
     await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation'); await openTask(p, 'Get three quotes for the kitchen')
-    await detail(p).getByRole('button', { name: /^When: / }).first().click(); const editor = p.getByRole('dialog', { name: 'When' }); await editor.waitFor()
+    await detail(p).getByRole('button', { name: /^Reminder: / }).first().click(); const editor = p.getByRole('dialog', { name: 'When' }); await editor.waitFor()
     await editor.getByRole('tab', { name: /^Reminders/ }).click(); await settle(p, 400)
     return clipOf(p, editor, 16)
   }, async after(p) { await p.keyboard.press('Escape') } },
@@ -345,6 +424,71 @@ const shots = [
     await p.getByRole('button', { name: 'Hide task list' }).click().catch(() => {}); await settle(p, 500)
   }, async after(p) { await p.getByRole('button', { name: /Show task list/ }).click().catch(() => {}) } },
   { name: 'day', server: D, async run(p) { await go(p, demoBase, '/day', () => p.getByRole('button', { name: 'Day' }).first().waitFor()) } },
+  { name: 'completed-calendar', server: P, async run(p, { ctx }) {
+    const api = async (method, path, body) => {
+      const r = await ctx.request.fetch(plainBase + path, { method, headers: { Origin: plainBase, 'Content-Type': 'application/json' }, data: body === undefined ? undefined : JSON.stringify(body) })
+      if (!r.ok()) throw new Error(`${method} ${path} → ${r.status()} ${await r.text()}`)
+      return r.json()
+    }
+    if (!completedCalendarFixture) {
+      const date = new Date().toISOString().slice(0, 10)
+      const project = await api('POST', '/api/v1/projects', { name: 'Website launch', color: '#3b82f6' })
+      const task = (title, time, estimate_minutes) => api('POST', '/api/v1/tasks', { title, project_id: project.id, due: { date, ...(time ? { time } : {}) }, estimate_minutes })
+      const timed = await task('Send the project update', '09:00', 30)
+      const allDay = await task('Book the train tickets', undefined, 15)
+      const open = await task('Review the launch checklist', '14:00', 60)
+      for (const done of [timed, allDay]) await api('PATCH', `/api/v1/tasks/${done.id}`, { completed_at: Date.now() })
+      completedCalendarFixture = { date, timed: timed.id, allDay: allDay.id, open: open.id }
+    }
+    const fixture = completedCalendarFixture
+    await p.setViewportSize({ width: 1280, height: 800 })
+    await p.clock.setFixedTime(new Date(`${fixture.date}T12:00:00Z`))
+    await go(p, plainBase, `/day/${fixture.date}`, () => p.locator(`[data-block="${fixture.open}"]`).waitFor())
+    await p.getByRole('button', { name: 'Show completed tasks', exact: true }).click()
+    await p.locator(`[data-block="${fixture.timed}"] .line-through`).waitFor()
+    await p.locator(`[data-lane-task="${fixture.allDay}"] .line-through`).waitFor()
+    await p.locator('[data-calendar-completed-toggle][aria-pressed="true"]').waitFor()
+    await p.mouse.move(0, 0)
+  } },
+  // Frames (calendar-frames 5.2): "Deep work" on weekday mornings and "Admin" late in the afternoon behind the Week's blocks.
+  { name: 'frames', server: D, async run(p) {
+    const api = async (method, body) => {
+      const r = await p.request.fetch(demoBase + '/api/v1/frames', { method, headers: { Origin: demoBase, 'Content-Type': 'application/json' }, data: body === undefined ? undefined : JSON.stringify(body) })
+      if (!r.ok()) throw new Error(`${method} /api/v1/frames → ${r.status()} ${await r.text()}`)
+      return r.json()
+    }
+    // Once for both themes: the second run finds them there.
+    if (!(await api('GET')).frames.length) {
+      await api('POST', { title: 'Deep work', weekdays: '1,2,3,4,5', start: '09:00', end: '11:00', color: '#7c3aed' })
+      await api('POST', { title: 'Admin', weekdays: '1,2,3,4', start: '16:00', end: '16:45', color: '#0d9488' })
+    }
+    await go(p, demoBase, '/week', () => p.locator('[data-frame-band]').first().waitFor())
+    // The demo's reminder toast would cover the late afternoon.
+    await p.addStyleTag({ content: '[aria-label^="Reminder:"] { display: none !important }' })
+    await p.getByRole('button', { name: 'Hide task list' }).click().catch(() => {}); await settle(p, 500)
+  }, async after(p) { await p.getByRole('button', { name: /Show task list/ }).click().catch(() => {}) } },
+  // Slots (calendar-slots 5.2): today's "Admin" slot holding six small tasks, one done, in the Day.
+  { name: 'slots', server: D, async run(p) {
+    const api = async (method, path, body) => {
+      const r = await p.request.fetch(demoBase + path, { method, headers: { Origin: demoBase, 'Content-Type': 'application/json' }, data: body === undefined ? undefined : JSON.stringify(body) })
+      if (!r.ok()) throw new Error(`${method} ${path} → ${r.status()} ${await r.text()}`)
+      return r.status() === 204 ? null : r.json()
+    }
+    // Once for both themes: the second run finds it there.
+    if (!(await api('GET', '/api/v1/slots')).slots.length) {
+      const today = await p.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+      const ids = []
+      for (const [i, title] of ['Reply to Marco', 'Pay the invoice', 'Book the venue', 'Renew the domain', 'Send the slides', 'File the receipt'].entries()) {
+        ids.push((await api('POST', '/api/v1/tasks', { title, estimate_minutes: 5 + (i % 3) * 5 })).id)
+      }
+      await api('POST', '/api/v1/slots', { title: 'Admin', date: today, start: '14:00', minutes: 150, color: '#0d9488', task_ids: ids, move_tasks: true })
+      await api('PATCH', `/api/v1/tasks/${ids[0]}`, { completed_at: Date.now() })
+    }
+    await go(p, demoBase, '/day', () => p.locator('[data-slot]').first().waitFor())
+    await p.addStyleTag({ content: '[aria-label^="Reminder:"] { display: none !important }' })
+    await p.locator('[data-slot]').first().scrollIntoViewIfNeeded()
+    await p.getByRole('button', { name: 'Hide task list' }).click().catch(() => {}); await settle(p, 500)
+  }, async after(p) { await p.getByRole('button', { name: /Show task list/ }).click().catch(() => {}) } },
   // The Plan (planner-view 5.2): two rows of columns with their capacity bars and a dimmed projected row.
   { name: 'plan', server: D, async run(p) { await go(p, demoBase, '/plan', () => p.locator('[data-plan-grid]').waitFor()); await settle(p, 300) } },
   { name: 'comments', server: D, card: true, async run(p) {
@@ -352,7 +496,7 @@ const shots = [
     await scrollPanelTo(p, detail(p).getByRole('region', { name: 'Comments, activity, history and time' }), 8)
   } },
   { name: 'notifications', card: true, server: D, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
     await p.getByRole('button', { name: /^Notifications/ }).click(); const d = p.getByRole('dialog', { name: 'Notifications' }); await d.waitFor(); await settle(p, 500)
     const b = await d.boundingBox(); const vp = p.viewportSize()
     const x = Math.max(0, b.x - 240)
@@ -371,19 +515,19 @@ const shots = [
   // The time-zone popover of a timed due (task-detail-redesign 5.4).
   { name: 'time-zone', server: D, async run(p) {
     await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation'); await openTask(p, 'Get three quotes for the kitchen')
-    await detail(p).getByRole('button', { name: /^When: / }).first().click(); await p.getByRole('dialog', { name: 'When' }).waitFor()
+    await detail(p).getByRole('button', { name: /^Do: / }).first().click(); await p.getByRole('dialog', { name: 'When' }).waitFor()
     await p.getByRole('dialog', { name: 'When' }).getByRole('button', { name: /^Time zone/ }).first().click()
     const d = p.getByRole('dialog', { name: 'Time zone' }); await d.waitFor(); await settle(p, 400)
     return clipOf(p, d, 16)
   }, async after(p) { await p.keyboard.press('Escape') } },
   // A task's location editor (task-locations): coordinates typed into the field, set as the location.
   { name: 'locations', server: D, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor()); await openTask(p, 'Pick up groceries')
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor()); await openTask(p, 'Pick up groceries')
     const d = p.getByRole('dialog', { name: 'Location' })
-    const part = detail(p).getByRole('button', { name: /^Where: .*45\.4642/ }).first()
+    const part = detail(p).getByRole('button', { name: /^Location: .*45\.4642/ }).first()
     if (!(await part.count())) {
       // The first theme sets it; the second finds it set (one sandbox for both).
-      await detail(p).getByRole('button', { name: 'Add a property' }).click(); await p.getByRole('menuitem', { name: 'Location' }).click(); await d.waitFor()
+      await detail(p).getByRole('button', { name: 'Location: Add a place' }).click(); await d.waitFor()
       await d.getByRole('combobox').fill('45.4642, 9.19'); await d.getByRole('option').first().waitFor(); await p.keyboard.press('Enter'); await settle(p, 400)
     }
     await part.click(); await d.waitFor(); await settle(p, 400)
@@ -391,7 +535,7 @@ const shots = [
   }, async after(p) { await p.keyboard.press('Escape') } },
   { name: 'trash', server: D, card: true, async run(p) { await go(p, demoBase, '/trash', () => p.getByRole('heading', { level: 1, name: 'Trash' }).waitFor()) } },
   { name: 'shortcuts', server: D, card: true, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
     await p.keyboard.press('?'); await p.getByText('Keyboard shortcuts').first().waitFor(); await settle(p, 500)
   }, async after(p) { await p.keyboard.press('Escape') } },
   { name: 'sync-status', card: true, server: D, async run(p, { ctx }) {
@@ -402,9 +546,9 @@ const shots = [
     return { x: b.x, y: b.y, width: b.width, height: 330 }
   }, async after(p, { ctx }) { await ctx.setOffline(false); await settle(p, 2500) } },
   // Phone
-  { name: 'mobile-today', card: true, server: D, phone: true, async run(p) { await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor()) } },
+  { name: 'mobile-today', card: true, server: D, phone: true, async run(p) { await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor()) } },
   { name: 'mobile-menu', server: D, phone: true, async run(p) {
-    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Overdue' }).waitFor())
+    await go(p, demoBase, '/today', () => p.getByRole('heading', { name: 'Earlier' }).waitFor())
     await p.getByRole('button', { name: 'Open menu' }).click(); await settle(p, 600)
   } },
   // Ordinary instance: account, settings and sharing
@@ -420,7 +564,7 @@ const shots = [
   }, async after(p) { await p.keyboard.press('Escape') } },
   { name: 'settings', server: P, card: true, async run(p) { await go(p, plainBase, '/settings', () => p.getByRole('heading', { name: 'Account', level: 1 }).waitFor()) } },
   { name: 'settings-security', card: true, server: P, async run(p) {
-    await go(p, plainBase, '/settings/account', () => p.getByRole('heading', { name: 'Account', level: 1 }).waitFor())
+    await go(p, plainBase, '/settings/account/security', () => p.getByRole('heading', { name: 'Security', level: 1 }).waitFor())
     const h = p.getByRole('heading', { level: 2, name: 'Two-factor authentication' }); await h.waitFor()
     await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
@@ -431,39 +575,80 @@ const shots = [
     await p.goto(plain.pageLink); await p.getByRole('heading', { level: 1, name: 'Paint the fence' }).waitFor(); await settle(p, 800)
   } },
   { name: 'settings-passkeys', server: P, async run(p) {
-    await go(p, plainBase, '/settings/account', () => p.getByRole('heading', { name: 'Account', level: 1 }).waitFor())
+    await go(p, plainBase, '/settings/account/security', () => p.getByRole('heading', { name: 'Security', level: 1 }).waitFor())
     const h = p.getByRole('heading', { level: 2, name: 'Passkeys', exact: true }); await h.waitFor()
     await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
     return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 270 }
   } },
   { name: 'settings-notifications', server: P, permissions: ['notifications'], async run(p) {
-    await go(p, plainBase, '/settings/notifications', () => p.getByRole('heading', { name: 'Notifications', level: 1 }).waitFor())
+    await go(p, plainBase, '/settings/notifications/push', () => p.getByRole('heading', { name: 'Push notifications', level: 1 }).waitFor())
     const h = p.getByRole('heading', { level: 2, name: 'Notifications' }); await h.waitFor()
     await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
     return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 240 }
   } },
-  // Archived projects live at the bottom of the Projects page.
+  // Default reminders (default-reminders D8): 30 minutes before a time, 1 day before a date.
+  { name: 'settings-default-reminders', server: P, async run(p) {
+    await go(p, plainBase, '/settings/notifications/push', () => p.getByRole('heading', { name: 'Push notifications', level: 1 }).waitFor())
+    await p.evaluate(async () => {
+      const op = (field, value) => ({ id: `docs-${field}`, entity: 'user_prefs', entityId: 'me', field, value, ts: Date.now(), device: 'docs' })
+      await fetch('/api/v1/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: 'docs', cursor: 0, ops: [op('reminder_default_timed', '-30'), op('reminder_default_dated', '-1440')] }) })
+    })
+    await go(p, plainBase, '/settings/notifications/push', () => p.locator('#default-reminder-timed').waitFor())
+    await p.waitForFunction(() => document.querySelector('#default-reminder-timed')?.value === '-30', null, { timeout: 20000 })
+    const h = p.getByRole('heading', { level: 2, name: 'Default reminders' }); await h.waitFor()
+    await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
+    const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
+    return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 230 }
+  } },
+  // Delivery channels (notification-channels): one ntfy channel added through the API.
+  { name: 'settings-notification-channels', server: P, async run(p) {
+    await go(p, plainBase, '/settings/notifications/channels', () => p.getByRole('heading', { name: 'Delivery channels', level: 1 }).waitFor())
+    await p.evaluate(async () => {
+      const { channels } = await (await fetch('/api/v1/notification-channels')).json()
+      if (channels.length) return
+      await fetch('/api/v1/notification-channels', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'ntfy', name: 'Phone', url: 'https://ntfy.sh', topic: 'ana-tasks', events: ['reminder', 'assigned', 'mentioned'] }) })
+    })
+    await go(p, plainBase, '/settings/notifications/channels', () => p.locator('[data-channel]').first().waitFor())
+    const h = p.getByRole('heading', { level: 2, name: 'Delivery channels' }); await h.waitFor()
+    await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
+    const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
+    return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 330 }
+  } },
+  // All projects as a table with health (projects-table): the header, the tabs and the table.
+  { name: 'all-projects', server: P, async run(p) {
+    await go(p, plainBase, '/projects', () => p.locator('[data-projects-table] [data-health]').first().waitFor())
+    await settle(p, 400)
+    const main = await p.locator('main').boundingBox(); const table = await p.locator('[data-projects-table]').boundingBox()
+    return { x: main.x, y: main.y, width: main.width, height: Math.min(table.y + table.height - main.y + 56, 640) }
+  } },
+  // Archived projects are the Projects page's second tab (projects-table D7).
   { name: 'archived-projects', server: P, async run(p) {
-    await go(p, plainBase, '/projects', () => p.locator('[data-archived-disclosure] summary').waitFor())
-    const summary = p.locator('[data-archived-disclosure] summary'); await summary.click(); await p.getByTestId('archived-projects').waitFor()
-    await summary.evaluate((el) => el.scrollIntoView({ block: 'center' })); await settle(p, 400)
-    const main = await p.locator('main').boundingBox(); const top = await summary.boundingBox()
+    await go(p, plainBase, '/projects', () => p.getByRole('tab', { name: /^Archived/ }).waitFor())
+    const tab = p.getByRole('tab', { name: /^Archived/ }); await tab.click(); await p.getByTestId('archived-projects').waitFor()
+    await settle(p, 400)
+    const main = await p.locator('main').boundingBox()
     const list = await p.getByTestId('archived-projects').boundingBox()
-    return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: list.y + list.height - top.y + 44 }
+    return { x: main.x, y: main.y, width: main.width, height: list.y + list.height - main.y + 32 }
   } },
   { name: 'members', server: P, async run(p) {
-    await go(p, plainBase, '/settings/people', () => p.getByRole('heading', { name: 'People', level: 1 }).waitFor())
+    await go(p, plainBase, '/settings/people/users', () => p.getByRole('heading', { name: 'Users and invitations', level: 1 }).waitFor())
     const h = p.getByRole('heading', { level: 2, name: 'Members' }); await h.waitFor()
     await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
     return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 380 }
   } },
+  { name: 'rules', server: P, async run(p) { await go(p, plainBase, '/rules', () => p.locator('[data-rule-row]').nth(2).waitFor()); await settle(p, 600) } },
   { name: 'import', card: true, server: P, async run(p) { await go(p, plainBase, '/settings/import', () => p.getByRole('heading', { level: 1 }).first().waitFor()) } },
   // The switch guides (named-importers 7.4): the import preview of each app's real
-  // export, from the sanitised fixtures in internal/importer/testdata.
-  ...[['todoist', 'todoist-backup/backup.zip'], ['things', 'things-db/main.sqlite'], ['ticktick', 'ticktick-csv/backup.csv'], ['linear', 'linear-csv/export.csv']].map(([app, fixture]) => (
+  // export, from the sanitised fixtures in internal/importer/testdata (and the
+  // synthesised ones of more-importers).
+  ...[['todoist', 'todoist-backup/backup.zip'], ['things', 'things-db/main.sqlite'], ['ticktick', 'ticktick-csv/backup.csv'], ['linear', 'linear-csv/export.csv'],
+    ['google-tasks', 'google-tasks-json/Tasks.json'], ['trello', 'trello-json/board.json'], ['asana', 'asana-csv/export.csv'],
+    ['microsoft-todo', 'microsoft-todo-json/todo.json'], ['apple-reminders', 'apple-reminders-json/reminders.json'], ['anydo', 'anydo-json/data.json']].map(([app, fixture]) => (
     { name: `import-${app}`, server: P, async run(p) {
       await go(p, plainBase, '/settings/import', () => p.getByRole('heading', { level: 1 }).first().waitFor())
       await p.locator('#import-file').setInputFiles(`internal/importer/testdata/${fixture}`)
@@ -483,12 +668,54 @@ const shots = [
   { name: 'assistant-phone', server: 'assistant', phone: true, async run(p) {
     await ask(p, 'Move everything overdue to Friday', () => p.locator('[data-assistant-review]').waitFor({ timeout: 20000 }))
   }, async after(p) { await p.locator('[data-assistant-review]').getByRole('button', { name: 'Discard' }).click().catch(() => {}) } },
+  // Workspaces (workspaces): last, because the scene adds a second workspace to the instance.
+  { name: 'workspace-switcher', server: P, async run(p) {
+    const api = async (method, path, body) => {
+      const r = await p.request.fetch(plainBase + path, { method, headers: { Origin: plainBase, 'Content-Type': 'application/json' }, data: body === undefined ? undefined : JSON.stringify(body) })
+      if (!r.ok()) throw new Error(`${method} ${path} → ${r.status()} ${await r.text()}`)
+      const t = await r.text(); return t ? JSON.parse(t) : null
+    }
+    // Once for both themes: the second run finds Family there.
+    const { workspaces } = await api('GET', '/api/v1/workspaces')
+    if (!workspaces.some((w) => w.name === 'Family')) {
+      const family = await api('POST', '/api/v1/workspaces', { name: 'Family', color: '#22c55e' })
+      await api('POST', `/api/v1/workspaces/${family.id}/members`, { email: 'bob@example.com', role: 'member' })
+      const adults = await api('POST', `/api/v1/workspaces/${family.id}/groups`, { name: 'Adults' })
+      await api('PUT', `/api/v1/workspaces/${family.id}/groups/${adults.id}/members/${family.ownerId}`)
+      const house = await api('POST', '/api/v1/projects', { name: 'House', color: '#f97316', workspace_id: family.id })
+      await api('POST', '/api/v1/tasks', { title: 'Fix the gutter', project_id: house.id })
+    }
+    await go(p, plainBase, '/today', () => p.locator('[data-workspace-trigger]').waitFor())
+    await settle(p, 1500)
+    await p.locator('[data-workspace-trigger]').click(); const menu = p.getByRole('menu'); await menu.waitFor(); await settle(p, 400)
+    const side = await p.locator('[data-sidebar-header]').boundingBox(); const m = await menu.boundingBox()
+    return { x: Math.max(0, side.x - 8), y: Math.max(0, side.y - 8), width: Math.max(side.width, m.x + m.width - side.x) + 24, height: m.y + m.height - side.y + 24 }
+  }, async after(p) { await p.keyboard.press('Escape') } },
+  { name: 'workspaces', server: P, async run(p) { await go(p, plainBase, '/today', () => p.locator('[data-workspace-trigger]').waitFor()) } },
+  { name: 'settings-workspaces', server: P, card: true, async run(p) {
+    await go(p, plainBase, '/settings/workspaces', () => p.getByRole('heading', { name: 'Workspaces', level: 1 }).waitFor())
+    await p.getByRole('button', { name: /^Family/ }).first().click(); await p.getByRole('tab', { name: /^Members/ }).click()
+    await p.locator('#workspace-members').waitFor(); await settle(p, 600)
+  } },
   { name: 'assistant-settings', server: 'assistant', async run(p) {
-    await go(p, assistantBase, '/settings/integrations', () => p.getByRole('heading', { name: 'Integrations', level: 1 }).waitFor())
+    await go(p, assistantBase, '/settings/integrations/assistant', () => p.getByRole('heading', { name: 'Assistant', level: 1 }).waitFor())
     const h = p.locator('#assistant-settings-heading'); await h.waitFor(); await p.locator('[data-assistant-owner]').waitFor()
     await h.evaluate((el) => el.scrollIntoView({ block: 'start' })); await settle(p, 400)
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
     return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 560 }
+  } },
+  // The owner's switch for the on-device assistant of encrypted accounts (assistant-on-device), not saved.
+  { name: 'assistant-device-owner', server: 'assistant', async run(p) {
+    await go(p, assistantBase, '/settings/integrations/assistant', () => p.getByRole('heading', { name: 'Assistant', level: 1 }).waitFor())
+    await p.locator('[data-assistant-owner]').getByRole('button', { name: 'Configure' }).click()
+    const group = p.locator('[data-assistant-group="device"]'); await group.waitFor()
+    await group.getByLabel('Let encrypted accounts use the assistant from their own device').check()
+    await group.getByLabel('Anthropic (Claude)').check()
+    await group.getByLabel(/^A model server/).check()
+    await group.locator('textarea').fill('http://localhost:11434')
+    await group.evaluate((el) => el.scrollIntoView({ block: 'center' })); await settle(p, 400)
+    const box = await group.boundingBox()
+    return { x: Math.max(0, box.x - 24), y: Math.max(0, box.y - 24), width: box.width + 48, height: box.height + 48 }
   } },
 ]
 

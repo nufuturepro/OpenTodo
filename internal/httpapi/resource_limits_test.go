@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -11,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/httpapi/httpx"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 func bareServer(t *testing.T) (*Server, *sql.DB) {
@@ -51,9 +51,9 @@ func TestRequireSessionOrFullUsesResolvedToken(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/me/agent-access", nil)
 		// The header names no stored token: only the resolved scope can decide.
 		req.Header.Set("Authorization", "Bearer ot_not_looked_up_again")
-		req = req.WithContext(context.WithValue(req.Context(), tokenKey, auth.TokenInfo{Scope: tc.scope}))
+		req = req.WithContext(httpx.WithToken(req.Context(), auth.TokenInfo{Scope: tc.scope}))
 		rec := httptest.NewRecorder()
-		if got := s.admits(rec, req, signedIn.fullTokens()); got != tc.want {
+		if got := s.admits(rec, req, signedIn.FullTokens()); got != tc.want {
 			t.Fatalf("scope %s: allowed = %v, want %v (status %d)", tc.scope, got, tc.want, rec.Code)
 		}
 	}

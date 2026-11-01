@@ -1,29 +1,21 @@
 import { useState } from 'react'
-import { Select } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
 import { Checkbox, Switch } from '../ui'
 import {
-  BUNDLED_LANGUAGES, dayMonthOrderSource, type DayMonthOrderSource, loadQuickAddSettings, type QuickAddSettings, resolveLanguages, saveQuickAddSettings,
+  BUNDLED_LANGUAGES, loadQuickAddSettings, type QuickAddSettings, resolveLanguages, saveQuickAddSettings,
 } from '../lib/nlp'
-import { useDateTimeFormat } from './DateTimePrefsProvider'
-import { t, msg, translatedMap, preferredLanguages } from '../lib/i18n'
+import { t, msg, preferredLanguages, translatedMap } from '../lib/i18n'
 import { cardCopy, rowCopy, SETTINGS_COPY } from '../lib/settingsCopy'
+import { useUserPrefsRow } from '../lib/localData'
+import { type AddPositionPref, readAddPosition, setAddPosition } from '../lib/userPrefs'
+import { act } from './actionError'
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English', de: 'Deutsch', fr: 'Français', it: 'Italiano', es: 'Español', pt: 'Português',
 }
 
-const SOURCE = translatedMap<DayMonthOrderSource>({
-  device: msg('set on this device'),
-  'date-format': msg('from your date format'),
-  language: msg('from your language'),
-})
-
-/** "Automatic: day-month, from your date format" (date-time-preferences D6). */
-export function automaticOrderLabel(order: 'DM' | 'MD', source: DayMonthOrderSource): string {
-  return t('Automatic: {order}, {source}', { order: order === 'DM' ? t('day-month') : t('month-day'), source: SOURCE[source] })
-}
-
+const ADD_POSITIONS: readonly AddPositionPref[] = ['bottom', 'top']
+const ADD_POSITION_LABEL = translatedMap<AddPositionPref>({ bottom: msg('At the bottom of the list'), top: msg('At the top of the list') })
 
 /** Settings section for natural-language quick add; stored on this device only. */
 export function QuickAddSettingsSection() {
@@ -35,9 +27,6 @@ export function QuickAddSettingsSection() {
   const browser = preferredLanguages()
   const active = resolveLanguages(s, browser)
   const followBrowser = s.languages === null
-  // An automatic order follows the date format preference before the language (date-time-preferences D6).
-  const { prefs } = useDateTimeFormat()
-  const auto = dayMonthOrderSource({ ...s, dayMonthOrder: 'auto' }, browser, prefs)
 
   function toggleLanguage(code: string, on: boolean) {
     const base = followBrowser ? active : s.languages ?? []
@@ -62,15 +51,34 @@ export function QuickAddSettingsSection() {
           ))}
         </div>
       </fieldset>
-      <SettingRow label={rowCopy('quick-add', 'order').label} htmlFor="quickadd-order"
-        description={s.dayMonthOrder === 'auto' ? undefined : rowCopy('quick-add', 'order').description} control={
-        <Select id="quickadd-order" className="sm:w-60" disabled={!s.enabled} value={s.dayMonthOrder}
-          onChange={(e) => update({ ...s, dayMonthOrder: e.target.value as QuickAddSettings['dayMonthOrder'] })}>
-          <option value="auto">{automaticOrderLabel(auto.order, auto.source)}</option>
-          <option value="DM">{t('Day/month (12 November)')}</option>
-          <option value="MD">{t('Month/day (December 11)')}</option>
-        </Select>
-      } />
+    </SettingsSection>
+  )
+}
+
+/** Settings → Capture → Quick add → New tasks (add-position D1): the synced choice, written through ops. */
+export function AddPositionSection() {
+  const value = readAddPosition(useUserPrefsRow())
+  return <AddPositionView value={value} onChange={(v) => act(setAddPosition(v))} />
+}
+
+export function AddPositionView({ value, onChange }: { value: AddPositionPref; onChange: (v: AddPositionPref) => void }) {
+  const copy = rowCopy('add-position', 'place')
+  return (
+    <SettingsSection {...cardCopy('add-position')}>
+      <div id="add-position" tabIndex={-1} data-setting-row="add-position" className="py-3 outline-none focus-visible:rounded-control focus-visible:ring-2 focus-visible:ring-focus">
+        <fieldset>
+          <legend className="text-body font-medium text-default">{copy.label}</legend>
+          <p className="mt-0.5 text-meta text-muted">{copy.description}</p>
+          <div className="mt-2 flex flex-col gap-1.5 text-body text-default sm:flex-row sm:gap-5" data-testid="add-position">
+            {ADD_POSITIONS.map((p) => (
+              <label key={p} className="flex items-center gap-1.5 touch-target">
+                <input type="radio" className="accent-(--ot-accent)" name="add-position" value={p} checked={value === p} onChange={() => onChange(p)} />
+                {ADD_POSITION_LABEL[p]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
     </SettingsSection>
   )
 }

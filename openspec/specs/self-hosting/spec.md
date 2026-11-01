@@ -75,7 +75,7 @@ The repository SHALL include a `docker-compose.yml` that Coolify can deploy from
 - **THEN** the proxy on that machine reaches the app and other machines cannot reach port 8080 directly
 
 ### Requirement: Security headers
-Responses SHALL carry a Content-Security-Policy restricting scripts, connections and frames to the app's own origin, plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and a same-origin referrer policy. When `OPENTODO_BASE_URL` is https, every response SHALL also carry `Strict-Transport-Security: max-age=31536000`, without `includeSubDomains` or `preload`; without an https base URL it SHALL NOT be sent.
+Responses SHALL carry a Content-Security-Policy restricting scripts, connections and frames to the app's own origin, plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a same-origin referrer policy, and a `Permissions-Policy` that denies the camera and allows geolocation for the app's own origin only. While the owner allows the on-device assistant (OpenSpec `in-app-assistant`), `connect-src` SHALL additionally list exactly the API origins of the providers the owner allowed and the owner's model server origins, never a wildcard; otherwise it SHALL be `'self'` only. The service worker SHALL serve the app shell with the latest policy the server sent. When `OPENTODO_BASE_URL` is https, every response SHALL also carry `Strict-Transport-Security: max-age=31536000`, without `includeSubDomains` or `preload`; without an https base URL it SHALL NOT be sent.
 
 #### Scenario: Headers present
 - **WHEN** the app shell is requested
@@ -85,16 +85,36 @@ Responses SHALL carry a Content-Security-Policy restricting scripts, connections
 - **WHEN** `OPENTODO_BASE_URL` is `https://todo.example.com` and any route is requested
 - **THEN** the response has `Strict-Transport-Security: max-age=31536000`, and a server without a base URL sends no such header
 
+#### Scenario: Geolocation for the app only
+- **WHEN** the app shell is requested
+- **THEN** the `Permissions-Policy` header allows `geolocation` for `self` and denies `camera`, so the browser can ask the user for their position on the app's own pages and on no embedded page
+
+#### Scenario: On-device assistant origins
+- **WHEN** the owner allows the on-device assistant with Anthropic and the model server origin `http://localhost:11434`, and the app shell is requested
+- **THEN** `connect-src` is `'self' https://api.anthropic.com http://localhost:11434`, and after the owner turns the switch off it is `'self'` again
+
+#### Scenario: Cached shell follows the server
+- **WHEN** the owner turned the switch on after the service worker cached the app shell and the page is loaded twice
+- **THEN** the second load carries the new policy without a new release
+
 ### Requirement: No telemetry
-The server and client SHALL make no network requests to third parties and SHALL collect no usage data. The only outbound requests the server makes SHALL be to destinations the owner or a user explicitly configured (such as a backup destination or a webhook endpoint), and none of them SHALL carry usage data beyond the configured payload.
+The server and client SHALL make no network requests to third parties and SHALL collect no usage data, with two exceptions: the map provider, and the model provider a user of an encrypted account set up for the on-device assistant while the owner allows it. The only outbound requests the server makes SHALL be to destinations the owner or a user explicitly configured (such as a backup destination or a webhook endpoint) and, while maps are on, to the map provider (OpenStreetMap-based by default, changeable or turned off by the owner, OpenSpec `task-locations`). None of them SHALL carry usage data beyond the configured payload, and map requests SHALL carry no account information. The browser SHALL never contact the map provider directly, and SHALL contact a model provider only for an on-device assistant turn or connection test the user started.
 
 #### Scenario: Network audit
-- **WHEN** the app is used for a session with the network inspected and no integration is configured
+- **WHEN** the app is used for a session with the network inspected, no integration is configured and no map is shown
 - **THEN** every request goes to the server's own origin
 
 #### Scenario: Only configured destinations
-- **WHEN** the owner has configured a backup destination and the server's outbound traffic is inspected
+- **WHEN** the owner has configured a backup destination, has turned maps off, and the server's outbound traffic is inspected
 - **THEN** every outbound request goes to that destination and to nothing else
+
+#### Scenario: Maps on by default
+- **WHEN** a server with default settings shows a user a task's map and the server's outbound traffic is inspected
+- **THEN** the only outbound requests besides configured destinations go to the default map tile provider, carry no cookie, token or user address, and the browser's own requests all go to the server's origin
+
+#### Scenario: On-device assistant
+- **WHEN** an encrypted user with the on-device assistant set up for Anthropic uses the app without asking the assistant anything
+- **THEN** the browser sends no request to Anthropic
 
 ### Requirement: Optional demo mode
 The server SHALL accept an optional `OPENTODO_DEMO` variable, off when unset. `true` SHALL turn the instance into a public demo (OpenSpec `demo-mode`); an invalid value SHALL stop startup with a message naming the variable. Demo mode SHALL need no other variable and SHALL be meant for a dedicated data directory.
@@ -150,7 +170,7 @@ The repository SHALL include a Coolify one-click service template, with an upstr
 - **THEN** the same `/data` volume is mounted and no data is lost
 
 ### Requirement: Template conformance check
-An automated check run by `make check` SHALL fail when any platform template breaks its platform's conventions or the shared deployment facts, when its image does not follow its platform's image policy (by default `ghcr.io/pixari/opentodo:stable`), when it names an `OPENTODO_*` variable the server does not read, when an upstream copy differs from its template, or when the release job no longer publishes the `stable` tag.
+An automated check run by `make check` SHALL fail when any platform template breaks its platform's conventions or the shared deployment facts, when its image does not follow its platform's image policy (by default `ghcr.io/opentodoapp/opentodo:stable`), when it names an `OPENTODO_*` variable the server does not read, when an upstream copy differs from its template, or when the release job no longer publishes the `stable` tag.
 
 #### Scenario: Template drifts from the release or the server
 - **WHEN** a template's image breaks its platform's image policy, the health check or the `/data` volume is missing, a `build:` key appears, or it names an `OPENTODO_*` variable the server does not read
@@ -250,7 +270,7 @@ The repository SHALL include an Unraid Community Applications template, publishe
 - **THEN** the same appdata path is mounted, migrations run on start, and all accounts and tasks are still present
 
 ### Requirement: Stable image tag
-Every release that is not a pre-release SHALL also publish the image as `ghcr.io/pixari/opentodo:stable`, pointing at the same image as its version tags. Pre-releases SHALL NOT move `stable`. A manual workflow SHALL point `stable` at an already published version without rebuilding it.
+Every release that is not a pre-release SHALL also publish the image as `ghcr.io/opentodoapp/opentodo:stable`, pointing at the same image as its version tags. Pre-releases SHALL NOT move `stable`. A manual workflow SHALL point `stable` at an already published version without rebuilding it.
 
 #### Scenario: A release moves stable
 - **WHEN** the tag `v0.7.0` is pushed and the release job succeeds
@@ -263,6 +283,10 @@ Every release that is not a pre-release SHALL also publish the image as `ghcr.io
 #### Scenario: Roll back
 - **WHEN** the maintainer runs the promote workflow with version `0.7.0` after `0.7.1` was released
 - **THEN** `stable` resolves to the `0.7.0` image and no image is rebuilt
+
+#### Scenario: Releases before the move are promoted to the new name
+- **WHEN** the manual workflow points `stable` at `0.14.2`, which was published only as `ghcr.io/pixari/opentodo:0.14.2`
+- **THEN** it first copies that release to `ghcr.io/opentodoapp/opentodo:0.14.2` with the same digest and its signatures, then moves `stable` under both names
 
 ### Requirement: Platform catalog templates
 The repository SHALL include a template, in the platform's own format, for CasaOS, Umbrel, TrueNAS Community Edition, Runtipi, Dokploy, Easypanel, Portainer and Cosmos Cloud, each in `deploy/<platform>/` with a checker, a guide in `docs/self-hosting/` and, where a store repository receives it, an `upstream/` copy laid out as that repository expects. Each SHALL run the image with the shared deployment facts, closed sign-up and no required setting.
@@ -280,7 +304,7 @@ The repository SHALL include a template, in the platform's own format, for CasaO
 - **THEN** `make check` fails and names the file
 
 ### Requirement: Image policy per platform
-Each platform checker SHALL declare an image policy: `stable` (the image `ghcr.io/pixari/opentodo:stable`), `release` (the latest release in `CHANGELOG.md`) or `release-digest` (that release plus a `sha256` index digest). Templates SHALL use `stable` unless the platform's store rejects moving tags or offers updates only when a version changes.
+Each platform checker SHALL declare an image policy: `stable` (the image `ghcr.io/opentodoapp/opentodo:stable`), `release` (the latest release in `CHANGELOG.md`) or `release-digest` (that release plus a `sha256` index digest). Templates SHALL use `stable` unless the platform's store rejects moving tags or offers updates only when a version changes.
 
 #### Scenario: A release bumps the pinned templates
 - **WHEN** a release is prepared and a template with the `release` or `release-digest` policy still names the previous version
@@ -290,8 +314,12 @@ Each platform checker SHALL declare an image policy: `stable` (the image `ghcr.i
 - **WHEN** the release image is published and the maintainer runs `node scripts/deploy/pin.mjs`
 - **THEN** every pinned digest under `deploy/` is replaced by the registry's multi-arch index digest for that version, and `--check` reports any that still differ
 
+#### Scenario: A digest pinned before the move
+- **WHEN** a `release-digest` template pins a release up to the last one published before the move (`0.14.2`)
+- **THEN** the check requires the legacy name `ghcr.io/pixari/opentodo` for it, and after the next release it requires `ghcr.io/opentodoapp/opentodo`, which `scripts/deploy/pin.mjs` writes with the new digest
+
 ### Requirement: Client address from trusted proxies only
-The server SHALL believe `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto` and `CF-Connecting-IP` only from a trusted proxy peer: loopback, private and link-local networks when `OPENTODO_TRUSTED_PROXIES` is unset, otherwise the configured list. From any other peer, the peer is the client. From a trusted peer, the client SHALL be the nearest untrusted `X-Forwarded-For` hop read from the right (or `CF-Connecting-IP` at a trusted Cloudflare edge hop). Every limit and the audit log use it.
+The server SHALL believe `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto` and `CF-Connecting-IP` only from a trusted proxy peer: loopback, private and link-local networks when `OPENTODO_TRUSTED_PROXIES` is unset, otherwise the configured list. From any other peer, the peer is the client. From a trusted peer, the client SHALL be the nearest untrusted `X-Forwarded-For` hop read from the right (or `CF-Connecting-IP` at a trusted Cloudflare edge hop); when every hop is trusted, the client SHALL be the last `X-Forwarded-For` entry, the one the nearest proxy appended, never an earlier entry the client could write. Every limit and the audit log use it. The first request from a trusted peer other than loopback that carries no `X-Forwarded-For` SHALL log one warning per process saying that every client behind that address shares it.
 
 #### Scenario: Direct client forges the header
 - **WHEN** a client on a public address connects directly and sends `X-Forwarded-For: 192.168.1.5`
@@ -300,6 +328,14 @@ The server SHALL believe `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Pro
 #### Scenario: Local reverse proxy
 - **WHEN** the variable is unset and a proxy on a container network (`172.18.0.3`) forwards a request with `X-Forwarded-For: 6.6.6.6, 203.0.113.4`
 - **THEN** the client is `203.0.113.4`
+
+#### Scenario: Every hop trusted
+- **WHEN** the variable is unset and a proxy on a container network forwards a request with `X-Forwarded-For: 127.0.0.1, 192.168.1.20`
+- **THEN** the client is `192.168.1.20`
+
+#### Scenario: Forwarder that adds no header
+- **WHEN** the variable is unset and requests arrive from `172.17.0.1` without `X-Forwarded-For`
+- **THEN** the client is `172.17.0.1` and the log has one warning naming that address
 
 #### Scenario: Cloudflare edge vouches for the client
 - **WHEN** the value is `cloudflare` and a local proxy forwards a request whose nearest hop is a Cloudflare edge with `CF-Connecting-IP: 198.51.100.9`
@@ -377,7 +413,7 @@ Release binaries and images SHALL be built with the Go toolchain named by the `t
 - **THEN** the repository checks fail
 
 ### Requirement: CI path filter covers every input
-The CI path filter SHALL classify every file that is compiled into the binary or checks the deploy templates (including `skills/`, `deploy/`, `scripts/deploy*` and the root `docker-compose.yml`) as code, so changes to them run the server jobs, and its classification SHALL be covered by a table of paths and expected outputs that runs in CI.
+The CI path filter SHALL classify every file that is compiled into the binary or checks the deploy templates (including `skills/`, `deploy/`, `scripts/deploy*` and the root `docker-compose.yml`) as code, so changes to them run the server jobs, and its classification SHALL be covered by a table of paths and expected outputs that runs in CI. Files under `mobile/` SHALL be classified as `mobile`, so a change there runs the Android shell job, and a change to nothing else runs only that job and the repository checks.
 
 #### Scenario: Agent skill only
 - **WHEN** a pull request changes only `skills/opentodo-cli/SKILL.md`
@@ -386,6 +422,10 @@ The CI path filter SHALL classify every file that is compiled into the binary or
 #### Scenario: Docs only
 - **WHEN** a pull request changes only files under `docs/` and the generated in-app help
 - **THEN** the filter reports `code=false` and `docs=true`
+
+#### Scenario: Android shell only
+- **WHEN** a pull request changes only `mobile/android/app/src/main/AndroidManifest.xml`
+- **THEN** the filter reports `mobile=true` and `code=false`, the Android job runs and the Go tests do not
 
 ### Requirement: Templates for general container platforms
 The repository SHALL include a checked template and a guide for Kubernetes (a Helm chart), Podman Quadlet, CapRover, Fly.io, Render and Synology Container Manager, each in `deploy/<platform>/` with a checker that applies the shared deployment facts and the image policy of that platform. Each template SHALL run a single instance with persistent storage on `/data` writable by the user the container runs as, the health check, closed sign-up by default and no required setting.
@@ -403,11 +443,11 @@ The repository SHALL include a checked template and a guide for Kubernetes (a He
 - **THEN** the template runs exactly one instance and replaces it by stopping the old one first, because SQLite has one writer
 
 ### Requirement: Helm chart publishing
-Every release that is not a pre-release SHALL publish the Helm chart as an OCI artifact under `oci://ghcr.io/pixari/charts`, and pull requests that change the chart SHALL lint it.
+Every release that is not a pre-release SHALL publish the Helm chart as an OCI artifact under `oci://ghcr.io/opentodoapp/charts`, and pull requests that change the chart SHALL lint it.
 
 #### Scenario: A release publishes the chart
 - **WHEN** the tag `v0.7.0` is pushed
-- **THEN** a chart version for that release can be installed with `helm install` from `oci://ghcr.io/pixari/charts/opentodo`
+- **THEN** a chart version for that release can be installed with `helm install` from `oci://ghcr.io/opentodoapp/charts/opentodo`
 
 #### Scenario: A broken chart is caught
 - **WHEN** a pull request changes `deploy/helm/` so that the chart no longer lints or renders
@@ -551,3 +591,145 @@ CI SHALL run every part of `make check` (including the gofmt gate, the design-sy
 #### Scenario: New make check step
 - **WHEN** a target is added to `make check` but neither to `make ci-checks` nor to a CI step
 - **THEN** the repository checks fail and name the target
+
+### Requirement: Home Assistant add-on
+The repository SHALL include a Home Assistant add-on repository in `deploy/homeassistant/upstream/`, published as `OpenTodoApp/opentodo-homeassistant-addons`, whose add-on runs the OpenTodo binary of the latest release on Home Assistant OS and Supervised installations for amd64 and aarch64, keeps its data in the add-on's `/data`, offers the essential variables of the deployment facts as options with the catalogue's defaults and descriptions, requires none, and is opened on a published port rather than through Ingress. A checker SHALL verify the add-on against the deployment facts and the latest release.
+
+#### Scenario: Install and open
+- **WHEN** a user adds the repository URL in Home Assistant, installs the OpenTodo add-on, starts it and clicks Open Web UI
+- **THEN** OpenTodo opens on port 8080 of the Home Assistant machine and the first visitor gets the owner setup screen, while later visitors cannot register
+
+#### Scenario: Options reach OpenTodo
+- **WHEN** the user sets `allow_signup`, `base_url` or `log_level` and restarts the add-on
+- **THEN** OpenTodo runs with the matching `OPENTODO_*` values, and an option left empty keeps OpenTodo's default
+
+#### Scenario: Data survives a restart and is in the backup
+- **WHEN** the add-on is restarted, or a Home Assistant backup that includes it is restored
+- **THEN** every account and task is still there, and the backup was taken with the add-on stopped so the database is consistent
+
+#### Scenario: A release becomes an update
+- **WHEN** OpenTodo publishes a release that is not a pre-release
+- **THEN** the add-on repository publishes images for that version before its `version` changes, and Home Assistant offers the update
+
+#### Scenario: A stale add-on fails the check
+- **WHEN** `CHANGELOG.md` names a newer release than the add-on's `version` or the OpenTodo version in its `Dockerfile`, or an option is missing or has a default that differs from the catalogue
+- **THEN** `make check` fails and names the problem
+
+### Requirement: Legacy image name after the move
+After the repository moved from the user `pixari` to the organization `OpenTodoApp`, CI SHALL keep publishing every image it publishes (its tags and a cosign signature of its digest) also as `ghcr.io/pixari/opentodo`, every Helm chart also under `oci://ghcr.io/pixari/charts`, and the manual `stable` promotion also for the legacy name, for every release up to and including the 0.16 releases and for builds of the main branch until a later release exists. The legacy push SHALL use the repository secret `GHCR_LEGACY_TOKEN` when it is set and the workflow's own token otherwise, and SHALL NOT fail the workflow when the registry refuses it: it SHALL print a warning naming the secret instead. Self-hosting documentation SHALL state the new name and the last release the legacy name receives. The move changes no data, route or configuration, so offline behaviour and convergence are unaffected.
+
+#### Scenario: A release in the transition window
+- **WHEN** the tag `v0.15.0` is released
+- **THEN** `ghcr.io/opentodoapp/opentodo:0.15.0` and `ghcr.io/pixari/opentodo:0.15.0` name the same digest, both signed, and `stable` moves under both names
+
+#### Scenario: After the window
+- **WHEN** the tag `v0.17.0` is released
+- **THEN** only `ghcr.io/opentodoapp/opentodo` gets it, and `ghcr.io/pixari/opentodo:stable` stays on the last 0.16 release
+
+#### Scenario: The legacy push is refused
+- **WHEN** the registry refuses the push to `ghcr.io/pixari/opentodo` because neither token may write that package
+- **THEN** the release still succeeds and the run shows a warning that names `GHCR_LEGACY_TOKEN`
+
+### Requirement: Background jobs run when their work is due
+The process that runs the background jobs SHALL start each job when its work is due instead of on a fixed timer, and SHALL wake a job at once when the server queues work for it. Each job SHALL run at most once at a time and independently of the others, so a long backup never delays a delivery. A job that is still due right after it ran SHALL wait a retry pause before it runs again. A job SHALL be asked again for its next due time at least every 30 seconds, and within about 2 seconds after another server process on the same data directory wrote to the database. Upkeep without a deadline (database statistics, delivery log size limits, the rule run log, orphaned secrets) SHALL run at most hourly and only after something changed. No job SHALL start later than the fixed timers it replaces would have started it:
+- webhook and notification channel deliveries: queued ones at once, retries at their scheduled time;
+- reminder pushes: at the firing time;
+- weekly digests: at the chosen hour;
+- automation rule events: at once; time triggers: at the minute of the occurrence;
+- calendar subscription fetches, calendar sync cycles and issue connection polls: at their next due time;
+- scheduled backups: at the scheduled time, a run missed while stopped at startup.
+
+#### Scenario: Webhook queued while idle
+- **WHEN** a task change queues a webhook delivery while the jobs runner is sleeping
+- **THEN** the delivery is sent without waiting for any poll interval
+
+#### Scenario: Reminder at its firing time
+- **WHEN** a reminder fires at 09:00:00 and its device subscribed to push
+- **THEN** the push is sent at 09:00:00 (within a second), not on the next 30-second tick
+
+#### Scenario: Failing delivery does not spin
+- **WHEN** a reminder push fails with a transient error and the reminder stays due
+- **THEN** the reminder job waits 30 seconds before it tries again, also when other work wakes it
+
+#### Scenario: Idle server
+- **WHEN** a self-hosted server has no queued deliveries, no due reminders and no other due work for an hour
+- **THEN** it runs no job during that hour except checking when work is next due and noticing other processes' writes
+
+#### Scenario: Long backup
+- **WHEN** a scheduled backup uploads for ten minutes and a webhook delivery is queued meanwhile
+- **THEN** the delivery is sent at once
+
+#### Scenario: Write served by the other process during a rolling update
+- **WHEN** during a rolling update the process that does not run the jobs saves a task change that queues a webhook delivery
+- **THEN** the process that runs the jobs sends it within a few seconds, exactly once, and the other process sends nothing
+
+### Requirement: An unwritable data directory is explained
+When the server cannot create its data directory or a file in it because of permissions, it SHALL stop with a message that names the directory, the numeric user and group the process runs as, and a command that gives the folder to that user (`chown -R <uid>:<gid> <host folder>`), with a link to the guide. It SHALL not start serving.
+
+#### Scenario: Host folder owned by root
+- **WHEN** the container starts with `/data` bound to a host folder owned by root
+- **THEN** it stops, and its log says that `/data` is not writable for user 65532 (group 65532) and shows `chown -R 65532:65532` with the folder mounted at `/data` and the guide's address
+
+#### Scenario: Writable directory
+- **WHEN** the data directory is writable
+- **THEN** the server starts as before and logs nothing about permissions
+
+### Requirement: CI tests the built app offline
+CI SHALL run the tests of the built web app (the precache and deny list of the service worker, the web app manifest, and the absence of workbench code in the build) after the build, and a missing build SHALL fail them rather than skip them. CI SHALL also start the built server on a fresh data directory and check in a browser that, once the service worker controls the page, a reload with the network off opens the app with the tasks stored on the device, that a request to `/api/*` is never answered from a cache, and that a task added offline reaches the server after the network returns.
+
+#### Scenario: The service worker caches the API
+- **WHEN** a change lets the service worker answer `/api/v1/tasks` from a cache
+- **THEN** the offline start check fails naming the API request
+
+#### Scenario: The app does not open offline
+- **WHEN** a change drops the app's start page from the precache
+- **THEN** the reload with the network off shows no app and the offline start check fails
+
+#### Scenario: The build is missing
+- **WHEN** the built-app tests run in CI without `internal/web/dist`
+- **THEN** they fail instead of being skipped
+
+### Requirement: Tiered CI
+CI SHALL run in tiers. A pull request SHALL run the repository checks and, when it changes code, the web, server and image checks and one server binary; the browser layout and end-to-end checks in one engine at every width when it changes the web app, the server or their scripts; the workbench accessibility and visual checks when it changes the web app's sources or the workbench; the Android, extension and skill jobs only when their own files change; and a change to the docs alone SHALL run the repository checks and the docs website check. A change to the CI workflow or its path filter SHALL run every pull request tier. A push to the default branch and a release tag SHALL run every job and every engine, width, language and platform, and SHALL publish only after all of them succeeded; a job skipped by a tier SHALL never be the reason a pull request fails.
+
+#### Scenario: A server-only pull request
+- **WHEN** a pull request changes only `internal/sync`
+- **THEN** CI runs the checks, web, server, image, one binary and the single Chromium layout and end-to-end job, and skips the workbench, WebKit, translated-layout, other binary, Android, extension and skill jobs
+
+#### Scenario: A docs-only pull request
+- **WHEN** a pull request changes only files under `docs/`
+- **THEN** CI runs the repository checks (including the docs check) and the docs website check, and nothing else
+
+#### Scenario: The push runs everything
+- **WHEN** that pull request is merged
+- **THEN** the push run runs every layout leg (Chromium and WebKit at each width, German and French), all six binaries and the workbench checks, and the image is published only if every one of them passed
+
+### Requirement: Nightly failures are reported
+The nightly checks SHALL report their result on the default branch as a GitHub issue labelled `ci-nightly`: a failed or timed-out nightly job SHALL open that issue, or comment on it when it is already open, naming the run and the failed jobs; a night on which every job passes SHALL close it. The report SHALL use only the workflow's own token.
+
+#### Scenario: A nightly job fails
+- **WHEN** the race detector finds a data race in the nightly run and no `ci-nightly` issue is open
+- **THEN** an issue labelled `ci-nightly` is opened with a link to the run and the failed job
+
+#### Scenario: Still failing the next night
+- **WHEN** the nightly run fails again while the `ci-nightly` issue is open
+- **THEN** a comment with the new run link is added to that issue and no second issue is opened
+
+#### Scenario: Green again
+- **WHEN** every nightly job passes while the `ci-nightly` issue is open
+- **THEN** the issue is closed with a link to the green run
+
+### Requirement: The sync client is tested against the server
+CI SHALL run the web app's sync client code, unmocked, against the server binary built in the same run, with several simulated devices that each have their own local database and session. The tests SHALL cover at least convergence of two devices of one account, offline edits on two devices converging on the later edit on every device and the server, a device clock far ahead being refused and corrected without losing the change, a refused edit of a viewer being reported and undone on the device, and a device's offline queue reaching the server after reconnecting.
+
+#### Scenario: The server changes a refusal reason
+- **WHEN** a change renames the `clock_skew` refusal on the server without changing the client
+- **THEN** the contract test of a fast device clock fails in CI
+
+#### Scenario: The client stops undoing refused edits
+- **WHEN** a change keeps a viewer's refused edit on the device
+- **THEN** the contract test of the viewer fails because the device still shows the refused value
+
+#### Scenario: Unit tests stay offline
+- **WHEN** a contributor runs `npm test` without a server binary
+- **THEN** the contract tests are not run, and `npm run test:contract` names the missing binary

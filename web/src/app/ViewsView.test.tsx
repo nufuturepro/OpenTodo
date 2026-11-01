@@ -7,7 +7,7 @@ import { db } from '../lib/db'
 import { favouritesOf } from '../lib/favourites'
 import { resetDeviceId } from '../lib/ops'
 import { USER_PREFS_ID } from '../lib/userPrefs'
-import { click, flush, render, type } from '../ui/test-utils'
+import { click, render, type, waitFor } from '../ui/test-utils'
 import { resetPanel } from './panel'
 import { ViewsView } from './ViewsView'
 
@@ -21,13 +21,8 @@ beforeEach(async () => {
 })
 afterEach(() => {
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean | Promise<boolean>, ms = 3000) {
-  for (let t = 0; t < ms && !(await ok()); t += 20) await flush(20)
-  expect(await ok()).toBe(true)
-}
 const button = (text: string) => [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!
 const nameInput = () => document.querySelector<HTMLInputElement>('input[aria-label="Board name"]')
 
@@ -51,7 +46,7 @@ describe('New board chooser', () => {
     await waitFor(async () => (await db.views.count()) === 1)
     const [v] = await db.views.toArray()
     expect(v).toMatchObject({ name: 'Morning', kind: 'dashboard', panels: [] })
-    await waitFor(() => location.pathname === `/view/${v.id}`)
+    await waitFor(() => location.pathname === `/views/${v.id}`)
   })
 
   it('the Eisenhower matrix: four unpinned filters, one pinned board (spec "Create the matrix")', async () => {
@@ -66,6 +61,6 @@ describe('New board chooser', () => {
     expect(board.panels.map((id) => views.find((v) => v.id === id)!.name)).toEqual(['Urgent and important', 'Important, not urgent', 'Urgent, not important', 'Neither'])
     expect(views.filter((v) => v.kind === 'list').every((v) => !v.pinned)).toBe(true)
     expect(favouritesOf(await db.userPrefs.get(USER_PREFS_ID), { projects: [], labels: [], views }).map((f) => f.id)).toEqual([board.id])
-    await waitFor(() => location.pathname === `/view/${board.id}`)
+    await waitFor(() => location.pathname === `/views/${board.id}`)
   })
 })

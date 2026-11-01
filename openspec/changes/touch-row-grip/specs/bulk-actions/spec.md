@@ -15,8 +15,8 @@ Each row SHALL show a selection checkbox whenever any row is ticked; it SHALL NO
 - **WHEN** a user on a phone taps the marker at a row's right edge
 - **THEN** the row is ticked, every row shows its checkbox, the selection bar appears, one haptic pulse fires, and the task did not open
 
-#### Scenario: Long press on the grip starts a selection
-- **WHEN** a user on a phone presses the row's grip and holds it still past the hold interval, then lifts
+#### Scenario: Long press starts a selection
+- **WHEN** a user on a phone presses and holds a row's grip without moving, then lifts
 - **THEN** the row is ticked, every row shows its checkbox, the selection bar appears, one haptic pulse fires, and the task did not open
 
 #### Scenario: The row body's long press never ticks
@@ -30,6 +30,10 @@ Each row SHALL show a selection checkbox whenever any row is ticked; it SHALL NO
 #### Scenario: The grip drags at once
 - **WHEN** a user on a phone presses a row's grip and moves it past the drag threshold without waiting for the hold
 - **THEN** the drag lifts immediately — the grip never scrolls — carrying the ticked selection when the pressed row was ticked before the press, and the row body is untouched
+
+#### Scenario: Hold and move drags the selection
+- **WHEN** two rows are ticked and the user holds the grip of one of them past the hold interval, then moves the finger
+- **THEN** the drag of both tasks starts with its usual feedback, and no third row is ticked
 
 #### Scenario: A hold that becomes a drag gives its tick back
 - **WHEN** a user on a phone holds a row's grip past the hold interval so it ticks, then drags and drops it elsewhere

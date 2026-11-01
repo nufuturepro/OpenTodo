@@ -1,8 +1,8 @@
 # CasaOS / ZimaOS app store template
 
-[`docker-compose.yml`](docker-compose.yml) is an app for the CasaOS / ZimaOS app store ([IceWhaleTech/CasaOS-AppStore](https://github.com/IceWhaleTech/CasaOS-AppStore)): a Docker Compose file with the store's `x-casaos` metadata. It runs the latest release by version (`ghcr.io/pixari/opentodo:0.9.0`, the store refuses moving tags), publishes the web port 8080 as 8418 on the server, keeps the data in `/DATA/AppData/$AppID/data` on `/data`, and offers the base URL, setup token, sign-up and trusted proxies settings with the catalogue's descriptions. No setting is required. A pinned `busybox` one-shot service (`opentodo-init`) runs `chown -R 65532:65532 /data` before OpenTodo starts, because Docker creates the bind folder owned by root and the image has no shell (the store's OpenClaw app does the same). The facts it shares with the other templates are in [`../deploy.json`](../deploy.json); `make check` keeps them in line ([`../README.md`](../README.md)).
+[`docker-compose.yml`](docker-compose.yml) is an app for the CasaOS / ZimaOS app store ([IceWhaleTech/CasaOS-AppStore](https://github.com/IceWhaleTech/CasaOS-AppStore)): a Docker Compose file with the store's `x-casaos` metadata. It runs the latest release by version (`ghcr.io/opentodoapp/opentodo:0.18.1`, the store refuses moving tags), publishes the web port 8080 as 8418 on the server, keeps the data in `/DATA/AppData/$AppID/data` on `/data`, and offers the base URL, setup token, sign-up and trusted proxies settings with the catalogue's descriptions. No setting is required. A pinned `busybox` one-shot service (`opentodo-init`) runs `chown -R 65532:65532 /data` before OpenTodo starts, because Docker creates the bind folder owned by root and the image has no shell (the store's OpenClaw app does the same). The facts it shares with the other templates are in [`../deploy.json`](../deploy.json); `make check` keeps them in line ([`../README.md`](../README.md)).
 
-**Status: not yet submitted.** The steps for users, including installing it now as a custom app, are in [docs/self-hosting/casaos.md](../../docs/self-hosting/casaos.md).
+**Status: Submitted: [IceWhaleTech/CasaOS-AppStore#1104](https://github.com/IceWhaleTech/CasaOS-AppStore/pull/1104).** The steps for users, including installing it now as a custom app, are in [docs/self-hosting/casaos.md](../../docs/self-hosting/casaos.md).
 
 ## Install it now, without the store
 
@@ -16,19 +16,18 @@ The store takes one folder per app. [`upstream/Apps/OpenTodo/`](upstream/Apps/Op
 | --- | --- |
 | `docker-compose.yml` | An identical copy of [`docker-compose.yml`](docker-compose.yml) |
 | `icon.svg` | An identical copy of [`../coolify/opentodo.svg`](../coolify/opentodo.svg) (`x-casaos.icon`) |
-| `icon.png` | 256x256, from `web/public/pwa-512.png` |
+| `icon.png` | 256x256, rendered from the brand mark by `make brand-icons` |
 | `thumbnail.png` | 1176x663, the Today screen (`docs/images/today-light.webp`), cropped |
 | `screenshot-1.png`, `screenshot-2.png` | 1280 wide, the Today and board screens (`docs/images/today-light.webp`, `board-light.webp`) |
 
 The asset URLs in `x-casaos` point at `https://cdn.jsdelivr.net/gh/IceWhaleTech/CasaOS-AppStore@main/Apps/OpenTodo/`, where the files are served once the pull request is merged; the store build copies them into its own output. The assets live only in `upstream/` (the template itself names them by URL). `node scripts/deploy-check.mjs` (`scripts/deploy/casaos.mjs`) fails when the copy differs, a file is missing or extra, the icon differs from the logo, or a PNG has the wrong size.
 
-To regenerate the PNGs (Pillow):
+To regenerate the screenshots (Pillow; `icon.png` and `icon.svg` come from `make brand-icons`):
 
 ```bash
 python3 - <<'EOF'
 from PIL import Image
 d = 'deploy/casaos/upstream/Apps/OpenTodo/'
-Image.open('web/public/pwa-512.png').convert('RGBA').resize((256, 256), Image.LANCZOS).save(d + 'icon.png', optimize=True)
 def shot(name):
     im = Image.open(f'docs/images/{name}.webp').convert('RGB')
     return im.resize((1280, round(im.height * 1280 / im.width)), Image.LANCZOS)

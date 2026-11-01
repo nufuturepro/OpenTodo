@@ -91,30 +91,15 @@ The colour the browser or operating system uses around the app (address bar, ins
 - **WHEN** the installed app is launched
 - **THEN** the splash screen shows the server's neutral colour, and the first frame after it uses the user's remembered appearance
 
-### Requirement: Appearance in Settings
-Settings → Appearance SHALL be its own section offering a mode control, one tile per theme (a horizontal row of swatches below 640 px), the density choice and the sidebar destination switches. Each tile SHALL preview its theme's accent on the current mode and name the theme in text. A choice SHALL apply at once, without a reload. Every control SHALL be operable by keyboard alone, and the current mode, theme and density SHALL be announced to assistive technology.
-
-#### Scenario: Pick a theme by keyboard
-- **WHEN** the user tabs to the theme tiles, moves with the arrow keys to `teal` and presses Enter or Space
-- **THEN** the app switches to the teal accent at once and the teal tile is marked as selected
-
-#### Scenario: Previews follow the mode
-- **WHEN** the user switches the mode from `light` to `dark` in the panel
-- **THEN** the app and every tile preview turn dark at once
-
-#### Scenario: Swatches on a phone
-- **WHEN** the user opens Appearance on a 390 px screen
-- **THEN** the eight themes are a single scrollable row of named swatches, not a grid of cards
-
 ### Requirement: Density preference
-Each user SHALL have a density preference, `comfortable` (default) or `compact`, stored and synced like mode and theme as an additive preference, applied at once to task rows, group headers and the sidebar. A client SHALL treat an unknown value as `comfortable` and keep the stored value unchanged. Touch targets SHALL stay 44 px on coarse pointers in both densities.
+Each user SHALL have a density preference, `comfortable` (default) or `compact`, stored and synced like mode and theme as an additive preference, applied at once to task rows, group headers and the sidebar. Comfortable rows SHALL be 36 px and compact rows 32 px with a fine pointer. A client SHALL treat an unknown value as `comfortable` and keep the stored value unchanged. Touch targets SHALL stay 44 px on coarse pointers in both densities.
 
 #### Scenario: Compact on two devices
 - **WHEN** the user picks Compact on a laptop
-- **THEN** rows are 36 px tall there at once and on the user's tablet after sync, where touch targets remain 44 px
+- **THEN** rows are 32 px tall there at once and on the user's tablet after sync, where touch targets remain 44 px
 
 ### Requirement: Sidebar destinations preference
-Each user SHALL have a synced list of promoted destinations, shown among the primary sidebar items. Any of these can be promoted: Loop home, Next, Waiting, Anytime, Someday, Assigned to me, Completed, Updates, Trash, Filter. The default is empty. Settings → Appearance SHALL offer one switch per destination. A client SHALL ignore unknown entries and keep the stored value unchanged. While the user's "How you work" preference is `first`, the switches SHALL be shown disabled with a sentence explaining that Open Loops first arranges the sidebar, and the stored list SHALL be kept.
+Each user SHALL have a synced list of promoted destinations, shown among the primary sidebar items. Any of these can be promoted: Loop home, Next, Waiting, Anytime, Someday, Assigned to me, Completed, Updates, Trash, Filter, Focus. The default is empty. Settings → Appearance SHALL offer one switch per destination. A client SHALL ignore unknown entries and keep the stored value unchanged. While the user's "How you work" preference is `first`, the switches SHALL be shown disabled with a sentence explaining that Open Loops first arranges the sidebar, and the stored list SHALL be kept.
 
 #### Scenario: Promote Someday
 - **WHEN** the user turns on Someday in Settings → Appearance
@@ -131,3 +116,152 @@ Each user SHALL have a synced list of promoted destinations, shown among the pri
 #### Scenario: Open Loops first
 - **WHEN** a user in `first` mode opens Settings → Appearance
 - **THEN** the destination switches are disabled with the explanation, and switching back to `companion` restores the promotions they show
+
+#### Scenario: Promote Focus
+- **WHEN** the user turns on Focus in Settings → Appearance
+- **THEN** Focus is listed among the primary items on every device after sync, and a client that predates this change ignores the `focus` entry and keeps the stored value unchanged
+
+### Requirement: Favourites preference
+Each user SHALL have a synced, ordered list of favourites, each an entry naming a kind (project, label or saved filter) and an id, stored and synced like the promoted destinations as an additive preference; the default is empty. A client SHALL ignore entries of an unknown kind or whose item is missing, archived or deleted, and keep the stored value unchanged. A saved filter whose own pinned flag is set SHALL be treated as a favourite even when the list does not name it, after the listed entries.
+
+#### Scenario: Pin on two devices
+- **WHEN** the user pins a project on a laptop
+- **THEN** the project is in Favourites there at once and on the user's phone after sync, in the same position
+
+#### Scenario: Unknown kind from a newer device
+- **WHEN** a device receives a favourites list containing an entry of a kind it does not know
+- **THEN** it shows the entries it knows, keeps the stored value unchanged, and a later write from this device preserves the unknown entry
+
+#### Scenario: Filter pinned on an older device
+- **WHEN** an older device sets a saved filter's pinned flag without writing the favourites list
+- **THEN** devices with this change list the filter in Favourites after the listed entries, and unpinning it on a new device clears the flag and removes it from the list
+
+#### Scenario: Concurrent pins converge
+- **WHEN** two devices pin different projects while offline and then sync
+- **THEN** both devices show the same Favourites group, the later write's order winning for the list and no project duplicated
+
+### Requirement: Retired row detail preference
+The `row_detail` field of the user's appearance preferences SHALL remain in the operation schema and the client defaults as a retired field: it is accepted, stored, synced and exported exactly as before, converges by last-writer-wins on the field, and SHALL have no effect on how rows render. No client SHALL write it, and no client SHALL remove or rename it; an older client that still writes `detailed` SHALL cause no change on a current client.
+
+#### Scenario: Older client writes Detailed
+- **WHEN** a device running the previous version picks Detailed and syncs
+- **THEN** the current devices receive the op, keep the value, and keep rendering the one row
+
+#### Scenario: Export round-trip
+- **WHEN** a user whose stored `row_detail` is `detailed` exports and imports into a new account
+- **THEN** the value travels in the export and is stored, and the rows are unchanged
+
+#### Scenario: Nothing is written
+- **WHEN** a user opens Settings → Appearance and changes the density
+- **THEN** one op for `density` is queued and none for `row_detail`
+
+### Requirement: Haptic feedback preference
+Each user SHALL have a `haptics` preference, `on` or `off`, defaulting to `on`, synced like the other appearance preferences as an additive field and editable offline, converging by last-writer-wins. With it on, a device that can vibrate SHALL give a short tick (at most 15 ms) when a task is completed and when a long press lifts a task for dragging; with it off, or on a device that cannot vibrate, nothing SHALL vibrate. The switch SHALL appear in Settings → Appearance only on devices that can vibrate; a client that receives an unknown value SHALL treat it as `on` and keep the stored value.
+
+#### Scenario: Complete on a phone
+- **WHEN** the preference is on and the user completes a task on a phone whose browser supports vibration
+- **THEN** the device ticks once as the check mark fills, and does not tick again when the row leaves
+
+#### Scenario: Turned off on one device
+- **WHEN** the user turns haptics off on their phone while offline and later opens a tablet
+- **THEN** the phone stops ticking at once, the preference syncs when online, and the tablet stops ticking too
+
+#### Scenario: Desktop hides the switch
+- **WHEN** the user opens Settings → Appearance in a desktop browser without vibration support
+- **THEN** no haptics row is shown and nothing is written to the preference
+
+#### Scenario: Older device
+- **WHEN** a device with an app version before this preference receives the field
+- **THEN** it ignores the field and keeps syncing as before
+
+### Requirement: Task opening preference
+Each user SHALL have a preference for how a task opens from a list, `page` (the default) or `panel`, stored as the additive field `task_open` of the user's preferences. It SHALL be written as an operation on the user's personal data like mode and theme, so it applies on every device of that user and never on another user's. It SHALL be editable offline and take effect at once on the editing device, and concurrent edits SHALL converge by last-writer-wins. A client SHALL treat an empty or unknown value as `page` and keep the stored value unchanged. `panel` opens tasks in the side panel of `web-app` "Task details in a side panel", on screens at least 1024 px wide only; on a narrower screen the preference has no effect.
+
+Settings → Appearance → Task details SHALL offer it as "Open tasks" with the choices "As a page" and "In a side panel", saying that the panel needs a window at least 1024 px wide and that the choice applies on all the user's devices. Searching settings for "side panel" or "open tasks" SHALL find the row.
+
+#### Scenario: New account
+- **WHEN** a user who never changed the preference opens a task in Today on a 1280 px wide screen
+- **THEN** the task opens as its page, exactly as before this change
+
+#### Scenario: Choose the side panel on two devices
+- **WHEN** the user picks "In a side panel" on a desktop and the user's laptop syncs later
+- **THEN** both open tasks in the side panel, the laptop without a reload, and the user's phone still opens them as pages
+
+#### Scenario: Choose offline
+- **WHEN** the device is offline and the user picks "In a side panel"
+- **THEN** the next task opened shows in the panel at once, and the choice reaches the other devices on the next sync
+
+#### Scenario: Unknown value from a newer client
+- **WHEN** a device receives a `task_open` value it does not know
+- **THEN** it opens tasks as pages and writes no operation
+
+#### Scenario: Older device
+- **WHEN** a device with an app version before this preference receives the field
+- **THEN** it ignores the field and keeps opening tasks as before
+
+### Requirement: Appearance in Settings
+Settings → Appearance SHALL be its own section offering a mode control, one tile per theme (a horizontal row of swatches below 640 px), the density choice, the task rows choice (One line or Detailed, see `row-layouts` "Where the row layout is chosen"), the haptic feedback switch on devices that can vibrate, and the sidebar destination switches. Each tile SHALL preview its theme's accent on the current mode and name the theme in text. A choice SHALL apply at once, without a reload. Every control SHALL be operable by keyboard alone, and the current mode, theme, density, task rows and haptics state SHALL be announced to assistive technology. The section SHALL NOT offer the retired row detail choice (Calm or Detailed, `row_detail`).
+
+#### Scenario: Pick a theme by keyboard
+- **WHEN** the user tabs to the theme tiles, moves with the arrow keys to `teal` and presses Enter or Space
+- **THEN** the app switches to the teal accent at once and the teal tile is marked as selected
+
+#### Scenario: Previews follow the mode
+- **WHEN** the user switches the mode from `light` to `dark` in the panel
+- **THEN** the app and every tile preview turn dark at once
+
+#### Scenario: Swatches on a phone
+- **WHEN** the user opens Appearance on a 390 px screen
+- **THEN** the eight themes are a single scrollable row of named swatches, not a grid of cards
+
+#### Scenario: Task rows after Density
+- **WHEN** the user tabs through Settings → Appearance after Density
+- **THEN** the next control is the Task rows choice, One line or Detailed, and choosing Detailed writes one op for `row_layout` and none for `row_detail`
+
+### Requirement: Sidebar counts preference
+Each user SHALL have a synced sidebar counts preference: "Inbox and Today" (the default) or "Every list", offered in Settings → Appearance with a short description of each. It decides which sidebar rows show their count at rest (`app-shell` "Sidebar structure"). Counts are always computed on the device from local rows and are never stored, so they are correct offline and follow every sync. The preference is an additive field of the user's preferences row: written offline through the outbox, converging by last-writer-wins, included in the export. An unknown value reads as the default and is kept unchanged.
+
+#### Scenario: Turn every count on
+- **WHEN** the user chooses "Every list" in Settings → Appearance on the laptop
+- **THEN** the laptop's sidebar shows the counts of projects, labels and views at once, and the phone does after sync
+
+#### Scenario: Default
+- **WHEN** a user who never changed the preference opens Settings → Appearance
+- **THEN** "Inbox and Today" is selected and the sidebar shows numbers only on Inbox, Today and collapsed group headers
+
+#### Scenario: Offline
+- **WHEN** the device is offline and the user switches to "Every list"
+- **THEN** the counts show at once from local data and the choice reaches the other devices when the network returns
+
+#### Scenario: Unknown value
+- **WHEN** a newer client stores a value this client does not know
+- **THEN** this client shows the default and keeps the stored value unchanged
+
+### Requirement: Primary destination order
+Each user SHALL have a synced order of the primary sidebar destinations. Settings → Appearance SHALL list the destinations that can be primary in that order: Inbox, Today, Upcoming and Calendar, and the promotable ones with their "Show in sidebar" switch. Each row SHALL have a drag handle and Move up and Move down in its menu, and Alt+↑ and Alt+↓ SHALL move the focused row.
+
+The sidebar SHALL list the primary destinations that are shown in this order:
+- destinations missing from it follow in the default order;
+- ids a client does not know are ignored and kept.
+
+The order is an additive field of the user's preferences row, separate from the promotion list: written offline through the outbox, converging by last-writer-wins on the whole order, and included in the export. While "How you work" is Open Loops first, the list SHALL be disabled with the existing explanation and the stored order kept. The phone tab bar keeps Today, Inbox and Upcoming, and the drawer lists the remaining primary destinations in the stored order.
+
+#### Scenario: Move Today first
+- **WHEN** the user moves Today above Inbox with Move up in Settings → Appearance
+- **THEN** the sidebar lists Today, Inbox, Upcoming, Calendar on this device at once and on the user's other devices after sync
+
+#### Scenario: Keyboard
+- **WHEN** focus is on the Calendar row of the list and the user presses Alt+↑ twice
+- **THEN** Calendar moves above Today and Upcoming, the change is announced, and focus stays on the Calendar row
+
+#### Scenario: Newly promoted destination
+- **WHEN** the stored order holds `today,inbox,upcoming,calendar` and the user promotes Someday
+- **THEN** Someday is listed last among the primary destinations, and can then be moved
+
+#### Scenario: Concurrent reorders
+- **WHEN** the laptop moves Calendar first and the phone moves Upcoming first, both offline, then both sync
+- **THEN** every device shows the order written last, whole
+
+#### Scenario: Older client
+- **WHEN** a client that predates this change syncs a stored order
+- **THEN** it shows its default order and keeps the field unchanged, and a later promotion from that client does not remove it

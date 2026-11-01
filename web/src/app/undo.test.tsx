@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { createProject, createSubtask, createTask, resetDeviceId } from '../lib/ops'
 import { setCurrentUserId } from '../lib/sharing'
-import { click, flush, render } from '../ui/test-utils'
+import { click, render, waitFor } from '../ui/test-utils'
 import { TOAST_MS, UndoToast, undoToast } from './bulk/UndoToast'
 import { ACTION_TOAST_MS, bulkToast, hideBulkToast } from './bulk/toastStore'
 import { PanelHost } from './PanelHost'
@@ -25,12 +25,8 @@ beforeEach(async () => {
   // Offline throughout: nothing reaches a server, everything lands in the outbox.
   vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
 })
-afterEach(() => { vi.unstubAllGlobals(); hideBulkToast(); resetPanel(); document.body.innerHTML = '' })
+afterEach(() => { vi.unstubAllGlobals(); hideBulkToast(); resetPanel() })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const toast = () => document.querySelector('[data-bulk-toast]')
 const opsFor = (id: string, field: string) => db.outbox.toArray().then((ops) => ops.filter((o) => o.entityId === id && o.field === field))
 

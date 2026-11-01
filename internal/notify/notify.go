@@ -58,8 +58,8 @@ func (Nop) Assigned(context.Context, Assigned) {}
 // (OpenSpec change `comments-and-activity`).
 const KindMentioned = "mentioned"
 
-// Mentioned is emitted once per account newly listed in a comment's mentions,
-// after the batch that added it committed. Only current members of the task's
+// Mentioned is emitted once per account newly listed in a comment's mentions or
+// a task's note_mentions, after the batch that added it committed. Only current members of the task's
 // shared project are ever mentioned (the sync engine filters the list at
 // receipt). Excerpt is the start of the comment body on one line.
 type Mentioned struct {
@@ -73,6 +73,14 @@ type Mentioned struct {
 	ProjectName string `json:"projectName,omitempty"`
 	Excerpt     string `json:"excerpt"`
 	At          int64  `json:"at"` // Unix ms, server time of the batch
+	// Source is "note" for a mention in a task's notes (editor-everywhere D7, no
+	// CommentID); empty for a comment.
+	Source string `json:"source,omitempty"`
+	// GroupID and GroupName name the workspace group through which the
+	// recipient was mentioned, when they were not mentioned directly (OpenSpec
+	// change group-mentions, D3).
+	GroupID   string `json:"groupId,omitempty"`
+	GroupName string `json:"groupName,omitempty"`
 }
 
 // MentionSink is implemented by sinks that also handle mentions. It is separate
@@ -172,3 +180,85 @@ func (m Multi) PageActivity(ctx context.Context, e PageEvent) {
 
 // PageActivity implements PageSink.
 func (Nop) PageActivity(context.Context, PageEvent) {}
+
+// Automation rule notifications (OpenSpec change automation-rules, design D8):
+// rule_fired when a rule with the notify action ran on a task, rule_paused when
+// the server paused a rule that ran too often (once per pause).
+const (
+	KindRuleFired  = "rule_fired"
+	KindRulePaused = "rule_paused"
+)
+
+// RuleEvent names the rule and, for rule_fired, the task. Names and titles go
+// through e2ee.Display: an encrypted account's devices show their own text.
+type RuleEvent struct {
+	UserID    string `json:"-"`
+	RuleID    string `json:"ruleId"`
+	RuleName  string `json:"ruleName"`
+	TaskID    string `json:"taskId,omitempty"`
+	TaskTitle string `json:"taskTitle,omitempty"`
+	At        int64  `json:"at"`
+}
+
+// RuleSink is implemented by sinks that also handle rule events; like
+// MentionSink it is separate from Sink so existing sinks keep compiling.
+type RuleSink interface {
+	RuleFired(ctx context.Context, e RuleEvent)
+	RulePaused(ctx context.Context, e RuleEvent)
+}
+
+// RuleFired fans the event out to every sink that implements RuleSink.
+func (m Multi) RuleFired(ctx context.Context, e RuleEvent) {
+	for _, s := range m {
+		if rs, ok := s.(RuleSink); ok {
+			rs.RuleFired(ctx, e)
+		}
+	}
+}
+
+// RulePaused fans the event out to every sink that implements RuleSink.
+func (m Multi) RulePaused(ctx context.Context, e RuleEvent) {
+	for _, s := range m {
+		if rs, ok := s.(RuleSink); ok {
+			rs.RulePaused(ctx, e)
+		}
+	}
+}
+
+// KindMemberInvitation: someone who shares nothing with the recipient asked to
+// add them to a project or workspace (OpenSpec change member-add-consent, D5).
+const KindMemberInvitation = "member_invitation"
+
+// MemberInvited is emitted once when an invitation to an existing account is
+// stored. Target is "project" or "workspace"; TargetName is the project's or
+// workspace's name as shown to people (e2ee.Display for a project).
+type MemberInvited struct {
+	RecipientID  string `json:"-"`
+	InvitationID string `json:"invitationId"`
+	Target       string `json:"target"`
+	TargetID     string `json:"targetId"`
+	TargetName   string `json:"targetName,omitempty"`
+	InviterID    string `json:"inviterId"`
+	InviterName  string `json:"inviterName"`
+	Role         string `json:"role"`
+	At           int64  `json:"at"`
+}
+
+// InvitationSink is implemented by sinks that also handle membership
+// invitations; like MentionSink it is separate from Sink so existing sinks
+// keep compiling.
+type InvitationSink interface {
+	MemberInvited(ctx context.Context, e MemberInvited)
+}
+
+// MemberInvited fans the event out to every sink that implements InvitationSink.
+func (m Multi) MemberInvited(ctx context.Context, e MemberInvited) {
+	for _, s := range m {
+		if is, ok := s.(InvitationSink); ok {
+			is.MemberInvited(ctx, e)
+		}
+	}
+}
+
+// MemberInvited implements InvitationSink.
+func (Nop) MemberInvited(context.Context, MemberInvited) {}

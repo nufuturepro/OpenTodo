@@ -1,11 +1,9 @@
 // @vitest-environment happy-dom
 // Action menus as data (OpenSpec change labels-and-menus, tasks 1.2–1.4).
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
-import { click, flush, key, render } from '../../ui/test-utils'
+import { describe, expect, it } from 'vitest'
+import { click, key, render, waitFor } from '../../ui/test-utils'
 import { ActionMenu, orderGroups, useConfirm, type ActionGroup } from './ActionMenu'
-
-afterEach(() => { document.body.innerHTML = '' })
 
 const targets = [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }, { id: 'c', name: 'Current' }]
 
@@ -32,7 +30,7 @@ async function openMenu(calls: string[]) {
   const trigger = r.container.querySelector('button')!
   trigger.focus()
   await click(trigger)
-  await flush(20)
+  await waitFor(() => items().length > 0, 'the open menu')
   return { ...r, trigger }
 }
 
@@ -64,17 +62,17 @@ describe('ActionMenu', () => {
     const calls: string[] = []
     const { unmount } = await openMenu(calls)
     await click(items()[3])
-    await flush(20)
+    await waitFor(() => !!document.querySelector('[data-picker-step]'), 'the picker step')
     expect(document.querySelector('[data-picker-step]')).toBeTruthy()
     const options = [...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)
     expect(options.join(' ')).toContain('Alpha')
     expect(options.join(' ')).not.toContain('Current')
     await key(document, 'Escape')
-    await flush(20)
+    await waitFor(() => !document.querySelector('[data-picker-step]'), 'back from the picker')
     expect(document.querySelector('[data-picker-step]')).toBeNull()
     expect(items().length).toBe(5)
     await key(document, 'Escape')
-    await flush(20)
+    await waitFor(() => !document.querySelector('[role="menu"]'), 'the menu closed')
     expect(document.querySelector('[role="menu"]')).toBeNull()
     expect(calls).toEqual([])
     await unmount()
@@ -84,10 +82,10 @@ describe('ActionMenu', () => {
     const calls: string[] = []
     const { unmount } = await openMenu(calls)
     await click(items()[3])
-    await flush(20)
+    await waitFor(() => document.querySelectorAll('[role="option"]').length > 0, 'the picker options')
     const beta = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes('Beta')) as HTMLElement
     await act(async () => { beta.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); beta.click() })
-    await flush(20)
+    await waitFor(() => calls.length > 0, 'the pick applied')
     expect(calls).toEqual(['move:b'])
     expect(document.querySelector('[data-picker-step]')).toBeNull()
     await unmount()
@@ -97,7 +95,7 @@ describe('ActionMenu', () => {
     const calls: string[] = []
     const { unmount } = await openMenu(calls)
     await click(items()[4])
-    await flush(30)
+    await waitFor(() => !!document.querySelector('[role="alertdialog"]'), 'the confirm dialog')
     expect(document.querySelector('[role="menu"]')).toBeNull()
     const dialog = document.querySelector('[role="alertdialog"]')!
     expect(dialog.textContent).toContain('3 open tasks are affected.')
@@ -105,7 +103,7 @@ describe('ActionMenu', () => {
     const confirm = [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Delete thing')
     expect(confirm).toBeTruthy()
     await click(document.activeElement!)
-    await flush(20)
+    await waitFor(() => !document.querySelector('[role="alertdialog"]'), 'the dialog closed')
     expect(document.querySelector('[role="alertdialog"]')).toBeNull()
     expect(calls).toEqual([])
     await unmount()
@@ -115,10 +113,10 @@ describe('ActionMenu', () => {
     const calls: string[] = []
     const { unmount } = await openMenu(calls)
     await click(items()[4])
-    await flush(30)
+    await waitFor(() => !!document.querySelector('[role="alertdialog"]'), 'the confirm dialog')
     const confirm = [...document.querySelectorAll('[role="alertdialog"] button')].find((b) => b.textContent === 'Delete thing')!
     await click(confirm)
-    await flush(20)
+    await waitFor(() => calls.length > 0, 'the action run')
     expect(calls).toEqual(['deleted'])
     await unmount()
   })
@@ -142,9 +140,9 @@ describe('a panel item (task-menu-refinement D2)', () => {
     const trigger = r.container.querySelector('button')!
     trigger.focus()
     await click(trigger)
-    await flush(20)
+    await waitFor(() => items().some((b) => b.getAttribute('data-menu-label') === 'Pick a date…'), 'the menu items')
     await click(items().find((b) => b.getAttribute('data-menu-label') === 'Pick a date…')!)
-    await flush(20)
+    await waitFor(() => !!document.querySelector('[data-panel-content]'), 'the date panel')
     return r
   }
 
@@ -155,13 +153,13 @@ describe('a panel item (task-menu-refinement D2)', () => {
     expect(document.querySelector('[data-panel-content]')).toBeTruthy()
     expect(items().map((b) => b.getAttribute('data-menu-label'))).toEqual(['Rename', 'Pick a date…'])
     await key(document, 'Escape')
-    await flush(20)
+    await waitFor(() => !document.querySelector('[data-panel-content]') && !document.querySelector('[data-menu-extended]'), 'the panel to close')
     expect(document.querySelector('[data-panel-content]')).toBeNull()
     expect(document.querySelector('[data-menu-extended]')).toBeNull()
     expect(items().length).toBe(2)
     expect(document.activeElement?.getAttribute('data-menu-label')).toBe('Pick a date…')
     await key(document, 'Escape')
-    await flush(20)
+    await waitFor(() => !document.querySelector('[data-overlay-root]'), 'the menu to close')
     expect(document.querySelector('[data-overlay-root]')).toBeNull()
     expect(calls).toEqual([])
     await r.unmount()
@@ -171,7 +169,7 @@ describe('a panel item (task-menu-refinement D2)', () => {
     const calls: string[] = []
     const r = await openPanel(calls)
     await click(items().find((b) => b.getAttribute('data-menu-label') === 'Rename')!)
-    await flush(20)
+    await waitFor(() => !document.querySelector('[data-overlay-root]'), 'the menu to close')
     expect(calls).toEqual(['rename'])
     expect(document.querySelector('[data-overlay-root]')).toBeNull()
     await r.unmount()
@@ -181,7 +179,7 @@ describe('a panel item (task-menu-refinement D2)', () => {
     const calls: string[] = []
     const r = await openPanel(calls)
     await click(document.querySelector<HTMLElement>('[data-pick]')!)
-    await flush(20)
+    await waitFor(() => !document.querySelector('[data-overlay-root]'), 'the menu to close')
     expect(calls).toEqual(['picked'])
     expect(document.querySelector('[data-overlay-root]')).toBeNull()
     await r.unmount()
@@ -197,10 +195,10 @@ describe('useConfirm', () => {
     }
     const r = await render(<Host />)
     await click(r.container.querySelector('button')!)
-    await flush(20)
+    await waitFor(() => !!document.querySelector('[role="alertdialog"]'), 'the confirm dialog')
     expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('Two labels become one.')
     await key(document, 'Escape')
-    await flush(20)
+    await waitFor(() => !document.querySelector('[role="alertdialog"]'), 'the dialog closed')
     expect(document.querySelector('[role="alertdialog"]')).toBeNull()
     expect(calls).toEqual([])
     await r.unmount()

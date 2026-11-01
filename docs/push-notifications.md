@@ -11,7 +11,7 @@ order: 85
 
 <picture><source srcset="images/settings-notifications-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/settings-notifications-light.webp" alt="Settings, Notifications section with the options Enable notifications on this device and Include task titles."></picture>
 
-Push notifications deliver [reminders](notifications.md) even when OpenTodo isn't open. Each device decides for itself.
+Push notifications deliver [reminders](notifications.md) even when OpenTodo isn't open. Each device decides for itself. To receive them in ntfy, Pushover, Gotify or through a webhook instead, add a [delivery channel](notification-channels.md).
 
 ## Get reminders when the app is closed
 
@@ -28,6 +28,10 @@ Below the options, **Delivery check** lists everything push needs on this device
 ## On iPhone and iPad
 
 Push needs iOS or iPadOS 16.4 or later, and only works in the installed app. Add OpenTodo to your home screen first ([Install on your phone](install-phone.md#iphone-and-ipad)), open it from there, then turn on notifications in its settings.
+
+## In the Android app
+
+The [Android app](android-app.md) uses no push service: the switch reads **Notifications through the app**, and the app schedules your next seven days of reminders on the phone, refreshing them about hourly. For reminders on time, allow **Alarms & reminders** for OpenTodo in Android's settings, and exempt it from battery optimisation if your phone delays alarms.
 
 ## Privacy
 

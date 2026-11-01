@@ -4,18 +4,21 @@
 //   2. no emoji or Unicode glyph is used as an icon in web/src/app (use <Icon>),
 //   3. no user-facing text in web/src/app and web/src/ui bypasses the message layer
 //      (OpenSpec change app-localization, design D8; scripts/i18n/untranslated.mjs,
-//      exceptions in scripts/i18n/allow.txt).
+//      exceptions in scripts/i18n/allow.txt),
+//   4. "Learn more" is rendered only by the LearnMore element (settings-refresh D2).
 // A glyph counts as an icon when it stands alone in a string or JSX text, starts or
 // ends a label ("✓ Complete", "Next ›"), or is a trigger=/icon= prop. Typography
 // inside copy ("Settings → Integrations", "2 × 3") is fine.
 //
 //   node scripts/ui-check.mjs            (exit 1 with file:line for each problem)
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { untranslated } from './i18n/untranslated.mjs'
 
 const repo = fileURLToPath(new URL('..', import.meta.url))
+/** A repo-relative path with forward slashes: the rules below match on them, on every OS. */
+const rel = (f) => relative(repo, f).split(sep).join('/')
 const walk = (dir) => readdirSync(dir).flatMap((n) => {
   const p = join(dir, n)
   return statSync(p).isDirectory() ? walk(p) : [p]
@@ -64,6 +67,18 @@ export function rawDueTimeProblems(file, text) {
   return out
 }
 
+// "Learn more" (OpenSpec change settings-refresh, design D2; settings-navigation
+// "Learn more links") comes only from the LearnMore element, which points like a link.
+export function learnMoreProblems(file, text) {
+  if (file.endsWith('web/src/ui/LearnMore.tsx')) return []
+  const out = []
+  text.split('\n').forEach((line, i) => {
+    const code = line.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '')
+    if (/t\(\s*['"]Learn more['"]\s*\)|>\s*Learn more\s*</.test(code)) out.push(`${file}:${i + 1}: "Learn more" outside the LearnMore element: ${line.trim().slice(0, 100)}`)
+  })
+  return out
+}
+
 // Illustrations (OpenSpec change inbox-means-unplaced, design D9; design-system
 // "Illustrations") use the design tokens only: no hard-coded colour, no raster or
 // external image, no text, no gradient or filter, and at most 4 KB per file.
@@ -76,13 +91,27 @@ const ILLUSTRATION_RULES = [
   [/Gradient\b|<filter\b|<feDropShadow\b/, 'a gradient, filter or shadow'],
 ]
 
+// illustrations-v2: two stroke weights (the main line and the fine detail line), shape
+// fills from three surface tokens only, and at most one accent shape per drawing.
+export const ILLUSTRATION_STROKES = ['1.75', '1']
+const ILLUSTRATION_FILLS = ['none', 'var(--color-surface)', 'var(--color-sunken)', 'var(--color-accent)']
+
 export function illustrationProblems(file, text) {
   const out = []
   if (Buffer.byteLength(text, 'utf8') > ILLUSTRATION_MAX_BYTES) out.push(`${file}: over ${ILLUSTRATION_MAX_BYTES} bytes`)
+  let accents = 0
   text.split('\n').forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, '')
     for (const [re, what] of ILLUSTRATION_RULES) if (re.test(code)) out.push(`${file}:${i + 1}: ${what}`)
+    for (const [, w] of code.matchAll(/strokeWidth="([^"]*)"/g)) {
+      if (!ILLUSTRATION_STROKES.includes(w)) out.push(`${file}:${i + 1}: stroke width ${w} (use ${ILLUSTRATION_STROKES.join(' or ')})`)
+    }
+    for (const [, f] of code.matchAll(/\bfill="([^"]*)"/g)) {
+      if (!ILLUSTRATION_FILLS.includes(f)) out.push(`${file}:${i + 1}: fill ${f} (use the surface, the sunken surface or the accent)`)
+      if (f === 'var(--color-accent)') accents++
+    }
   })
+  if (accents > 1) out.push(`${file}: ${accents} accent shapes (at most one)`)
   return out
 }
 
@@ -98,7 +127,7 @@ function storyProblems() {
       const covers = (s) => readFileSync(join(dir, s), 'utf8').includes(`from './${stem}'`)
       return !siblings.some(covers)
     })
-    .map((f) => `${relative(repo, f)}: no stories file imports this component`)
+    .map((f) => `${rel(f)}: no stories file imports this component`)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -106,11 +135,13 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const problems = [
     ...storyProblems(),
     ...walk(app).filter((f) => f.endsWith('.tsx') && !/\.test\.tsx$/.test(f))
-      .flatMap((f) => iconProblems(relative(repo, f), readFileSync(f, 'utf8'))),
+      .flatMap((f) => iconProblems(rel(f), readFileSync(f, 'utf8'))),
     ...[...walk(app), ...walk(join(repo, 'web/src/ui'))].filter((f) => /\.tsx?$/.test(f) && !/\.(test|stories)\.tsx?$/.test(f))
-      .flatMap((f) => rawDueTimeProblems(relative(repo, f), readFileSync(f, 'utf8'))),
+      .flatMap((f) => rawDueTimeProblems(rel(f), readFileSync(f, 'utf8'))),
+    ...[...walk(app), ...walk(join(repo, 'web/src/ui'))].filter((f) => /\.tsx?$/.test(f) && !/\.(test|stories)\.tsx?$/.test(f))
+      .flatMap((f) => learnMoreProblems(rel(f), readFileSync(f, 'utf8'))),
     ...walk(join(repo, 'web/src/ui/illustrations')).filter((f) => f.endsWith('.tsx') && !/\.(test|stories)\.tsx$/.test(f))
-      .flatMap((f) => illustrationProblems(relative(repo, f), readFileSync(f, 'utf8'))),
+      .flatMap((f) => illustrationProblems(rel(f), readFileSync(f, 'utf8'))),
     ...untranslated().map((p) => `${p} (untranslated: wrap it in t() or add it to scripts/i18n/allow.txt)`),
   ]
   if (problems.length) {

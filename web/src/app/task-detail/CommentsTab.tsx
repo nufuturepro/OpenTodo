@@ -3,26 +3,32 @@
 // behaviour"): threads oldest first, chat style, with the composer after the
 // newest one. Built from local storage, so it reads and writes offline. Viewers
 // may comment, so it ignores the panel's read-only mode.
-import { useLiveQuery } from 'dexie-react-hooks'
 import { forwardRef, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useAttachmentLimits } from '../../lib/attachments'
 import {
-  canDeleteComment, canEditComment, createComment, deleteComment, editComment, mentionableMembers, type Thread, threadOrder, threadVisible,
+  canDeleteComment, canEditComment, createComment, deleteComment, editComment, type MentionTarget, type ReactionName, type Thread, threadOrder,
+  threadVisible, toggleReaction,
 } from '../../lib/comments'
-import { useCommentAttachments, useCommentRows } from '../../lib/localData'
+import { useCommentAttachments, useCommentRows, useMembershipMap } from '../../lib/localData'
 import { useDemo } from '../../lib/demo'
-import { currentUserId, membershipMap, memberName, roleOf } from '../../lib/sharing'
-import type { Attachment, Comment, Membership, ProjectMember, ProjectRole, Task } from '../../lib/types'
-import { Avatar } from '../../ui'
+import { memberName, roleOf, useMe } from '../../lib/sharing'
+import type { Attachment, Comment, ProjectRole, Task } from '../../lib/types'
+import { mentionChipsOf, useMentionTargets } from '../useMentionTargets'
+import { PersonAvatar } from '../PersonAvatar'
 import { Button, Icon, IconButton, Menu, MenuItem } from '../../ui'
 import { ConfirmDialog } from '../../ui'
 import { useTaskPublished } from './taskPageStatus'
 import { Markdown } from '../Markdown'
 import { CommentAttachments } from './AttachmentsRow'
-import { Composer, readDraft } from './Composer'
+import { afterTap } from './afterTap'
+import { Composer, readDraft, type ComposedExtras } from './Composer'
+import { ReactionBar, ReactionMenuItems } from './ReactionBar'
 import { RelativeTime } from './RelativeTime'
 import { t } from '../../lib/i18n'
+import { messageOf } from '../../lib/errorText'
+import { useAction } from '../../lib/useAction'
+import { useResetOnChange } from '../../lib/useResetOnChange'
 
 /** True on touch screens: comment actions are always shown there instead of on hover. */
 export function useCoarsePointer(): boolean {
@@ -43,16 +49,19 @@ export interface CommentsViewProps {
   threads: Thread[]
   me: string | null
   role: ProjectRole
-  members: ProjectMember[]
+  /** Who can be mentioned: the project's members, then its workspace's groups (group-mentions D4). */
+  members: MentionTarget[]
   name: (id: string) => string
   /** Resolve true when stored. */
-  onCreate: (body: string, mentions: string[], parentId: string | null, files: File[]) => Promise<boolean>
+  onCreate: (body: string, mentions: string[], parentId: string | null, files: File[], extras?: ComposedExtras) => Promise<boolean>
   /** Attachments by comment id (OpenSpec attachments), shown under each comment. */
   attachments?: Map<string, Attachment[]>
   /** Offer the composer's attach button. */
   canAttach?: boolean
   onEdit: (id: string, body: string, mentions: string[]) => Promise<boolean>
   onDelete: (id: string) => Promise<unknown>
+  /** Toggle the viewer's reaction (editor-everywhere D8); no reactions without it. */
+  onReact?: (id: string, reaction: ReactionName) => void
   error?: string | null
   /** Comment to scroll to and highlight (from the Activity tab). */
   focusComment?: string | null
@@ -62,11 +71,15 @@ export interface CommentsViewProps {
   composerHost?: HTMLElement | null
   /** Changes when Shift+C asks for the composer: it expands and takes focus. */
   expand?: number
+  /** The composer's field: the rich editor (default) or the plain text field (stories with fixed baselines). */
+  richComposer?: boolean
 }
 
-export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewProps>(function CommentsView(
-  { taskId, threads, me, role, members, name, onCreate, onEdit, onDelete, error, focusComment, now, attachments, canAttach = false, composerHost, expand = 0 }, composerRef,
+export const CommentsView = forwardRef<HTMLElement | null, CommentsViewProps>(function CommentsView(
+  { taskId, threads, me, role, members, name, onCreate, onEdit, onDelete, onReact, error, focusComment, now, attachments, canAttach = false, composerHost, expand = 0, richComposer }, composerRef,
 ) {
+  // Mention tokens of the members and groups, shown as chips in the bodies.
+  const { names: mentionChips, groups: groupChips } = mentionChipsOf(members)
   const coarse = useCoarsePointer()
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
@@ -101,7 +114,7 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
   // expands on click or focus, with a draft, with a reply target or on Shift+C, and
   // collapses again when left empty.
   const [open, setOpen] = useState(() => !!readDraft(taskId))
-  useEffect(() => { setOpen(!!readDraft(taskId)) }, [taskId])
+  useResetOnChange([taskId], () => setOpen(!!readDraft(taskId)))
   // A published task's comments appear on its page (task-pages, "Composer notice").
   const published = useTaskPublished(taskId)
   const focusComposer = () => requestAnimationFrame(() => (typeof composerRef === 'object' ? composerRef?.current : null)?.focus())
@@ -123,7 +136,8 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
     const reply = !isReply
     const edit = canEditComment(c, me)
     const del = canDeleteComment(c, me, role)
-    if (!reply && !edit && !del) return null
+    const react = !!onReact && !!me
+    if (!reply && !edit && !del && !(coarse && react)) return null
     if (coarse) {
       return (
         <span className="absolute -top-1 right-0" data-comment-actions>
@@ -131,6 +145,7 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
             {reply && <MenuItem label={t('Reply')} icon="corner-down-right" onSelect={() => startReply(c.id)} />}
             {edit && <MenuItem label={t('Edit')} icon="pencil" onSelect={() => setEditing(c.id)} />}
             {del && <MenuItem label={t('Delete')} icon="trash-2" danger onSelect={() => setDeleting(c.id)} />}
+            {react && <ReactionMenuItems comment={c} me={me} onReact={onReact} />}
           </Menu>
         </span>
       )
@@ -150,7 +165,7 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
     const author = c.guest_name ? t('{name} (guest)', { name: c.guest_name }) : name(c.author_id)
     return (
       <article className="group relative flex gap-3" aria-label={t('Comment by {author}', { author })} data-guest-comment={c.guest_name ? '' : undefined}>
-        <Avatar id={c.guest_name ? `guest:${c.guest_name}` : c.author_id || 'unknown'} name={c.guest_name || author} size={isReply ? 'sm' : 'md'} />
+        <PersonAvatar id={c.guest_name ? `guest:${c.guest_name}` : c.author_id || 'unknown'} name={c.guest_name || author} size={isReply ? 'sm' : 'md'} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2">
             <span className="text-body font-semibold text-default">{author}</span>
@@ -163,14 +178,22 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
           </div>
           {editing === c.id ? (
             <div className="mt-1">
-              <Composer id={`edit-${c.id}`} initial={c.body} members={members} me={me} autoFocus submitLabel={t('Save')} label={t('Edit comment')}
+              <Composer id={`edit-${c.id}`} rich={richComposer} initial={c.body} members={members} me={me} autoFocus submitLabel={t('Save')} label={t('Edit comment')}
                 onCancel={() => setEditing(null)}
-                onSubmit={(body, mentions) => onEdit(c.id, body, mentions).then((ok) => { if (ok) setEditing(null); return ok })} />
+                onSubmit={(body, mentions) => {
+                  // Submitted unchanged: nothing to write (comments "Unchanged edit is byte-identical").
+                  if (body === c.body) {
+                    setEditing(null)
+                    return Promise.resolve(true)
+                  }
+                  return onEdit(c.id, body, mentions).then((ok) => { if (ok) setEditing(null); return ok })
+                }} />
             </div>
           ) : (
             <>
-              {c.body && <Markdown source={c.body} className="user-text mt-0.5 max-w-prose text-body leading-relaxed text-default" />}
+              {c.body && <Markdown source={c.body} taskId={taskId} mentions={mentionChips} mentionGroups={groupChips} className="user-text mt-0.5 max-w-prose text-body leading-relaxed text-default" />}
               <CommentAttachments list={attachments?.get(c.id) ?? []} />
+              {onReact && <ReactionBar comment={c} me={me} name={name} onReact={onReact} coarse={coarse} />}
             </>
           )}
         </div>
@@ -190,8 +213,9 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
       onBlur={(e) => {
         // Leaving an empty composer (no draft, no reply) puts it back to rest.
         const next = e.relatedTarget as Node | null
-        if (!composerHost || (next && e.currentTarget.contains(next)) || replyTarget) return
-        if (!readDraft(taskId).trim()) setOpen(false)
+        const block = e.currentTarget
+        if (!composerHost || (next && block.contains(next)) || replyTarget) return
+        afterTap(() => { if (!block.contains(document.activeElement) && !readDraft(taskId).trim()) setOpen(false) })
       }}>
       {published && <p className="text-meta text-muted" data-page-composer-notice><Icon name="globe" size="xs" /> {t('This task is published: comments you write from now on are visible on its page.')}</p>}
       {replyTarget && (
@@ -200,9 +224,9 @@ export const CommentsView = forwardRef<HTMLTextAreaElement | null, CommentsViewP
           <IconButton icon="x" size="sm" label={t('Cancel reply')} onClick={() => setReplyTo(null)} />
         </div>
       )}
-      <Composer ref={composerRef} id="comment-composer" draftTaskId={taskId} members={members} me={me}
+      <Composer ref={composerRef} id="comment-composer" rich={richComposer} draftTaskId={taskId} members={members} me={me}
         submitLabel={replyTarget ? t('Reply') : t('Comment')} label={replyTarget ? t('Write a reply') : t('Write a comment')} attach={canAttach}
-        onSubmit={(body, mentions, files) => onCreate(body, mentions, replyTarget?.id ?? null, files).then((ok) => { if (ok) { setReplyTo(null); posted.current = true } return ok })} />
+        taskId={taskId} onSubmit={(body, mentions, files, extras) => onCreate(body, mentions, replyTarget?.id ?? null, files, extras).then((ok) => { if (ok) { setReplyTo(null); posted.current = true } return ok })} />
     </div>
   ) : (
     <p className="text-meta text-faint">{t('Sign in to comment.')}</p>
@@ -249,36 +273,30 @@ export interface CommentsTabProps {
 }
 
 /** Container: reads comments, members and the signed-in user from local storage. */
-export const CommentsTab = forwardRef<HTMLTextAreaElement | null, CommentsTabProps>(function CommentsTab({ task, userId, focusComment, composerHost, expand }, composerRef) {
-  const storedMe = useLiveQuery(() => currentUserId(), [], null)
+export const CommentsTab = forwardRef<HTMLElement | null, CommentsTabProps>(function CommentsTab({ task, userId, focusComment, composerHost, expand }, composerRef) {
+  const storedMe = useMe()
   const me = userId ?? storedMe
-  const memberships = useLiveQuery(() => membershipMap(), [], new Map<string, Membership>())
+  const memberships = useMembershipMap()
   const comments = useCommentRows(task.id)
   // Comment attachments (OpenSpec attachments): a deleted comment's are hidden with it.
   const attachments = useCommentAttachments(task.id)
   const demo = useDemo()
   const limits = useAttachmentLimits()
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => setError(null), [task.id])
+  const { error, setError, run: attempt } = useAction({ describe: messageOf })
+  useResetOnChange([task.id], () => setError(null))
 
   const name = useCallback((id: string) => (id && id === me ? t('You') : memberName(id, memberships) ?? t('Someone')), [me, memberships])
-  const run = async (fn: () => Promise<unknown>) => {
-    setError(null)
-    try {
-      await fn()
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      return false
-    }
-  }
+  const targets = useMentionTargets(task.project_id, me)
+  // Resolves whether the change was made, so an editor closes only on success.
+  const run = async (fn: () => Promise<unknown>) => (await attempt(async () => { await fn(); return true })) ?? false
 
   return (
     <CommentsView ref={composerRef} taskId={task.id} threads={threadOrder(comments).filter(threadVisible)} me={me}
-      role={roleOf(task.project_id, memberships)} members={mentionableMembers(task.project_id, memberships)} name={name} error={error}
+      role={roleOf(task.project_id, memberships)} members={targets} name={name} error={error}
       focusComment={focusComment} attachments={attachments} canAttach={!demo && limits?.enabled !== false} composerHost={composerHost} expand={expand}
-      onCreate={(body, mentions, parentId, files) => run(() => createComment({ taskId: task.id, body, mentions, parentId, files }))}
+      onCreate={(body, mentions, parentId, files, extras) => run(() => createComment({ taskId: task.id, body, mentions, parentId, files, id: extras?.id, embeds: extras?.embeds }))}
       onEdit={(id, body, mentions) => run(() => editComment(id, body, mentions))}
-      onDelete={(id) => deleteComment(id)} />
+      onDelete={(id) => deleteComment(id)}
+      onReact={(id, reaction) => void run(() => toggleReaction(id, reaction))} />
   )
 })

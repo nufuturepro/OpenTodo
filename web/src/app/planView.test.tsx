@@ -9,14 +9,16 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GRID_PREFS_META_KEY } from '../lib/calendar'
 import { db, setMeta } from '../lib/db'
-import { createTask, resetDeviceId } from '../lib/ops'
-import { click, flush, key, render, type } from '../ui/test-utils'
+import { createProject, createTask, resetDeviceId } from '../lib/ops'
+import { click, flush, key, render, type, minWidthPx, waitFor } from '../ui/test-utils'
 import { CalendarRangeSwitch } from './CalendarRange'
-import { panelTaskId, resetPanel } from './panel'
+import { resetPanel } from './panel'
+import { openedTask, resetTaskPage } from './taskPage.testkit'
 import { PlanView } from './PlanView'
 import { parseRoute, routePath } from './router'
 
 beforeEach(async () => {
+  resetTaskPage()
   vi.useFakeTimers({ toFake: ['Date'] })
   // Monday 12 October 2026.
   vi.setSystemTime(new Date(2026, 9, 12, 12, 0))
@@ -33,16 +35,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   resetPanel()
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean | Promise<boolean>, ms = 3000) {
-  for (let t = 0; t < ms && !(await ok()); t += 20) await flush(20)
-  expect(await ok()).toBe(true)
-}
 const day = (root: ParentNode, d: string) => root.querySelector<HTMLElement>(`[data-plan-day="${d}"]`)!
 const row = (root: ParentNode, id: string) => root.querySelector<HTMLElement>(`[data-plan-task="${id}"]`)!
-const plan = (detail: 'calm' | 'detailed' = 'calm', date?: string) => render(<PlanView date={date} detail={detail} />)
+// The days appear once the local tasks are read; the skeleton stands in before (motion-polish D2).
+async function plan(date?: string) {
+  const r = await render(<PlanView date={date} />)
+  await waitFor(() => !!r.container.querySelector('[data-plan-grid], [data-plan-agenda]'))
+  return r
+}
 
 async function drag(el: Element, target: Element) {
   document.elementFromPoint = () => target
@@ -70,8 +72,8 @@ describe('plan route and mode', () => {
   })
 
   it('Range switch keeps the date, and /calendar opens the Plan after it was used last', async () => {
-    const r = await plan('calm', '2026-11-05')
-    await flush(30)
+    const r = await plan('2026-11-05')
+    await waitFor(() => localStorage.getItem('ot.calendar.mode') === 'plan', 'the remembered mode')
     expect(localStorage.getItem('ot.calendar.mode')).toBe('plan')
     expect(parseRoute('/calendar')).toEqual({ view: 'plan' })
     const sw = r.container.querySelector('[role="group"][aria-label="Calendar range"]')!
@@ -114,7 +116,7 @@ describe('plan columns', () => {
     await createTask({ title: 'Early', due: { date: d, time: '09:00' }, estimate_minutes: 30 })
     await createTask({ title: 'Urgent', due: { date: d }, priority: 1 })
     await createTask({ title: 'Someday-ish', due: { date: d }, priority: 3 })
-    let r = await plan('calm')
+    const r = await plan()
     await waitFor(() => day(r.container, d).querySelectorAll('[data-plan-task]').length === 4)
     const titles = () => [...day(r.container, d).querySelectorAll('[data-plan-task]')].map((b) => b.querySelector('.truncate')!.textContent)
     expect(titles()).toEqual(['Early', 'Late', 'Urgent', 'Someday-ish'])
@@ -122,9 +124,22 @@ describe('plan columns', () => {
     expect(p3().className).toContain('border-input')
     expect(day(r.container, d).querySelector('[data-estimate]')!.textContent).toBe('30m')
     await r.unmount()
-    r = await plan('detailed')
-    await waitFor(() => day(r.container, d).querySelectorAll('[data-plan-task]').length === 4)
-    expect(p3().className).toContain('bg-p3')
+  })
+
+  // rows-v2 "One row on the board, in Plan and in the review screens", scenario "Plan row".
+  it('Plan row: the one row in its compact shape, time, title, estimate and ring, no date words and no project', async () => {
+    const home = await createProject({ name: 'Home' })
+    const id = await createTask({ title: 'Stretch', project_id: home, due: { date: '2026-10-15', time: '08:30' }, estimate_minutes: 15, priority: 2 })
+    const r = await plan()
+    await waitFor(() => !!day(r.container, '2026-10-15').querySelector(`[data-plan-task="${id}"]`))
+    const el = row(r.container, id)
+    expect(el.getAttribute('data-row-shape')).toBe('compact')
+    expect(el.querySelector('[data-plan-time]')!.textContent).toBe('08:30')
+    expect(el.querySelector('[data-estimate]')!.textContent).toBe('15m')
+    expect(el.querySelector('[data-priority="2"] [data-priority-dot]')!.className).toContain('border-p2')
+    expect(el.textContent).not.toContain('Home')
+    expect(el.textContent).not.toMatch(/Thu|Oct|Tomorrow|Today/)
+    expect(el.querySelector('input[type="checkbox"], [role="checkbox"]')).toBeNull()
     await r.unmount()
   })
 
@@ -184,11 +199,11 @@ describe('events in the plan', () => {
     expect(ev.tabIndex).toBe(0)
     const before = await db.outbox.count()
     await drag(ev, day(r.container, '2026-10-15'))
-    await flush(30)
-    expect(await db.outbox.count()).toBe(before)
     ev.focus()
     await click(ev)
     await waitFor(() => document.querySelector('[data-event-details]') !== null)
+    // Checked once the click after the drag was handled: the drag queued nothing.
+    expect(await db.outbox.count()).toBe(before)
     expect(document.querySelector('[data-event-details]')!.textContent).toContain('Room 4')
     await key(document.activeElement ?? document.body, 'Escape')
     await waitFor(() => document.querySelector('[data-event-details]') === null)
@@ -263,6 +278,7 @@ describe('rescheduling in the plan', () => {
     await drag(row(r.container, id), day(r.container, '2026-10-16'))
     await click(row(r.container, id))
     await key(document.body, 'ArrowRight')
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- nothing may be written, and a refused move shows no signal to wait for
     await flush(50)
     expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-10-15' })
     await r.unmount()
@@ -278,7 +294,7 @@ describe('rescheduling in the plan', () => {
     expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-10-26' })
     await r.unmount()
     // The route renders the new span; the moved task is shown on the 26th.
-    const again = await plan('calm', '2026-10-19')
+    const again = await plan('2026-10-19')
     await waitFor(() => day(again.container, '2026-10-26')?.querySelector(`[data-plan-task="${id}"]`) !== null)
     await again.unmount()
   })
@@ -291,12 +307,12 @@ describe('rescheduling in the plan', () => {
     await waitFor(() => r.container.querySelectorAll('[data-plan-projected]').length === 2)
     const before = await db.outbox.count()
     await drag(r.container.querySelector('[data-plan-projected]')!, day(r.container, '2026-10-20'))
-    await flush(30)
-    expect(await db.outbox.count()).toBe(before)
     await key(document.body, 'j')
     expect(row(r.container, series).getAttribute('aria-pressed')).toBe('true')
     await key(document.body, 'j')
     expect(row(r.container, other).getAttribute('aria-pressed')).toBe('true')
+    // Checked once the keys after the drag were handled: the drag queued nothing.
+    expect(await db.outbox.count()).toBe(before)
     await r.unmount()
   })
 
@@ -323,6 +339,7 @@ describe('rescheduling in the plan', () => {
     await drag(row(r.container, a), day(r.container, '2026-10-14'))
     await click(row(r.container, a))
     await key(document.body, 'ArrowUp', { altKey: true })
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- nothing may be queued, and a refused reorder shows no signal to wait for
     await flush(50)
     expect(await db.outbox.count()).toBe(before)
     expect((await db.tasks.get(a))!.due).toEqual({ date: '2026-10-14' })
@@ -350,13 +367,13 @@ describe('keyboard in the plan', () => {
     await key(document.body, 'j')
     await key(document.body, 'j')
     await key(document.body, 'Enter')
-    expect(panelTaskId()).toBe(second)
+    expect(openedTask()).toBe(second)
     await r.unmount()
   })
 
   it('Week back with [, and t brings the span back to today', async () => {
     const r = await plan()
-    await flush(30)
+    await waitFor(() => r.container.querySelectorAll('[role="gridcell"]').length > 0, 'the plan grid')
     await key(document.body, '[')
     expect(location.pathname).toBe('/plan/2026-10-05')
     await key(document.body, 't')
@@ -385,8 +402,9 @@ describe('span and phone', () => {
     let r = await plan()
     await waitFor(() => r.container.querySelectorAll('[role="gridcell"]').length === 14)
     await click(r.container.querySelector('[data-page-header] button[aria-label="More actions"]')!)
-    await flush(30)
-    const item = [...document.querySelectorAll('[role="menuitemradio"], [role="menuitemcheckbox"], [role="menuitem"]')].find((e) => e.textContent?.includes('21 days'))!
+    const find21 = () => [...document.querySelectorAll('[role="menuitemradio"], [role="menuitemcheckbox"], [role="menuitem"]')].find((e) => e.textContent?.includes('21 days'))
+    await waitFor(() => !!find21(), 'the 21 days item')
+    const item = find21()!
     await click(item)
     await waitFor(() => r.container.querySelectorAll('[role="gridcell"]').length === 21)
     await r.unmount()
@@ -401,7 +419,7 @@ describe('span and phone', () => {
     afterEach(() => { window.matchMedia = original })
     const phone = () => {
       window.matchMedia = ((q: string) => ({
-        matches: Number(/min-width:\s*(\d+)px/.exec(q)?.[1] ?? 0) <= 390, media: q, onchange: null,
+        matches: minWidthPx(q) <= 390, media: q, onchange: null,
         addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
       })) as typeof window.matchMedia
     }
@@ -418,9 +436,9 @@ describe('span and phone', () => {
       expect(projected.className).toContain('text-faint')
       expect(r.container.querySelector('[data-agenda-day="2026-10-19"] [data-capacity]')!.textContent).toBe('45m / 8h')
       await click(row(r.container, id))
-      expect(panelTaskId()).toBeNull()
+      expect(openedTask()).toBeNull()
       await click(row(r.container, id))
-      expect(panelTaskId()).toBe(id)
+      expect(openedTask()).toBe(id)
       const axe = (await import('axe-core')).default
       const res = await axe.run(r.container, { rules: { 'color-contrast': { enabled: false } } })
       expect(res.violations.map((v) => v.id)).toEqual([])

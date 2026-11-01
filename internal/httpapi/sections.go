@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/iconset"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/iconset"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Sections (OpenSpec change `board-view`, design D7). REST requests are handled
@@ -81,7 +81,15 @@ func checkSectionStyle(body map[string]json.RawMessage) string {
 // checkSections dispatches the section rules of the entity being written.
 func (s *Server) checkSections(ctx context.Context, uid, entity string, body map[string]json.RawMessage, existing opsync.Entity) (string, error) {
 	switch entity {
+	case "project":
+		if msg := checkProjectStatus(body); msg != "" {
+			return msg, nil
+		}
+		return checkFlowMode(entity, body), nil
 	case "section":
+		if msg := checkFlowMode(entity, body); msg != "" {
+			return msg, nil
+		}
 		return s.checkSection(ctx, uid, body, existing)
 	case "task":
 		return s.checkTaskSection(ctx, uid, body, existing)

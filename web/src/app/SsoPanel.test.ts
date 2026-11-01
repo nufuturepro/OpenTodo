@@ -8,7 +8,7 @@ import { formFrom, LinkedAccountsView, type LinkedAccountsViewProps, saveInput, 
 
 const settings: OidcSettings = {
   enabled: true, issuer: 'https://sso.example.com', clientId: 'opentodo', clientSecret: '••••1234', clientSecretSet: true,
-  displayName: 'Home SSO', scopes: 'openid email profile', allowProvision: false, ssoOnly: false, providerLogout: false,
+  displayName: 'Home SSO', scopes: 'openid email profile', allowProvision: false, ssoOnly: false, providerLogout: false, syncPictures: false,
   redirectUri: 'https://todo.example.com/api/v1/auth/oidc/callback', baseUrlConfigured: true,
   managedBy: { issuer: 'settings', clientId: 'settings', clientSecret: 'settings', displayName: 'settings', ssoOnly: 'settings' },
 }
@@ -28,7 +28,7 @@ describe('SsoPanelView', () => {
   it('leads with the provider and its status; the configuration stays closed until Configure', () => {
     const html = panel({ configuring: false })
     expect(html).toContain('>Single sign-on</h2>')
-    expect(html).toMatch(/data-hue="green"[^>]*><span[^>]*>On<\/span>/)
+    expect(html).toMatch(/data-status="ok"[^>]*><span[^>]*><\/span><span[^>]*>On<\/span>/)
     expect(html).toContain('Sign in with Home SSO')
     expect(html).toContain('sso.example.com')
     expect(html).toContain('>Configure</button>')

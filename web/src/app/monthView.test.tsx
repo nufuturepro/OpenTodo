@@ -7,12 +7,14 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { createTask, resetDeviceId } from '../lib/ops'
-import { click, flush, key, render, type } from '../ui/test-utils'
+import { click, flush, key, render, type, waitFor } from '../ui/test-utils'
 import { addMonthsISO, MonthView } from './MonthView'
-import { panelTaskId, resetPanel } from './panel'
+import { resetPanel } from './panel'
+import { openedTask, resetTaskPage } from './taskPage.testkit'
 import { parseRoute, routePath } from './router'
 
 beforeEach(async () => {
+  resetTaskPage()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 10, 18, 12, 0))
   await db.delete()
@@ -26,13 +28,8 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   resetPanel()
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const cell = (root: ParentNode, d: string) => root.querySelector<HTMLElement>(`[data-month-day="${d}"]`)!
 
 describe('month route', () => {
@@ -46,7 +43,7 @@ describe('month route', () => {
 
   it('keeps the date when switching range, and is remembered for /calendar', async () => {
     const r = await render(<MonthView date="2026-11-18" />)
-    await flush(30)
+    await waitFor(() => localStorage.getItem('ot.calendar.mode') === 'month', 'the remembered mode')
     expect(localStorage.getItem('ot.calendar.mode')).toBe('month')
     expect(parseRoute('/calendar')).toEqual({ view: 'month' })
     const sw = r.container.querySelector('[role="group"][aria-label="Calendar range"]')!
@@ -91,6 +88,18 @@ describe('month grid', () => {
     await r.unmount()
   })
 
+  it('fills rows in the project hue and dims the ones of days before today (surfaces-v2)', async () => {
+    const old = await createTask({ title: 'Old', due: { date: '2026-11-10' } })
+    const soon = await createTask({ title: 'Soon', due: { date: '2026-11-20' } })
+    const r = await render(<MonthView />)
+    await waitFor(() => r.container.querySelector(`[data-month-task="${soon}"]`) !== null)
+    expect(r.container.querySelector(`[data-month-task="${old}"]`)!.className).toContain('ui-block--past')
+    const row = r.container.querySelector(`[data-month-task="${soon}"]`)!
+    expect(row.className).toContain('ui-block')
+    expect(row.className).not.toContain('ui-block--past')
+    await r.unmount()
+  })
+
   it('dropping a task on another day keeps its time', async () => {
     const id = await createTask({ title: 'Call', due: { date: '2026-11-17', time: '14:30' } })
     const r = await render(<MonthView />)
@@ -117,6 +126,7 @@ describe('month grid', () => {
     expect(r.container.querySelector(`[data-month-task="${id}"]`)!.textContent).toContain('read-only')
     await click(r.container.querySelector(`[data-month-task="${id}"]`)!)
     await key(document.body, 'ArrowRight')
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- nothing may be written, and a refused move shows no signal to wait for
     await flush(50)
     expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-11-20' })
     await r.unmount()
@@ -142,7 +152,7 @@ describe('month grid', () => {
     await key(document.body, 'j')
     await key(document.body, 'j')
     await key(document.body, 'Enter')
-    expect(panelTaskId()).toBe(second)
+    expect(openedTask()).toBe(second)
     await r.unmount()
   })
 })

@@ -7,6 +7,7 @@
 // buttons use it by default; screens never use the native `title` attribute.
 import { cloneElement, type ReactElement, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { t } from '../lib/i18n'
 
 export interface TooltipProps {
   /** What the control does, in a few words. */
@@ -19,6 +20,8 @@ export interface TooltipProps {
   children: ReactElement<Record<string, unknown>>
   /** Hover delay in milliseconds (focus opens at once). */
   delay?: number
+  /** Never opens and leaves no text on the control (cut text that fits: TruncatedText). */
+  disabled?: boolean
 }
 
 const GAP = 6
@@ -27,7 +30,25 @@ function coarsePointer(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
 }
 
-export function Tooltip({ label, shortcut, side = 'bottom', children, delay = 400 }: TooltipProps) {
+/**
+ * A shortcut as keys: a sequence like "g t" reads "G then T" (precision-shell D4); a
+ * chord or a single key is one badge.
+ */
+export function KeySequence({ keys }: { keys: string }) {
+  const steps = /^\S+( \S+)+$/.test(keys) && !keys.includes('+') ? keys.split(' ') : [keys]
+  return (
+    <span className="inline-flex items-center gap-1" data-key-sequence>
+      {steps.map((k, i) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          {i > 0 && <span className="text-muted">{t('then')}</span>}
+          <kbd className="ui-kbd">{k.length === 1 ? k.toUpperCase() : k}</kbd>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+export function Tooltip({ label, shortcut, side = 'bottom', children, delay = 400, disabled = false }: TooltipProps) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLElement | null>(null)
@@ -39,15 +60,17 @@ export function Tooltip({ label, shortcut, side = 'bottom', children, delay = 40
 
   const show = useCallback((immediate: boolean) => {
     clearTimeout(timer.current)
+    if (disabled) return
     if (immediate) setOpen(true)
     else timer.current = setTimeout(() => setOpen(true), delay)
-  }, [delay])
+  }, [delay, disabled])
   const hide = useCallback(() => {
     clearTimeout(timer.current)
     setOpen(false)
   }, [])
 
   useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => { if (disabled) hide() }, [disabled, hide])
 
   // Escape closes the tip wherever focus is (also from the control itself).
   useEffect(() => {
@@ -89,6 +112,9 @@ export function Tooltip({ label, shortcut, side = 'bottom', children, delay = 40
       else if (r && typeof r === 'object') (r as { current: HTMLElement | null }).current = el
     },
     'aria-describedby': described,
+    // The tooltip's text on its control while closed: the interface audit's truncation
+    // check (ux-audit-three-widths M10) finds the full text of a cut name here.
+    'data-tip': !disabled && typeof label === 'string' ? label : undefined,
     onPointerEnter: (e: PointerEvent) => { (child.props.onPointerEnter as ((e: PointerEvent) => void) | undefined)?.(e); if (e.pointerType !== 'touch' && !coarsePointer()) show(false) },
     onPointerLeave: (e: PointerEvent) => { (child.props.onPointerLeave as ((e: PointerEvent) => void) | undefined)?.(e); hide() },
     onPointerDown: (e: PointerEvent) => { (child.props.onPointerDown as ((e: PointerEvent) => void) | undefined)?.(e); pressed.current = true; hide() },
@@ -100,10 +126,10 @@ export function Tooltip({ label, shortcut, side = 'bottom', children, delay = 40
 
   const tipNode = open ? (
     <div ref={tip} id={id} role="tooltip" data-tooltip
-      className="pointer-events-none fixed z-[70] max-w-64 rounded-chip border border-default bg-raised px-2 py-1 text-meta text-default shadow-2"
+      className="overlay-fade-in pointer-events-none fixed z-[70] max-w-64 rounded-chip border border-strong bg-pop px-2 py-1 text-meta text-default shadow-2"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}>
       <span>{label}</span>
-      {shortcut && <><span className="mx-1 text-faint"> · </span><kbd className="ui-kbd">{shortcut}</kbd></>}
+      {shortcut && <><span className="mx-1 text-muted"> · </span><KeySequence keys={shortcut} /></>}
     </div>
   ) : null
 

@@ -29,7 +29,7 @@ In a task list `x` or Space SHALL tick or untick the cursor row, `Shift+↓`/`Sh
 - **THEN** nothing is ticked and the page scrolls as usual
 
 ### Requirement: Select with a pointer or on touch
-Each row SHALL show a selection checkbox whenever any row is ticked; it SHALL NOT appear on hover or on the cursor row alone. With a pointer, `Ctrl`/`⌘`+click on a row SHALL tick it without opening it and Shift+click SHALL select the range from where ticking started; on devices without hover a Select button in the list header SHALL show the checkboxes on every row until Done. Checkboxes SHALL be at least 44×44 px on touch screens and announce their state.
+Each row SHALL show a selection checkbox whenever any row is ticked; it SHALL NOT appear on hover or on the cursor row alone. With a pointer, `Ctrl`/`⌘`+click on a row SHALL tick it without opening it and Shift+click SHALL select the range from where ticking started. On a touch screen a long press on a row SHALL tick it, show the checkboxes on every row and the selection bar, and give one short haptic pulse where the device supports it; "Select tasks" in the page's overflow menu SHALL show the checkboxes without ticking a row. The press SHALL arm during the hold interval with held feedback on the row, and a long press on a row that is already ticked SHALL arm without ticking anything new. A long press on a row that is already ticked, followed by movement, SHALL start the drag of the selection once the hold has elapsed: movement before the hold is a scroll, and the drag lifts only on movement after it, never under a still finger. The checkboxes SHALL stay shown until Done in the selection bar, or until the selection is cleared or used. Checkboxes SHALL be at least 48×48 px on touch screens and announce their state. Selection is device state and never an operation; it works offline and is never synced.
 
 #### Scenario: Range by Shift+click
 - **WHEN** the user `Ctrl`+clicks the first row and Shift+clicks the fifth row
@@ -39,9 +39,21 @@ Each row SHALL show a selection checkbox whenever any row is ticked; it SHALL NO
 - **WHEN** nothing is ticked and the user points at a row and clicks its round checkbox
 - **THEN** the task is completed and nothing is ticked
 
+#### Scenario: Long press starts a selection
+- **WHEN** a user on a phone presses and holds a row without moving, then lifts
+- **THEN** the row is ticked, every row shows its checkbox, the selection bar appears, and the task did not open
+
 #### Scenario: Touch selection mode
-- **WHEN** a user on a phone taps Select, ticks two rows and taps Done
+- **WHEN** a user on a phone chooses "Select tasks" in the bar's overflow, ticks two rows and taps Done
 - **THEN** the checkboxes hide again, the two rows stay ticked and the bar stays shown until the selection is cleared or used
+
+#### Scenario: Hold and move drags the selection
+- **WHEN** two rows are ticked and the user presses and holds one of them, waits for the hold to elapse, then moves the finger
+- **THEN** the drag of both tasks starts with its usual feedback, as it did before this change, and no third row is ticked
+
+#### Scenario: A move before the hold is a scroll
+- **WHEN** a user on a phone presses a row and moves past the drag threshold before the hold interval elapses
+- **THEN** the page scrolls (or the swipe runs), the row is not ticked and no drag starts
 
 ### Requirement: Where selection is available
 Selection SHALL work in the Inbox, Today, Upcoming, Assigned to me, Completed, project lists and boards, label views, the Filter view and saved views. On a board `Shift+↓`/`↑` extend within the column. It SHALL NOT be offered on dashboards or in the Day and Week calendars. Navigating to another view SHALL clear the selection, and a ticked task that leaves the list (completed, moved, filtered out) SHALL leave the selection.
@@ -93,7 +105,7 @@ Complete or reopen (`c`), priority (`1`–`4`), date and move to Trash (Delete) 
 - **THEN** the parent and all its subtasks are in the Trash, each with one deletion operation
 
 ### Requirement: Labels on several tasks
-`L` or Labels with tasks ticked SHALL open the label picker showing labels carried by every ticked task as checked. Picking an unchecked label SHALL add it to each ticked task that lacks it; picking a checked label SHALL remove it from each. Each task's label array SHALL be read immediately before it is written, inside the batch, and written whole, so sequential edits on one device never lose a label; concurrent writes converge per task by last-writer-wins as for a single task.
+`L` or Labels with tasks ticked SHALL open the label picker showing labels carried by every ticked task as checked. Picking a label SHALL remove it from each ticked task when every ticked task carries it, and otherwise SHALL add it to each ticked task that lacks it, deciding from the ticked tasks as stored at the moment of the pick, not from what the picker showed, so a pick made before the picker has read the tasks acts as the checked state would have shown. While the picker is open its checks SHALL follow the ticked tasks as read: they SHALL appear when the read of the current selection lands, SHALL change after each pick, and SHALL never show the labels of an earlier selection. Each task's label array SHALL be read immediately before it is written, inside the batch, and written whole, so sequential edits on one device never lose a label; concurrent writes converge per task by last-writer-wins as for a single task.
 
 #### Scenario: Add a label to three tasks
 - **WHEN** three tasks are ticked, one already carrying "errand", and the user picks "errand"
@@ -102,6 +114,14 @@ Complete or reopen (`c`), priority (`1`–`4`), date and move to Trash (Delete) 
 #### Scenario: Remove a common label
 - **WHEN** every ticked task carries "waiting" and the user picks the checked "waiting"
 - **THEN** "waiting" is removed from each ticked task and their other labels are kept
+
+#### Scenario: Picked before the picker has read the tasks
+- **WHEN** two ticked tasks both carry "errand" and the user opens the label picker and picks "errand" before its checked marks appear
+- **THEN** "errand" is removed from both tasks
+
+#### Scenario: Checks appear in an open picker
+- **WHEN** two ticked tasks both carry "errand" and the user presses `L` before the menu has read them
+- **THEN** "errand" becomes checked in the open picker as soon as the tasks are read, and after the user picks it, it is removed from both and its check goes away in the same picker
 
 ### Requirement: Moves and assignments are reviewed first
 Moving ticked tasks to a project or section and assigning them SHALL first show the list of changes, one per task with old → new, shared destinations marked, every item checked; Enter applies the checked items as one batch and Escape discards. A move into another sharing scope SHALL be written as the copy-and-tombstone the single-task move uses. Assign SHALL be offered only when every ticked task is in one shared project. Applied changes converge like any edit.
@@ -143,3 +163,44 @@ The `?` overlay and the keyboard guide SHALL list the selection keys and `.`, an
 #### Scenario: Listed in the shortcut help
 - **WHEN** the user presses `?`
 - **THEN** the "Tasks in a list" section lists `x` / Space, `Shift+↓` / `Shift+↑`, `Ctrl/⌘+A`, `.` and `Ctrl/⌘+Z`
+
+### Requirement: Group actions are one batch
+An action offered on a list group header for every task of the group (Today's Earlier group: Move all to today, Reschedule…) SHALL be written as one batch of operations exactly like the same action on a ticked selection: the change shows at once on every row of the group, is queued while offline, syncs as ordinary per-field operations, converges by last-writer-wins per task and field, follows the single-task rules for repeating tasks and subtasks, and reaches a task once. It SHALL offer the same Undo toast for ten seconds, naming the action ("4 tasks moved to today"), and `Ctrl`/`⌘`+`Z` outside a text field while the toast shows SHALL undo it; a field changed since the action is skipped and the task named. A group action SHALL NOT require a selection and SHALL leave any existing selection untouched. Read-only tasks in the group SHALL be left as they are and counted in the toast ("3 of 4 tasks moved to today").
+
+#### Scenario: Group action without a selection
+- **WHEN** two rows of a project are ticked and the user activates "Move all to today" on Today's Earlier group in another tab of the same device
+- **THEN** the Earlier tasks move as one batch, the project's selection is unchanged, and the toast offers Undo
+
+#### Scenario: Read-only task in the group
+- **WHEN** Earlier holds three of the user's tasks and one task of a shared project the user can only view, and the user activates "Move all to today"
+- **THEN** the three tasks are due today, the viewed task is unchanged and stays in Earlier, and the toast reads "3 of 4 tasks moved to today"
+
+#### Scenario: Concurrent edit converges
+- **WHEN** Reschedule… → Next week runs on five tasks while a phone retitles one of them offline, and both sync
+- **THEN** every device shows that task due next week with the new title
+
+### Requirement: The selection bar stays in sight
+While tasks are ticked, the selection bar SHALL stay visible as the list scrolls: pinned just below the page's sticky header, or at the top of the list where the header scrolls away, above the rows, which scroll under it. A row moved to with the keyboard SHALL be kept below the bar as well as below the header.
+
+#### Scenario: Ticking far down a long list
+- **WHEN** the user scrolls to the end of a 40-task project and Shift+clicks a range of tasks there
+- **THEN** the bar with the count, Actions and Clear shows right below the page header without scrolling back up
+
+#### Scenario: Keyboard cursor under the bar
+- **WHEN** tasks are ticked and the user moves up the list with the arrow keys
+- **THEN** every selected row stays fully visible below the selection bar
+
+### Requirement: One ticked task on touch
+On a touch screen, the long press that ticks a row SHALL give its haptic pulse only while the user's haptic feedback preference is on (`appearance-preferences` "Haptic feedback preference"). While exactly one task is ticked, the selection bar's Actions menu SHALL be that task's full actions menu: the items the row menu offers for one task, including Start tracking and Start focus where they apply. A long press on a coarse pointer SHALL keep ticking the row and SHALL NOT open the menu. Selection stays device state and writes nothing.
+
+#### Scenario: Haptics off
+- **WHEN** the user turned haptic feedback off and long-presses a row on an Android phone
+- **THEN** the row is ticked and the selection bar appears, and the device does not vibrate
+
+#### Scenario: Start focus from the phone bar
+- **WHEN** a user on a phone long-presses "Write the report" and taps Actions in the selection bar
+- **THEN** the menu lists Complete, Schedule…, Start tracking and Start focus at its top, and choosing Start focus opens the Focus screen on that task with a session running
+
+#### Scenario: Two ticked tasks
+- **WHEN** two rows are ticked on a phone and the user taps Actions
+- **THEN** the menu offers the batch actions only, without Start tracking or Start focus

@@ -7,10 +7,11 @@
 // writes the synced `review` row; the menu opens the Daily check and the Monthly look.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Card, Dialog, Icon, MenuItem, Notice, PageBody, PageHeader, Skeleton, type IconName } from '../../ui'
-import { useAllLabels, useAllProjects, useReviewRow, useReviewedAt } from '../../lib/localData'
+import { useAllLabels, useAllProjects, useProjectPrefsLoaded, useReviewEvery, useReviewRow, useReviewedAt } from '../../lib/localData'
 import { formatInstant } from '../../lib/dates'
 import { createTask, setTaskCompleted } from '../../lib/ops'
 import { resolveLabels } from '../../lib/labels'
+import { hasTimeColumn } from '../../lib/rowTime'
 import { finishReview, firstUnfinished, PHASE_OF, PHASE_TITLES, reviewSteps, STEP_IDS, STEP_TITLES, SWEEP_PROMPTS, type ReviewSteps, type StepId, type WalkProject } from '../../lib/review'
 import { compute, periodFor, sharedIds } from '../../lib/stats'
 import type { Project, Task } from '../../lib/types'
@@ -29,6 +30,7 @@ import { ProjectWalk } from './ProjectWalk'
 import { ReviewProgress } from './ReviewProgress'
 import { StepCard } from './StepCard'
 import { useShortcutScope } from '../shortcuts'
+import { useResetOnChange } from '../../lib/useResetOnChange'
 
 const LIST_STEPS: readonly StepId[] = ['clear', 'back', 'waiting', 'ahead', 'someday']
 
@@ -38,13 +40,16 @@ export function ReviewView({ step: routeStep }: { userId?: string; step?: string
   const projects = useAllProjects()
   const labels = useAllLabels()
   const reviewedAt = useReviewedAt()
+  const reviewEvery = useReviewEvery()
+  // The walk's queue is fixed when it opens, so it waits for the stamps and intervals (project-review-cadence).
+  const prefsLoaded = useProjectPrefsLoaded()
   const review = useReviewRow()
   const [now, setNow] = useState(() => Date.now())
   const steps = useMemo(() => {
-    if (!input) return null
+    if (!input || !prefsLoaded) return null
     const thisWeek = compute({ tasks: input.tasks, projects: input.projects, shared: sharedIds([...input.memberships.values()]), me: input.me, today: input.today }, periodFor('this-week', input.today, weekStart), weekStart)
-    return reviewSteps({ ...input, completedThisWeek: thisWeek.completed, reviewedAt, now })
-  }, [input, reviewedAt, now, weekStart])
+    return reviewSteps({ ...input, completedThisWeek: thisWeek.completed, reviewedAt, reviewEvery, now })
+  }, [input, prefsLoaded, reviewedAt, reviewEvery, now, weekStart])
 
   const initial = (STEP_IDS as readonly string[]).includes(routeStep ?? '') ? (routeStep as StepId) : null
   const [step, setStep] = useState<StepId | null>(initial)
@@ -63,14 +68,16 @@ export function ReviewView({ step: routeStep }: { userId?: string; step?: string
   const [notice, setNotice] = useState<string | null>(null)
   const [finished, setFinished] = useState<number | null>(null)
   const openId = usePanelTaskId()
-  useEffect(() => setSelected(null), [step])
+  useResetOnChange([step], () => setSelected(null))
   // Working in a step (a selection, an open task) counts as choosing it.
   useEffect(() => { if (selected) chosen.current = true }, [selected])
   // The walk compares stamps with "now"; refresh it when a project is marked reviewed.
-  useEffect(() => setNow(Date.now()), [reviewedAt])
+  useResetOnChange([reviewedAt], () => setNow(Date.now()))
 
   const current = step ?? 'clear'
   const taskRows = useMemo(() => (steps ? stepTasks(steps, current) : []), [steps, current])
+  // The time column (rows-v2 D2): one fact of the step's list.
+  const timeColumn = useMemo(() => hasTimeColumn(taskRows), [taskRows])
   const keyRows = useMemo(() => taskRows.map((tk) => ({ key: tk.id, task: tk })), [taskRows])
   useListKeys({
     rows: keyRows, selected, setSelected, openId, setOpenId: setPanelTaskId, pickerFor, setPickerFor,
@@ -129,14 +136,14 @@ export function ReviewView({ step: routeStep }: { userId?: string; step?: string
             next={next ? { label: t('Next: {step}', { step: STEP_TITLES[next] }), onClick: () => go(next) } : { label: t('Finish review'), onClick: finish, finish: true }}>
             <StepIntro step={step} steps={steps} />
             {step === 'projects' ? (
-              <ProjectWalk walk={steps.walk} now={now} paused={!!addTo || !!openId} onAdd={(w: WalkProject) => setAddTo(w.project)} />
+              <ProjectWalk walk={steps.walk} notDue={steps.notDue} now={now} paused={!!addTo || !!openId} onAdd={(w: WalkProject) => setAddTo(w.project)} />
             ) : step === 'sweep' ? (
               <MindSweep projects={projects} labels={labels} />
             ) : taskRows.length > 0 && (
               <ul className="-mx-2" data-testid={`review-${step}`}>
                 {taskRows.map((item) => (
                   <TaskRow key={item.id} task={item} project={item.project_id ? projectMap.get(item.project_id) : undefined} labels={resolveLabels(item.labels, labelMap)}
-                    showProject={step !== 'clear'} selected={item.id === selected}
+                    showProject={step !== 'clear'} selected={item.id === selected} timeColumn={timeColumn}
                     onToggle={() => act(setTaskCompleted(item.id, !item.completed_at))}
                     onOpen={() => { setSelected(item.id); setPanelTaskId(item.id) }} />
                 ))}
@@ -222,14 +229,14 @@ function StepIntro({ step, steps }: { step: StepId; steps: ReviewSteps }) {
       return (
         <p className="mb-3 text-body text-muted">
           {t('{n, plural, one {You completed # task this week.} other {You completed # tasks this week.}}', { n: steps.completedThisWeek })}{' '}
-          {steps.overdue.length ? t('{n} overdue: complete them with c, or open one to give it a new date.', { n: steps.overdue.length }) : t('Nothing is overdue.')}{' '}
+          {steps.overdue.length ? t('{n} from earlier: complete them with c, or open one to give it a new date.', { n: steps.overdue.length }) : t('Nothing is open from earlier.')}{' '}
           <button type="button" className="text-accent underline" onClick={() => navigate({ view: 'stats' })}>{t('See statistics')}</button>
         </p>
       )
     case 'waiting':
       return <p className="mb-3 text-body text-muted">{steps.waiting.length ? t('Assigned to someone else or blocked by another task. Open one to follow up in its comments.') : t('Nothing is waiting.')}</p>
     case 'projects':
-      return <p className="mb-3 text-body text-muted">{t('One project at a time: is it still alive, and is its next step clear? r marks it reviewed, q adds a next action.')}</p>
+      return <p className="mb-3 text-body text-muted">{t('One project at a time: is it still alive, and is its next step clear? r marks it reviewed, q adds a next action, e sets how often it comes up.')}</p>
     case 'someday':
       return <p className="mb-3 text-body text-muted">{steps.someday.length ? t('Anything you now want to do? n brings a task back from Someday, c completes it, Delete trashes it.') : t('Nothing is parked in Someday.')}</p>
     default:

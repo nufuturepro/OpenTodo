@@ -4,20 +4,19 @@
 // open). Each decision is the same operation the list writes, with its Undo
 // toast, so it applies locally first, works offline and converges like any edit.
 import { useWithMethod } from './help/MethodLink'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ComboboxPanel, EmptyState, Notice, PageBody, PageHeader, Dialog } from '../ui'
 import { formatDate, formatDueLong, logicalToday } from '../lib/dates'
 import { useAllLabels, useMemberships, useProjects, useReminderRows } from '../lib/localData'
 import { moveTaskAcrossScopes } from '../lib/ops'
-import { currentUserId } from '../lib/sharing'
+import { useMe } from '../lib/sharing'
 import { advance, advanceQueue, back, current, positionText, progress, startTriage, type TriageState } from '../lib/triage'
 import { useLiveTasks } from '../lib/liveTasks'
 import type { Membership, Project, Task } from '../lib/types'
 import { LabelPicker } from './LabelPicker'
 import { registerListState } from './listActions'
 import { Markdown } from './Markdown'
-import { setPanelTaskId, usePanelTaskId } from './panel'
+import { setPanelTaskId, setTaskSplit, usePanelTaskId } from './panel'
 import { ProjectPickerField } from './ProjectPickerField'
 import { ScheduleSheet } from './ScheduleSheet'
 import { navigate } from './router'
@@ -62,8 +61,10 @@ export function TriageView() {
   const projects = useProjects()
   const labels = useAllLabels()
   const memberships = useMemberships()
-  const me = useLiveQuery(() => currentUserId(), [], null)
+  const me = useMe()
   const openId = usePanelTaskId()
+  // The card keeps the opened task beside it from 1024 px instead of leaving for the task page (task-full-page D3).
+  useEffect(() => setTaskSplit(true), [])
   const [state, setState] = useState<TriageState | null>(null)
   const [picker, setPicker] = useState<Picker>(null)
   const [announce, setAnnounce] = useState('')
@@ -235,7 +236,7 @@ export function TriageView() {
       ) : (
         <>
           <section ref={card} tabIndex={-1} aria-label={t('Task {n} of {total}', { n: p.n, total: p.total })} data-triage-card={task.id}
-            className="rounded-card border border-default bg-surface p-5 outline-none shadow-1 focus-visible:outline-2 focus-visible:outline-focus">
+            className="rounded-card border border-default bg-surface p-5 outline-none shadow-1 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus">
             <h2 className="user-text text-h2 font-semibold text-strong">{task.title || t('Untitled')}</h2>
             {(task.due || task.labels.length > 0 || reminders.some((r) => !r.deleted_at)) && (
               <p className="mt-2 flex flex-wrap gap-2 text-meta text-muted">

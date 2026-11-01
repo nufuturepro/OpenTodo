@@ -82,11 +82,13 @@ import { DocTooLargeError, MAX_DOC_CHARS_ENCRYPTED } from './docfields'
 import { db, getMeta, setMeta, useDatabase } from './db'
 import {
   changePassphrase, commitEnable, currentKey, prepareEnable, disableEncryption, enableEncryption, EncryptionConflictError, encryptionSnapshot, loadEncryptionState, lock,
-  MAX_FAILURES, notYetEncrypted, refreshFromServer, resetPassphrase, restoreKeyRecord, turnOffAfterMissingRecord, unlock, UnlockThrottledError, UNDECRYPTABLE,
+  biometricUnlockState, enableBiometricUnlock, unlockWithBiometrics,
+  MAX_FAILURES, notYetEncrypted, refreshFromServer, resetPassphrase, restoreKeyRecord, turnOffAfterMissingRecord, unlock, UnlockThrottledError, UNDECRYPTABLE, isContentField,
 } from './e2ee'
 import { decryptIncoming, LockedError, MIGRATION_BATCH, normalizeOnSight, prepareOutgoing, runMigration, startMigration } from './e2eeSync'
 import { applyOps, mutate, PlaintextTooLongError, resetDeviceId } from './ops'
 import { syncNow, syncSnapshot } from './sync'
+import { nextMillisecond } from '../test/clock'
 
 const PASS = 'correct horse battery staple'
 const FAST = { iterations: 1000 }
@@ -296,6 +298,15 @@ describe('field split and transport (task 2.1)', () => {
   })
 })
 
+describe('reactions and note mentions (editor-everywhere D7, D8)', () => {
+  it('stay plaintext; comment bodies and task descriptions stay content', () => {
+    expect(isContentField('comment', 'reactions.alice')).toBe(false)
+    expect(isContentField('task', 'note_mentions')).toBe(false)
+    expect(isContentField('comment', 'body')).toBe(true)
+    expect(isContentField('task', 'description')).toBe(true)
+  })
+})
+
 describe('two devices', () => {
   it('a second device enrols with the passphrase and both converge on concurrent edits', async () => {
     await enableOnA()
@@ -311,7 +322,7 @@ describe('two devices', () => {
     // Concurrent offline edits: A edits the title, B the title and the due date.
     await on('A')
     await mutate('task', 't1', { title: 'Dentist (A)' })
-    await new Promise((r) => setTimeout(r, 3))
+    await nextMillisecond()
     await on('B')
     await mutate('task', 't1', { title: 'Dentist (B)', due: { date: '2026-10-20' } })
     await syncNow()
@@ -577,27 +588,7 @@ describe('migration job (task 2.4)', () => {
     expect(encryptionSnapshot().migration).toBeNull()
   })
 
-  it('reads each task about once per run, not the whole table per batch (large-list-performance)', async () => {
-    await on('A')
-    const many = MIGRATION_BATCH * 10
-    const ops: Op[] = []
-    for (let i = 0; i < many; i++) ops.push({ id: `seed-${i}`, entity: 'task', entityId: `t${String(i).padStart(5, '0')}`, field: 'title', value: `Task ${i}`, ts: 100, device: 'old' })
-    await applyOps(ops)
-    await enableEncryption(PASS, FAST)
-    let reads = 0
-    const count = (row: unknown) => { reads++; return row }
-    db.tasks.hook('reading', count)
-    try {
-      await startMigration('encrypt')
-    } finally {
-      db.tasks.hook('reading').unsubscribe(count)
-    }
-    console.info(`[large-list-performance] task rows read by the migration of ${many} tasks: ${reads} (${(reads / many).toFixed(1)} per task)`)
-    expect((await db.outbox.toArray()).filter((o) => o.field === 'title')).toHaveLength(many)
-    // Counting the work, the batch and writing each row back: a fixed few reads per task
-    // (about 5), where re-reading the table for each of the ten batches took about 20.
-    expect(reads).toBeLessThan(many * 8)
-  })
+  // The 2,000-task read count of the migration is in e2eeMigration.perf.test.ts (the perf run).
 
   it('encrypts an existing project description when encryption is turned on (project-notes 2.1)', async () => {
     await on('A')
@@ -768,6 +759,19 @@ describe('task origins (task-origin 1.3)', () => {
     expect(notYetEncrypted((await db.tasks.get('t1')) as never, 'task')).toBe(false)
   })
 
+  it('re-encrypts on sight a plaintext value stamped ahead of this device\'s clock', async () => {
+    // The writer's clock runs a second ahead (within the skew tolerance, so no
+    // offset corrects it): the rewrite must still be stamped after it, or the
+    // plaintext keeps winning on the server (clock receive rule).
+    await enableOnA()
+    const mail = { kind: 'email', id: '<a2@mail.example>' }
+    server.log.push({ id: 'mail2', entity: 'task', entityId: 't1', field: 'origin', value: mail, ts: Date.now() + 1000, device: 'server', seq: ++server.seq })
+    await syncNow()
+    await syncNow()
+    expect((await db.tasks.get('t1'))!.origin).toEqual(mail)
+    expect(isEnvelope(current('task', 't1', 'origin'))).toBe(true)
+  })
+
   it('enabling encrypts an existing origin and disabling decrypts it again', async () => {
     await on('A')
     await seedTasks()
@@ -816,5 +820,76 @@ describe('locations and places (task-locations 1.4, "Encrypted locations and pla
     await unlock(PASS, 'passphrase')
     await syncNow()
     expect(await db.places.get('pl1')).toMatchObject({ name: 'Home', address: 'Via Po 2', geo: { lat: 45.07, lon: 7.69 } })
+  })
+})
+
+// Biometric unlock in a native shell (OpenSpec change native-shells, design D7).
+describe('biometric unlock through the shell', () => {
+  const g = globalThis as unknown as { window?: { opentodoShell?: unknown } }
+  let stored: string | null = null
+  let valid = true
+  let forgotten = 0
+  function installShell(capabilities = ['biometric']) {
+    stored = null
+    valid = true
+    forgotten = 0
+    g.window = {
+      opentodoShell: {
+        bridge: 1, platform: 'android', app: '0.10.0', capabilities,
+        biometricStore: async (k: string) => { stored = k; return true },
+        biometricRead: async () => (valid ? stored : null),
+        biometricForget: () => { stored = null; forgotten++ },
+      },
+    }
+  }
+  afterEach(() => { delete g.window })
+
+  it('enable after a passphrase unlock, then unlock with the biometric prompt alone', async () => {
+    installShell()
+    await enableOnA()
+    expect(await enableBiometricUnlock(PASS, 'passphrase')).toBe(true)
+    expect(stored).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(await biometricUnlockState()).toEqual({ available: true, enabled: true })
+    await lock()
+    expect(await currentKey()).toBeNull()
+    expect(await unlockWithBiometrics()).toBe(true)
+    const key = await currentKey()
+    expect(key).not.toBeNull()
+    expect(key!.extractable).toBe(false)
+    await syncNow()
+    expect(syncSnapshot().state).toBe('idle')
+  })
+
+  it('biometrics changed: the shell returns nothing and the passphrase still unlocks', async () => {
+    installShell()
+    await enableOnA()
+    await enableBiometricUnlock(PASS, 'passphrase')
+    await lock()
+    valid = false
+    expect(await unlockWithBiometrics()).toBe(false)
+    expect(await currentKey()).toBeNull()
+    await unlock(PASS, 'passphrase')
+    expect(await currentKey()).not.toBeNull()
+  })
+
+  it('a passphrase change here and encryption turned off delete the stored key', async () => {
+    installShell()
+    await enableOnA()
+    await enableBiometricUnlock(PASS, 'passphrase')
+    await changePassphrase(PASS, 'another long passphrase', FAST)
+    expect(forgotten).toBeGreaterThan(0)
+    expect((await biometricUnlockState()).enabled).toBe(false)
+    await enableBiometricUnlock('another long passphrase', 'passphrase')
+    await disableEncryption()
+    expect(stored).toBeNull()
+    expect((await biometricUnlockState()).enabled).toBe(false)
+  })
+
+  it('a shell without the biometric capability never offers it', async () => {
+    installShell(['reminders'])
+    await enableOnA()
+    expect(await biometricUnlockState()).toEqual({ available: false, enabled: false })
+    expect(await enableBiometricUnlock(PASS, 'passphrase')).toBe(false)
+    expect(stored).toBeNull()
   })
 })

@@ -1,11 +1,13 @@
 // node --test scripts/deploy/synology.test.mjs  (OpenSpec change platform-catalogs)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { configVariables, loadFacts, readText } from './common.mjs'
+import { configVariables, loadFacts, readText, releaseVersion } from './common.mjs'
 import { check, checkDocs, checkTemplate, DOCS, TEMPLATE } from './synology.mjs'
 
 const facts = loadFacts()
 const ctx = { facts, configVars: configVariables(), changelog: readText('CHANGELOG.md') }
+/** The latest release in CHANGELOG.md, which the pinned templates name. */
+const V = releaseVersion(ctx.changelog)
 const text = readText(TEMPLATE)
 const has = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}, got:\n${errors.join('\n')}`)
 const sub = (a, b) => {
@@ -28,8 +30,8 @@ test('synology: strict YAML and shape', () => {
 })
 
 test('synology: image policy and updates', () => {
-  has(sub('opentodo:stable', 'opentodo:latest'), /image must be ghcr\.io\/pixari\/opentodo:stable/)
-  has(sub('opentodo:stable', 'opentodo:0.9.0'), /image must be ghcr\.io\/pixari\/opentodo:stable/)
+  has(sub('opentodo:stable', 'opentodo:latest'), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
+  has(sub('opentodo:stable', `opentodo:${V}`), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
   has(sub('pull_policy: always', 'pull_policy: missing'), /pull_policy must be always/)
 })
 

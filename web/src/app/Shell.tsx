@@ -1,8 +1,10 @@
-import { DESKTOP_HEADER_QUERY, IconButton, PageActions, PageBarTitle, useMediaQuery, usePageBar, useOverlayDepth } from '../ui'
+import { DESKTOP_HEADER_QUERY, IconButton, setSidebarToggle, PageActions, PageBarTitle, TruncatedText, useMediaQuery, usePageBar, useOverlayDepth } from '../ui'
+import { useCommandBar } from './palette/useCommandBar'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { User } from '../lib/types'
 import { resolveStartView } from '../lib/views'
 import { describeRejected } from '../lib/sharing'
+import { keysOf } from '../lib/shortcuts'
 import { dismissRejected, useSyncStatus } from '../lib/sync'
 import { canonicalPath, navigate, parseRoute, useRoute } from './router'
 import { SIDEBAR_COLLAPSED_REM, SIDEBAR_MAX_REM, SIDEBAR_MIN_REM, setSidebarCollapsed, setSidebarWidth, toggleSidebarCollapsed, useSidebarLayout } from './sidebarLayout'
@@ -23,16 +25,20 @@ import { FeedView } from './FeedView'
 import { ImportScreen } from './ImportScreen'
 import { SettingsView } from './SettingsView'
 import { ReminderToasts } from './ReminderToasts'
+import { WorkspaceHost } from './NewWorkspaceDialog'
+import { FramesHost } from './calendar/framesRequest'
+import { FocusPickerHost } from './focus/focusRequest'
 import { WelcomeDialog } from './WelcomeDialog'
 import { ArchivePrompt } from './ArchivePrompt'
-import { sidebarFind, openTaskInList } from './signals'
+import { notificationsOpen, sidebarFind } from './signals'
 import { hasScope, useShortcutDispatcher, useShortcutScope } from './shortcuts'
-import { closePanelIfStale, openTaskPanel, panelTaskId, taskIdFromAddress, usePanel } from './panel'
+import { closePanelIfStale, panelTaskId, taskIdFromAddress, usePanel } from './panel'
+import { currentAddress, openTaskPage, settleTrail } from './taskTrail'
 import { AddButton, TAB_BAR_HEIGHT_REM, TabBar } from './TabBar'
-import { onQuickAddSheetRequest, QuickAddSheet } from './QuickAddSheet'
+import { usePhoneChrome } from './useScrollDirection'
+import { onQuickAddSheetRequest, QuickAddSheet, requestQuickAddSheet } from './QuickAddSheet'
 import { PanelHost } from './PanelHost'
 import { TaskPage } from './TaskPage'
-import { getTask } from '../lib/localData'
 import { watchViewerZone } from '../lib/dates'
 import { UndoToast } from './bulk/UndoToast'
 import { DailyCheckToast } from './method/DailyCheckToast'
@@ -45,6 +51,7 @@ import { useVimEnabled } from './vim/prefs'
 import { closeHelp, useHelpRequest } from '../lib/helpRequest'
 import { assistantStatus, openAssistant, refreshAssistantStatus, showLauncher, useAssistantOpen, useAssistantStatus } from '../lib/assistantStatus'
 import { t } from '../lib/i18n'
+import { handleShellUrl } from '../lib/shellActions'
 import { useRunningRepair } from '../lib/timeEntries'
 import { TrackingPill } from './TrackingIndicator'
 import { BreakReminder } from './focus/BreakReminder'
@@ -56,6 +63,7 @@ const VimLayer = lazy(() => import('./vim/VimLayer'))
 const TriageView = lazy(() => import('./TriageView').then((m) => ({ default: m.TriageView })))
 // In-app Help (user-documentation): the view, the panel and the guide text are
 // chunks of their own, fetched when Help first opens (and precached for offline).
+const RulesView = lazy(() => import('./rules/RulesView').then((m) => ({ default: m.RulesView })))
 const HelpView = lazy(() => import('./help/HelpBundle').then((m) => ({ default: m.HelpView })))
 const HelpPanel = lazy(() => import('./help/HelpBundle').then((m) => ({ default: m.HelpPanel })))
 // In-app assistant (in-app-assistant D9): its own chunk, fetched on first open;
@@ -77,36 +85,42 @@ const LoopHome = lazy(() => import('./method/LoopHome').then((m) => ({ default: 
 // The start guide (lean-chrome D5): its own chunk; it opens over the Inbox once per account, or from Settings.
 const FirstRunGuide = lazy(() => import('./FirstRun').then((m) => ({ default: m.FirstRunGuide })))
 
+/** Requests that need the sidebar on screen: the phone drawer opens, and for a find the icon rail expands. */
+function useSidebarRequests(setSidebarOpen: (open: boolean) => void) {
+  // A find request (the shortcut, the palette): the icon rail expands and the phone drawer opens.
+  useEffect(() => sidebarFind.subscribe((id) => { if (id === 'open') { setSidebarCollapsed(false); setSidebarOpen(true) } }), [setSidebarOpen])
+  // The briefing's replies open the bell's list (briefing-links D2): on a phone it sits in the drawer.
+  useEffect(() => notificationsOpen.subscribe(() => { if (!window.matchMedia?.('(min-width: 48rem)').matches) setSidebarOpen(true) }), [setSidebarOpen])
+}
+
 export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const route = useRoute()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  // A find request (the shortcut, the palette) needs the sidebar on screen: the icon rail expands and the phone drawer opens.
-  useEffect(() => sidebarFind.subscribe((id) => { if (id === 'open') { setSidebarCollapsed(false); setSidebarOpen(true) } }), [])
+  useSidebarRequests(setSidebarOpen)
   const [notice, setNotice] = useState<string | null>(null)
   // Changes the server refused after a role change (project-sharing).
   const { rejected } = useSyncStatus()
-
   // A travelling device: re-read the time zone whenever the app becomes visible
   // (absolute-datetimes), so zoned dues re-render in the new zone.
   useEffect(() => watchViewerZone(), [])
   // Two devices started tracking while offline: keep one running entry (time-tracking D2).
   useRunningRepair()
-
   // Start view (per device, OpenSpec `custom-views`): applied once per launch, and only
   // when the app opens at its root, so deep links and reloads keep their page.
   useEffect(() => {
-    // `?task=<id>` (a notification click, a shared link, a reload with the panel
-    // open): at the root, show the task in its own list instead of the start view;
-    // on any other page, reopen it in the panel there (app-shell).
-    // Old and alias addresses (/activity, /calendar, earlier settings ids) are replaced in place.
+    // `?task=<id>` (a notification click, an older shared link, a link in a note):
+    // the task opens as its page over the page in the address, so Esc returns there
+    // (task-full-page D4). Old and alias addresses (/activity, /calendar, earlier
+    // settings ids) are replaced in place.
     const canonical = canonicalPath(location.pathname)
     if (canonical && canonical !== location.pathname) history.replaceState(null, '', `${canonical}${location.search}`)
     const taskParam = taskIdFromAddress()
     if (taskParam) {
-      if (location.pathname === '/') {
-        history.replaceState(null, '', location.pathname)
-        void getTask(taskParam).then((task) => task && openTaskInList(task))
-      } else openTaskPanel(taskParam)
+      const params = new URLSearchParams(location.search)
+      params.delete('task')
+      const q = params.toString()
+      history.replaceState(null, '', `${location.pathname}${q ? `?${q}` : ''}`)
+      openTaskPage(taskParam)
       return
     }
     if (location.pathname !== '/') return
@@ -128,8 +142,9 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
 
   useEffect(() => {
     setSidebarOpen(false)
-    // The panel belongs to the page that opened it (app-shell D1).
+    // The panel belongs to the page that opened it (app-shell D1); a return from the task page restores its list's scroll.
     closePanelIfStale(location.pathname)
+    settleTrail(currentAddress())
   }, [route])
 
   // Whether the owner turned the assistant on for this account (cached offline).
@@ -149,29 +164,21 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
     void setCurrentUserId(user.id)
   }, [user.id])
 
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const [paletteLoaded, setPaletteLoaded] = useState(false)
+  const palette = useCommandBar()
   const [showHelp, setShowHelp] = useState(false)
-  // Phone navigation (app-shell): the tab bar and the add button hide while a sheet or the panel is open.
+  // Phone navigation (app-shell): the tab bar and the add button hide while a sheet or the panel is open, and on the task page (its own bar).
   const [addOpen, setAddOpen] = useState(false)
-  useEffect(() => onQuickAddSheetRequest(() => setAddOpen(true)), [])
+  useEffect(() => { const off = onQuickAddSheetRequest(() => setAddOpen(true)); void handleShellUrl(requestQuickAddSheet); return off }, []) // and a native shell's address actions (native-shells)
   const addButton = useRef<HTMLButtonElement>(null)
   const sheetOpen = useOverlayDepth() > 0
   const panelOpen = !!usePanel()
-  const phoneChrome = !sheetOpen && !panelOpen && !['share', 'invite', 'project-invite', 'reset'].includes(route.view)
+  const phoneChrome = !sheetOpen && !panelOpen && !['share', 'invite', 'project-invite', 'workspace-invite', 'reset', 'task'].includes(route.view)
   // The one keydown listener (keyboard-shortcuts "One shortcut registry with
   // scopes"); the shell owns the `global` scope: the palette, `g` navigation, the
   // cheat sheet, the sidebar toggle and the assistant.
   useShortcutDispatcher()
   const go = (r: Parameters<typeof navigate>[0]) => () => navigate(r)
   useShortcutScope('global', {
-    'global.palette': (e) => {
-      // Ctrl/⌘+K opens the palette from everywhere, also while typing in a field,
-      // except in the notes editor, where it inserts a link (search-and-command-palette D1).
-      if ((e.target as HTMLElement | null)?.closest?.('[data-notes-editor], .ProseMirror')) return false
-      setPaletteLoaded(true)
-      setPaletteOpen(true)
-    },
     'go.inbox': go({ view: 'inbox' }), 'go.today': go({ view: 'today' }), 'go.upcoming': go({ view: 'upcoming' }), 'go.someday': go({ view: 'someday' }),
     'go.anytime': go({ view: 'anytime' }), 'go.completed': go({ view: 'completed' }), 'go.assigned': go({ view: 'assigned' }), 'go.labels': go({ view: 'labels' }), 'go.projects': go({ view: 'projects' }),
     'go.views': go({ view: 'views' }), 'go.day': go({ view: 'day' }), 'go.week': go({ view: 'week' }), 'go.month': go({ view: 'month' }), 'go.plan': go({ view: 'plan' }), 'go.filter': go({ view: 'filter' }), 'go.settings': go({ view: 'settings' }),
@@ -184,7 +191,7 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
     'global.help': () => setShowHelp((v) => !v),
     // `[` collapses the sidebar to icons from 1024 px (app-shell "Resizable sidebar"); the calendar's and the timeline's own `[` win there.
     'global.sidebar': () => {
-      if (!window.matchMedia?.('(min-width: 1024px)').matches) return false
+      if (!window.matchMedia?.('(min-width: 64rem)').matches) return false
       toggleSidebarCollapsed()
     },
     'global.assistant': () => {
@@ -194,7 +201,8 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
   })
 
   const sidebar = useSidebarLayout()
-  const openPalette = () => { setPaletteLoaded(true); setPaletteOpen(true) }
+  useHeaderSidebarToggle(sidebar.collapsed)
+  const openPalette = palette.openSearch
   const vim = useVimEnabled()
   const [vimHelp, setVimHelp] = useState<HelpSection | null>(null)
   const helpRequest = useHelpRequest()
@@ -203,23 +211,26 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
   const frame = useRef<HTMLElement>(null)
   const content = useRef<HTMLDivElement>(null)
   usePageFocus(route, frame, content)
+  // The phone's bottom chrome: the tab bar minimises while scrolling down, the toast sits above it (phone-v2 D5, D6).
+  const minimised = usePhoneChrome(content, phoneChrome, sidebarOpen)
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-canvas">
       <SkipLink frame={frame} content={content} />
       {/* touch-none: a swipe on the scrim does not scroll the page behind the open drawer (sidebar-drawer-scroll). */}
       {sidebarOpen && <div className="fixed inset-0 z-[45] touch-none bg-scrim md:hidden" onClick={() => setSidebarOpen(false)} />}
-      {/* The sidebar column: a drawer below 768 px, a column from there, resizable and collapsible from 1024 px (app-shell). */}
+      {/* The sidebar column: a drawer below 768 px, a column from there, resizable and collapsible from 1024 px (app-shell); its colour, shared by the sticky group headers, is --sidebar-bg: the surface in the drawer, the canvas as a column (precision-tokens D1), where it sits beside the inset content surface without an edge (precision-shell D1). */}
       <aside data-sidebar data-sidebar-width={sidebar.collapsed ? 'collapsed' : sidebar.width}
         style={{ '--sidebar-w': `${sidebar.collapsed ? SIDEBAR_COLLAPSED_REM : sidebar.width}rem` } as React.CSSProperties}
-        className={`fixed inset-y-0 left-0 z-[45] flex w-64 max-w-[85vw] transform border-r border-default bg-canvas pl-[env(safe-area-inset-left)] transition-transform md:static md:w-(--sidebar-w) md:max-w-none md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-[45] flex w-80 max-w-[85vw] max-md:[&_[data-sidebar-item]]:min-h-12 transform max-md:border-r max-md:border-default bg-(--sidebar-bg) [--sidebar-bg:var(--color-surface)] md:[--sidebar-bg:var(--color-canvas)] md:pointer-fine:[--sidebar-bg:var(--color-sidebar)] pl-[env(safe-area-inset-left)] transition-transform md:static md:w-(--sidebar-w) md:max-w-none md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="min-w-0 flex-1">
           <Sidebar route={route} user={user} onSearch={openPalette} onShortcuts={() => setShowHelp(true)} onSignOut={onLogout} onAssistant={showLauncher(assistant) ? openAssistant : undefined} collapsed={sidebar.collapsed} onToggleCollapse={toggleSidebarCollapsed} />
         </div>
         {!sidebar.collapsed && <SidebarResizer width={sidebar.width} />}
       </aside>
-      <main ref={frame} className="flex min-w-0 flex-1 flex-col md:!pb-0" data-app-frame data-phone-chrome={phoneChrome || undefined}
+      {/* From 768 px the page is one inset content surface on the canvas: 8 px from the window, the surface radius, one hairline (precision-shell D1). */}
+      <main ref={frame} className="flex min-w-0 flex-1 flex-col md:!pb-0 md:my-2 md:mr-2 md:overflow-hidden md:rounded-surface md:border md:border-default md:bg-surface" data-app-frame data-phone-chrome={phoneChrome || undefined}
         style={phoneChrome ? { paddingBottom: `calc(${TAB_BAR_HEIGHT_REM}rem + env(safe-area-inset-bottom))` } : undefined}>
         {/* Below 768 px: the bar with the menu button, the page's title and its actions (app-shell "No desktop top bar"). */}
         <PhoneBar onMenu={() => setSidebarOpen(true)} />
@@ -238,19 +249,23 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
         {/* relative: the containing block of absolutely positioned content (every
             .sr-only label), which would otherwise be the page and stretch the
             document below the frame (issue #95). */}
-        <div ref={content} id="content" className={`relative min-h-0 flex-1 overflow-y-auto ${sidebarOpen ? 'max-md:overflow-hidden' : ''}`}>
+        {/* Below 768 px the add button's footprint is reserved under every list, so it never covers the last row (phone-v2 D2). */}
+        <div ref={content} id="content" data-add-room={phoneChrome || undefined}
+          className={`relative min-h-0 flex-1 overflow-y-auto scroll-pb-(--list-scroll-pad) ${phoneChrome ? 'max-md:pb-(--add-room)' : ''} ${sidebarOpen ? 'max-md:overflow-hidden' : ''}`}>
           {/* One screen failing (a render bug, a chunk gone after an upgrade) leaves the shell usable (client-sync-robustness). */}
           <PanelBoundary resetKey={route}>
           {route.view === 'help' ? (
             <Suspense fallback={<p className="px-4 py-6 text-body text-muted" role="status">{t('Loading help…')}</p>}><HelpView page={route.page} q={route.q} /></Suspense>
           ) : route.view === 'settings' ? (
-            <SettingsView user={user} onLogout={onLogout} section={route.section} anchor={route.anchor} />
+            <SettingsView user={user} onLogout={onLogout} section={route.section} page={route.page} anchor={route.anchor} />
           ) : route.view === 'import' ? (
             <ImportScreen />
           ) : route.view === 'labels' ? (
             <LabelsView route={route} />
           ) : route.view === 'places' ? (
             <PlacesView />
+          ) : route.view === 'rules' ? (
+            <Suspense fallback={null}><RulesView create={route.create} /></Suspense>
           ) : route.view === 'projects' ? (
             <ProjectsView archived={route.archived} />
           ) : route.view === 'filter' ? (
@@ -282,7 +297,7 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
           ) : route.view === 'feed' ? (
             <FeedView />
           ) : route.view === 'ask' ? (
-            <AskScreen role={user.role} />
+            <AskScreen role={user.role} name={user.name} />
           ) : route.view === 'day' || route.view === 'week' ? (
             <CalendarView mode={route.view} date={route.date} />
           ) : route.view === 'month' ? (
@@ -291,7 +306,7 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
             <PlanView date={route.date} />
           ) : (
             // App renders the invite, reset, capture and display screens itself; a stray /invite, /reset, /share or /display route inside the shell falls back to the Inbox.
-            <TaskListView userId={user.id} userRole={user.role} route={route.view === 'invite' || route.view === 'project-invite' || route.view === 'reset' || route.view === 'forgot' || route.view === 'verify' || route.view === 'public' || route.view === 'share' || route.view === 'display' ? { view: 'inbox' } : route} />
+            <TaskListView userId={user.id} userRole={user.role} route={route.view === 'invite' || route.view === 'project-invite' || route.view === 'workspace-invite' || route.view === 'reset' || route.view === 'confirm-email' || route.view === 'forgot' || route.view === 'verify' || route.view === 'public' || route.view === 'share' || route.view === 'display' ? { view: 'inbox' } : route} />
           )}
           </PanelBoundary>
         </div>
@@ -304,14 +319,14 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
         )}
       </main>
       <PanelBoundary><PanelHost user={user} /></PanelBoundary>
-      {phoneChrome && <TabBar route={route} onSearch={openPalette} onMore={() => setSidebarOpen(true)} moreOpen={sidebarOpen} />}
-      {(phoneChrome || addOpen) && <AddButton ref={addButton} open={addOpen} onClick={() => setAddOpen((v) => !v)} />}
+      {phoneChrome && <TabBar route={route} onSearch={openPalette} minimised={minimised} />}
+      {(phoneChrome || addOpen) && <AddButton ref={addButton} open={addOpen} away={minimised && !addOpen} onClick={() => setAddOpen((v) => !v)} />}
       <QuickAddSheet open={addOpen} onClose={() => setAddOpen(false)} anchor={addButton} route={route} userId={user.id} />
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} vim={vim} extraSections={vim && vimHelp ? [vimHelp] : []}
         context={{ view: route.view, board: hasScope('board') || hasScope('timeline'), panelOpen: hasScope('panel') || !!panelTaskId() }} />}
       {helpRequest && <PanelBoundary><Suspense fallback={null}><HelpPanel key={helpRequest.screen} screen={helpRequest.screen} trigger={helpRequest.trigger} onClose={closeHelp} /></Suspense></PanelBoundary>}
-      {assistantLoaded && <PanelBoundary><Suspense fallback={null}><AssistantRoot context={() => ({ view: route.view })} /></Suspense></PanelBoundary>}
-      {paletteLoaded && paletteOpen && <PanelBoundary resetKey={paletteOpen}><Suspense fallback={null}><CommandPalette user={user} onClose={() => setPaletteOpen(false)} showShortcuts={() => setShowHelp(true)} /></Suspense></PanelBoundary>}
+      {assistantLoaded && <PanelBoundary><Suspense fallback={null}><AssistantRoot name={user.name} onPage={route.view === 'ask'} context={() => ({ view: route.view, projectId: route.view === 'project' ? route.id : undefined })} /></Suspense></PanelBoundary>}
+      {palette.loaded && palette.open && <PanelBoundary resetKey={palette.open}><Suspense fallback={null}><CommandPalette user={user} initialMode={palette.mode} logWin={palette.win} onClose={palette.close} showShortcuts={() => setShowHelp(true)} /></Suspense></PanelBoundary>}
       {/* The owner's one-time thank-you on a new server (welcome-note). */}
       <WelcomeDialog user={user} />
       {/* The start guide after it (first-run "Three-step first run"); never a row of the list. */}
@@ -323,7 +338,8 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
       <UndoToast />
       <DailyCheckToast />
       <TemplateDialogHost />
-      <ArchivePrompt />
+      <ArchivePrompt /><WorkspaceHost route={route} panelTask={panelTaskId()} />
+      <FramesHost /><FocusPickerHost />
     </div>
   )
 }
@@ -335,7 +351,7 @@ function SidebarResizer({ width }: { width: number }) {
   return (
     <div role="separator" aria-orientation="vertical" aria-label={t('Resize sidebar')} aria-valuemin={SIDEBAR_MIN_REM} aria-valuemax={SIDEBAR_MAX_REM} aria-valuenow={width}
       tabIndex={0} data-sidebar-resizer
-      className="hidden w-1 shrink-0 cursor-col-resize self-stretch hover:bg-accent/40 focus-visible:bg-accent focus-visible:outline-none lg:block"
+      className="hidden w-1 shrink-0 cursor-col-resize self-stretch hover:bg-accent/40 focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus lg:block"
       onPointerDown={(e) => {
         dragging.current = { startX: e.clientX, startWidth: width }
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -353,23 +369,41 @@ function SidebarResizer({ width }: { width: number }) {
   )
 }
 
-/** Below 768 px: the menu button, the page's title and its actions (app-shell "No desktop top bar"), from the page-bar store. */
+/**
+ * Below 768 px: the menu button, the page's title and its actions (app-shell "No
+ * desktop top bar"), from the page-bar store. A day page keeps its title in the page,
+ * so its bar holds only the menu button and the actions, without a hairline; a page
+ * with Back (a task, a nested page) puts Back where the menu button is (precision-phone D1).
+ */
 function PhoneBar({ onMenu }: { onMenu: () => void }) {
   const bar = usePageBar()
   const desktop = useMediaQuery(DESKTOP_HEADER_QUERY)
   if (desktop) return null
+  const day = !!bar?.day
   return (
-    <header className="flex min-h-12 items-center gap-1 border-b border-default px-2 pt-[max(0.25rem,env(safe-area-inset-top))] pr-[max(0.5rem,env(safe-area-inset-right))] md:hidden" data-phone-bar>
-      <IconButton icon="menu" label={t('Open menu')} onClick={onMenu} className="touch-target" />
-      {bar?.back && <IconButton icon="arrow-left" label={bar.back.label} onClick={bar.back.onClick} className="touch-target" data-page-back />}
+    <header className={`flex min-h-12 items-center gap-1 px-2 pt-[max(0.25rem,env(safe-area-inset-top))] pr-[max(0.5rem,env(safe-area-inset-right))] md:hidden ${day ? '' : 'border-b border-soft'}`} data-phone-bar data-phone-bar-day={day || undefined}>
+      {bar?.back
+        ? <IconButton icon="chevron-left" label={bar.back.label} onClick={bar.back.onClick} className="touch-target" data-page-back />
+        : <IconButton icon="menu" label={t('Open menu')} onClick={onMenu} className="touch-target" />}
       <div className="min-w-0 flex-1">
-        <PageBarTitle>{bar?.title}</PageBarTitle>
-        {bar?.subtitle && <p className="truncate text-meta text-muted" data-phone-subtitle>{bar.subtitle}</p>}
+        {!day && <PageBarTitle>{bar?.title}</PageBarTitle>}
+        {/* One line, so the bar keeps its height (audit M12): a plain subtitle keeps its full text reachable when cut; controls (the Inbox's planned line, a project's members) cut themselves and are named by their content (ux-fixes-phone D2). */}
+        {!day && bar?.subtitle && (typeof bar.subtitle === 'string'
+          ? <TruncatedText as="p" text={bar.subtitle} className="block text-meta text-muted" data-phone-subtitle="" />
+          : <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-meta text-muted" data-phone-subtitle>{bar.subtitle}</div>)}
       </div>
       <TrackingPill />
       <div className="flex shrink-0 items-center gap-1" data-page-actions>
-        {bar && <PageActions overflow={bar.overflow} menu={bar.menu} help={bar.help} />}
+        {bar && <PageActions actions={bar.actions} overflow={bar.overflow} menu={bar.menu} help={bar.help} />}
       </div>
     </header>
   )
+}
+
+/** Registers the sidebar toggle every page header shows (precision-shell D2). */
+function useHeaderSidebarToggle(collapsed: boolean) {
+  useEffect(() => {
+    setSidebarToggle({ collapsed, toggle: toggleSidebarCollapsed, shortcut: keysOf('global.sidebar') })
+    return () => setSidebarToggle(null)
+  }, [collapsed])
 }

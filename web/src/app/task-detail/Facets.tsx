@@ -32,6 +32,10 @@ import type { Optional } from './usePropertyEditing'
 import { WhenControl, WhenSegmentPicker } from './WhenControl'
 import { t } from '../../lib/i18n'
 import { act, reportActionError } from '../actionError'
+import { dayPartFields } from '../../lib/dayParts'
+import { energyLevelsOn, energyOf, setTaskEnergy } from '../../lib/energy'
+import { useUserPrefsRow } from '../../lib/localData'
+import { EnergyChoice } from './EnergyChoice'
 
 export const PRIORITIES: { p: Priority; label: string; cls: string }[] = [
   // Priority colours come from the p1–p4 tokens (borders, 3:1); the labels use the
@@ -62,7 +66,7 @@ const itemPath = (i: PickerItem) => i.path
 const itemMeta = (i: PickerItem) => i.meta
 
 /** The parts that are optional (revealed by Add, removed when left empty); the rest are fixed. */
-const OPTIONAL = new Set<string>(['deadline', 'when', 'evening', 'reminders', 'estimate', 'repeat', 'labels', 'assignee', 'blocked-by', 'parent', 'section', 'location'])
+export const OPTIONAL = new Set<string>(['deadline', 'when', 'evening', 'reminders', 'estimate', 'repeat', 'labels', 'assignee', 'blocked-by', 'parent', 'section', 'location', 'energy'])
 /** The When segment a part opens on. */
 const SEGMENT_OF: Record<string, WhenSegmentId> = { due: 'due', evening: 'due', repeat: 'repeat', deadline: 'deadline', when: 'start', reminders: 'reminders' }
 
@@ -70,29 +74,12 @@ function Dot({ color }: { color?: string }) {
   return <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color ?? 'var(--ot-faint)' }} />
 }
 
-export function Facets(props: PropertiesProps) {
-  const { task, readOnly, userId, parent } = props
-  const m = usePropertiesModel(props)
+/** The facet parts of a task in the list row's words; `revealed` adds empty parts for unset properties. */
+export function useFacetParts(props: PropertiesProps, m: PropertiesModel, revealed: Set<string>) {
+  const { task, parent } = props
   const dt = useDateTimeFormat()
-  const ed = m.editing
-  const anchors = useRef(new Map<string, HTMLButtonElement>())
-  const editingRef = useRef<string | null>(ed.editing)
-  editingRef.current = ed.editing
-  // The anchor of the open editor: the part that opened it, read when the popover places itself.
-  const anchor = useMemo<RefObject<HTMLElement | null>>(() => ({ get current() { return anchors.current.get(editingRef.current ?? '') ?? null } }), [])
-  const [segment, setSegment] = useState<WhenSegmentId>('due')
-  useEffect(() => { const s = SEGMENT_OF[ed.editing ?? '']; if (s) setSegment(s) }, [ed.editing])
-
-  const setEditing = (id: string, on: boolean) => (OPTIONAL.has(id) ? ed.chipProps(id as Optional) : ed.fixedChip(id)).onEditingChange(on)
-  const close = () => { if (ed.editing) setEditing(ed.editing, false) }
   const origin = originOf(task)
   const shownLocation = useShownLocation(task)
-
-  const revealed = useMemo(() => {
-    const ids = new Set<string>()
-    for (const id of OPTIONAL) if (ed.visible(id as Optional)) ids.add(id)
-    return ids
-  }, [ed])
   const facets = facetsOf(task, {
     local: m.local,
     zoneCity: isZoned(task.due) ? zoneCity(task.due.tz) : null,
@@ -112,18 +99,50 @@ export function Facets(props: PropertiesProps) {
     revealed,
     dateTime: dt.resolved,
   })
+  return { facets, origin, shownLocation }
+}
 
-  const onPart = (part: FacetPart) => {
-    // The origin opens its source (task-origin); removing it is in the panel's header menu.
-    if (part.id === 'origin') { if (origin?.url) openOrigin(origin); return }
+/**
+ * The one open part editor: the parts' buttons by id (a popover anchors to the part
+ * that opened it), the When segment it starts on, and opening, toggling and closing.
+ */
+export function usePartEditor(m: PropertiesModel, task: Task) {
+  const ed = m.editing
+  const anchors = useRef(new Map<string, HTMLButtonElement>())
+  const editingRef = useRef<string | null>(ed.editing)
+  editingRef.current = ed.editing
+  // The anchor of the open editor: the part that opened it, read when the popover places itself.
+  const anchor = useMemo<RefObject<HTMLElement | null>>(() => ({ get current() { return anchors.current.get(editingRef.current ?? '') ?? null } }), [])
+  const [segment, setSegment] = useState<WhenSegmentId>('due')
+  useEffect(() => { const s = SEGMENT_OF[ed.editing ?? '']; if (s) setSegment(s) }, [ed.editing])
+  const setEditing = (id: string, on: boolean) => (OPTIONAL.has(id) ? ed.chipProps(id as Optional) : ed.fixedChip(id)).onEditingChange(on)
+  const close = () => { if (ed.editing) setEditing(ed.editing, false) }
+  const activate = (id: string) => {
+    // The origin opens its source (task-origin); removing it is in the header menu.
+    if (id === 'origin') { const origin = originOf(task); if (origin?.url) openOrigin(origin); return }
     // A second activation of the open part closes its editor (task-panel-polish "Popover triggers toggle").
-    if (ed.editing === part.id) { close(); return }
+    if (ed.editing === id) { close(); return }
     if (ed.editing) setEditing(ed.editing, false)
-    setEditing(part.id, true)
+    setEditing(id, true)
   }
+  const partRef = (id: string, el: HTMLButtonElement | null) => { if (el) anchors.current.set(id, el); else anchors.current.delete(id) }
+  return { open: ed.editing, anchor, segment, setSegment, activate, close, partRef }
+}
+
+export function Facets(props: PropertiesProps) {
+  const { task, readOnly, userId } = props
+  const m = usePropertiesModel(props)
+  const ed = m.editing
+  const pe = usePartEditor(m, task)
+  const revealed = useMemo(() => {
+    const ids = new Set<string>()
+    for (const id of OPTIONAL) if (ed.visible(id as Optional)) ids.add(id)
+    return ids
+  }, [ed])
+  const { facets, shownLocation } = useFacetParts(props, m, revealed)
   const line = (facet: FacetId, icon: IconName, name: string, parts: FacetPart[]) => (
-    <FacetLine facet={facet} icon={icon} name={name} parts={parts} readOnly={readOnly} open={ed.editing}
-      onPart={onPart} partRef={(id, el) => { if (el) anchors.current.set(id, el); else anchors.current.delete(id) }} />
+    <FacetLine facet={facet} icon={icon} name={name} parts={parts} readOnly={readOnly} open={pe.open}
+      onPart={(part) => pe.activate(part.id)} partRef={pe.partRef} />
   )
 
   return (
@@ -134,15 +153,15 @@ export function Facets(props: PropertiesProps) {
       {facets.who.length > 0 && line('who', 'users', t('Who'), facets.who)}
       <LocationPreview shown={shownLocation} />
       {!readOnly && <AddMenu task={task} userId={userId} m={m} />}
-      {!readOnly && ed.editing && (
-        <PartEditor id={ed.editing} props={props} m={m} anchor={anchor} segment={segment} onSegment={setSegment} onClose={close} />
+      {!readOnly && pe.open && (
+        <PartEditor id={pe.open} props={props} m={m} anchor={pe.anchor} segment={pe.segment} onSegment={pe.setSegment} onClose={pe.close} />
       )}
     </section>
   )
 }
 
 /** The popover of the open part: its editor, its title and what Clear does. */
-function PartEditor({ id, props, m, anchor, segment, onSegment, onClose }: {
+export function PartEditor({ id, props, m, anchor, segment, onSegment, onClose }: {
   id: string
   props: PropertiesProps
   m: PropertiesModel
@@ -214,6 +233,8 @@ function PartEditor({ id, props, m, anchor, segment, onSegment, onClose }: {
       ))
     case 'estimate':
       return frame('clock', t('Estimate'), <EstimateField task={task} />, task.estimate_minutes !== null ? () => act(updateTask(task.id, { estimate_minutes: null })) : undefined)
+    case 'energy':
+      return frame('zap', t('Energy'), <EnergyChoice task={task} onChosen={onClose} />, energyOf(task) ? () => act(setTaskEnergy(task.id, null)) : undefined)
     case 'labels':
       return frame('tag', t('Labels'), (
         <div className="space-y-2">
@@ -253,6 +274,8 @@ function PartEditor({ id, props, m, anchor, segment, onSegment, onClose }: {
 /** The Add menu (task-panel-facets D5): what is not set, grouped by facet, then Attach. */
 function AddMenu({ task, userId, m }: { task: Task; userId?: string; m: PropertiesModel }) {
   const { solo, offerSection, editing: ed } = m
+  // Energy is offered only while the account has Energy levels on (task-energy D3).
+  const energyOn = energyLevelsOn(useUserPrefsRow())
   type Offer = { id: Optional; label: string; icon: IconName; shortcut?: string; when?: boolean; run?: () => void }
   const groups: { title: string; offers: Offer[] }[] = [
     { title: t('Where'), offers: [
@@ -263,12 +286,13 @@ function AddMenu({ task, userId, m }: { task: Task; userId?: string; m: Properti
     { title: t('When'), offers: [
       { id: 'deadline', label: t('Deadline'), icon: 'hourglass', shortcut: keysOf('list.deadline') },
       { id: 'when', label: t('Start'), icon: 'calendar-range', shortcut: keysOf('list.defer') },
-      { id: 'evening', label: t('This Evening'), icon: 'moon', shortcut: keysOf('list.evening'), run: () => act(updateTask(task.id, { evening: true })) },
+      { id: 'evening', label: t('This Evening'), icon: 'moon', shortcut: keysOf('list.evening'), run: () => act(updateTask(task.id, dayPartFields('evening'))) },
       { id: 'reminders', label: t('Reminder'), icon: 'alarm-clock' },
       { id: 'repeat', label: t('Repeat'), icon: 'repeat' },
     ] },
     { title: t('How'), offers: [
       { id: 'estimate', label: t('Estimate'), icon: 'clock', shortcut: keysOf('list.estimate') },
+      { id: 'energy', label: t('Energy'), icon: 'zap', when: energyOn },
       { id: 'labels', label: t('Labels'), icon: 'tag', shortcut: keysOf('list.labels') },
     ] },
     { title: t('Who'), offers: [

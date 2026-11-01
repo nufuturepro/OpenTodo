@@ -6,6 +6,7 @@
 import { localDate } from '../lib/dates'
 import type { Task } from '../lib/types'
 import { navigate, routePath } from './router'
+import { openTaskPage } from './taskTrail'
 import { armGPrefix, clearPrefix, isPrefixPending } from './shortcuts/dispatch'
 
 /** The `g` prefix now lives in the shortcut dispatcher (ux-overhaul D5); these stay for the Vim layer and tests. */
@@ -58,6 +59,9 @@ export const locationFocus = channel()
 /** `Shift+N` on a selected row: the detail panel opens its start date field (someday-and-evening). */
 export const deferFocus = channel()
 
+/** "Log a win" (today-closed-list D6): the command bar opens in Add with "Log as done" on. */
+export const logWinRequest = channel()
+
 /** `b` on a selected row: the detail panel opens its Blocked by picker (task-dependencies). */
 export const blockedByFocus = channel()
 
@@ -67,6 +71,18 @@ export const sidebarFind = channel()
 /** `s` on a selected row: the Day view opens with that task in placement mode. */
 export const placement = channel()
 
+/** "Re-plan the rest of the day" (replan-the-day D4): the Day or Week view opens its preview. Request id: `open`. */
+export const replanRequest = channel()
+
+/**
+ * Open the re-plan preview: in place on the Day or Week view, else on the Day view of
+ * today (Today's menu, the command palette elsewhere).
+ */
+export function openReplan(inCalendar: boolean): void {
+  replanRequest.request('open')
+  if (!inCalendar) navigate({ view: 'day' })
+}
+
 /** `s` on a list row: open the Day view (on the task's date, else today) in placement mode for it. */
 export function placeInDay(task: Pick<Task, 'id' | 'due'>, today: string): void {
   placement.request(task.id)
@@ -75,23 +91,22 @@ export function placeInDay(task: Pick<Task, 'id' | 'due'>, today: string): void 
 }
 
 /**
- * Open a task's detail panel from outside a list (a reminder toast, a notification
- * click): go to the task's project (or the Inbox) and open it there. When the list
- * is already showing, its subscriber opens it at once; otherwise the list takes the
- * request when the route changes.
+ * Ask the list on screen to open a task (project activity, the triage card): the
+ * list selects the row and opens the task as its page, remembering the list.
  */
 export const openTask = channel()
 
 /** Select a task (without opening it) when the list next shows: leaving the triage mode (inbox-triage). */
 export const selectTask = channel()
 
+/** The briefing's replies (briefing-links D2): the shell opens the drawer on a phone, the bell opens its list. Request id: `open`. */
+export const notificationsOpen = channel()
+
+/**
+ * Open a task from outside a list (a reminder toast, a notification, the palette):
+ * as its page, with Esc going to the task's own list (its project, or the Inbox)
+ * with the task selected there (task-full-page D2).
+ */
 export function openTaskInList(task: Pick<Task, 'id' | 'project_id'>): void {
-  const route = task.project_id ? { view: 'project' as const, id: task.project_id } : { view: 'inbox' as const }
-  const path = routePath(route)
-  if (typeof location !== 'undefined' && (location.pathname === path || (path === '/' && location.pathname === '/inbox'))) {
-    openTask.request(task.id)
-    return
-  }
-  openTask.set(task.id)
-  navigate(route)
+  openTaskPage(task.id, { from: routePath(task.project_id ? { view: 'project', id: task.project_id } : { view: 'inbox' }) })
 }

@@ -22,21 +22,21 @@ Pick whichever is quickest:
 - Select a task and press <kbd>L</kbd>, start typing, and press <kbd>Enter</kbd>. The picker stays open so you can add more.
 - Open the task and use **Labels** in the panel.
 
-If the label doesn't exist yet, typing its name and pressing <kbd>Enter</kbd> creates it. On a task row, labels show as small colored dots with the first label's name and "+2" for the others (hover or focus them to read every name); with Detailed rows in Settings → Appearance, each label is a chip. To remove one, open the task and select the **×** on the chip.
+If the label doesn't exist yet, typing its name and pressing <kbd>Enter</kbd> creates it. On a task row, labels show as small chips with the label's colour and name, two at most, then "+2" for the others (hover or focus them to read every name). To remove one, open the task and select the **×** on the chip.
 
 Labels are personal. In a shared project, other members don't see the labels you add.
 
 ## See everything with one label
 
-Once you have a label, the **Labels** group in the sidebar lists your labels; it starts folded on a new device. The number of open tasks for each is on the labels page (<kbd>g</kbd> <kbd>l</kbd>) and in the label's header, not in the sidebar. Select one to see all its tasks, grouped by project; a task you add there with [quick add](quick-add.md) gets the label. **Pin to sidebar** in a label's menu (in the sidebar, on the labels page or in the label's header) adds it to **Favourites** at the top of the sidebar.
+Once you have a label, the **Labels** group in the sidebar lists your labels; it starts folded on a new device. The number of open tasks for each is on the labels page (<kbd>g</kbd> <kbd>l</kbd>) and in the label's header (in the sidebar with [every count on](sidebar-counts-and-order.md)). Select one to see all its tasks, grouped by project ([or another way](group-and-order.md)); a task you add there with [quick add](quick-add.md) gets the label. **Pin to sidebar** in a label's menu (in the sidebar, on the labels page or in the label's header) adds it to **Favourites** at the top of the sidebar.
 
 **All** next to Labels (or <kbd>g</kbd> <kbd>l</kbd>) opens the labels page, where you rename, recolour, reorder, merge and delete labels: see [Manage labels](manage-labels.md).
 
 ## Find tasks with a filter
 
-Open **Filter** in the sidebar (or press <kbd>g</kbd> <kbd>f</kbd>) and type a query. Results appear as you type, grouped by project.
+Open **Filter** in the sidebar (or press <kbd>g</kbd> <kbd>f</kbd>) and type a query. Results appear as you type, grouped by project. Rather not type? **+ Condition** above the input builds the query for you ([the builder](filters.md#build-a-filter-without-typing)).
 
-<picture><source srcset="images/filter-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/filter-light.webp" alt="The Filter view with the query (@call | @errand) & due <= 7 days and the matching tasks below."></picture>
+<picture><source srcset="images/filter-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/filter-light.webp" alt="The New view page with the query (@call | @errand) & due <= 7 days and the matching tasks below."></picture>
 
 A query combines small pieces:
 
@@ -50,6 +50,7 @@ A query combines small pieces:
 | `due <= 7 days` | due within the next week | `due before friday` |
 | `search: text` | words in the title or notes | `search: invoice` |
 | `blocked`, `unblocked` | waiting for an open task, or not | `unblocked & today` |
+| `available` | can be done now: not blocked, not waiting for an earlier step, not parked or starting later | `available & @phone` |
 | `completed` | include completed tasks | `#Home & completed` |
 
 Join them with `&` (and), `|` (or) and `!` (not), and use brackets to group:
@@ -72,10 +73,11 @@ The full language, with ten worked examples, is in [Filter queries](filters.md).
 
 ## Save a filter as a view
 
-When a query is useful, keep it: press <kbd>s</kbd> in the results, give it a name, and it appears under **Filters** in the sidebar, and in **Favourites** until you unpin it. Its live count is in the Filters overview (<kbd>g</kbd> <kbd>v</kbd>) and its page header. Saved views sync to your other devices. See [Views](views.md#save-your-own-views) for grouping, sorting and dashboards.
+When a query is useful, keep it: press <kbd>s</kbd> in the results, give it a name, and it appears under **Views** in the sidebar, and in **Favourites** until you unpin it. Its live count is in the Filters overview (<kbd>g</kbd> <kbd>v</kbd>) and its page header. Saved views sync to your other devices. See [Views](views.md#save-your-own-views) for grouping, sorting and dashboards.
 
 ## Tips
 
 - Labels for context work well: `@call`, `@computer`, `@errand`, `@home`. Then a view like `@errand & due <= 2 days` is your shopping list.
 - A `@waiting` label plus a pinned "Waiting on others" view makes follow-ups hard to forget.
 - Filters run on your device. They're instant, and they work offline.
+- Labels and saved views belong to one [workspace](workspaces.md), so the same name can exist in two of them.

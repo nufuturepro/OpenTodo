@@ -23,8 +23,13 @@ type Config struct {
 	// registration on a server without accounts (OpenSpec change owner-bootstrap).
 	// It has no effect once an owner exists.
 	SetupToken string
-	SessionTTL time.Duration
-	LogLevel   slog.Level
+	// SetupCodeRequired (OPENTODO_SETUP_CODE=required) makes a first
+	// registration without a setup token carry the one-time code the server
+	// prints in its log, unless it comes over a direct loopback connection
+	// (OpenSpec change auth-hardening, D6). Off by default.
+	SetupCodeRequired bool
+	SessionTTL        time.Duration
+	LogLevel          slog.Level
 	// ImportMaxMB caps the size of an uploaded import file (OPENTODO_IMPORT_MAX_MB).
 	ImportMaxMB int
 	// WebhooksAllowPrivate presets the owner's "allow private network targets"
@@ -73,6 +78,15 @@ type Config struct {
 	// Maps holds the optional OPENTODO_MAPS* overrides of the map provider and
 	// switch (OpenSpec `task-locations`, see maps.go).
 	Maps MapsConfig
+	// Automations is the optional OPENTODO_AUTOMATIONS override of the owner's
+	// automations switch (OpenSpec `automation-rules`); nil when unset.
+	Automations *bool
+	// STT is the optional speech-to-text service override (OpenSpec change
+	// settings-refresh, see stt.go).
+	STT STTConfig
+	// Google is the optional Google OAuth client of calendar sync (OpenSpec
+	// change calendar-two-way, see google.go).
+	Google GoogleConfig
 	// Demo turns the server into a public demo instance (OPENTODO_DEMO=true;
 	// OpenSpec `demo-mode`): a private, short-lived sandbox per visitor
 	// (`demo-sandboxes`), a nightly reset, sign-up and every abusable feature
@@ -179,6 +193,15 @@ func Load() (Config, error) {
 		return c, err
 	}
 	if err := c.loadMaps(); err != nil {
+		return c, err
+	}
+	if err := c.loadAutomations(); err != nil {
+		return c, err
+	}
+	if err := c.loadSTT(); err != nil {
+		return c, err
+	}
+	if err := c.loadGoogle(); err != nil {
 		return c, err
 	}
 	if raw := strings.TrimSpace(os.Getenv("OPENTODO_TRUSTED_PROXIES")); raw != "" {
@@ -307,6 +330,13 @@ func (c *Config) loadServerVars() error {
 			return fmt.Errorf("OPENTODO_SETUP_TOKEN must be at least %d characters when set", MinSetupTokenLen)
 		}
 		c.SetupToken = v
+	}
+	switch v := strings.ToLower(strings.TrimSpace(os.Getenv("OPENTODO_SETUP_CODE"))); v {
+	case "", "off":
+	case "required":
+		c.SetupCodeRequired = true
+	default:
+		return fmt.Errorf("OPENTODO_SETUP_CODE must be required or off, got %q", v)
 	}
 	if v := os.Getenv("OPENTODO_SESSION_DAYS"); v != "" {
 		d, err := strconv.Atoi(v)

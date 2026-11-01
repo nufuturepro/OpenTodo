@@ -7,9 +7,10 @@ import 'fake-indexeddb/auto'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { describe, expect, it, vi } from 'vitest'
 import { db } from '../../lib/db'
-import { createTask } from '../../lib/ops'
+import { createTask, mutate } from '../../lib/ops'
+import { USER_PREFS_ID } from '../../lib/userPrefs'
 import { click, key, render, type, waitFor } from '../../ui/test-utils'
-import { setupTaskDetailTests, settle } from './taskDetail.testkit'
+import { setupTaskDetailTests } from './taskDetail.testkit'
 import { WhenControl } from './WhenControl'
 
 setupTaskDetailTests()
@@ -18,7 +19,7 @@ async function mount(id: string, focus: Parameters<typeof WhenControl>[0]['focus
   const task = (await db.tasks.get(id))!
   const onDone = vi.fn()
   const r = await render(<Live id={id} focus={focus} onDone={onDone} />)
-  await settle()
+  await waitFor(() => !!r.container.querySelector('[data-when-segment]') && r.container.contains(document.activeElement), 'the control with its focused segment')
   const seg = (name: string) => r.container.querySelector(`[data-when-segment="${name}"]`) as HTMLElement
   return { ...r, task, onDone, seg }
 }
@@ -36,6 +37,8 @@ async function queuedFields(id: string, from: number): Promise<Record<string, un
   const ops = (await db.outbox.toArray()).slice(from).filter((o) => o.entityId === id)
   return Object.fromEntries(ops.map((o) => [o.field, o.value]))
 }
+/** Wait until a task op is queued after `from`. */
+const queued = (id: string, from: number) => waitFor(async () => Object.keys(await queuedFields(id, from)).length > 0, 'the write queued')
 
 describe('WhenControl', () => {
   it('shows six segments under one header, focuses the asked one, and Done calls back', async () => {
@@ -55,7 +58,7 @@ describe('WhenControl', () => {
     const date = seg('due').querySelector('input') as HTMLInputElement
     await type(date, '2026-11-03')
     await key(date, 'Enter')
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ due: { date: '2026-11-03' } })
     await unmount()
   })
@@ -68,17 +71,17 @@ describe('WhenControl', () => {
     expect(document.activeElement).toBe(date)
     await type(date, '2026-10-16')
     await key(date, 'Enter')
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ start: '2026-10-16' })
 
     from = await mark()
     await click([...seg('start').querySelectorAll('button')].find((b) => b.textContent?.includes('Someday'))!)
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toMatchObject({ start: 'someday', due: null })
 
     from = await mark()
     await click(seg('start').querySelector('[data-choice="tomorrow"]')!)
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toMatchObject({ start: '2026-10-15' })
     await unmount()
   })
@@ -90,22 +93,38 @@ describe('WhenControl', () => {
     const input = seg('deadline').querySelector('input') as HTMLInputElement
     await type(input, 'fri')
     await key(input, 'Enter')
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ deadline: '2026-10-16' })
     from = await mark()
     await click(seg('deadline').querySelector('[data-choice="end-of-month"]')!)
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ deadline: '2026-10-31' })
     await unmount()
   })
 
-  it('Evening writes evening only', async () => {
+  it('Evening writes the evening flag with no part of the day (day-parts D2)', async () => {
     const id = await createTask({ title: 'Plan' })
     const { seg, unmount } = await mount(id, 'evening')
+    expect(seg('evening').querySelector('[data-day-part-control]')).toBeNull()
     const from = await mark()
     await click(seg('evening').querySelector('[role="switch"]')!)
-    await settle()
-    expect(await queuedFields(id, from)).toEqual({ evening: true })
+    await queued(id, from)
+    expect(await queuedFields(id, from)).toEqual({ evening: true, day_part: null })
+    await unmount()
+  })
+
+  it('with day parts on, the part control writes the pair with Undo (day-parts D4)', async () => {
+    await mutate('user_prefs', USER_PREFS_ID, { day_parts: 'on' })
+    const id = await createTask({ title: 'Stretch', evening: true })
+    const { seg, unmount } = await mount(id, 'evening')
+    await waitFor(() => !!seg('evening').querySelector('[data-day-part-control]'), 'the part control')
+    expect(seg('evening').querySelector('[role="switch"]')).toBeNull()
+    const from = await mark()
+    await click(seg('evening').querySelector('[data-day-part="morning"]')!)
+    await waitFor(async () => (await db.tasks.get(id))?.day_part === 'morning', 'Morning written')
+    expect(await queuedFields(id, from)).toEqual({ day_part: 'morning', evening: false })
+    await waitFor(() => seg('evening').querySelector('[data-day-part="morning"]')?.getAttribute('aria-checked') === 'true', 'Morning checked')
+    await mutate('user_prefs', USER_PREFS_ID, { day_parts: '' })
     await unmount()
   })
 
@@ -115,18 +134,19 @@ describe('WhenControl', () => {
     let from = await mark()
     // Presets name the due date's weekday and day; the rule written is the editor's own.
     await click(seg('repeat').querySelector('[data-preset="weekly"]')!)
-    await settle()
+    await queued(id, from)
+    await waitFor(() => seg('repeat').querySelector('[data-preset="weekly"]')!.getAttribute('aria-checked') === 'true', 'the preset checked')
     expect(Object.keys(await queuedFields(id, from))).toEqual(['recurrence'])
     expect((await db.tasks.get(id))!.recurrence).toBe('every thursday')
     expect(seg('repeat').querySelector('[data-preset="weekly"]')!.getAttribute('aria-checked')).toBe('true')
     expect(seg('repeat').querySelector('[data-rule-words]')!.textContent).toContain('every thursday')
     from = await mark()
     await click(seg('repeat').querySelector('[data-preset="custom"]')!)
-    await settle()
+    await waitFor(() => !!seg('repeat').querySelector('input[aria-label="Repeat rule"]'), 'the rule field')
     const input = seg('repeat').querySelector('input[aria-label="Repeat rule"]') as HTMLInputElement
     await type(input, 'every week')
     await key(input, 'Enter')
-    await settle()
+    await queued(id, from)
     const fields = await queuedFields(id, from)
     expect(Object.keys(fields)).toEqual(['recurrence'])
     expect((await db.tasks.get(id))!.recurrence).toBeTruthy()
@@ -140,9 +160,9 @@ describe('WhenControl', () => {
     const add = seg('reminders').querySelector('button[aria-label="Add reminder"]') as HTMLButtonElement
     expect(document.activeElement).toBe(add)
     await click(add)
-    await settle()
+    await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')].some((i) => i.textContent?.includes('At due time')), 'the reminder menu')
     await click([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((i) => i.textContent?.includes('At due time'))!)
-    await settle()
+    await waitFor(async () => (await db.reminders.where('task_id').equals(id).count()) === 1, 'the reminder stored')
     expect(await queuedFields(id, from)).toEqual({})
     const reminders = (await db.outbox.toArray()).slice(from).filter((o) => o.entity === 'reminder')
     expect(reminders.length).toBeGreaterThan(0)
@@ -174,15 +194,17 @@ describe('WhenControl', () => {
     const { seg, unmount } = await mount(id)
     let from = await mark()
     await click(seg('due').querySelector('[data-choice="tomorrow"]')!)
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ due: { date: '2026-10-15' } })
     expect(seg('due').querySelector('[data-zone-line]')).toBeNull()
     expect(seg('due').textContent).not.toContain('time zone')
+    // Add time comes with the date, once the live task has it.
+    await waitFor(() => !!seg('due').querySelector('[data-add-time]'), 'Add time')
     await click(seg('due').querySelector('[data-add-time]')!)
-    await settle()
+    await waitFor(() => !!seg('due').querySelector('[data-time-suggestion="09:00"]'), 'the time suggestions')
     from = await mark()
     await click(seg('due').querySelector('[data-time-suggestion="09:00"]')!)
-    await settle()
+    await queued(id, from)
     expect(await queuedFields(id, from)).toEqual({ due: { date: '2026-10-15', time: '09:00' } })
     await waitFor(() => !!seg('due').querySelector('[data-zone-line]'), 'the zone line')
     expect(seg('due').querySelector('[data-zone-line]')!.textContent).toContain('Floating time')

@@ -6,7 +6,7 @@ Defines how a single quick-add line is parsed into task attributes: the token gr
 ## Requirements
 
 ### Requirement: Attribute tokens
-The quick-add line SHALL recognise `#<name>` as a project reference, `@<name>` as a label, `p1`–`p4` as a priority (1 highest, 4 lowest) and `+<duration>` (`+30m`, `+2h`, `+1h30`) as a duration estimate in minutes. A `#` token SHALL match a non-archived, non-deleted project by case-insensitive name, exact match first and unique prefix second; a token that matches no project SHALL stay in the title unchanged. Recognised tokens SHALL be removed from the title and surrounding whitespace collapsed.
+The quick-add line SHALL recognise `#<name>` as a project reference, `@<name>` as a label, `p1`–`p4` as a priority (1 highest, 4 lowest), `+<duration>` (`+30m`, `+2h`, `+1h30`) as a duration estimate in minutes, and `<spent>/<estimate>` (`30m/2h`, `1h/1h30`, `45min/2h`) as time already spent and an estimate, where both parts carry a unit. A `#` token SHALL match a non-archived, non-deleted project by case-insensitive name, exact match first and unique prefix second; a token that matches no project SHALL stay in the title unchanged. Recognised tokens SHALL be removed from the title and surrounding whitespace collapsed. Time spent SHALL become one closed time entry ending at creation, written in the same batch as the task.
 
 #### Scenario: Full line
 - **WHEN** the user enters `Meeting with Sarah #work @call p1 +30m` and a project named "Work" exists
@@ -19,6 +19,22 @@ The quick-add line SHALL recognise `#<name>` as a project reference, `@<name>` a
 #### Scenario: Ambiguous prefix is not guessed
 - **WHEN** projects "Home" and "Homework" exist and the user enters `Fix sink #hom`
 - **THEN** the token is not resolved, the title keeps `#hom`, and the preview shows no project chip
+
+#### Scenario: Spent and estimate
+- **WHEN** the user enters `Draft the offer 30m/2h` at 10:00
+- **THEN** the task has title `Draft the offer`, estimate 120 minutes and one closed entry from 09:30 to 10:00, the preview shows a "Spent 30 min" chip beside the estimate chip, and the row reads `30m / 2h`
+
+#### Scenario: Plus stays an estimate only
+- **WHEN** the user enters `Draft the offer +30m`
+- **THEN** the task has estimate 30 minutes and no time entry
+
+#### Scenario: Dates are not durations
+- **WHEN** the user enters `Pay rent 30/12` in a day-month language
+- **THEN** `30/12` is a date and no entry is created, because both parts of a spent token need a unit
+
+#### Scenario: Same in every language
+- **WHEN** the line `Angebot schreiben 30m/2h` is parsed with German active, or `Rédiger l'offre 1h/2h` with French active
+- **THEN** the result is 30 (or 60) minutes spent and a 120-minute estimate, while `Réunion 15h` with French active still means a meeting at 15:00, and every case is in the shared vectors run by the web and server parsers
 
 ### Requirement: Date and time phrases
 The parser SHALL recognise relative day words, weekday names with an optional "next", "in N days/weeks/months", "next week/month", month-and-day and numeric dates, and 12-hour or 24-hour times optionally preceded by "at". Dates SHALL resolve against the viewer's local date, always to today or later, and a time without a date SHALL mean today. The result SHALL be stored as the floating `{date: "YYYY-MM-DD", time?: "HH:MM"}` due value.
@@ -34,21 +50,6 @@ The parser SHALL recognise relative day words, weekday names with an optional "n
 #### Scenario: Date in the past rolls forward
 - **WHEN** today is 2026-10-09 and the user enters `Renew passport 3 Feb`
 - **THEN** the task is due `2027-02-03`
-
-### Requirement: Numeric order and week start follow the preferences
-While the device's numeric date order is automatic, numeric dates SHALL be read in the order of the user's date format (OpenSpec `date-time-preferences`; `iso` and `system` keep the language's order). "next week" and the "next <weekday>" rule SHALL use weeks that start on the user's preferred first day of the week.
-
-#### Scenario: Numeric date follows the date format
-- **WHEN** the browser language is English (US), the quick-add order is automatic, the date format is `day-month`, today is 2026-10-09, and the user enters `Pay rent 3/11`
-- **THEN** the task is due `2026-11-03`
-
-#### Scenario: Explicit quick-add order wins
-- **WHEN** the device's quick-add numeric order is set to month-day and the date format is `day-month`, and the user enters `Pay rent 3/11` on 2026-10-09
-- **THEN** the task is due `2027-03-11`
-
-#### Scenario: Next week with a Sunday start
-- **WHEN** the first day of the week is `sun`, today is Wednesday 2026-10-14, and the user enters `Plan trip next week`
-- **THEN** the task is due Sunday `2026-10-18`
 
 ### Requirement: Multi-language vocabulary
 Date, time, recurrence and reminder vocabulary SHALL be bundled for English, German, French, Italian, Spanish and Portuguese, available with no network. The active set SHALL be the interface language (OpenSpec `localization`) when not `system`, then the browser's bundled preferred languages, with English always active, overridable in Settings on the device. Attribute tokens (`#`, `@`, `p1`–`p4`, `+`) SHALL be language-independent. The stored rule SHALL always be the canonical English form.
@@ -86,15 +87,15 @@ Date, time, recurrence and reminder vocabulary SHALL be bundled for English, Ger
 - **THEN** a relative reminder with offset −30 minutes is created in every case
 
 ### Requirement: Live preview chips
-While the user types, the client SHALL show one chip per recognised attribute (due, project, label, priority, estimate, recurrence, reminder) and the title as it will be saved. The preview SHALL update on every keystroke and be announced without stealing focus. A link to the quick add guide SHALL appear beside the chips during the first three uses on a device and in the input's tooltip afterwards; no shortcut badge SHALL be printed unless shortcut hints are on.
+While the user types, the client SHALL show each recognised attribute (due, project, label, priority, estimate, recurrence, reminder) and the title as it will be saved, and SHALL tint each recognised span inside the field itself in that attribute's soft colour, aligned with the typed text, so the preview explains and the field shows where. The preview and the tints SHALL update on every keystroke and be announced without stealing focus; the tints SHALL be decorative, so assistive technology reads the field's text and the preview only. A dismissed token SHALL lose its tint. Under the high-contrast presentation the tint SHALL be a one-pixel underline in the attribute's colour. A link to the quick add guide SHALL appear beside the chips during the first three uses on a device and in the input's tooltip afterwards; no shortcut badge SHALL be printed unless shortcut hints are on. The same field, parsing and tints SHALL be used by every quick add: the list's line, the phone's sheet, the capture screen and the command bar's Add mode. The preview SHALL take the form of its place: one dismissible chip per attribute under the list's line, the capture screen and the title editors; one field row per attribute in the command bar's Add mode (`command-palette` "Add mode"); and one neutral dismissible chip per attribute in the phone's sheet ("Quick add tools on a phone"). Every form SHALL offer the same dismissal and SHALL produce the same task for the same line.
 
 #### Scenario: Chips appear as tokens are typed
 - **WHEN** the user has typed `Buy milk tomorrow p2`
-- **THEN** a due chip reading tomorrow's date and a priority chip reading `P2` are shown, and the title preview reads `Buy milk`
+- **THEN** a due chip reading tomorrow's date and a priority chip reading `P2` are shown, the title preview reads `Buy milk`, and in the field `tomorrow` carries the due tint and `p2` the priority tint
 
 #### Scenario: Chips disappear when text changes
 - **WHEN** the user deletes `p2` from the line
-- **THEN** the priority chip disappears and the task would be created with priority 4
+- **THEN** the priority chip and its tint disappear and the task would be created with priority 4
 
 #### Scenario: Guide link fades out
 - **WHEN** the user has added four tasks on this device
@@ -106,11 +107,23 @@ While the user types, the client SHALL show one chip per recognised attribute (d
 
 #### Scenario: Dismissing the recurrence chip keeps the text
 - **WHEN** the user dismisses the recurrence chip, or presses Backspace twice with the caret at the end of `Water plants every Monday`
-- **THEN** the title is `Water plants every Monday`, no rule is set, and the chip does not reappear while that text is unchanged
+- **THEN** the title is `Water plants every Monday`, no rule is set, the chip does not reappear while that text is unchanged, and `every Monday` carries no tint
 
 #### Scenario: Quoted phrase is not a reminder
 - **WHEN** the user enters `Read "remind me at 9" essay`
-- **THEN** no reminder is created and the title is `Read remind me at 9 essay`
+- **THEN** no reminder is created, the quoted span carries no tint, and the title is `Read remind me at 9 essay`
+
+#### Scenario: Screen reader
+- **WHEN** a screen reader user types `Call Ana friday`
+- **THEN** the field reads back `Call Ana friday`, the due chip is announced, and nothing is announced for the tint
+
+#### Scenario: High contrast
+- **WHEN** the high-contrast presentation is on and the user types `Pay rent p1`
+- **THEN** `p1` is underlined in the priority colour instead of tinted
+
+#### Scenario: Same line, same task in every form
+- **WHEN** the user enters `Pay rent friday p1 +15m` once in Today's quick-add line, once in the command bar's Add mode opened from Today and once in the phone's sheet in Today
+- **THEN** the three tasks have the same title, due date, priority and estimate
 
 ### Requirement: Dismiss and escape parsed tokens
 The user SHALL be able to reject an interpretation: activating a chip's dismiss control, or pressing Backspace when the caret is at the end of the line and the last chip is highlighted, SHALL keep that text literally in the title and SHALL suppress re-parsing of that span until the span's text changes. Text inside double quotes SHALL never be parsed, and the quotes SHALL be removed from the saved title.
@@ -432,3 +445,168 @@ An ordinal weekday date SHALL get the ordinary due chip and SHALL be dismissable
 #### Scenario: Offline capture
 - **WHEN** the device is offline and the user enters `Board second Tuesday #work`
 - **THEN** the task is created locally with the resolved date and project, survives a reload, and uploads on the next successful sync
+
+### Requirement: Numeric dates follow the date format
+Numeric dates SHALL be read in the order of the user's date format (OpenSpec `date-time-preferences`): `day-month` reads day first, `month-day` month first, and `iso` and `system` keep the order of the language the line is parsed in. There SHALL be no separate quick-add choice of numeric order; an order stored by an earlier version on a device SHALL be ignored. "next week" and the "next <weekday>" rule SHALL use weeks that start on the user's preferred first day of the week. The date format is a synced preference, so every device reads the same line the same way, offline included.
+
+#### Scenario: Numeric date follows the date format
+- **WHEN** the browser language is English (US), the date format is `day-month`, today is 2026-10-09, and the user enters `Pay rent 3/11`
+- **THEN** the task is due `2026-11-03`
+
+#### Scenario: An old device order is ignored
+- **WHEN** a device still holds a quick-add numeric order of month-day from an earlier version, the date format is `day-month`, and the user enters `Pay rent 3/11` on 2026-10-09
+- **THEN** the task is due `2026-11-03`, and Settings → Capture shows no numeric order choice
+
+#### Scenario: Next week with a Sunday start
+- **WHEN** the first day of the week is `sun`, today is Wednesday 2026-10-14, and the user enters `Plan trip next week`
+- **THEN** the task is due Sunday `2026-10-18`
+
+### Requirement: Quick add tools on a phone
+The phone's quick-add sheet SHALL show, under the line, a row of neutral chips for the attributes the line sets, each with a control that keeps its words as text, followed by a dashed placeholder chip for the project and for the label when the line sets none; and a tool row with buttons for a date, a priority, a label, an estimate and a project, and a send button. A tool button or a placeholder chip SHALL start that attribute's token at the end of the line (`#` for a project, `@` for a label, `p` for a priority, `+` for an estimate; for a date, the caret moves to the end of the line), keeping the keyboard up and the field focused, and opening the suggestions for `#` and `@`. The send button SHALL add the task exactly as Enter does. The sheet SHALL add tasks offline through the same local operation as every quick add.
+
+#### Scenario: Start a project from the tool row
+- **WHEN** the user has typed `Buy primer` in the phone's sheet and taps the project tool
+- **THEN** the line reads `Buy primer #`, the field keeps focus with the keyboard up, and the project suggestions are open
+
+#### Scenario: Chips for what is understood
+- **WHEN** a project "Home renovation" exists and the user types `Call Mia about the tiles tomorrow 5pm #HomeRenovation`
+- **THEN** the chip row shows a date chip reading tomorrow at 17:00 and a project chip "Home renovation", and a dashed "Label" placeholder
+
+#### Scenario: Send offline
+- **WHEN** the device is offline and the user taps send with `Water the plants`
+- **THEN** the task appears at once in the current view with its defaults and syncs when the connection returns
+
+### Requirement: Pasting several lines into quick add
+When text with at least two non-empty lines is pasted into an empty quick add (or one whose whole text is selected), in any of its presentations (a list's or a section's quick add, the command bar, the phone's add sheet, the share capture screen, a calendar day's add dialog), the paste SHALL NOT be inserted; instead an offer anchored to the field SHALL show the number of tasks, the first five lines as they will be titled and how many more follow, with "Add N tasks" (the default, Enter) and "Paste as one line" (inserts the lines joined by spaces); Escape SHALL close the offer and paste nothing. A paste into a field that already holds unselected text, or of a single line, SHALL behave as before.
+
+Before counting, each line SHALL be trimmed, blank lines SHALL be skipped, one leading list marker (`-`, `*`, `+`, `•`, `‣`, `◦`, a number or letter followed by `.` or `)`, `[ ]`, `[x]`, `- [ ]`, `- [x]`, `☐`, `☑`) SHALL be removed, and runs of whitespace SHALL become one space; a line holding only a marker SHALL be skipped. A checked box SHALL NOT complete the task.
+
+Confirming SHALL create one task per line, in the pasted order. With parsing on, each line SHALL be parsed on its own with the same options as a typed line, and the view's defaults SHALL fill what the line does not set, exactly as if each line had been typed and added; a line whose parse leaves an empty title SHALL keep its cleaned text as the title. All tasks of one paste, with the reminders their lines ask for, SHALL be written as one batch of operations, applied locally first, so the paste works offline, is uploaded together and converges like tasks created one by one; one Undo SHALL remove them all. A paste of more than 100 lines SHALL NOT be split: the offer SHALL say so and offer Import and "Paste as one line". If any line cannot be written (for example, too long to encrypt), no task of the paste SHALL be created and the field SHALL show why.
+
+#### Scenario: Paste a shopping list into the Inbox
+- **WHEN** the user pastes "- Milk\n- Eggs\n\n- Bread" into the empty Inbox quick add and presses Enter on the offer
+- **THEN** the Inbox gains the tasks "Milk", "Eggs" and "Bread" in that order, and a toast says "3 tasks added" with Undo
+
+#### Scenario: Each line is parsed with the view's defaults
+- **WHEN** parsing is on and the user pastes "Call Anna tomorrow 10am\nSend invoice #Work p1" into Today's quick add and confirms
+- **THEN** "Call Anna" is due tomorrow at 10:00, and "Send invoice" is due today in project Work with priority 1
+
+#### Scenario: Paste as one line
+- **WHEN** the user pastes two lines and chooses "Paste as one line"
+- **THEN** the field holds both lines joined by a space and nothing is created until the user adds it
+
+#### Scenario: Escape pastes nothing
+- **WHEN** the offer is open and the user presses Escape
+- **THEN** the offer closes, the field is still empty and nothing is created
+
+#### Scenario: Field already has text
+- **WHEN** the field holds "Buy " with the caret at its end and the user pastes two lines
+- **THEN** no offer appears and the paste is inserted into the field as the browser does
+
+#### Scenario: Offline paste
+- **WHEN** the device is offline and the user pastes and confirms five lines
+- **THEN** the five tasks appear at once, survive a reload, and are uploaded together on the next successful sync
+
+#### Scenario: One Undo
+- **WHEN** the user pastes and confirms five lines and then chooses Undo in the toast
+- **THEN** all five tasks are removed in one step and none of them reaches other devices as an open task
+
+#### Scenario: Too many lines
+- **WHEN** the user pastes 150 lines
+- **THEN** the offer says that more than 100 lines cannot be added at once, offers Import and "Paste as one line", and creates nothing
+
+#### Scenario: Encrypted account with a line too long
+- **WHEN** an encrypted account pastes three lines and one is longer than an encrypted title can hold
+- **THEN** no task is created and the field says that the title is too long to encrypt
+
+### Requirement: Part of the day phrases
+While the user's Day parts preference (OpenSpec `day-parts`) is on, the parser SHALL recognise `this morning` and `this afternoon`, which make the task due today with that part, and a part word (`morning`, `afternoon`, `evening`) directly after a date phrase, which sets that date with that part (Evening as the evening flag), each with its bundled equivalents in every active language (en, de, fr, it, es, pt). A part word anywhere else SHALL stay in the title. While the preference is off these phrases SHALL not be parsed; `tonight` and `this evening` SHALL keep their meaning in every mode. A time still sets the due time. Each SHALL show a dismissable chip. The TypeScript parser and the Go port SHALL agree on shared vectors, and `POST /api/v1/quick-add/parse` SHALL accept an optional `day_parts` boolean that turns the phrases on or off; when the request leaves it out, the route SHALL use the signed-in account's Day parts preference (`user_prefs.day_parts`), and an explicit `day_parts` SHALL win over the preference in both directions.
+
+#### Scenario: Tomorrow morning
+- **WHEN** day parts are on and the user enters `Stretch tomorrow morning` on 2026-10-14
+- **THEN** the task is titled `Stretch`, due 2026-10-15 with the part Morning, and a Morning chip is shown
+
+#### Scenario: Title word stays literal
+- **WHEN** day parts are on and the user enters `Morning run tomorrow`
+- **THEN** the task is titled `Morning run`, due tomorrow, with no part
+
+#### Scenario: German afternoon
+- **WHEN** German is active, day parts are on and the user enters `Einkaufen heute Nachmittag`
+- **THEN** the task is due today with the part Afternoon and titled `Einkaufen`
+
+#### Scenario: Preference off
+- **WHEN** day parts are off and the user enters `Call Ana this morning`
+- **THEN** the task is titled `Call Ana this morning` with no date and no part
+
+#### Scenario: Parse route follows the preference
+- **WHEN** an account with day parts on calls `POST /api/v1/quick-add/parse` with `Stretch tomorrow morning` and no `day_parts`
+- **THEN** the response is titled `Stretch` with the part Morning
+
+#### Scenario: Explicit day_parts wins
+- **WHEN** an account with day parts on sends `day_parts: false`, or an account with day parts off sends `day_parts: true`
+- **THEN** the phrases are respectively not read and read, whatever the preference
+
+### Requirement: Energy tokens
+While the Energy levels switch (OpenSpec `task-energy`) is on, the quick-add line SHALL recognise `~deep`, `~medium` and `~low`, and the prefixes `~d`, `~m` and `~l`, ignoring case, in every interface language, as the task's energy. A recognised token SHALL be removed from the title and shown as a dismissable chip; the last energy token on the line SHALL win. `~` followed by anything else SHALL stay in the title. Typing `~` SHALL suggest the three values. While the switch is off the token SHALL not be parsed or suggested. Parsing SHALL be deterministic and offline, and the web and server parsers SHALL agree through the shared vectors.
+
+#### Scenario: Token in a full line
+- **WHEN** the switch is on and the user enters `Draft the strategy #Work ~deep +2h`
+- **THEN** the task is titled `Draft the strategy`, in "Work", with a 120-minute estimate and energy Deep, and the preview shows a "Deep energy" chip
+
+#### Scenario: Prefix and language
+- **WHEN** German is active, the switch is on and the user enters `Rechnungen ablegen ~L`
+- **THEN** the task is titled `Rechnungen ablegen` with energy Low
+
+#### Scenario: Not a token
+- **WHEN** the switch is on and the user enters `Dinner for ~6 people`
+- **THEN** the title is `Dinner for ~6 people` and no energy is set
+
+#### Scenario: Switch off
+- **WHEN** the switch is off and the user enters `Call ~low`
+- **THEN** the title is `Call ~low` and no chip is shown
+
+#### Scenario: Same in the CLI
+- **WHEN** the line `Sort receipts ~low` is parsed by the CLI's quick add
+- **THEN** the result equals the web parser's, as pinned by the shared vectors
+
+### Requirement: Bare month names
+A month name alone (without a day) SHALL be a date only while the line has no complete date phrase after it: a later relative day word, weekday, relative period, month and day, numeric date or `tonight`/`this morning` phrase SHALL replace it, and the month word SHALL then stay in the title. A second month name alone SHALL not replace the first. A month name alone directly after `from`, `since`, `of`, `for` or a bundled equivalent (`seit`, `von`, `vom`, `ab`, `für`; `depuis`, `de`, `du`, `des`; `da`, `dal`, `di`, `del`; `desde`, `de`, `del`; `desde`, `de`, `do`) SHALL stay text and set no date. The TypeScript parser and the Go port SHALL agree on shared vectors.
+
+#### Scenario: Month in passing, date at the end
+- **WHEN** today is Wednesday 2026-10-28 and the user enters `Collect the invoices from September and send them to the accountant next monday at 10am`
+- **THEN** the task is due `{date: "2026-11-02", time: "10:00"}` and its title is `Collect the invoices from September and send them to the accountant`
+
+#### Scenario: Month in passing in each language
+- **WHEN** today is 2026-10-28 and the user enters, with that language active, `Rechnungen von September an den Steuerberater schicken nächsten Montag um 10 Uhr`, `Rassembler les factures de septembre pour le comptable lundi prochain à 10h`, `Raccogliere le fatture di settembre per il commercialista lunedì prossimo alle 10`, `Reunir las facturas de septiembre para el contador el próximo lunes a las 10` or `Juntar as faturas de setembro para o contador na próxima segunda às 10`
+- **THEN** the task is due 2026-11-02 at 10:00 and the month word stays in the title
+
+#### Scenario: A later date replaces a bare month
+- **WHEN** today is 2026-10-28 and the user enters `September report tomorrow`
+- **THEN** the task is due 2026-10-29 and its title is `September report`
+
+#### Scenario: The only date phrase
+- **WHEN** today is 2026-10-28 and the user enters `Pay rent in September`, `Miete zahlen im September`, `Payer le loyer en septembre`, `Pagare l'affitto a settembre`, `Pagar el alquiler en septiembre` or `Pagar o aluguel em setembro`, with that language active
+- **THEN** the task is due 2027-09-01
+
+#### Scenario: Month after "from" is text
+- **WHEN** the user enters `File the invoices from September` or, with German active, `Rechnungen seit März ablegen`
+- **THEN** no due date is set and the title is the line as typed
+
+### Requirement: Every other phrases
+The parser SHALL read "every other" before a unit or a weekday as a repeat every 2 of that unit: `every other day`, `week`, `month` and `year` SHALL set `every 2 days`, `every 2 weeks`, `every 2 months` and `every 2 years`, and `every other <weekday>` SHALL set `every 2 weeks` with the task due on the first such weekday on or after today unless the line has its own date phrase. The bundled equivalents SHALL be `jeden zweiten`, `jede zweite`, `jedes zweite`, `alle zwei`; `un … sur deux`, `une … sur deux`, `tous les deux`, `toutes les deux`; `ogni due`, `a giorni alterni`, `a settimane alterne`, `a mesi alterni`, `ad anni alterni`; `cada dos`; `a cada dois`, `a cada duas`, `cada dois`, `cada duas`. The phrase SHALL be removed from the title. A German ordinal weekday followed by "of the month" (`jeden zweiten Montag im Monat`) SHALL keep its monthly reading. The TypeScript parser and the Go port SHALL agree on shared vectors.
+
+#### Scenario: Every other weekday
+- **WHEN** today is Wednesday 2026-10-28 and the user enters `Send timesheet every other friday`
+- **THEN** the title is `Send timesheet`, the rule is `every 2 weeks` and the task is due 2026-10-30
+
+#### Scenario: Every other unit
+- **WHEN** today is 2026-10-28 and the user enters `Review budget every other week`, `Pay invoice every other month`, `Water ferns every other day` or `Renew passport every other year`
+- **THEN** the rule is `every 2 weeks`, `every 2 months`, `every 2 days` or `every 2 years`, the task is due 2026-10-28 and the phrase leaves the title
+
+#### Scenario: Every other weekday in each language
+- **WHEN** today is 2026-10-28 and the user enters, with that language active, `Stundenzettel senden jeden zweiten Freitag`, `Envoyer la feuille de temps un vendredi sur deux`, `Inviare il foglio ore ogni due venerdì`, `Enviar la hoja de horas cada dos viernes` or `Enviar a folha de horas a cada duas sextas`
+- **THEN** the rule is `every 2 weeks`, the task is due 2026-10-30 and only the words before the phrase remain in the title
+
+#### Scenario: Every other unit in each language
+- **WHEN** the user enters, with that language active, `jede zweite Woche`, `une semaine sur deux`, `ogni due settimane`, `a settimane alterne`, `cada dos semanas` or `a cada duas semanas` after a title
+- **THEN** the rule is `every 2 weeks`

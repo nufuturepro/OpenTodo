@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/importer"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/importer"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Limits from the design (D5).
@@ -82,37 +82,35 @@ type Patch struct {
 }
 
 // Options configures a Service. Zero values pick production defaults; tests
-// inject a clock, a sleeper, a jitter source and an HTTP client.
+// inject a clock, a jitter source and an HTTP client.
 type Options struct {
 	Version string
 	Log     *slog.Logger
 	Now     func() time.Time
-	After   func(time.Duration) <-chan time.Time
 	Rand    func() float64 // in [0,1); 0.5 means no jitter
 	Client  *http.Client   // defaults to NewClient with the owner policy
 	// Resolver is used for the creation-time target check and by the default client.
 	Resolver Resolver
 }
 
-// Service owns webhook configuration, the delivery queue and its worker.
+// Service owns webhook configuration and the delivery queue; the tenant's
+// "webhooks" job (internal/jobs) sends what is due.
 type Service struct {
 	db      *sql.DB
 	sync    *opsync.Service
 	log     *slog.Logger
 	version string
 	now     func() time.Time
-	after   func(time.Duration) <-chan time.Time
 	rand    func() float64
 	client  *http.Client
 	dialer  *Dialer
-	wake    chan struct{}
+	wake    func()
 }
 
-// New wires a Service. Install it with syncSvc.SetObserver(svc.Observe) and run
-// svc.Run in a goroutine.
+// New wires a Service. Install it with syncSvc.SetObserver(svc.Observe); the
+// tenant's jobs send the queue (ProcessDue) and are woken through SetWake.
 func New(db *sql.DB, syncSvc *opsync.Service, o Options) *Service {
-	s := &Service{db: db, sync: syncSvc, log: o.Log, version: o.Version, now: o.Now, after: o.After, rand: o.Rand,
-		client: o.Client, wake: make(chan struct{}, 1)}
+	s := &Service{db: db, sync: syncSvc, log: o.Log, version: o.Version, now: o.Now, rand: o.Rand, client: o.Client}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -121,9 +119,6 @@ func New(db *sql.DB, syncSvc *opsync.Service, o Options) *Service {
 	}
 	if s.now == nil {
 		s.now = time.Now
-	}
-	if s.after == nil {
-		s.after = time.After
 	}
 	if s.rand == nil {
 		s.rand = rand.Float64
@@ -326,7 +321,7 @@ func (s *Service) Create(ctx context.Context, userID string, in Patch) (*Webhook
 	w := &Webhook{ID: ids.New(), URL: url, Events: events, ProjectID: project, Enabled: enabled, CreatedAt: now, UpdatedAt: now, secret: NewSecret()}
 	ev, _ := json.Marshal(events)
 	_, err = s.db.ExecContext(ctx, `INSERT INTO webhooks(id,user_id,url,secret,events,project_id,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		w.ID, userID, w.URL, w.secret, string(ev), project, boolInt(enabled), now, now)
+		w.ID, userID, w.URL, w.secret, string(ev), project, enabled, now, now)
 	if err != nil {
 		return nil, fmt.Errorf("insert webhook: %w", err)
 	}
@@ -368,12 +363,16 @@ func (s *Service) Update(ctx context.Context, userID, id string, in Patch) (*Web
 		}
 		w.Enabled = *in.Enabled
 	}
+	turnedOn := w.Enabled && in.Enabled != nil
 	w.UpdatedAt = s.nowMs()
 	ev, _ := json.Marshal(w.Events)
 	_, err = s.db.ExecContext(ctx, `UPDATE webhooks SET url=?, events=?, project_id=?, enabled=?, disabled_reason=?, consecutive_failures=?, updated_at=?
-		WHERE id = ? AND user_id = ?`, w.URL, string(ev), w.ProjectID, boolInt(w.Enabled), w.DisabledReason, w.ConsecutiveFailures, w.UpdatedAt, id, userID)
+		WHERE id = ? AND user_id = ?`, w.URL, string(ev), w.ProjectID, w.Enabled, w.DisabledReason, w.ConsecutiveFailures, w.UpdatedAt, id, userID)
 	if err != nil {
 		return nil, fmt.Errorf("update webhook: %w", err)
+	}
+	if turnedOn {
+		s.Wake() // deliveries held while it was off are due now
 	}
 	return w, nil
 }
@@ -729,11 +728,4 @@ func idValue(raw json.RawMessage) string {
 	}
 	_ = json.Unmarshal(raw, &v)
 	return v
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }

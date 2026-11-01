@@ -1,6 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
-import { Button, Dialog } from '../ui'
-import { Badge } from '../ui'
+import { Button, Dialog, StatusIndicator } from '../ui'
 import { Field, Input } from '../ui'
 import { Checkbox } from '../ui'
 import { ConfirmDialog } from '../ui'
@@ -17,6 +16,9 @@ import { FileMigrationPaused, runFileMigration, waitForUploads } from '../lib/at
 import { requestSync } from '../lib/sync'
 import { t, msg } from '../lib/i18n'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
+import { messageOf } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
+import { copyText } from '../lib/clipboard'
 
 // Settings → End-to-end encryption (OpenSpec `e2ee`, task 4.1). The pure
 // EncryptionView renders every state from props (tested with static markup);
@@ -32,7 +34,7 @@ export function encryptionMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message
   // fetch() rejects with TypeError when the server is unreachable.
   if (err instanceof TypeError && isNetworkError(err)) return t('You are offline. This needs a connection to your server.')
-  return err instanceof Error ? err.message : String(err)
+  return messageOf(err)
 }
 
 export type Mode =
@@ -124,18 +126,19 @@ export function EncryptionView(p: EncryptionViewProps) {
 
       <SettingRow {...rowCopy('e2ee', 'status')} status={
         <span className="flex flex-wrap items-center gap-2" data-testid="e2ee-status">
-          <Badge hue={status === 'on' ? 'green' : status === 'locked' ? 'orange' : 'slate'}>
+          <StatusIndicator tone={status === 'on' ? 'ok' : status === 'locked' ? 'warn' : 'off'}>
             {status === 'on' ? t('On') : status === 'locked' ? t('Locked on this device') : t('Off')}
-          </Badge>
+          </StatusIndicator>
           {state.enabled && <span className="text-muted">{state.unlocked ? t('Unlocked on this device · key version {version}', { version: state.keyVersion }) : t('This device is locked · key version {version}', { version: state.keyVersion })}</span>}
         </span>
       } control={!state.enabled && mode.kind === 'idle' && (
-        <Button variant="primary" onClick={() => p.onMode({ kind: 'passphrase' })}>{t('Set up encryption…')}</Button>
+        <Button variant="primary" onClick={() => p.onMode({ kind: 'passphrase' })}>{t('Set up encryption')}</Button>
       )} />
 
       {!state.enabled && mode.kind === 'idle' && (
         <p className="py-3 text-meta text-muted">
           {t('Still visible to the server: {PLAINTEXT_FIELDS}. Shared projects are not encrypted, and new projects cannot be shared while encryption is on.', { PLAINTEXT_FIELDS: t(PLAINTEXT_FIELDS) })}
+          {' '}{t('Your name, email and profile picture are account data and are never encrypted.')}
         </p>
       )}
 
@@ -169,22 +172,22 @@ export function EncryptionView(p: EncryptionViewProps) {
           </p>
           {state.unlocked && (
             <SettingRow {...rowCopy('e2ee', 'passphrase')}
-              control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'change' })}>{t('Change passphrase…')}</Button>} />
+              control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'change' })}>{t('Change passphrase')}</Button>} />
           )}
           <SettingRow {...rowCopy('e2ee', 'forgot')}
-            control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'reset' })}>{t('Reset passphrase with recovery key…')}</Button>} />
+            control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'reset' })}>{t('Reset passphrase with recovery key')}</Button>} />
           <SettingRow {...rowCopy('e2ee', 'history')}
-            control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'confirmPurge' })}>{t('Purge plaintext history…')}</Button>} />
+            control={<Button variant="secondary" onClick={() => p.onMode({ kind: 'confirmPurge' })}>{t('Purge plaintext history')}</Button>} />
           {state.unlocked && (
             <SettingRow {...rowCopy('e2ee', 'device')}
               control={<Button variant="secondary" icon="lock" onClick={p.onLock}>{t('Lock this device')}</Button>} />
           )}
           {state.unlocked ? (
             <SettingRow {...rowCopy('e2ee', 'off')}
-              control={<Button variant="danger" onClick={() => p.onMode({ kind: 'confirmDisable' })}>{t('Turn off encryption…')}</Button>} />
+              control={<Button variant="danger" onClick={() => p.onMode({ kind: 'confirmDisable' })}>{t('Turn off encryption')}</Button>} />
           ) : (
             <SettingRow {...rowCopy('e2ee', 'lost')}
-              control={<Button variant="danger" onClick={() => p.onMode({ kind: 'confirmLost' })}>{t('I lost my passphrase and recovery key…')}</Button>} />
+              control={<Button variant="danger" onClick={() => p.onMode({ kind: 'confirmLost' })}>{t('I lost my passphrase and recovery key')}</Button>} />
           )}
         </>
       )}
@@ -267,23 +270,10 @@ function download(text: string) {
 export function EncryptionPanel() {
   const state = useEncryption()
   const [mode, setMode] = useState<Mode>({ kind: 'idle' })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction({ describe: encryptionMessage, onStart: () => setNotice(null) })
   const [prepared, setPrepared] = useState<PreparedEnable | null>(null)
 
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      await fn()
-    } catch (err) {
-      setError(encryptionMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
   const checkNew = (next: string, confirm: string) => {
     if (next.length < MIN_PASSPHRASE_LENGTH) throw new Error(t('The passphrase needs at least {n} characters.', { n: MIN_PASSPHRASE_LENGTH }))
     if (next !== confirm) throw new Error(t('The two passphrases do not match.'))
@@ -301,8 +291,10 @@ export function EncryptionPanel() {
         setMode({ kind: 'recovery', recoveryKey: prep.recoveryKey, copied: false, acknowledged: false })
       })}
       onCopy={() => {
-        void navigator.clipboard?.writeText(recoveryText)
-        if (mode.kind === 'recovery' || mode.kind === 'newRecovery') setMode({ ...mode, copied: true })
+        // "Copied" only once the key is really on the clipboard (issue 525).
+        void copyText(recoveryText).then(() => {
+          if (mode.kind === 'recovery' || mode.kind === 'newRecovery') setMode({ ...mode, copied: true })
+        }, () => undefined)
       }}
       onDownload={() => download(recoveryText)}
       onAcknowledge={(v) => mode.kind === 'recovery' && setMode({ ...mode, acknowledged: v })}

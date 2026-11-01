@@ -90,12 +90,16 @@ func (a *App) sleep(d time.Duration) {
 }
 
 // Main runs the CLI and returns the process exit code.
-func (a *App) Main(args []string) int {
+func (a *App) Main(args []string) int { return a.MainContext(context.Background(), args) }
+
+// MainContext is Main with a context that ends long-running commands
+// (`ot vault watch`).
+func (a *App) MainContext(ctx context.Context, args []string) int {
 	a.init()
 	a.out = a.Stdout
 	a.gate = &writeGate{}
 	g := &globalFlags{}
-	err := a.run(context.Background(), g, args)
+	err := a.run(ctx, g, args)
 	a.Stdout = a.out
 	if err == nil {
 		if a.gate.dry != nil {
@@ -129,6 +133,8 @@ type globalFlags struct {
 	json     bool
 	dryRun   bool
 	readOnly bool
+	// workspace picks the workspace one command acts on (OpenSpec change workspaces).
+	workspace string
 }
 
 func (g *globalFlags) bind(fs *flag.FlagSet) {
@@ -137,6 +143,7 @@ func (g *globalFlags) bind(fs *flag.FlagSet) {
 	fs.BoolVar(&g.json, "json", g.json, "print only JSON")
 	fs.BoolVar(&g.dryRun, "dry-run", g.dryRun, "print the planned requests, send no write")
 	fs.BoolVar(&g.readOnly, "read-only", g.readOnly, "refuse write commands")
+	fs.StringVar(&g.workspace, "workspace", g.workspace, "workspace name or id (also OPENTODO_WORKSPACE)")
 }
 
 // command is one top-level command of the dispatcher; cmdSpecs (commands.go)
@@ -157,7 +164,7 @@ func init() {
 		{"login", "sign in with email and password and store an API token", "ot login <server-url> [--email <email>] [--profile <name>]", cmdLogin},
 		{"auth", "manage the stored credentials: set-token, status, logout", "ot auth set-token <token> [--server <url>]\not auth status\not auth logout [--yes]", cmdAuth},
 		{"list", "list tasks (default: all open tasks)", "ot list [--inbox|--today|--upcoming|--project <name-or-id>|--completed|--all] [--limit <n>]", cmdList},
-		{"today", "alias for `ot list --today`", "ot today [--limit <n>]", viewAlias("today")},
+		{"today", "alias for `ot list --today`", "ot today [--all] [--limit <n>]", viewAlias("today")},
 		{"inbox", "alias for `ot list --inbox`", "ot inbox [--limit <n>]", viewAlias("inbox")},
 		{"upcoming", "alias for `ot list --upcoming`", "ot upcoming [--limit <n>]", viewAlias("upcoming")},
 		{"add", "create a task and print its id", "ot add <title> [--project <name-or-id>] [--due <when>] [--time HH:MM] [--priority 1-4] [--label <l>]... [--note <text>] [--idempotency-key <key>]", cmdAdd},
@@ -165,15 +172,22 @@ func init() {
 		{"done", "complete one or more tasks", "ot done <ref>...", cmdDone},
 		{"reopen", "reopen one or more completed tasks", "ot reopen <ref>...", cmdReopen},
 		{"rm", "delete one or more tasks (soft delete)", "ot rm <ref>... [--yes]", cmdRm},
-		{"project", "manage projects: list, add, rename, archive, rm", "ot project list [--all]\not project add <name> [--color <#rrggbb>] [--idempotency-key <key>]\not project rename <ref> <new-name>\not project archive <ref> [--undo]\not project rm <ref> [--yes]", cmdProject},
+		{"project", "manage projects: list, add, rename, move, archive, rm", "ot project list [--all]\not project add <name> [--color <#rrggbb>] [--idempotency-key <key>]\not project rename <ref> <new-name>\not project move <ref> --workspace <name>\not project archive <ref> [--undo]\not project rm <ref> [--yes]", cmdProject},
 		{"token", "manage API tokens: list, create, revoke", "ot token list\not token create <name> [--scope full|read|agent]\not token revoke <id-or-name> [--yes]", cmdToken},
 		{"mcp", "bridge stdio MCP clients to the configured server", "ot mcp [--allow-full-token] [--decrypt]", cmdMCP},
 		{"encryption", "end-to-end encryption on this machine: unlock, lock, status", "ot encryption unlock [--recovery] [--passphrase-file <path>]\not encryption lock\not encryption status", cmdEncryption},
+		{"vault", "Markdown vault: a folder of project files in two-way sync", "ot vault init <dir> [--adopt]\not vault sync [<dir>]\not vault status [<dir>]\not vault watch [<dir>]\not vault tasknotes <folder> [--vault <dir>] [--inside] | --off", cmdVault},
 		{"issues", "issue connections: list, sync", "ot issues list\not issues sync [<id>]", cmdIssues},
+		{"rules", "automation rules: list, enable, disable, runs", "ot rules list\not rules enable <id>\not rules disable <id>\not rules runs <id>", cmdRules},
+		{"frames", "calendar frames: list, add, rm", "ot frames\not frames add <title> [--days mon-fri] [--from HH:MM] [--to HH:MM] [--color #rrggbb] [--source label:<id>]\not frames rm <id> [--yes]", cmdFrames},
+		{"slots", "calendar slots: list, add, put, rm", "ot slots [--from <day>] [--to <day>]\not slots add <title> [--date <day>] [--at HH:MM] [--for 45m] [--color #rrggbb]\not slots put <slot> <task>…\not slots rm <id> [--yes]", cmdSlots},
 		{"time", "track time: start, stop, log, list, export", "ot time start <ref> [--note <text>]\not time stop\not time log <ref> <duration> [--on <day>] [--note <text>]\not time log <ref> --from HH:MM --to HH:MM [--on <day>] [--note <text>]\not time list [--task <ref>] [--from <day>] [--to <day>] [--running] [--limit <n>]\not time export [--from <day>] [--to <day>] [-o <file>]", cmdTime},
+		{"workspaces", "list your workspaces", "ot workspaces", cmdWorkspaces},
 		{"export", "download the full JSON export", "ot export [--out <file>]", cmdExport},
+		{"import", "import a file: an OpenTaskKit export, CSV or another app's export", "ot import <file> [--format <f>] [--existing skip|overwrite] [--duplicates skip|import] [--time-zone <zone>] [--workspace <name-or-id>]", cmdImport},
 		{"schema", "print commands, flags, exit codes and output schemas as JSON", "ot schema", cmdSchema},
 		{"skill", "print the agent skill file embedded in ot", "ot skill", cmdSkill},
+		{"completion", "print a shell completion script: bash, zsh or fish", "ot completion bash|zsh|fish", cmdCompletion},
 		{"version", "print the client version", "ot version", cmdVersion},
 		{"help", "show help for a command", "ot help [command] [--json]", cmdHelp},
 	}
@@ -189,6 +203,12 @@ func findCommand(name string) *command {
 }
 
 func (a *App) run(ctx context.Context, g *globalFlags, args []string) error {
+	// The hidden completion entry point (ot-completion design D2) takes the
+	// words of a command line as they are, before any flag parsing.
+	if len(args) > 0 && args[0] == completeCommand {
+		a.runComplete(ctx, args[1:])
+		return nil
+	}
 	fs := a.flagSet("ot", g)
 	showHelp := fs.Bool("help", false, "show help")
 	fs.BoolVar(showHelp, "h", false, "show help")
@@ -331,7 +351,7 @@ func (a *App) printUsage() {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	for _, c := range commands {
-		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.summary)
+		fmt.Fprintf(w, "  %-10s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global flags:")
@@ -347,6 +367,7 @@ func (a *App) printUsage() {
 	fmt.Fprintln(w, "Off a terminal or with --json, rm, project rm, token revoke and auth logout need --yes.")
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 server error, 2 usage or validation, 3 authentication or configuration, 4 server unreachable,")
 	fmt.Fprintln(w, "5 not permitted (scope, role, switch, encryption or read-only: do not retry). `ot schema` describes everything as JSON.")
+	fmt.Fprintln(w, "Shell completion: `ot completion bash|zsh|fish` (see `ot help completion`).")
 }
 
 func (a *App) printCommandUsage(name string) {
@@ -391,12 +412,13 @@ func flagUsage(f flagSpec) string {
 }
 
 var commandHelp = map[string]string{
-	"list": "Filters: --inbox (no project), --today (due today or earlier, overdue first), --upcoming (due after today),\n--project <name-or-id>, --completed (most recent first), --all (open and completed). Default: every open task.",
-	"add":  "--due accepts YYYY-MM-DD, today, tomorrow or an English weekday (next occurrence). --time needs HH:MM.\n--label may be repeated. Prints the new task id; with --json prints the task.",
-	"edit": "Clear a value with --due none, --project none or --note \"\". Only the given flags change.",
-	"rm":   "Soft-deletes (tombstone). Asks for confirmation on a terminal unless --yes is given;\noff a terminal or with --json it refuses without --yes (exit 2).",
-	"done": "A task that is already completed is reported as unchanged and nothing is sent.",
-	"mcp":  "Reads newline-delimited JSON-RPC messages from stdin and writes responses to stdout.\nA read-only token is required unless --allow-full-token is given.",
+	"list":       "Filters: --inbox (no project), --today (due today or earlier, overdue first), --upcoming (due after today),\n--project <name-or-id>, --completed (most recent first), --all (open and completed). Default: every open task.",
+	"add":        "--due accepts YYYY-MM-DD, today, tomorrow or an English weekday (next occurrence). --time needs HH:MM.\n--label may be repeated. Prints the new task id; with --json prints the task.",
+	"edit":       "Clear a value with --due none, --project none or --note \"\". Only the given flags change.",
+	"rm":         "Soft-deletes (tombstone). Asks for confirmation on a terminal unless --yes is given;\noff a terminal or with --json it refuses without --yes (exit 2).",
+	"done":       "A task that is already completed is reported as unchanged and nothing is sent.",
+	"completion": "Load it in your shell's startup file or completion directory, for example:\n  bash: ot completion bash > ~/.local/share/bash-completion/completions/ot\n  zsh:  ot completion zsh > ~/.zfunc/_ot   (with fpath=(~/.zfunc $fpath) before compinit)\n  fish: ot completion fish > ~/.config/fish/completions/ot.fish\nProject, label, workspace and task values are read from the profile's server (2 seconds at most).",
+	"mcp":        "Reads newline-delimited JSON-RPC messages from stdin and writes responses to stdout.\nA read-only token is required unless --allow-full-token is given.",
 }
 
 func cmdHelp(a *App, ctx context.Context, g *globalFlags, args []string) error {

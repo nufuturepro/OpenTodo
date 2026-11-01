@@ -73,7 +73,7 @@ Every API write SHALL be recorded as operations stamped with server time, with d
 - **THEN** the response is 400 `invalid_op` and nothing is stored
 
 ### Requirement: Export
-`GET /api/v1/export` SHALL return every project and task of the authenticated user, soft-deleted ones included, and their attachments' metadata as one JSON document with a format name and version, served as a download. With `format=zip` it SHALL stream a ZIP holding that document as `export.json` and each stored file the user can read under `attachments/<id>/<name>`, without buffering files in memory. Both forms require authentication.
+`GET /api/v1/export` SHALL return every project and task of the authenticated user, soft-deleted ones included, their attachments' metadata and the time entries the user can read (deleted ones included) as one JSON document with a format name and version, served as a download, together with a `workspaces` array (id, name, icon, colour, `default`, the caller's role, and for the caller's own workspaces the members' ids and roles and the groups with their member ids) and the `workspace_id` of every project, label, view and task that has one. With `format=zip` it SHALL stream a ZIP holding that document as `export.json` and each stored file the user can read under `attachments/<id>/<name>`, without buffering files in memory. Both forms require authentication.
 
 #### Scenario: Export includes everything
 - **WHEN** a user requests the export
@@ -90,6 +90,14 @@ Every API write SHALL be recorded as operations stamped with server time, with d
 #### Scenario: Unknown format
 - **WHEN** a user requests `format=tar`
 - **THEN** the response is 400 `invalid_input` naming the accepted values
+
+#### Scenario: Time entries of a shared task
+- **WHEN** two members tracked time on a task of a shared project and one of them exports
+- **THEN** both entries are in `time_entries` with their `user_id`, as both are rows the exporting member can read
+
+#### Scenario: Workspaces in the export
+- **WHEN** a user who owns "Personal" and "Work" and is a member of "Family" requests the export
+- **THEN** `workspaces` lists the three with the user's role, Personal marked `default`, Work with its members' ids, roles and groups, Family with the user's role only, and each project carries its `workspace_id`
 
 ### Requirement: Health endpoint
 `GET /healthz` SHALL require no authentication and SHALL return 200 with the version when the database is reachable, otherwise 503.
@@ -195,3 +203,53 @@ Every task representation (get, list, create response, export, webhook payloads)
 #### Scenario: Export carries it
 - **WHEN** a user with a task from email requests the export
 - **THEN** that task's entry carries `"origin":{"kind":"email","id":"<a1@mail.example>"}` and tasks without one carry `"origin":null`
+
+### Requirement: Quick-add parse route
+`POST /api/v1/quick-add/parse` SHALL take `{line, url?, today?, now?}` and answer `200 {title, fields, chips, unmatched, origin}`: `fields` the task fields the line sets under the quick-add grammar (`due`, `deadline`, `start`, `evening`, `project_id`, `labels` as `{id?, name}` with `id` absent for a label that does not exist yet, `priority`, `estimate_minutes`, `spent_minutes`, `recurrence`, `reminders`), `chips` the preview chips in the account's interface language with their text and the span of the line they come from, `unmatched` the `#name` tokens that name no project, and `origin` the recognised origin of `url` (an `issue` origin for a recognised tracker link, else a `url` origin) or `null` without a `url`. Parsing SHALL use the account's quick-add languages, date order and week start, and the account's non-deleted projects and labels; `today` and `now` (the caller's local date and time) SHALL default to the server's clock in the zone the account's devices last reported. The route SHALL be deterministic and SHALL write nothing. It SHALL accept a session and every token scope, including `read`, since it changes nothing. A `line` over 2,000 characters or a body that is not an object SHALL be refused with `400 invalid_input`; more than 60 requests a minute per account SHALL be refused with `429 rate_limited`. The result SHALL match the web parser and the command-line client for the same line and context, pinned by the shared quick-add vectors.
+
+#### Scenario: Parse with the account's projects
+- **WHEN** an account with a project "Home" and German as its first quick-add language POSTs `{"line":"Heizung entlüften morgen 9 Uhr #Home p1 @call"}` with a bearer token
+- **THEN** the response is 200 with `title` "Heizung entlüften", `fields.due` tomorrow at 09:00, `fields.project_id` the id of Home, `fields.priority` 1, `fields.labels` `[{"name":"call"}]` (no id, the label does not exist), and chips reading the date and the project in German
+
+#### Scenario: Recognised origin
+- **WHEN** the body carries `"url":"https://github.com/o/r/issues/7"`
+- **THEN** `origin` is `{"kind":"issue","provider":"github","id":"o/r#7","url":"https://github.com/o/r/issues/7"}` and the server made no request to that address
+
+#### Scenario: Read token accepted
+- **WHEN** a `read` token POSTs a line
+- **THEN** the response is 200 and nothing has changed on the account
+
+#### Scenario: Anonymous request
+- **WHEN** a request without credentials POSTs a line
+- **THEN** the response is 401 `unauthorized`
+
+#### Scenario: Over-long line
+- **WHEN** the line is 3,000 characters long
+- **THEN** the response is 400 `invalid_input` naming `line`
+
+#### Scenario: Rate limit
+- **WHEN** an account sends its 61st parse request within a minute
+- **THEN** the response is 429 `rate_limited`, and requests are accepted again in the next window
+
+#### Scenario: Same result as the app
+- **WHEN** every line of the shared quick-add vectors is sent with each vector's context
+- **THEN** the fields answer equals the vector's expected result
+
+### Requirement: Wrong method and unknown routes
+A request under `/api/` to a path some route serves, with a method none of its routes serve, SHALL answer 405 with code `method_not_allowed`, an `Allow` header listing the methods the path serves, and a message naming the method, the path and those methods. A path no route serves SHALL answer 404 `not_found` with a message naming the method and path. Neither SHALL repeat the query string or a control character, and the path SHALL be cut when long.
+
+#### Scenario: A redirected POST
+- **WHEN** a reverse proxy turns the owner's `POST /api/v1/settings/assistant/test` into a `GET`
+- **THEN** the response is 405 with `Allow: POST` and the message "GET is not allowed on /api/v1/settings/assistant/test; use POST"
+
+#### Scenario: Not signed in
+- **WHEN** a client without a session or token sends `GET /api/v1/settings/assistant/test`
+- **THEN** it also gets the 405, and the same request with `POST` still gets 401 `unauthorized` from the route's policy
+
+#### Scenario: Unknown path
+- **WHEN** a client sends `GET /api/v2/tasks?token=secret`
+- **THEN** the response is 404 `not_found` with the message "unknown API route: GET /api/v2/tasks" and no `Allow` header
+
+#### Scenario: Switched-off feature
+- **WHEN** push is turned off and a client sends `POST /api/v1/push/subscriptions`
+- **THEN** the response is 404, not 405, because the generic collection routes count only for a real collection

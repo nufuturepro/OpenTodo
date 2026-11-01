@@ -3,11 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { configVariables, loadFacts, readText, ROOT } from './common.mjs'
+import { configVariables, escapeRegExp, loadFacts, readText, releaseVersion, ROOT } from './common.mjs'
 import { check, checkTemplate, checkUpstream, DIR, FILES } from './easypanel.mjs'
 
 const facts = loadFacts()
 const ctx = { facts, configVars: configVariables(), changelog: readText('CHANGELOG.md') }
+/** The latest release in CHANGELOG.md, which the pinned templates name. */
+const V = releaseVersion(ctx.changelog)
+const VR = escapeRegExp(V)
 const files = Object.fromEntries(FILES.map((f) => [f, readFileSync(join(ROOT, DIR, f))]))
 const has = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}, got:\n${errors.join('\n')}`)
 const edit = (file, from, to) => {
@@ -15,7 +18,7 @@ const edit = (file, from, to) => {
   assert.ok(text.includes(from), `${file} does not contain ${from}`)
   return { ...files, [file]: Buffer.from(text.replace(from, to)) }
 }
-const IMAGE = 'default: ghcr.io/pixari/opentodo:0.9.0'
+const IMAGE = `default: ghcr.io/opentodoapp/opentodo:${V}`
 
 test('easypanel: the committed template passes', () => {
   assert.deepEqual(check(ctx), [])
@@ -24,9 +27,9 @@ test('easypanel: the committed template passes', () => {
 
 test('easypanel: image policy release (specific versions only)', () => {
   for (const tag of ['latest', 'stable', '0.6', '0.6.0']) {
-    has(checkTemplate(edit('meta.yaml', IMAGE, `default: ghcr.io/pixari/opentodo:${tag}`), ctx), /image must be ghcr\.io\/pixari\/opentodo:0\.9\.0/)
+    has(checkTemplate(edit('meta.yaml', IMAGE, `default: ghcr.io/opentodoapp/opentodo:${tag}`), ctx), new RegExp(String.raw`image must be ghcr\.io\/opentodoapp\/opentodo:${VR}`))
   }
-  has(checkTemplate(edit('index.ts', 'image: input.appServiceImage', 'image: "ghcr.io/pixari/opentodo:0.9.0"'), ctx), /image source from input\.appServiceImage/)
+  has(checkTemplate(edit('index.ts', 'image: input.appServiceImage', `image: "ghcr.io/opentodoapp/opentodo:${V}"`), ctx), /image source from input\.appServiceImage/)
 })
 
 test('easypanel: port and volume', () => {
@@ -48,7 +51,7 @@ test('easypanel: variables and the generated setup token', () => {
 test('easypanel: meta.yaml rules', () => {
   has(checkTemplate(edit('meta.yaml', '  - To-Do List\n', '  - Todo\n'), ctx), /tag Todo is not one of/)
   has(checkTemplate(edit('meta.yaml', '(OPENTODO_SETUP_TOKEN)', '(the token)'), ctx), /where the setup token is/)
-  has(checkTemplate(edit('meta.yaml', 'url: https://github.com/pixari/opentodo\n', 'url: https://example.com\n'), ctx), /links needs Github/)
+  has(checkTemplate(edit('meta.yaml', 'url: https://github.com/OpenTodoApp/OpenTodo\n', 'url: https://example.com\n'), ctx), /links needs Github/)
   has(checkTemplate(edit('meta.yaml', 'default: opentodo\n', 'default: todo\n'), ctx), /appServiceName must default to opentodo/)
   has(checkTemplate(edit('meta.yaml', 'name: OpenTodo', 'name: &n OpenTodo'), ctx), /not in the supported YAML subset/)
 })

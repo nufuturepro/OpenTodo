@@ -3,15 +3,14 @@
 // local rows by lib/dashboard.ts. It sends nothing and writes nothing, so it works
 // offline and every synced device shows the same numbers, except "keeps slipping",
 // which reads this device's own activity record and says so (design D5).
-import { useLiveQuery } from 'dexie-react-hooks'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, Menu, MenuItem, PageBody, PageHeader } from '../../ui'
-import { useAllLabels, useAllProjects, useAllTaskRows, useMemberships } from '../../lib/localData'
-import { currentDayStart, dateLocaleOf, formatDate } from '../../lib/dates'
-import { currentUserId } from '../../lib/sharing'
+import { NO_TASK_ROWS, useAllLabels, useAllProjects, useAllTaskRows, useMemberships } from '../../lib/localData'
+import { currentDayStart, formatDate, monthName, weekdayName } from '../../lib/dates'
+import { useMe } from '../../lib/sharing'
 import { comparisonOf, PERIOD_KINDS, PERIOD_LABELS, periodFor, sharedIds, type DashboardPeriod, type Period } from '../../lib/stats'
 import { buildModel, dashboardOf, type Dashboard, type HourGrid } from '../../lib/dashboard'
-import { slippingFrom, slipRows } from '../../lib/statsSlipping'
+import { slippingFrom, useSlipRows } from '../../lib/statsSlipping'
 import type { Label, Membership, Project, Task, TimeEntry } from '../../lib/types'
 import { useDateTimeFormat } from '../DateTimePrefsProvider'
 import { HelpLink } from '../help/HelpLink'
@@ -22,19 +21,15 @@ import { formatMinutes } from '../../lib/duration'
 import { useLiveEntries, useMinuteNow } from '../../lib/timeEntries'
 import { useTimeExport } from './timeExport'
 import { t } from '../../lib/i18n'
+import { readEnum, writeString } from '../../lib/deviceStorage'
 
 const PERIOD_KEY = 'ot.stats.period'
 /** The stored period; a value this version no longer offers (the 4 and 12 weeks) opens on this week. */
 export function readPeriod(): DashboardPeriod {
-  try {
-    const v = localStorage.getItem(PERIOD_KEY)
-    return (PERIOD_KINDS as readonly string[]).includes(v ?? '') ? (v as DashboardPeriod) : 'this-week'
-  } catch {
-    return 'this-week'
-  }
+  return readEnum(PERIOD_KEY, PERIOD_KINDS, 'this-week')
 }
 function writePeriod(p: DashboardPeriod): void {
-  try { localStorage.setItem(PERIOD_KEY, p) } catch { /* device convenience only */ }
+  writeString(PERIOD_KEY, p) // device convenience only
 }
 
 /** The period chooser: a radio group with roving focus; the arrow keys change the period. */
@@ -91,10 +86,6 @@ function change(value: number, previous: number, vs: string, unit: 'percent' | '
   return { text: `${sign}${Math.round((Math.abs(diff) / previous) * 100)} % ${vs}`, direction }
 }
 
-const weekdayName = (wd: number, style: 'short' | 'long') =>
-  new Intl.DateTimeFormat(dateLocaleOf(), { weekday: style, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 9, 11 + wd)))
-const monthName = (iso: string, style: 'short' | 'long', year = false) =>
-  new Intl.DateTimeFormat(dateLocaleOf(), { month: style, ...(year ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(new Date(`${iso.slice(0, 7)}-15T12:00:00Z`))
 const hourText = (h: number) => `${String(h).padStart(2, '0')}:00`
 
 // ---------------------------------------------------------------- the dashboard
@@ -131,7 +122,7 @@ export function StatsContent({ tasks, projects, labels = [], memberships, me, to
   return (
     <div className="space-y-4" data-stats-content>
       <Tiles dash={dash} vs={vs} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="stats-panels">
+      <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2" data-testid="stats-panels">
         <KeepingUp dash={dash} range={range} />
         <WhereTimeGoes dash={dash} />
         <YearOfDone dash={dash} weekStart={weekStart} streak={dash.tiles.streak.current} />
@@ -154,7 +145,7 @@ function Tiles({ dash, vs }: { dash: Dashboard; vs: string }) {
     tracked.noEstimate > 0 ? t('{n, plural, one {# tracked task has no estimate} other {# tracked tasks have no estimate}}', { n: tracked.noEstimate }) : '',
   ].filter(Boolean).join(' · ')
   return (
-    <dl className="grid grid-cols-1 gap-3 min-[340px]:grid-cols-2 lg:grid-cols-4" data-testid="stats-tiles">
+    <dl className="grid grid-cols-1 gap-3 min-[21.25rem]:grid-cols-2 lg:grid-cols-4" data-testid="stats-tiles">
       <StatTile testId="done" label={t('Done')} value={String(done.value)} change={change(done.value, done.previous, vs)} note={t('including each day of a recurring task')} />
       {onTime.value === null
         ? <StatTile testId="on-time" label={t('On time')} value="–" note={t('No due dates in this period')} />
@@ -282,7 +273,7 @@ function KeepsSlipping({ slipping, projectOf }: { slipping: readonly Slip[]; pro
     return <EmptyPanel title={title} testId="slipping">{t('No open task was moved later three times or more in the last 90 days, on this device.')}</EmptyPanel>
   }
   return (
-    <section className="min-w-0 rounded-card border border-default bg-surface p-4" aria-label={title} data-panel="slipping">
+    <section className="ui-section-flat ui-panel-flat min-w-0" aria-label={title} data-panel="slipping">
       <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
         <h2 className="text-body font-semibold text-default">{title}</h2>
         <p className="text-meta text-muted">{note}</p>
@@ -310,11 +301,14 @@ export function StatsView() {
   const projects = useAllProjects()
   const labels = useAllLabels()
   const memberships = useMemberships()
-  const me = useLiveQuery(() => currentUserId(), [], null)
+  const me = useMe()
   const entries = useLiveEntries()
   const now = useMinuteNow(entries.some((e) => e.ended_at === null))
   // This device's due-date changes, read once per open (design D5, D8).
-  const rows = useLiveQuery(() => slipRows(Date.now()), [], [])
+  const read = useSlipRows()
+  const rows = useMemo(() => read ?? [], [read])
+  // The panels wait for the tasks and this device's date changes: panels that fill in stages move the page (ux-fixes-phone, audit M12).
+  const ready = tasks !== NO_TASK_ROWS && read !== null
   const slipping = useMemo(() => slippingFrom(rows, { tasks, projects, shared: sharedIds(memberships), me }, Date.now()), [rows, tasks, projects, memberships, me])
   const [period, setPeriod] = useState<DashboardPeriod>(readPeriod)
   const exportCsv = useTimeExport(entries, tasks, projects, period, today, weekStart)
@@ -334,8 +328,8 @@ export function StatsView() {
           </span>
         </div>
       </PageHeader>
-      <StatsContent tasks={tasks} projects={projects} labels={labels} memberships={memberships} me={me} today={today} weekStart={weekStart}
-        dayStart={currentDayStart()} entries={entries} now={now} period={period} slipping={slipping} />
+      {ready && <StatsContent tasks={tasks} projects={projects} labels={labels} memberships={memberships} me={me} today={today} weekStart={weekStart}
+        dayStart={currentDayStart()} entries={entries} now={now} period={period} slipping={slipping} />}
     </PageBody>
   )
 }

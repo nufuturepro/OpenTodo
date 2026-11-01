@@ -7,8 +7,8 @@ import { db, useDatabase } from '../lib/db'
 import { setDateTime } from '../lib/dates'
 import { createTask, resetDeviceId } from '../lib/ops'
 import type { Task } from '../lib/types'
-import { flush, key, render, type, spokenText, visibleText } from '../ui/test-utils'
-import { PanelHost } from './PanelHost'
+import { flush, key, render, spokenText, textWithoutBriefing, type, visibleText, waitFor } from '../ui/test-utils'
+import { TaskPageHost } from './taskPage.testkit'
 import { resetPanel } from './panel'
 import { TaskListView } from './TaskListView'
 import { TaskRow } from './TaskRow'
@@ -26,13 +26,8 @@ afterEach(() => {
   vi.useRealTimers()
   resetPanel()
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', title: 'Report', description: '', project_id: null, parent_id: null, priority: 4, due: null, labels: [], position: 0,
@@ -60,17 +55,17 @@ describe('row countdown (2.2)', () => {
 })
 
 describe('Today and Upcoming lists (2.3)', () => {
-  it('Today: deadline-only today, and a past deadline planned later lands in Overdue once', async () => {
+  it('Today: deadline-only today, and a past deadline planned later lands in Earlier once', async () => {
     await createTask({ title: 'Due today', due: { date: '2026-10-14' } })
     await createTask({ title: 'Deadline today', deadline: '2026-10-14' })
     await createTask({ title: 'Planned late', due: { date: '2026-10-16' }, deadline: '2026-10-13' })
     await createTask({ title: 'Still ahead', due: { date: '2026-10-20' }, deadline: '2026-10-24' })
     const r = await render(<TaskListView route={{ view: 'today' }} />)
     await waitFor(() => r.container.textContent!.includes('Deadline today'))
-    const text = r.container.textContent!
+    const text = textWithoutBriefing(r.container)
     expect(text).not.toContain('Still ahead')
     expect(text.split('Planned late').length - 1).toBe(1)
-    const overdue = text.indexOf('Overdue'), late = text.indexOf('Planned late'), todayH = text.indexOf('Today', overdue + 1)
+    const overdue = text.indexOf('Earlier'), late = text.indexOf('Planned late'), todayH = text.indexOf('Today', overdue + 1)
     expect(overdue).toBeGreaterThanOrEqual(0)
     expect(late).toBeGreaterThan(overdue)
     expect(late).toBeLessThan(todayH)
@@ -83,7 +78,7 @@ describe('Today and Upcoming lists (2.3)', () => {
     await createTask({ title: 'Both dates', due: { date: '2026-10-15' }, deadline: '2026-10-17' })
     const r = await render(<TaskListView route={{ view: 'upcoming' }} />)
     await waitFor(() => r.container.textContent!.includes('Only deadline'))
-    const text = r.container.textContent!
+    const text = textWithoutBriefing(r.container)
     expect(text.split('Both dates').length - 1).toBe(1)
     const tomorrow = text.indexOf('Tomorrow')
     expect(text.indexOf('Both dates')).toBeGreaterThan(tomorrow)
@@ -106,7 +101,7 @@ describe('Today count (2.3)', () => {
 describe('d on a list row (3.2)', () => {
   it('d, a date and Enter set the deadline of the selected task', async () => {
     const id = await createTask({ title: 'Write report', due: { date: '2026-10-14' } })
-    const r = await render(<><TaskListView route={{ view: 'today' }} /><PanelHost /></>)
+    const r = await render(<><TaskListView route={{ view: 'today' }} /><TaskPageHost /></>)
     await waitFor(() => r.container.textContent!.includes('Write report'))
     await key(document.body, 'j')
     await key(document.body, 'd')
@@ -114,8 +109,7 @@ describe('d on a list row (3.2)', () => {
     const input = document.activeElement as HTMLInputElement
     await type(input, '2026-11-06')
     await key(input, 'Enter')
-    await flush(40)
-    expect((await db.tasks.get(id))!.deadline).toBe('2026-11-06')
+    await waitFor(async () => (await db.tasks.get(id))?.deadline === '2026-11-06', 'the deadline stored')
   })
 
   it('d typed into a text field is a letter, not the shortcut', async () => {
@@ -126,7 +120,7 @@ describe('d on a list row (3.2)', () => {
     const other = r.container.querySelector('input[aria-label="Elsewhere"]') as HTMLInputElement
     other.focus()
     await key(other, 'd')
-    await flush(40)
+    await flush()
     expect(document.querySelector('[data-part="deadline"]')).toBeNull()
     expect(document.activeElement).toBe(other)
   })

@@ -19,8 +19,11 @@ COPY web/ ./
 COPY internal/activity/testdata/activity_fixture.json /src/internal/activity/testdata/activity_fixture.json
 COPY internal/digest/testdata/stats_fixture.json /src/internal/digest/testdata/stats_fixture.json
 COPY internal/digest/testdata/next_action_fixture.json /src/internal/digest/testdata/next_action_fixture.json
+COPY internal/flow/testdata/flow_fixture.json /src/internal/flow/testdata/flow_fixture.json
 COPY internal/sync/testdata/schema_fixture.json /src/internal/sync/testdata/schema_fixture.json
 COPY internal/origin/testdata/origin_vectors.json /src/internal/origin/testdata/origin_vectors.json
+COPY internal/sync/testdata/workspaces_fixture.json /src/internal/sync/testdata/workspaces_fixture.json
+COPY internal/filter/testdata/limits.json /src/internal/filter/testdata/limits.json
 # vite writes to ../internal/web/dist (see web/vite.config.ts)
 RUN mkdir -p /src/internal/web && npm run build
 
@@ -48,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 LABEL org.opencontainers.image.title="OpenTaskKit" \
       org.opencontainers.image.description="Your tasks, your server. Open-source, local-first task manager." \
-      org.opencontainers.image.source="https://github.com/pixari/opentodo" \
+      org.opencontainers.image.source="https://github.com/OpenTodoApp/OpenTaskKit" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 COPY --from=build /out/opentodo /opentodo
 COPY --from=build --chown=65532:65532 /out/data /data

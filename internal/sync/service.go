@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	gosync "sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/notify"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/notify"
 )
 
 // Service persists ops and materializes current field values.
@@ -31,16 +32,24 @@ type Service struct {
 	commentLimiter *fixedWindow
 	// attachmentLimit is the per-file attachment size limit in bytes (attachments D5).
 	attachmentLimit func() int64
+	// attachmentQuota is the per-account attachment quota in bytes (attachment_quota.go).
+	attachmentQuota func() int64
 	// blobs removes attachment files after purges (attachments D13); nil in tests without files.
 	blobs BlobStore
 	// pullBudget overrides MaxPullBytes in tests; 0 means MaxPullBytes.
 	pullBudget int
+	// compactChunk overrides compaction's chunk size in tests; 0 means 1,000.
+	compactChunk int
 	// guard bounds writes on a demo instance (demo-sandboxes D3); nil elsewhere.
 	guard WriteGuard
 	// quota refuses single ops once a hosted tenant reached a limit
 	// (multi-tenant-host D5); nil elsewhere.
 	quota Quota
-	// clockMu guards lastTS, the last timestamp ServerTS issued (sync-convergence).
+	// wsLimits bounds workspaces, members and groups (workspaces "Limits");
+	// the zero value means DefaultWorkspaceLimits.
+	wsLimits WorkspaceLimits
+	// clockMu guards lastTS, the last timestamp ServerTS issued or a stored op
+	// carried (sync-convergence; observeTS).
 	clockMu gosync.Mutex
 	lastTS  int64
 }
@@ -149,8 +158,13 @@ func (s *Service) SetAttachmentLimit(limit func() int64) { s.attachmentLimit = l
 func NewService(db *sql.DB) *Service {
 	s := &Service{db: db, now: time.Now, notifier: NewNotifier()}
 	s.SetCommentRateLimit(CommentRateLimit, CommentRateWindow)
+	s.seedClock()
 	return s
 }
+
+// SetClock replaces the service's time source (server timestamps, ServerTS);
+// tests only, through httpapi.WithClock.
+func (s *Service) SetClock(now func() time.Time) { s.now = now }
 
 // SetReader installs the reader pool (store.OpenReader) that List, Get and
 // Pull read from, so they do not queue behind writes. Call it during wiring.
@@ -286,13 +300,13 @@ func StampCompletedBy(userID string, ops []Op) []Op {
 		if op.Entity != "task" || op.Field != "completed_at" || has[op.EntityID] {
 			continue
 		}
-		done := !nullish(op.Value)
+		done := !IsNull(op.Value)
 		if !done && creates[op.EntityID] {
 			continue
 		}
 		value := json.RawMessage("null")
 		if done {
-			value = jsonOf(userID)
+			value = JSONOf(userID)
 		}
 		has[op.EntityID] = true
 		extra = append(extra, Op{ID: ids.NameID("completed_by", op.ID), Entity: "task", EntityID: op.EntityID,
@@ -771,6 +785,7 @@ func (s *Service) List(ctx context.Context, userID, entity string, includeDelete
 	defer rows.Close()
 	byID := map[string]Entity{}
 	scopeOf := map[string]string{}
+	dups := map[string][]string{}
 	order := []string{}
 	for rows.Next() {
 		var scope, id, field, value string
@@ -784,19 +799,33 @@ func (s *Service) List(ctx context.Context, userID, entity string, includeDelete
 			scopeOf[id] = scope
 			order = append(order, id)
 		} else if scopeOf[id] != scope {
-			// The same id in two visible scopes (only possible with forged ids):
-			// keep the preferred scope's record, never a mix of both.
-			if acc.rank(scope) >= acc.rank(scopeOf[id]) {
-				continue
+			// The same id in two visible scopes (only possible with data
+			// written before entity-id-ownership): keep one scope's record,
+			// never a mix of both, and pick the right one below.
+			if !slices.Contains(dups[id], scopeOf[id]) {
+				dups[id] = append(dups[id], scopeOf[id])
 			}
-			e = Entity{"id": e["id"]}
-			byID[id] = e
-			scopeOf[id] = scope
+			if !slices.Contains(dups[id], scope) {
+				dups[id] = append(dups[id], scope)
+			}
+			continue
 		}
 		e[field] = json.RawMessage(value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	rows.Close()
+	for id, holders := range dups {
+		home, err := homeScope(ctx, s.reader(), acc, entity, id, holders)
+		if err != nil {
+			return nil, err
+		}
+		if home != scopeOf[id] {
+			if byID[id], err = s.entityIn(ctx, home, entity, id); err != nil {
+				return nil, err
+			}
+		}
 	}
 	sort.Strings(order)
 	out := make([]Entity, 0, len(order))
@@ -823,6 +852,25 @@ func (s *Service) List(ctx context.Context, userID, entity string, includeDelete
 // (scope_id, entity, ...) reads only the visible scopes, and List sorts the ids.
 func listQuery(n int) string {
 	return `SELECT scope_id,entity_id,field,value FROM scope_fields WHERE scope_id IN (` + placeholders(n) + `) AND entity = ?`
+}
+
+// FieldTS is the timestamp of the winning op of one field of an entity the user
+// can see, over every visible scope; 0 when the field was never written. A
+// server write that must win over a device whose clock runs ahead (an
+// attachment's uploaded_at, issue #246) uses ServerTSAt(FieldTS+1).
+func (s *Service) FieldTS(ctx context.Context, userID, entity, id, field string) (int64, error) {
+	acc, err := loadAccess(ctx, s.reader(), userID)
+	if err != nil {
+		return 0, err
+	}
+	scopes := acc.scopes()
+	var ts sql.NullInt64
+	err = s.reader().QueryRowContext(ctx, `SELECT MAX(ts) FROM scope_fields WHERE scope_id IN (`+placeholders(len(scopes))+`) AND entity = ? AND entity_id = ? AND field = ?`,
+		append(anys(scopes), entity, id, field)...).Scan(&ts)
+	if err != nil {
+		return 0, err
+	}
+	return ts.Int64, nil
 }
 
 // Get materializes one entity the user can see or returns nil when it does not exist.
@@ -857,14 +905,23 @@ func (s *Service) Get(ctx context.Context, userID, entity, id string) (Entity, e
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	var best Entity
-	bestRank := 0
-	for scope, e := range byScope {
-		if r := acc.rank(scope); best == nil || r < bestRank {
-			best, bestRank = e, r
+	if len(byScope) <= 1 {
+		for _, e := range byScope {
+			return e, nil
 		}
+		return nil, nil
 	}
-	return best, nil
+	// The id is in several visible scopes (data written before
+	// entity-id-ownership): show the copy writes go to.
+	holders := make([]string, 0, len(byScope))
+	for scope := range byScope {
+		holders = append(holders, scope)
+	}
+	home, err := homeScope(ctx, s.reader(), acc, entity, id, holders)
+	if err != nil {
+		return nil, err
+	}
+	return byScope[home], nil
 }
 
 // Generation returns the op-log generation. It changes only when the database is

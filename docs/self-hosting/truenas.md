@@ -10,7 +10,7 @@ order: 23
 
 OpenTodo is one container with one data folder and no required settings. It runs on TrueNAS Community Edition 24.10 and later, which run apps with Docker.
 
-OpenTodo is not in the TrueNAS **Apps** catalogue yet: the app has been prepared for TrueNAS's community train but not accepted. Until it is, install it with **Install via YAML** as below.
+OpenTodo is not in the TrueNAS **Apps** catalogue yet: the app has been submitted to TrueNAS's community train ([truenas/apps#6240](https://github.com/truenas/apps/pull/6240)) but not accepted. Until it is, install it with **Install via YAML** as below.
 
 ## Install with Install via YAML
 
@@ -21,11 +21,11 @@ OpenTodo is not in the TrueNAS **Apps** catalogue yet: the app has been prepared
    ```yaml
    services:
      opentodo:
-       image: ghcr.io/pixari/opentodo:0.9.0
+       image: ghcr.io/opentodoapp/opentodo:0.18.1
        user: "568:568"
        restart: unless-stopped
        ports:
-         - "30530:8080"
+         - "30536:8080"
        environment:
          OPENTODO_BASE_URL: ""
          OPENTODO_SETUP_TOKEN: ""
@@ -33,7 +33,7 @@ OpenTodo is not in the TrueNAS **Apps** catalogue yet: the app has been prepared
          - /mnt/tank/apps/opentodo:/data
    ```
 
-4. Open `http://<your-truenas-address>:30530`. The first visitor creates the owner account; after that, the owner invites people (sign-up is closed).
+4. Open `http://<your-truenas-address>:30536`. The first visitor creates the owner account; after that, the owner invites people (sign-up is closed).
 
 The image has a health check of its own (it has no shell, so it runs `/opentodo healthcheck`), and TrueNAS shows the app as healthy once it answers.
 
@@ -47,9 +47,9 @@ Once OpenTodo is listed: **Apps → Discover Apps**, search for **OpenTodo**, cl
 | Setup Token | empty | Optional, 16+ characters. Set it when the server is reachable from the internet, so a stranger cannot create the owner account first. |
 | Allow Sign-up | off | On lets anyone who can reach the server create an account. |
 | Trusted Proxies | empty | The reverse proxies whose `X-Forwarded-For` is trusted, or `cloudflare`. Set it only when every request comes through them. |
-| Additional Environment Variables | none | Any other `OPENTODO_*` variable from the [configuration table](https://github.com/pixari/opentodo#configuration). |
+| Additional Environment Variables | none | Any other `OPENTODO_*` variable from the [configuration table](https://github.com/OpenTodoApp/OpenTodo#configuration). |
 | User ID / Group ID | 568 / 568 | The user OpenTodo runs as and that owns its files (`apps`). |
-| WebUI Port | 30530 | The port on your server. OpenTodo listens on it directly. |
+| WebUI Port | 30536 | The port on your server. OpenTodo listens on it directly. |
 | Data Storage | ixVolume | Where the database, attachments and backups live, mounted on `/data`. Choose **Host Path** to use a dataset of your own. |
 
 ## Permissions
@@ -58,10 +58,10 @@ The image runs as user 65532 by default, but the binary runs as any user that ca
 
 ## https and reverse proxies
 
-On the server's address (`http://192.168.1.10:30530`) tasks, projects, sync, sharing and attachments work. Installing the app on a phone, working offline, push notifications, passkeys and end-to-end encryption need https, because browsers only allow them there. Put OpenTodo behind a reverse proxy with a certificate (Nginx Proxy Manager or Caddy from the Apps catalogue, Traefik) or use Tailscale's https, then set **Base URL** (`OPENTODO_BASE_URL`) to that https address. Keep it empty on plain http: an https Base URL opened over plain http breaks signing in. If the proxy sits behind Cloudflare's proxy, set **Trusted Proxies** to `cloudflare`. More on proxies in [Running with Docker](docker.md#behind-a-reverse-proxy).
+On the server's address (`http://192.168.1.10:30536`) tasks, projects, sync, sharing and attachments work. Installing the app on a phone, working offline, push notifications, passkeys and end-to-end encryption need https, because browsers only allow them there. Put OpenTodo behind a reverse proxy with a certificate (Nginx Proxy Manager or Caddy from the Apps catalogue, Traefik) or use Tailscale's https, then set **Base URL** (`OPENTODO_BASE_URL`) to that https address. Keep it empty on plain http: an https Base URL opened over plain http breaks signing in. If the proxy sits behind Cloudflare's proxy, set **Trusted Proxies** to `cloudflare`. More on proxies in [Running with Docker](docker.md#behind-a-reverse-proxy).
 
 ## Updates and backups
 
-The app names one release (`0.9.0`), never a moving tag. With Install via YAML, change the tag in the app's YAML (**Edit**) to the new release and save; TrueNAS pulls it and restarts the app. From the catalogue, TrueNAS shows **Update** on the app when the catalogue has a new version (its maintainers bump it after each OpenTodo release). Migrations run on start and there are no down-migrations, so back up first.
+The app names one release (`0.18.1`), never a moving tag. With Install via YAML, change the tag in the app's YAML (**Edit**) to the new release and save; TrueNAS pulls it and restarts the app. From the catalogue, TrueNAS shows **Update** on the app when the catalogue has a new version (its maintainers bump it after each OpenTodo release). Migrations run on start and there are no down-migrations, so back up first.
 
 Everything OpenTodo stores is in its dataset (or ixVolume). Protect it with periodic **snapshots** and **replication** or a **Cloud Sync** task, or turn on scheduled backups in **Settings → Server** (written to `backups/` in the same folder, or to S3 or WebDAV). See [Backups](../backups.md).

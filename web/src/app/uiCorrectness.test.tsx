@@ -12,7 +12,7 @@ import { applyCatalog, loadLanguage } from '../lib/i18n/catalog'
 import { createProject, createTask, mutateMany, resetDeviceId, type Change } from '../lib/ops'
 import type { ImportJob, Membership, Project, ProjectInvite } from '../lib/types'
 import { SidebarGroup } from '../ui'
-import { click, flush, key, mockFetch, noPublicLinks, render, waitFor } from '../ui/test-utils'
+import { click, flush, key, mockFetch, noPublicLinks, render, textWithoutBriefing, waitFor } from '../ui/test-utils'
 import { resetCollapsedGroups } from './collapsedGroups'
 import { ImportScreen } from './ImportScreen'
 import { InviteLinksSection } from './InviteLinksSection'
@@ -43,7 +43,6 @@ afterEach(() => {
   resetPanel()
   applyCatalog('en', 'en', {})
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
 })
 
 const confirmDialog = () => document.querySelector<HTMLElement>('[data-testid="confirm-dialog"]')
@@ -65,6 +64,7 @@ describe('a viewer of a shared project (UI-10)', () => {
     await key(document.body, 'O', { shiftKey: true })
     await key(document.body, 's')
     await key(document.body, 'e')
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- a viewer's keys write and open nothing, so there is no signal to wait for
     await flush(100)
     expect((await db.tasks.get(id))!.due).toEqual(before!.due)
     expect(await db.tasks.count()).toBe(1)
@@ -85,11 +85,10 @@ describe('midnight while the app is open (UI-17)', () => {
     </>)
     const today = () => [...r.container.querySelectorAll('a, button')].find((a) => a.textContent?.startsWith('Today')) as HTMLElement | undefined
     await waitFor(() => !!r.container.querySelector('[data-list-page]') && !!today(), 'the list and sidebar')
-    await flush(50)
-    expect(r.container.querySelector('[data-list-page]')!.textContent).not.toContain('Tomorrow thing')
+    expect(textWithoutBriefing(r.container.querySelector('[data-list-page]')!)).not.toContain('Tomorrow thing')
     vi.setSystemTime(new Date(2026, 9, 15, 0, 0, 30))
     await act(async () => { vi.advanceTimersByTime(60_000) })
-    await waitFor(() => r.container.querySelector('[data-list-page]')!.textContent!.includes('Tomorrow thing'), 'the task in Today after midnight', 3000)
+    await waitFor(() => textWithoutBriefing(r.container.querySelector('[data-list-page]')!).includes('Tomorrow thing'), 'the task in Today after midnight', 3000)
     await waitFor(() => today()!.querySelector('[data-count]')?.textContent === '1', 'the sidebar count after midnight', 3000)
     await r.unmount()
   })
@@ -158,6 +157,7 @@ describe('confirmations use the app dialog (UI-19)', () => {
       if (path.endsWith('/members') && method === 'GET') return membership
       if (path.endsWith('/transfer')) { calls.push('transfer'); return { ...membership, role: 'admin' } }
       if (path.endsWith('/invites') || path.endsWith('/public-links')) return path.endsWith('/invites') ? { invites: [] } : { links: [] }
+      if (path.endsWith('/agent-access')) return { kept_away: false, inherited_from: null }
       return undefined
     })
     const r = await render(<ShareDialog project={project} userId="u1" cached={membership} onClose={() => {}} />)
@@ -174,7 +174,7 @@ describe('confirmations use the app dialog (UI-19)', () => {
       { userId: 'u2', name: 'Sam', email: 'sam@example.com', role: 'owner' },
       { userId: 'u1', name: 'Ada', email: 'ada@example.com', role: 'editor' },
     ] }
-    mockFetch((method, path) => (path.endsWith('/members') && method === 'GET' ? editor : path.endsWith('/public-links') ? { links: [] } : undefined))
+    mockFetch((method, path) => (path.endsWith('/members') && method === 'GET' ? editor : path.endsWith('/public-links') ? { links: [] } : path.endsWith('/agent-access') ? { kept_away: false, inherited_from: null } : undefined))
     const s = await render(<ShareDialog project={project} userId="u1" cached={editor} onClose={() => {}} />)
     await waitFor(() => !!button(document.body, 'Leave'), 'the leave control')
     await click(button(document.body, 'Leave')!)

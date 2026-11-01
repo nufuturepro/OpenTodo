@@ -16,6 +16,7 @@ A task, or a comment on it, can carry files and links: a receipt, a photo of a w
 ## Add a file or a link
 
 - **Pick, paste or drop.** Choose **Attach › Choose files…** to pick files, paste an image or a file into the task panel, or drop files onto it (a drop zone appears while you drag).
+- **In the text.** An image pasted into the notes or a comment is attached and shown in place ([details](formatting.md#images)).
 - **Links.** Choose **Attach › Add a link…** and paste an `http` or `https` address. A link is stored as a link: the server never downloads it.
 - **Offline.** Adding a file without a connection works: the attachment appears at once, marked "waiting to upload", and uploads after the next sync. Other devices show it as "uploading" until the file has arrived on the server.
 
@@ -27,7 +28,7 @@ Attachments belong to their task: everyone who can see the task can see its atta
 
 ## Limits
 
-The server owner sets a size limit per file (25 MB unless changed) and a total per account (1 GB unless changed) in **Settings → Server → Attachments**, and can turn attachments off. **Settings → Data** shows how much of your total you use. Removing an attachment frees your total at once; the file itself stays on the server for the Trash retention period (30 days unless changed), so a removal can be undone from any device, and is then deleted for good. Purging a task from the Trash deletes its files immediately.
+The server owner sets a size limit per file (25 MB unless changed) and a total per account (1 GB unless changed) in **Settings → Server → Attachments**, and can turn attachments off. **Settings → Data** shows how much of your total you use. Removing an attachment frees your total at once; the file stays on the server for the Trash retention period (30 days unless changed), then is deleted. Until then any device can undo the removal, if your total still has room. Purging a task from the Trash deletes its files immediately.
 
 ## Encryption
 

@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/pixari/opentodo/internal/activity"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/activity"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Comment and activity routes (OpenSpec change `comments-and-activity`). All
@@ -24,6 +24,8 @@ func (s *Server) registerCommentRoutes(mux *routes) {
 	mux.handle("POST /api/v1/tasks/{id}/comments", signedIn, s.handleCreateComment)
 	mux.handle("PATCH /api/v1/comments/{id}", signedIn, s.handlePatchComment)
 	mux.handle("DELETE /api/v1/comments/{id}", signedIn, s.handleDeleteComment)
+	// Reactions (editor-everywhere D8): the caller replaces their own list only.
+	mux.handle("PUT /api/v1/comments/{id}/reactions", signedIn.FullTokens(), s.handlePutReactions)
 	mux.handle("GET /api/v1/tasks/{id}/activity", signedIn, s.activityHandler("task"))
 	mux.handle("GET /api/v1/projects/{id}/activity", signedIn, s.activityHandler("project"))
 	// Cross-project feed (OpenSpec change `activity-feed`).
@@ -40,7 +42,7 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"comments": list})
+	writeJSON(w, http.StatusOK, map[string]any{"comments": opsync.FoldAllReactions(list, userFrom(r.Context()).ID)})
 }
 
 // commentInput is the body of POST and PATCH. Fields not listed are refused so a
@@ -122,7 +124,7 @@ func (s *Server) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	m, _ := json.Marshal(mentions)
 	b, _ := json.Marshal(*in.Body)
 	id := ids.New()
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	body := map[string]json.RawMessage{
 		"task_id": json.RawMessage(opsync.QuoteJSON(taskID)), "author_id": json.RawMessage(opsync.QuoteJSON(uid)),
 		"body": b, "parent_id": parent, "mentions": m, "created_at": json.RawMessage(strconv.FormatInt(now, 10)),
@@ -157,7 +159,7 @@ func (s *Server) handlePatchComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_input", msg)
 		return
 	}
-	body := map[string]json.RawMessage{"edited_at": json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+	body := map[string]json.RawMessage{"edited_at": json.RawMessage(strconv.FormatInt(s.now().UnixMilli(), 10))}
 	if in.Body != nil {
 		body["body"], _ = json.Marshal(*in.Body)
 	}
@@ -167,11 +169,43 @@ func (s *Server) handlePatchComment(w http.ResponseWriter, r *http.Request) {
 	s.writeComment(w, r, r.PathValue("id"), body, http.StatusOK)
 }
 
+// handlePutReactions replaces the caller's reactions on a comment with
+// {reactions: [names]} (editor-everywhere D8): an empty list removes them.
+func (s *Server) handlePutReactions(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.existingComment(w, r); !ok {
+		return
+	}
+	var in struct {
+		Reactions *[]string `json:"reactions"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || in.Reactions == nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", "send {\"reactions\": [names]}")
+		return
+	}
+	seen := map[string]bool{}
+	for _, name := range *in.Reactions {
+		if !slices.Contains(opsync.ReactionNames, name) {
+			writeError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("%q is not a reaction (one of %s)", name, strings.Join(opsync.ReactionNames, ", ")))
+			return
+		}
+		if seen[name] {
+			writeError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("%q is listed twice", name))
+			return
+		}
+		seen[name] = true
+	}
+	body := map[string]json.RawMessage{}
+	body[opsync.ReactionPrefix+userFrom(r.Context()).ID], _ = json.Marshal(*in.Reactions)
+	s.writeComment(w, r, r.PathValue("id"), body, http.StatusOK)
+}
+
 func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.existingComment(w, r); !ok {
 		return
 	}
-	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))}
+	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(s.now().UnixMilli(), 10))}
 	s.writeComment(w, r, r.PathValue("id"), body, http.StatusNoContent)
 }
 
@@ -180,24 +214,10 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 func (s *Server) writeComment(w http.ResponseWriter, r *http.Request, id string, body map[string]json.RawMessage, status int) {
 	ctx := r.Context()
 	uid := userFrom(ctx).ID
-	res, err := s.sync.ApplyStrict(ctx, uid, fieldOps("comment", id, body, s.opTS()))
-	if err != nil {
-		var rej *opsync.RejectedError
-		switch {
-		case writeLimited(w, err):
-		case errors.Is(err, opsync.ErrInvalidOp):
-			writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonRateLimited:
-			writeError(w, http.StatusTooManyRequests, "rate_limited", "too many comments, try again in a minute")
-		case errors.As(err, &rej):
-			writeError(w, http.StatusForbidden, "forbidden", "only the author can edit a comment; the author, project admins and the owner can delete it")
-		default:
-			s.internal(w, err)
-		}
+	if _, ok := s.applyREST(w, ctx, uid, fieldOps("comment", id, body, s.opTS()),
+		"only the author can edit a comment; the author, project admins and the owner can delete it",
+		refusals{opsync.ReasonRateLimited: refuse(http.StatusTooManyRequests, "rate_limited", "too many comments, try again in a minute")}); !ok {
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, serverDevice)
 	}
 	if status == http.StatusNoContent {
 		w.WriteHeader(status)
@@ -208,7 +228,7 @@ func (s *Server) writeComment(w http.ResponseWriter, r *http.Request, id string,
 		s.internal(w, err)
 		return
 	}
-	writeJSON(w, status, c)
+	writeJSON(w, status, opsync.FoldReactions(c, uid))
 }
 
 // ---- activity ----

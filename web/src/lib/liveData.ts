@@ -6,10 +6,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, getMeta } from './db'
 import { cachedWindow, showEvents, type EventsWindow } from './calendarFeeds'
-import { DEFAULT_GRID_PREFS, GRID_PREFS_META_KEY, normalizeGridPrefs, type GridPrefs } from './calendar'
+import { CALENDAR_COMPLETED_META_KEY, DEFAULT_GRID_PREFS, GRID_PREFS_META_KEY, normalizeGridPrefs, type GridPrefs } from './calendar'
 import { byPosition } from './ordering'
 import { loadCollapsedSections, loadListColumns, loadShowCompleted, loadViewMode, type ProjectViewMode } from './sections'
-import type { CalendarEvent, CalendarSubscription, Section, Task } from './types'
+import type { CalendarEvent, CalendarSubscription, ProjectPrefs, Section, Task } from './types'
 
 // Shared with the rest of the app (web-layering): one live query each, one visibility rule.
 export { getTask, useAllLabels, useMembershipMap, useMemberships, useProjects as useLiveProjects } from './localData'
@@ -54,6 +54,11 @@ export function useListColumnsPref(projectId: string | null): boolean {
   return useLiveQuery(() => (projectId ? loadListColumns(projectId) : Promise.resolve(false)), [projectId], false)
 }
 
+/** This user's preferences row of a project (project_prefs): null while loading or when there is none. */
+export function useProjectPrefsRow(projectId: string | null): ProjectPrefs | null {
+  return useLiveQuery(async () => (projectId ? (await db.prefs.get(projectId)) ?? null : null), [projectId], null)
+}
+
 /** Whether the project's list keeps its completed tasks in a Completed group on this device (project-completed-section). */
 export function useShowCompletedPref(projectId: string | null): boolean {
   return useLiveQuery(() => (projectId ? loadShowCompleted(projectId) : Promise.resolve(false)), [projectId], false)
@@ -89,6 +94,11 @@ export function useCalendarSubscriptions(): CalendarSubscription[] {
 /** Whether this device shows subscribed calendars in the grid (on unless turned off). */
 export function useShowEvents(): boolean {
   return useLiveQuery(showEvents, [], true)
+}
+
+/** Completed calendar tasks are hidden unless explicitly enabled on this device. */
+export function useCalendarShowCompleted(): boolean {
+  return useLiveQuery(async () => (await getMeta<unknown>(CALENDAR_COMPLETED_META_KEY, false)) === true, [], false)
 }
 
 /** The range of days the device cache of subscribed calendars covers, and when it was fetched. */

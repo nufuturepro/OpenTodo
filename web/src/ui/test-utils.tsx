@@ -2,7 +2,8 @@
 // `// @vitest-environment happy-dom`): render into a real DOM, fire keys.
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, vi } from 'vitest'
+import { vi } from 'vitest'
+import { trackRoot } from '../test/teardown'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -12,9 +13,6 @@ export interface Rendered {
   unmount: () => Promise<void>
 }
 
-/** Every root this module still holds, released by its own unmount or the hook below. */
-const mounted: { root: Root; container: HTMLElement }[] = []
-
 export async function render(ui: ReactNode): Promise<Rendered> {
   const container = document.createElement('div')
   document.body.append(container)
@@ -23,48 +21,23 @@ export async function render(ui: ReactNode): Promise<Rendered> {
     root = createRoot(container)
     root.render(ui)
   })
-  const entry = { root: root!, container }
-  mounted.push(entry)
-  const release = () => {
-    const i = mounted.indexOf(entry)
-    if (i >= 0) mounted.splice(i, 1)
+  let mounted = true
+  const unmount = async () => {
+    // Twice is harmless: the shared teardown may have unmounted it already.
+    if (!mounted) return
+    mounted = false
+    untrack()
+    await act(async () => root!.unmount())
+    container.remove()
   }
+  // The shared teardown (test-setup.ts) unmounts whatever a test leaves mounted.
+  const untrack = trackRoot(unmount)
   return {
     container,
     rerender: (next) => act(async () => root!.render(next)),
-    unmount: async () => {
-      release()
-      await act(async () => root!.unmount())
-      container.remove()
-    },
+    unmount,
   }
 }
-
-/**
- * Unmount whatever this file's tests rendered (OpenSpec web-lint-and-test-hygiene):
- * a root left mounted keeps its useLiveQuery subscriptions alive, and Dexie's
- * liveQuery re-query timer (setTimeout(doQuery, 0)) can then fire after the DOM
- * environment is torn down, where the emission's React dispatch reads a window
- * that no longer exists - the unhandled "ReferenceError: window is not defined"
- * that fails CI from statsTime.test.tsx. A test's own unmount() releases its
- * entry first, so nothing unmounts twice.
- */
-afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    // Best effort: a test's own afterEach may have run first and cleared
-    // document.body.innerHTML (127 files do), which leaves React removing a
-    // portal node that is already gone ("Failed to execute 'removeChild'").
-    // The unmount still closes the liveQuery subscriptions on the way - effect
-    // destroys run in React's deletion walk - so the teardown race stays closed;
-    // the throw is only about a node this file's cleanup already deleted.
-    try {
-      await act(async () => root.unmount())
-    } catch {
-      /* the body was cleared before we got here; the root is gone regardless */
-    }
-    container.remove()
-  }
-})
 
 export async function key(target: Element | Document, k: string, init: KeyboardEventInit = {}) {
   await act(async () => {
@@ -135,4 +108,17 @@ export function visibleText(el: Element): string {
   const copy = el.cloneNode(true) as Element
   copy.querySelectorAll('.sr-only').forEach((n) => n.remove())
   return copy.textContent ?? ''
+}
+
+/** The text of a list page without the day page's briefing, which names tasks too (OpenSpec change briefing). */
+export function textWithoutBriefing(el: Element): string {
+  const copy = el.cloneNode(true) as Element
+  copy.querySelectorAll('[data-page-briefing]').forEach((n) => n.remove())
+  return copy.textContent ?? ''
+}
+
+/** The pixel width a `(min-width: …)` media query needs, in px or rem (16 px each); 0 when it has none. */
+export function minWidthPx(query: string): number {
+  const m = /min-width:\s*([\d.]+)(px|rem)/.exec(query)
+  return m ? Number(m[1]) * (m[2] === 'rem' ? 16 : 1) : 0
 }

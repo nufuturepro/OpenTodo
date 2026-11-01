@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Project sharing routes (OpenSpec change `project-sharing`, design D7). Every
@@ -18,10 +18,10 @@ import (
 // here, never through the op log.
 func (s *Server) registerSharingRoutes(mux *routes) {
 	mux.handle("GET /api/v1/projects/{id}/members", signedIn, s.handleListMembers)
-	mux.handle("POST /api/v1/projects/{id}/members", signedIn.demoDenied(), s.handleAddMember)
-	mux.handle("PATCH /api/v1/projects/{id}/members/{userId}", signedIn.demoDenied(), s.handleSetMemberRole)
-	mux.handle("DELETE /api/v1/projects/{id}/members/{userId}", signedIn.demoDenied(), s.handleRemoveMember)
-	mux.handle("POST /api/v1/projects/{id}/transfer", signedIn.demoDenied(), s.handleTransferProject)
+	mux.handle("POST /api/v1/projects/{id}/members", signedIn.DemoDenied(), s.handleAddMember)
+	mux.handle("PATCH /api/v1/projects/{id}/members/{userId}", signedIn.DemoDenied(), s.handleSetMemberRole)
+	mux.handle("DELETE /api/v1/projects/{id}/members/{userId}", signedIn.DemoDenied(), s.handleRemoveMember)
+	mux.handle("POST /api/v1/projects/{id}/transfer", signedIn.DemoDenied(), s.handleTransferProject)
 }
 
 // memberError maps the sync package's membership errors onto the API envelope.
@@ -29,8 +29,10 @@ func (s *Server) memberError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, opsync.ErrNotFound):
 		msg := "project not found"
-		if strings.Contains(err.Error(), "member") {
-			msg = "member not found"
+		for _, k := range []string{"member", "group", "grant"} {
+			if strings.HasSuffix(err.Error(), ": "+k) {
+				msg = k + " not found"
+			}
 		}
 		writeError(w, http.StatusNotFound, "not_found", msg)
 	case errors.Is(err, opsync.ErrForbidden):
@@ -41,6 +43,9 @@ func (s *Server) memberError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "already_member", "this account is already a member of the project")
 	case errors.Is(err, opsync.ErrProjectIDConflict):
 		writeError(w, http.StatusConflict, "project_id_conflict", "this project cannot be shared because another account has a project with the same id; duplicate it and share the copy")
+	case errors.Is(err, opsync.ErrNotInWorkspace):
+		// A created workspace is a closed directory (OpenSpec change workspaces).
+		writeError(w, http.StatusConflict, "not_in_workspace", "this account is not a member of the project's workspace; ask the workspace owner to add them first")
 	case errors.Is(err, opsync.ErrInvalidMember):
 		writeError(w, http.StatusBadRequest, "invalid_input", strings.TrimPrefix(err.Error(), opsync.ErrInvalidMember.Error()+": "))
 	default:
@@ -54,7 +59,12 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		s.memberError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, m)
+	v, err := s.projectMembersView(r.Context(), m)
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 // respondMembers answers a successful change with the caller's fresh view of the
@@ -75,7 +85,12 @@ func (s *Server) respondMembers(w http.ResponseWriter, r *http.Request, status i
 		s.memberError(w, err)
 		return
 	}
-	writeJSON(w, status, m)
+	v, err := s.projectMembersView(ctx, m)
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
+	writeJSON(w, status, v)
 }
 
 // projectRoleLabel is how a project role appears in the audit log's from/to
@@ -92,7 +107,10 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	actor := userFrom(ctx)
 	var in struct {
 		Email string `json:"email"`
-		Role  string `json:"role"`
+		// UserID names a member of the project's workspace directory instead of
+		// an email (OpenSpec change workspaces); only for a created workspace.
+		UserID string `json:"userId"`
+		Role   string `json:"role"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		badBody(w, err)
@@ -121,13 +139,18 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	if len(m.Members) <= 1 && s.refuseIfEncrypted(w, r, "sharing is not available for accounts with end-to-end encryption yet") {
 		return
 	}
-	target, err := s.auth.UserByEmail(ctx, in.Email)
-	if errors.Is(err, auth.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "user_not_found", "no account with this email exists on this server")
-		return
-	}
-	if err != nil {
-		s.internal(w, err)
+	var target *auth.User
+	if in.UserID != "" {
+		target, err = s.memberTarget(r, in.UserID)
+		if errors.Is(err, auth.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user_not_found", "no account with this id is in the project's workspace")
+			return
+		}
+		if err != nil {
+			s.internal(w, err)
+			return
+		}
+	} else if target = s.memberByEmail(w, r, m.Role, in.Email, in.Role); target == nil {
 		return
 	}
 	ch, err := s.sync.AddMember(ctx, actor.ID, r.PathValue("id"), target.ID, in.Role)
@@ -135,7 +158,68 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 		s.memberError(w, err)
 		return
 	}
+	s.audit.Record(ctx, audit.ProjectMemberAdded(actor.ID, target.ID, r.PathValue("id"), in.Role))
 	s.respondMembers(w, r, http.StatusCreated, target.ID, ch)
+}
+
+// memberByEmail resolves an add by email (member-add-consent D1): it returns
+// the account to add at once, or answers the request itself (an invitation,
+// or an error) and returns nil. In a project of a created workspace only its
+// directory can be added, whether or not the address has an account.
+func (s *Server) memberByEmail(w http.ResponseWriter, r *http.Request, myRole, email, role string) *auth.User {
+	ctx := r.Context()
+	actor := userFrom(ctx)
+	if !s.allowMemberAdd(w, actor.ID) {
+		return nil
+	}
+	email, ok := inviteAddress(w, email)
+	if !ok {
+		return nil
+	}
+	target, err := s.lookupInvitee(ctx, email)
+	if err != nil {
+		s.internal(w, err)
+		return nil
+	}
+	closed, err := s.sync.InClosedWorkspace(ctx, r.PathValue("id"))
+	if err != nil {
+		s.internal(w, err)
+		return nil
+	}
+	if closed {
+		if target == nil {
+			s.memberError(w, opsync.ErrNotInWorkspace)
+		}
+		return target
+	}
+	now, err := s.addsAtOnce(ctx, actor.ID, target)
+	if err != nil {
+		s.internal(w, err)
+		return nil
+	}
+	if now {
+		return target
+	}
+	if !opsync.CanGrant(myRole, role) {
+		s.memberError(w, opsync.ErrForbidden)
+		return nil
+	}
+	s.inviteMember(w, r, auth.InvitationProject, r.PathValue("id"), target, email, role)
+	return nil
+}
+
+// memberAddsPerHour is how many people one account may try to add to projects
+// and workspaces by email in an hour, found or not.
+const memberAddsPerHour = 30
+
+// allowMemberAdd counts one add by email for actor and answers 429
+// rate_limited when the hour's budget is used up.
+func (s *Server) allowMemberAdd(w http.ResponseWriter, actor string) bool {
+	if s.memberAddLimiter.allow(actor) {
+		return true
+	}
+	writeError(w, http.StatusTooManyRequests, "rate_limited", "too many people added in the last hour, try again later")
+	return false
 }
 
 func (s *Server) handleSetMemberRole(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +289,8 @@ func (s *Server) annotateProjects(ctx context.Context, entity string, list ...op
 			if _, has := e["origin"]; e != nil && !has {
 				e["origin"] = json.RawMessage("null")
 			}
+			// And energy, null when none (task-energy D7).
+			presentEnergy(e)
 		}
 		return nil
 	}
@@ -217,21 +303,28 @@ func (s *Server) annotateProjects(ctx context.Context, entity string, list ...op
 					e[f] = json.RawMessage("null")
 				}
 			}
+			defaultFlowMode(e)
 		}
 		return nil
 	}
 	if entity == "view" {
-		// Every view representation carries on_drop, null when unset
-		// (OpenSpec change rule-boards, "Views API and export").
+		// Every view representation carries on_drop and icon, null when unset
+		// (OpenSpec changes rule-boards, "Views API and export", and sidebar-polish).
 		for _, e := range list {
-			if _, has := e["on_drop"]; e != nil && !has {
-				e["on_drop"] = json.RawMessage("null")
+			for _, f := range []string{"on_drop", "icon"} {
+				if _, has := e[f]; e != nil && !has {
+					e[f] = json.RawMessage("null")
+				}
 			}
 		}
 		return nil
 	}
 	if entity != "project" || len(list) == 0 {
 		return nil
+	}
+	for _, e := range list {
+		defaultFlowMode(e)
+		defaultProjectStatus(e)
 	}
 	shared, err := s.sync.SharedProjects(ctx, userFrom(ctx).ID)
 	if err != nil || len(shared) == 0 {
@@ -259,4 +352,22 @@ func stripAnnotations(entity string, body map[string]json.RawMessage) {
 		delete(body, "role")
 		delete(body, "owner_id")
 	}
+}
+
+// memberTarget resolves an add by account id, for a project of a created
+// workspace, whose directory the dialog lists (an id elsewhere is answered as
+// an unknown account, so ids cannot probe for accounts).
+func (s *Server) memberTarget(r *http.Request, userID string) (*auth.User, error) {
+	closed, err := s.sync.InClosedWorkspace(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return nil, err
+	}
+	if !closed {
+		return nil, auth.ErrNotFound
+	}
+	u, err := s.auth.UserByID(r.Context(), userID)
+	if err != nil || u == nil {
+		return nil, auth.ErrNotFound
+	}
+	return u, nil
 }

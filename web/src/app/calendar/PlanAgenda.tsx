@@ -2,7 +2,7 @@
 // listed vertically, each with its date, capacity bar, event rows, task rows and
 // projected rows; no columns and no drag. Tapping a selected row opens the detail
 // panel as a sheet, where the date is changed, as in the Week's agenda.
-import { dateLocaleOf } from '../../lib/dates'
+import { formatDateParts } from '../../lib/dates'
 import { t } from '../../lib/i18n'
 import { Button } from '../../ui'
 import type { PlanRowProps } from '../PlanView'
@@ -19,14 +19,13 @@ export function PlanAgenda({ days, today, dayLength, eventHue, onAdd, rowProps }
   return (
     <div className="space-y-3 py-2" data-plan-agenda>
       {days.map((day) => {
-        const [y, m, d] = day.date.split('-').map(Number)
-        const name = new Intl.DateTimeFormat(dateLocaleOf(), { weekday: 'long', day: 'numeric', month: 'short' }).format(new Date(y, m - 1, d))
-        const empty = day.entries.length === 0 && day.events.length === 0 && day.allDay.length === 0
+        const name = formatDateParts(day.date, { weekday: 'long', day: 'numeric', month: 'short' })
+        const empty = day.entries.length === 0 && day.events.length === 0 && day.allDay.length === 0 && !day.deadlines?.length
         return (
           <section key={day.date} data-agenda-day={day.date} aria-labelledby={`plan-${day.date}`}>
             <div className="border-b border-default px-1 pb-1">
               <h2 id={`plan-${day.date}`} className={`text-body font-semibold ${day.date === today ? 'text-accent' : 'text-strong'}`}>{name}</h2>
-              <CapacityBar load={day.load} dayLength={dayLength} eventHue={eventHue} />
+              <CapacityBar load={day.load} dayLength={dayLength} eventHue={eventHue} hidden={day.hidden} />
             </div>
             {empty
               // One quiet line per empty day (not an empty-view landmark: fourteen of them would repeat one name).

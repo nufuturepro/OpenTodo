@@ -15,7 +15,7 @@ An import never writes anything until you've seen what it will do, and it can be
 
 ## Import from another app
 
-Open **Settings → Data**, select **Import data…** (or press <kbd>g</kbd> then <kbd>Shift</kbd>+<kbd>I</kbd>) and choose a file. OpenTodo accepts:
+Open **Settings → Data**, select **Import data** (or press <kbd>g</kbd> then <kbd>Shift</kbd>+<kbd>I</kbd>) and choose a file. OpenTodo accepts:
 
 - an **OpenTodo export**, for moving to another server or restoring (the ZIP export brings its attached files too),
 - a **CSV file**, from a spreadsheet or a script, with a `title` column and optional columns for project, due date, priority, labels and more,
@@ -24,7 +24,7 @@ Open **Settings → Data**, select **Import data…** (or press <kbd>g</kbd> the
 Nothing is written straight away. OpenTodo first shows a preview:
 
 1. **Check the format** it detected. You can change it if it guessed wrong.
-2. **Choose the options**: which project gets tasks that have none, the time zone for dates, whether sections stay sections or become labels, and what to do with possible duplicates and with rows that have errors.
+2. **Choose the options**: with more than one workspace, the **Workspace** the import goes into (it starts with the one you have open, and the preview names it, such as "12 new projects into Work"; for an OpenTodo export it starts with **As in the export**), which project gets tasks that have none, the time zone for dates, whether sections stay sections or become labels, and what to do with possible duplicates and with rows that have errors.
 3. **Read the preview table.** Each row says what will happen: created, updated, skipped (with the reason) or an error (with the reason). Problems are listed first.
 4. **Import.** The import runs on the server, and the tasks reach all your devices on their next sync.
 
@@ -32,7 +32,7 @@ Recurring rules, reminders, subtasks, sections and completed tasks come across w
 
 ## Duplicates
 
-Importing the same file twice won't double your tasks. OpenTodo recognises rows it imported before, and flags tasks that look like ones you already have (same title, project and due date). Those are skipped unless you choose **Import them anyway**.
+Importing the same file twice won't double your tasks. OpenTodo recognises rows it imported before (by id, or by content without one), and flags tasks that look like ones you already have (same title, project and due date). Those are skipped unless you choose **Import them anyway**.
 
 For an OpenTodo export, items that already exist on the server are kept as they are, unless you choose to overwrite changed fields.
 

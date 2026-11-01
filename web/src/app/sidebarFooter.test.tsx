@@ -5,9 +5,11 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
-import { resetDeviceId } from '../lib/ops'
+import { applyOps, createTask, resetDeviceId } from '../lib/ops'
+import { setCurrentUserId } from '../lib/sharing'
+import { startTracking } from '../lib/timeEntries'
 import type { User } from '../lib/types'
-import { click, flush, key, render, spokenText, type, waitFor } from '../ui/test-utils'
+import { click, key, render, spokenText, type, waitFor } from '../ui/test-utils'
 import { resetPanel } from './panel'
 import { navigate } from './router'
 import { Shell } from './Shell'
@@ -26,7 +28,7 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
   history.replaceState(null, '', '/')
 })
-afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals(); resetPanel() })
+afterEach(() => { vi.unstubAllGlobals(); resetPanel() })
 
 const account = (root: ParentNode = document) => root.querySelector<HTMLButtonElement>('[data-account-menu]')!
 const items = () => [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')]
@@ -34,7 +36,7 @@ const items = () => [...document.querySelectorAll<HTMLElement>('[role="menu"] [r
 describe('one footer row', () => {
   it('Footer names: the account menu button is the name; each icon has its name; the menu items carry their shortcuts', async () => {
     const r = await render(<SidebarFooter route={{ view: 'inbox' }} user={user} collapsed={false} onShortcuts={() => {}} onAssistant={() => {}} onToggleCollapse={() => {}} onSignOut={() => {}} />)
-    await flush(50)
+    await waitFor(() => !!r.container.querySelector('[data-footer-icons]'), 'the footer')
     const row = r.container.querySelector('[data-footer-icons]')!
     expect(r.container.querySelectorAll('[data-footer-icons]')).toHaveLength(1)
     expect(account(row).getAttribute('aria-label')).toBeNull()
@@ -44,7 +46,8 @@ describe('one footer row', () => {
     expect(names[0]).toBe('Assistant')
     expect(names[1]).toBe('Notifications')
     expect(names[2]).toMatch(/^(Synced|Offline|Syncing)/)
-    expect(names[3]).toBe('Collapse sidebar')
+    // The toggle is in the page header now (precision-shell D2).
+    expect(names).toHaveLength(3)
     await click(account(row))
     await waitFor(() => items().length > 0)
     expect(items().map((b) => b.getAttribute('data-menu-label'))).toEqual(['Settings', 'Help', 'Keyboard shortcuts', 'Sign out'])
@@ -65,7 +68,7 @@ describe('one footer row', () => {
 
   it('Narrow sidebar: a long name truncates, every icon button stays at least 32 px, nothing wraps', async () => {
     const r = await render(<div style={{ width: '15rem' }}><SidebarFooter route={{ view: 'inbox' }} user={long} collapsed={false} onAssistant={() => {}} onToggleCollapse={() => {}} /></div>)
-    await flush(50)
+    await waitFor(() => !!r.container.querySelector('[data-footer-icons]'), 'the footer')
     const row = r.container.querySelector('[data-footer-icons]')!
     expect(row.className).not.toContain('flex-wrap')
     expect(row.className).not.toContain('flex-col')
@@ -77,7 +80,7 @@ describe('one footer row', () => {
 
   it('the icon rail stacks the avatar, the bell, the sync dot, Search and collapse; the name is the tooltip', async () => {
     const r = await render(<SidebarFooter route={{ view: 'inbox' }} user={user} collapsed onSearch={() => {}} onToggleCollapse={() => {}} />)
-    await flush(50)
+    await waitFor(() => !!r.container.querySelector('[data-footer-icons] [data-palette-button]'), 'the rail footer')
     const row = r.container.querySelector('[data-footer-icons]')!
     expect(row.className).toContain('flex-col')
     expect(account(row).getAttribute('aria-label')).toBe('Account menu for Ada')
@@ -99,7 +102,7 @@ describe('Help and sign out from the account menu', () => {
     expect(account().getAttribute('aria-current')).toBe('page')
     navigate({ view: 'inbox' })
     await waitFor(() => location.pathname !== '/help')
-    await flush(50)
+    await waitFor(() => account().getAttribute('aria-current') === null, 'the Inbox, Help no longer current')
     ;(document.activeElement as HTMLElement | null)?.blur()
     await key(document.body, 'g')
     await key(document.body, '?', { shiftKey: true })
@@ -109,7 +112,7 @@ describe('Help and sign out from the account menu', () => {
     await click(document.querySelector<HTMLElement>('[data-palette-button]')!)
     const input = await (async () => { await waitFor(() => !!document.querySelector('[role="dialog"] input')); return document.querySelector<HTMLInputElement>('[role="dialog"] input')! })()
     await type(input, 'Open Help')
-    await flush(50)
+    await waitFor(() => !!document.querySelector('[role="dialog"] [role="option"][aria-selected="true"]')?.textContent?.includes('Help'), 'Open Help first in the palette')
     await key(input, 'Enter')
     await waitFor(() => location.pathname === '/help')
     await r.unmount()
@@ -118,7 +121,7 @@ describe('Help and sign out from the account menu', () => {
   it('Sign out from the sidebar: the confirmation opens on Cancel, Escape returns to the account control, confirming signs out', async () => {
     const out = vi.fn()
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} onSignOut={out} />)
-    await flush(50)
+    await waitFor(() => !!account(r.container), 'the account control')
     await click(account(r.container))
     await waitFor(() => items().length > 0)
     await click(document.querySelector<HTMLElement>('[data-sign-out-button]')!)
@@ -136,6 +139,61 @@ describe('Help and sign out from the account menu', () => {
     const confirm = [...document.querySelectorAll<HTMLButtonElement>('[data-testid="confirm-dialog"] button')].find((b) => b.textContent === 'Sign out')!
     await click(confirm)
     await waitFor(() => out.mock.calls.length === 1)
+    await r.unmount()
+  })
+})
+
+// sidebar-v2 D6: the running entry is a pill in the footer's one row, in place of the name.
+describe('the running pill', () => {
+  const rows = (root: ParentNode) => [...root.querySelector('[data-sidebar-footer]')!.children].filter((c) => !c.classList.contains('sr-only'))
+  const start = async () => {
+    await setCurrentUserId('u1')
+    const id = await createTask({ title: 'Write the report' })
+    return startTracking(id, { now: Date.now() - 65 * 60000 })
+  }
+
+  it('Pill in the row: one row in both states, "Tracking 1:05 · Write the report" and "Stop", the menu named by the person', async () => {
+    const r = await render(<SidebarFooter route={{ view: 'inbox' }} user={user} collapsed={false} onToggleCollapse={() => {}} />)
+    await waitFor(() => !!r.container.querySelector('[data-footer-icons]'), 'the footer')
+    expect(rows(r.container)).toHaveLength(1)
+    const height = account(r.container).className.match(/\bmin-h-\S+/g)
+    await start()
+    await waitFor(() => !!r.container.querySelector('[data-tracking-indicator]'))
+    expect(rows(r.container)).toHaveLength(1)
+    const row = r.container.querySelector('[data-footer-icons]')!
+    expect(row.contains(r.container.querySelector('[data-tracking-indicator]'))).toBe(true)
+    expect(r.container.querySelector('[data-tracking-open]')!.getAttribute('aria-label')).toBe('Tracking 1:05 · Write the report')
+    expect(r.container.querySelector('[data-tracking-stop]')!.getAttribute('aria-label')).toBe('Stop')
+    // The pill takes the name's place; the menu keeps the person's name and its height.
+    expect(account(row).querySelector('.truncate')).toBeNull()
+    expect(account(row).getAttribute('aria-label')).toBe('Ada')
+    expect(account(row).className.match(/\bmin-h-\S+/g)).toEqual(height)
+    expect(r.container.querySelector('[data-tracking-open]')!.className).toContain('min-h-8')
+    await r.unmount()
+  })
+
+  it('Rail: the time alone, the title in its tooltip, Open and Stop in a menu', async () => {
+    await start()
+    const r = await render(<SidebarFooter route={{ view: 'inbox' }} user={user} collapsed />)
+    await waitFor(() => !!r.container.querySelector('[data-tracking-open]'))
+    const pill = r.container.querySelector<HTMLButtonElement>('[data-tracking-open]')!
+    expect(pill.textContent).toBe('1:05')
+    expect(pill.getAttribute('aria-label')).toBe('Tracking 1:05 · Write the report')
+    await click(pill)
+    await waitFor(() => items().length > 0)
+    expect(items().map((b) => b.getAttribute('data-menu-label'))).toEqual(['Open the tracked task', 'Stop'])
+    await r.unmount()
+  })
+
+  it('Stopped on another device: the pill leaves on sync without a reload and the name returns', async () => {
+    const entry = await start()
+    const r = await render(<SidebarFooter route={{ view: 'inbox' }} user={user} collapsed={false} />)
+    await waitFor(() => !!r.container.querySelector('[data-tracking-indicator]'))
+    expect(account(r.container).querySelector('.truncate')).toBeNull()
+    await applyOps([{ id: 'remote-stop', entity: 'time_entry', entityId: entry, field: 'ended_at', value: Date.now(), ts: Date.now() + 10_000_000, device: 'phone' }])
+    await waitFor(() => !r.container.querySelector('[data-tracking-indicator]'))
+    expect(account(r.container).querySelector('.truncate')?.textContent).toBe('Ada')
+    expect(spokenText(account(r.container))).toBe('Ada')
     await r.unmount()
   })
 })

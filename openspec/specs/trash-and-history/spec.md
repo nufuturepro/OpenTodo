@@ -58,7 +58,7 @@ When the last open task of a project with at least one task is completed, the cl
 - **THEN** no project is archived automatically from this device while other devices keep their own setting
 
 ### Requirement: Revision history
-The API SHALL expose `GET /api/v1/tasks/{id}/history` and `GET /api/v1/projects/{id}/history`, requiring authentication, returning the entity's operations ordered by timestamp with field, value, timestamp and device, including operations that lost under last-writer-wins. The client SHALL show this as a list of versions in the History tab of the detail panel, newest first; when offline it SHALL state that history needs a connection and show nothing stale.
+The API SHALL expose `GET /api/v1/tasks/{id}/history` and `GET /api/v1/projects/{id}/history`, requiring authentication, returning the entity's operations ordered by timestamp with field, value, timestamp and device, including operations that lost under last-writer-wins, except the superseded note versions that compaction removed (OpenSpec `op-log-compaction`): for edits received more than 30 days ago the note keeps one revision per calendar day in UTC. The client SHALL show this as a list of versions in the History tab of the detail panel, newest first, and above the first note revision older than 30 days it SHALL say in one muted line that older note versions are kept one per day (UTC); when offline it SHALL state that history needs a connection and show nothing stale.
 
 #### Scenario: Timeline of changes
 - **WHEN** a task was created on a laptop, retitled on a phone and rescheduled through the API, and the user opens its history online
@@ -76,6 +76,10 @@ The API SHALL expose `GET /api/v1/tasks/{id}/history` and `GET /api/v1/projects/
 - **WHEN** the user opens the History tab without a network
 - **THEN** the tab states that history needs a connection to the server and lists no versions
 
+#### Scenario: Thinned note history
+- **WHEN** a task's note was edited 40 times on 2 September and 5 times yesterday, compaction ran, and the user opens the task's history
+- **THEN** 2 September shows one note revision, the line saying older note versions are kept one per day (UTC) is shown once above the older revisions, and yesterday shows all 5
+
 ### Requirement: Restore a previous value
 From the history timeline the user SHALL be able to restore an earlier value of a field, written as a new operation with the current time, so it applies locally at once, is recorded in the history and converges like any other edit. Restoring SHALL never remove operations from the log. The user SHALL also be able to restore a whole version: one such operation for each restorable field the version changed, after one confirmation listing those fields.
 
@@ -92,7 +96,7 @@ From the history timeline the user SHALL be able to restore an earlier value of 
 - **THEN** both devices end with the title written with the greater timestamp, and the restored due date is kept
 
 ### Requirement: Permanent purge
-The user SHALL be able to permanently delete one trashed item or empty the Trash, after confirmation. The API SHALL expose `DELETE /api/v1/{tasks|projects}/{id}/purge` and `POST /api/v1/trash/purge`, requiring authentication, accepting only entities whose deletion time is set, removing their operations and current values, and recording a purge marker. Purging a project SHALL purge the tasks referencing it. Purging a task SHALL purge its attachments and delete their stored files.
+The user SHALL be able to permanently delete one trashed item or empty the Trash, after confirmation. The API SHALL expose `DELETE /api/v1/{tasks|projects}/{id}/purge` and `POST /api/v1/trash/purge`, requiring authentication, accepting only entities whose deletion time is set, removing their operations and current values, and recording a purge marker. Purging a project SHALL purge the tasks referencing it. Purging a task SHALL purge its attachments and delete their stored files, and SHALL purge its time entries with markers, so they leave every device, total and export.
 
 #### Scenario: Purge one task
 - **WHEN** the user permanently deletes a trashed task and confirms
@@ -110,6 +114,10 @@ The user SHALL be able to permanently delete one trashed item or empty the Trash
 - **WHEN** a trashed task with three attachments is purged
 - **THEN** the three attachments are purged with markers, their files are deleted from the data directory, the account's usage drops accordingly, and devices drop the attachments on their next sync
 
+#### Scenario: Time entries go with the task
+- **WHEN** a trashed task with four time entries, one of them another member's, is purged
+- **THEN** the four entries are purged with markers, the purge counts report `timeEntries: 4`, the entries are absent from the export and the CSV, and devices drop them on their next sync
+
 ### Requirement: Purged entities never return
 A sync response SHALL include the ids of entities purged since the client's cursor, and clients SHALL delete those entities locally. Operations received for a purged entity SHALL be discarded by the server and reported as duplicates, so a device that edited the entity offline cannot resurrect it. Purge markers SHALL be kept so this holds for any later arrival. The client SHALL request a purge only when online and SHALL show it as pending otherwise.
 
@@ -122,11 +130,11 @@ A sync response SHALL include the ids of entities purged since the client's curs
 - **THEN** the server discards those operations, the task stays purged everywhere and device B's copy is removed
 
 ### Requirement: Automatic purge after retention
-The server SHALL permanently purge trashed tasks and projects, and removed attachments, whose deletion time is older than the retention period, by default 30 days, configurable with the optional `OPENTODO_TRASH_RETENTION_DAYS` variable where `0` disables automatic purge. The job SHALL run at startup and daily, SHALL use the same purge path and markers, SHALL delete the files of purged attachments, and the Trash view SHALL show each item's remaining days.
+The server SHALL permanently purge trashed tasks and projects, and removed attachments, whose deletion time is older than the retention period, by default 30 days, configurable with the optional `OPENTODO_TRASH_RETENTION_DAYS` variable where `0` disables automatic purge. The job SHALL run at startup and, while the server runs, within a minute of the oldest trashed item passing the retention; it SHALL use the same purge path and markers, SHALL delete the files of purged attachments, and the Trash view SHALL show each item's remaining days.
 
 #### Scenario: Default retention
 - **WHEN** a task has been in the Trash for 31 days with default configuration
-- **THEN** the next retention run purges it and devices drop it on their next sync
+- **THEN** it is purged within a minute of passing the retention and devices drop it on their next sync
 
 #### Scenario: Disabled retention
 - **WHEN** `OPENTODO_TRASH_RETENTION_DAYS=0` is set
@@ -138,7 +146,7 @@ The server SHALL permanently purge trashed tasks and projects, and removed attac
 
 #### Scenario: Removed attachment after retention
 - **WHEN** an attachment was removed 31 days ago with default configuration
-- **THEN** the next retention run purges its metadata with a marker and deletes its file, and a device that restores it offline afterwards has its operations discarded like any purged entity
+- **THEN** it is purged within a minute of passing the retention: its metadata with a marker and its file, and a device that restores it offline afterwards has its operations discarded like any purged entity
 
 ### Requirement: Assistant writes are labelled in history
 History entries whose device starts with `agent:` SHALL carry a `device_label`: "AI assistant (<token name>)" when the viewer owns the token and it still exists, otherwise "AI assistant". The timeline SHALL show that label. Labels are computed when history is read; no op changes, and history stays online-only as before.
@@ -217,4 +225,19 @@ History entries whose device starts with `public:` SHALL carry a `device_label`:
 
 #### Scenario: Unauthenticated history request
 - **WHEN** a request without credentials asks for the history of a task ticked through a public link
+- **THEN** the response is 401 `unauthorized`
+
+### Requirement: Rule writes are labelled in history
+History entries whose device starts with `rule:` SHALL carry a `device_label`: "Rule (<name>)" when the viewer owns the rule and it still exists (the name decrypted on the device for an encrypted account), otherwise "Rule". The timeline SHALL show that label with the viewer as the author. Labels are computed when history is read; no op changes, and history stays online-only as before. Restoring an earlier value from such an entry SHALL be an ordinary operation by the restoring device that converges like any edit.
+
+#### Scenario: Own rule named
+- **WHEN** the rule "Sunday sweep" rescheduled a task and its owner opens the task's history online
+- **THEN** the version is labelled "Rule (Sunday sweep)" with the old and new due dates
+
+#### Scenario: Deleted rule
+- **WHEN** the rule has been deleted since
+- **THEN** the version is labelled "Rule"
+
+#### Scenario: Unauthenticated history request
+- **WHEN** a request without credentials asks for the history of a task changed by a rule
 - **THEN** the response is 401 `unauthorized`

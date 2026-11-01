@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,19 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/calfeed"
-	ob "github.com/pixari/opentodo/internal/outbound"
-	"github.com/pixari/opentodo/internal/recurrence"
-	"github.com/pixari/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/calfeed"
+	ob "github.com/OpenTodoApp/opentodo/internal/outbound"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
 )
 
 // Calendar feeds (OpenSpec change calendar-feeds): subscriptions to other
 // calendars shown in Day and Week, and the user's tasks as a calendar feed. One
 // owner switch, off by default, governs both (design D1).
-
-const calendarFeedsSettingKey = "calendar_feeds.enabled"
 
 // Request limits (design D5, D7).
 const (
@@ -37,113 +32,39 @@ const (
 	maxSubscriptionNm = 200
 )
 
-// WithCalendarFeeds hands the server the worker that fetches subscriptions, so
-// inline fetches and the background job share one store and policy.
-func WithCalendarFeeds(w *calfeed.Worker) Option { return func(s *Server) { s.calWorker = w } }
-
 func (s *Server) registerCalendarFeedRoutes(mux *routes) {
-	if s.calWorker == nil {
-		allow := func(context.Context) bool { return false }
-		if s.hooks != nil {
-			allow = s.hooks.AllowPrivate
-		}
-		s.calWorker = &calfeed.Worker{Store: calfeed.NewStore(s.sync.DB()), Fetcher: calfeed.NewFetcher(allow, s.version), Log: s.log}
-	}
-	s.calWorker.Enabled = s.calendarFeedsEnabled
-	s.calWorker.Notify = s.sync.Notifier().NotifyCalendar
 	s.calFetchLimiter = newRateLimiter(handFetchesPerHr, time.Hour)
 	s.feedLimiter = newRateLimiter(feedFetchesPerHr, time.Hour)
-	s.seedCalendarFeeds(context.Background())
 
-	mux.handle("GET /api/v1/settings/calendar-feeds", signedIn.demoDenied(), s.handleGetCalendarFeedsSetting)
-	mux.handle("PUT /api/v1/settings/calendar-feeds", ownerOnly("manage the calendar feeds setting").demoDenied(), s.handlePutCalendarFeedsSetting)
-	mux.handle("GET /api/v1/calendar-feeds/subscriptions", signedIn.demoDenied(), s.feedsGate(s.handleListSubscriptions))
-	mux.handle("POST /api/v1/calendar-feeds/subscriptions", signedIn.demoDenied(), s.feedsGate(s.handleCreateSubscription))
-	mux.handle("PATCH /api/v1/calendar-feeds/subscriptions/{id}", signedIn.demoDenied(), s.feedsGate(s.handlePatchSubscription))
-	mux.handle("DELETE /api/v1/calendar-feeds/subscriptions/{id}", signedIn.demoDenied(), s.feedsGate(s.handleDeleteSubscription))
-	mux.handle("POST /api/v1/calendar-feeds/subscriptions/{id}/refresh", signedIn.demoDenied(), s.feedsGate(s.handleRefreshSubscription))
-	mux.handle("GET /api/v1/calendar-feeds/events", signedIn.demoDenied(), s.feedsGate(s.handleCalendarEvents))
-	mux.handle("GET /api/v1/calendar-feeds/feed", signedIn.demoDenied(), s.feedsGate(s.handleGetFeed))
-	mux.handle("POST /api/v1/calendar-feeds/feed", signedIn.recent().demoDenied(), s.feedsGate(s.handleRotateFeed))
-	mux.handle("DELETE /api/v1/calendar-feeds/feed", signedIn.demoDenied(), s.feedsGate(s.handleRevokeFeed))
-	mux.handle("GET /feeds/{secret}/tasks.ics", public("calendar apps authenticate with the secret in the address").demoDenied(), s.handleTaskFeed)
+	s.switchRoutes(mux, "/api/v1/settings/calendar-feeds", switchRoute{sw: s.calFeedsOn,
+		get: signedIn.DemoDenied(), put: ownerOnly("manage the calendar feeds setting").DemoDenied()})
+	mux.handle("GET /api/v1/calendar-feeds/subscriptions", signedIn.DemoDenied(), s.feedsGate(s.handleListSubscriptions))
+	mux.handle("POST /api/v1/calendar-feeds/subscriptions", signedIn.DemoDenied(), s.feedsGate(s.handleCreateSubscription))
+	mux.handle("PATCH /api/v1/calendar-feeds/subscriptions/{id}", signedIn.DemoDenied(), s.feedsGate(s.handlePatchSubscription))
+	mux.handle("DELETE /api/v1/calendar-feeds/subscriptions/{id}", signedIn.DemoDenied(), s.feedsGate(s.handleDeleteSubscription))
+	mux.handle("POST /api/v1/calendar-feeds/subscriptions/{id}/refresh", signedIn.DemoDenied(), s.feedsGate(s.handleRefreshSubscription))
+	mux.handle("GET /api/v1/calendar-feeds/events", signedIn.DemoDenied(), s.eventsGate(s.handleCalendarEvents))
+	mux.handle("GET /api/v1/calendar-feeds/feed", signedIn.DemoDenied(), s.feedsGate(s.handleGetFeed))
+	mux.handle("POST /api/v1/calendar-feeds/feed", signedIn.Recent().DemoDenied(), s.feedsGate(s.handleRotateFeed))
+	mux.handle("DELETE /api/v1/calendar-feeds/feed", signedIn.DemoDenied(), s.feedsGate(s.handleRevokeFeed))
+	mux.handle("GET /feeds/{secret}/tasks.ics", public("calendar apps authenticate with the secret in the address").DemoDenied(), s.handleTaskFeed)
 }
 
-// CalendarWorker is the background fetcher, run by the jobs leader.
-func (s *Server) CalendarWorker() *calfeed.Worker { return s.calWorker }
-
-// seedCalendarFeeds applies the OPENTODO_CALENDAR_FEEDS preset on first start only.
-func (s *Server) seedCalendarFeeds(ctx context.Context) {
-	if s.cfg.CalendarFeeds == nil {
-		return
-	}
-	if _, err := s.sync.DB().ExecContext(ctx, `INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)`,
-		calendarFeedsSettingKey, boolText(*s.cfg.CalendarFeeds), time.Now().UnixMilli()); err != nil {
-		s.log.Error("seed calendar feeds setting", "err", err)
-	}
-}
-
-// calendarFeedsEnabled reads the owner switch through the cache (never on a demo instance).
-func (s *Server) calendarFeedsEnabled(ctx context.Context) bool {
-	if s.demo != nil {
-		return false
-	}
-	switch s.calFeeds.v.Load() {
-	case 1:
-		return false
-	case 2:
-		return true
-	}
-	var on bool
-	if _, err := settings.New(s.sync.DB()).Get(ctx, calendarFeedsSettingKey, &on); err != nil {
-		s.log.Error("read calendar feeds setting", "err", err)
-		return false
-	}
-	s.setCalendarFeedsCache(on)
-	return on
-}
-
-func (s *Server) setCalendarFeedsCache(on bool) {
-	if on {
-		s.calFeeds.v.Store(2)
-	} else {
-		s.calFeeds.v.Store(1)
-	}
-}
-
-func (s *Server) handleGetCalendarFeedsSetting(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.calendarFeedsEnabled(r.Context())})
-}
-
-func (s *Server) handlePutCalendarFeedsSetting(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Enabled *bool `json:"enabled"`
-	}
-	if err := readJSON(r, &in); err != nil || in.Enabled == nil {
-		badBodyWith(w, err, "invalid_input", `body must be {"enabled": true|false}`)
-		return
-	}
-	before := s.calendarFeedsEnabled(r.Context())
-	if err := settings.New(s.sync.DB()).Set(r.Context(), calendarFeedsSettingKey, *in.Enabled); err != nil {
-		s.internal(w, err)
-		return
-	}
-	s.setCalendarFeedsCache(*in.Enabled)
-	if before != *in.Enabled {
-		s.audit.Record(r.Context(), audit.SettingsChanged(userFrom(r.Context()).ID, calendarFeedsSettingKey, boolText(before), boolText(*in.Enabled)))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": *in.Enabled})
-}
-
-// feedsGate answers 404 feeds_disabled while the owner switch is off.
-func (s *Server) feedsGate(next http.HandlerFunc) http.HandlerFunc {
+// eventsGate lets the events route answer while calendar feeds or calendar
+// sync is on (calendar-two-way D10), else 404 feeds_disabled.
+func (s *Server) eventsGate(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.calendarFeedsEnabled(r.Context()) {
+		if !s.calFeedsOn.On(r.Context()) && !s.calsyncOn.On(r.Context()) {
 			writeError(w, http.StatusNotFound, "feeds_disabled", "calendar feeds are not enabled")
 			return
 		}
 		next(w, r)
 	}
+}
+
+// feedsGate answers 404 feeds_disabled while the owner switch is off.
+func (s *Server) feedsGate(next http.HandlerFunc) http.HandlerFunc {
+	return switchGate(s.calFeedsOn, "feeds_disabled", "calendar feeds are not enabled")(next)
 }
 
 func (s *Server) handleListSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -224,11 +145,7 @@ func trimTo(p *string, n int) string {
 	if p == nil {
 		return ""
 	}
-	v := strings.TrimSpace(*p)
-	if len(v) > n {
-		v = v[:n]
-	}
-	return v
+	return textutil.Truncate(strings.TrimSpace(*p), n)
 }
 
 func (s *Server) handlePatchSubscription(w http.ResponseWriter, r *http.Request) {
@@ -318,15 +235,29 @@ func (s *Server) handleCalendarEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userFrom(r.Context()).ID
-	events, err := s.calWorker.Store.Events(r.Context(), uid, from, to)
+	// Connected calendars (calendar-two-way D10) are served while calendar sync
+	// is on, the user's subscriptions while calendar feeds are.
+	feeds, managed := s.calFeedsOn.On(r.Context()), s.calsyncOn.On(r.Context())
+	events, err := s.calWorker.Store.EventsOf(r.Context(), uid, from, to, feeds, managed)
 	if err != nil {
 		s.internal(w, err)
 		return
 	}
-	subs, err := s.calWorker.Store.List(r.Context(), uid)
-	if err != nil {
-		s.internal(w, err)
-		return
+	subs, own := []calfeed.Subscription{}, 0
+	if feeds {
+		if subs, err = s.calWorker.Store.List(r.Context(), uid); err != nil {
+			s.internal(w, err)
+			return
+		}
+		own = len(subs)
+	}
+	if managed {
+		more, err := s.calWorker.Store.Managed(r.Context(), uid)
+		if err != nil {
+			s.internal(w, err)
+			return
+		}
+		subs = append(subs, more...)
 	}
 	type subInfo struct {
 		ID            string `json:"id"`
@@ -334,10 +265,12 @@ func (s *Server) handleCalendarEvents(w http.ResponseWriter, r *http.Request) {
 		Color         string `json:"color"`
 		Enabled       bool   `json:"enabled"`
 		LastSuccessAt *int64 `json:"lastSuccessAt"`
+		// Managed is a calendar sync connection's calendar, not a subscription.
+		Managed bool `json:"managed,omitempty"`
 	}
 	info := []subInfo{}
-	for _, sub := range subs {
-		info = append(info, subInfo{sub.ID, sub.Name, sub.Color, sub.Enabled, sub.LastSuccessAt})
+	for i, sub := range subs {
+		info = append(info, subInfo{sub.ID, sub.Name, sub.Color, sub.Enabled, sub.LastSuccessAt, i >= own})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events, "subscriptions": info})
 }
@@ -400,7 +333,7 @@ func (s *Server) handleTaskFeed(w http.ResponseWriter, r *http.Request) {
 		s.davLimiter.allow("feed:" + ip)
 		writeError(w, http.StatusNotFound, "not_found", "no such feed")
 	}
-	if !s.calendarFeedsEnabled(r.Context()) {
+	if !s.calFeedsOn.On(r.Context()) {
 		notFound()
 		return
 	}
@@ -423,7 +356,7 @@ func (s *Server) handleTaskFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gen, _ := s.sync.Generation(ctx)
-	now := time.Now()
+	now := s.now()
 	etag := fmt.Sprintf(`W/"%s-%d-%s"`, gen, cursor, now.UTC().Format("20060102"))
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(feedCacheSeconds))
@@ -447,46 +380,5 @@ func (s *Server) handleTaskFeed(w http.ResponseWriter, r *http.Request) {
 
 // feedTasks lists the user's visible open tasks with a due date, like the CalDAV view.
 func (s *Server) feedTasks(r *http.Request, uid string) ([]calfeed.FeedTask, error) {
-	d := &davRequest{s: s, r: r, user: &auth.User{ID: uid}}
-	v, err := d.load()
-	if err != nil {
-		return nil, err
-	}
-	var out []calfeed.FeedTask
-	for _, t := range v.tasks {
-		if !isNullish(t["completed_at"]) {
-			continue
-		}
-		pid := idOf(t["project_id"])
-		if pid != "" && !v.calendarVisible(pid) {
-			continue
-		}
-		var due struct {
-			Date string  `json:"date"`
-			Time *string `json:"time"`
-			TZ   *string `json:"tz"`
-		}
-		if json.Unmarshal(t["due"], &due) != nil || due.Date == "" {
-			continue
-		}
-		id := idOf(t["id"])
-		ft := calfeed.FeedTask{ID: id, Title: idOf(t["title"]), Description: idOf(t["description"]), Date: due.Date, Time: due.Time, TZ: due.TZ, Modified: v.modified[id]}
-		_ = json.Unmarshal(t["estimate_minutes"], &ft.Estimate)
-		_ = json.Unmarshal(t["priority"], &ft.Priority)
-		var rule string
-		if json.Unmarshal(t["recurrence"], &rule) == nil && rule != "" {
-			if parsed, err := recurrence.Parse(rule); err == nil {
-				ft.RRULE = parsed.RRULE()
-			}
-		}
-		var labels []string
-		_ = json.Unmarshal(t["labels"], &labels)
-		for _, l := range labels {
-			if name, ok := v.labels[l]; ok && name != "" {
-				ft.Labels = append(ft.Labels, name)
-			}
-		}
-		out = append(out, ft)
-	}
-	return out, nil
+	return s.dav.FeedTasks(r, uid)
 }

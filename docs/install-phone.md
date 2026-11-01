@@ -3,7 +3,7 @@ title: Install on your phone
 summary: Add OpenTodo to the home screen of an iPhone, iPad or Android phone, step by step, so it opens full screen and can show reminders.
 audience: user
 section: Get started
-specs: []
+specs: [native-shells]
 screens: []
 order: 21
 ---
@@ -12,6 +12,8 @@ order: 21
 <picture><source srcset="images/mobile-today-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/mobile-today-light.webp" alt="OpenTodo installed on a phone, showing the Today list full screen without browser bars."></picture>
 
 Sign in once in the browser first, at your server's `https://` address; then add the app to your home screen. The general picture, and the steps for computers, are in [Installing the app](install-app.md).
+
+Once installed, the round **+** at the bottom right adds a task, and the menu button at the top left opens a drawer with your projects, labels and views.
 
 ## iPhone and iPad
 
@@ -32,3 +34,11 @@ Recent iOS versions also offer **Add to Home Screen** from the share menu of oth
 Chrome sometimes shows an install banner at the bottom of the screen on its own; tapping it does the same thing.
 
 After installing, OpenTodo also appears in Android's share menu, so you can send a link or some text from another app straight into a new task. See [Capturing pages](capture.md).
+
+## The Android app
+
+Instead of installing from the browser, you can install the **OpenTodo** app from Google Play or F-Droid and enter your server's address on its first screen. It works the same and adds reminders without a push service, sharing on phones without Google Play services, home-screen widgets and fingerprint unlock. See [The Android app](android-app.md).
+
+## The iOS app
+
+There is no OpenTodo app in the App Store: the licence and the store's terms conflict, so the app is built from source. With a Mac and Xcode you can build it, sign it for your own iPhone or iPad and open your server from it; it then appears in the share sheet and adds a Today widget, Face ID unlock of an encrypted account and reminders scheduled on the phone. See [The iOS app](ios-app.md).

@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// Ask composer on Today, the Ask screen and their availability (OpenSpec change
-// assistant-skills, tasks 3.3 and 3.4).
+// Ask on Today, the Assistant page and their availability (OpenSpec changes
+// assistant-skills, tasks 3.3 and 3.4, and assistant-surface).
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetSkills } from '../lib/assistantSkills'
-import { resetAssistantStatus, setAssistantStatus, takeAssistantPrefill, type AssistantStatus } from '../lib/assistantStatus'
+import { openAssistantWith, resetAssistantStatus, setAssistantStatus, takeAssistantPrefill, type AssistantStatus } from '../lib/assistantStatus'
 import { db } from '../lib/db'
 import type { User } from '../lib/types'
-import { click, flush, key, render } from '../ui/test-utils'
+import { click, flush, key, render, waitFor } from '../ui/test-utils'
 import { AskScreen, TodayAskAction } from './assistant/AskEntry'
 import { navigate, parseRoute } from './router'
 import { Shell } from './Shell'
@@ -30,13 +30,13 @@ beforeEach(async () => {
   resetAssistantStatus()
   resetSkills(SKILLS)
 })
-afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals() })
+afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Today action (ux-overhaul, in-app-assistant "Ask composer")', () => {
   it('shows one Ask action in the header when the assistant is available, and it opens the panel', async () => {
     setAssistantStatus(base)
     const r = await render(<TodayAskAction role="member" />)
-    await flush(10)
+    await waitFor(() => !!document.querySelector('[data-today-ask]'), 'the Ask action')
     const button = document.querySelector<HTMLButtonElement>('[data-today-ask]')!
     expect(button.textContent).toBe('Ask')
     expect(document.querySelector('[data-ask-composer]')).toBeNull()
@@ -49,12 +49,12 @@ describe('Today action (ux-overhaul, in-app-assistant "Ask composer")', () => {
   it('off: neither the owner nor a member sees a hint or a composer', async () => {
     setAssistantStatus(off)
     let r = await render(<TodayAskAction role="owner" />)
-    await flush(20)
+    await flush()
     expect(document.body.textContent).toBe('')
     expect(document.querySelector('[data-ask-hint]')).toBeNull()
     await r.unmount()
     r = await render(<TodayAskAction role="member" />)
-    await flush(20)
+    await flush()
     expect(document.body.textContent).toBe('')
     await r.unmount()
   })
@@ -62,7 +62,7 @@ describe('Today action (ux-overhaul, in-app-assistant "Ask composer")', () => {
   it('an encrypted account gets no Ask action on Today', async () => {
     setAssistantStatus(encrypted)
     const r = await render(<TodayAskAction role="owner" />)
-    await flush(20)
+    await flush()
     expect(document.querySelector('[data-today-ask]')).toBeNull()
     expect(document.querySelector('[data-ask-composer]')).toBeNull()
     await r.unmount()
@@ -70,20 +70,31 @@ describe('Today action (ux-overhaul, in-app-assistant "Ask composer")', () => {
 })
 
 describe('Ask screen (3.4)', () => {
-  it('lists every skill and "Use this skill" opens the panel with it', async () => {
+  it('is the conversation page: the greeting, the composer and the starter skills, and a starter fills the composer (assistant-surface)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
     setAssistantStatus(base)
-    const r = await render(<AskScreen role="member" />)
-    await flush(10)
-    expect(document.querySelectorAll('[aria-label="Skills"] li')).toHaveLength(3)
-    await click([...document.querySelectorAll('[data-ask-screen] button')].find((b) => b.textContent === 'Use this skill')!)
-    expect(takeAssistantPrefill()).toEqual({ text: '', skill: 'idea-to-project', send: false })
+    const r = await render(<AskScreen role="member" name="Ada Lovelace" />)
+    // The page is a lazy chunk, and the skill list arrives after it.
+    await waitFor(() => document.querySelectorAll('[data-assistant-starter]').length > 0, 'the starters')
+    expect(document.querySelector('[data-assistant-page]')).not.toBeNull()
+    expect(document.querySelector('[data-assistant-empty] h2')!.textContent).toMatch(/^Good (morning|afternoon|evening), Ada\.What should we sort out\?$/)
+    // The starters follow the fixed order and skip skills the server does not offer.
+    expect([...document.querySelectorAll('[data-assistant-starter]')].map((b) => b.getAttribute('data-assistant-starter'))).toEqual(['plan-week', 'idea-to-project'])
+    await click(document.querySelector<HTMLButtonElement>('[data-assistant-starter="plan-week"]')!)
+    await waitFor(() => !!document.querySelector('[data-assistant-chosen]'), 'the chosen skill')
+    expect(document.querySelector('[data-assistant-chosen]')!.textContent).toContain('Skill: Plan my week.')
+    // Hidden on this device once dismissed.
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Hide the skill suggestions"]')!)
+    expect(document.querySelector('[data-assistant-starters]')).toBeNull()
+    expect(localStorage.getItem('opentodo.assistant.startersHidden')).toBe('1')
+    localStorage.clear()
     await r.unmount()
   })
 
   it('explains an encrypted account and shows no composer', async () => {
     setAssistantStatus(encrypted)
     const r = await render(<AskScreen role="member" />)
-    await flush(10)
+    await waitFor(() => !!document.querySelector('[data-ask-unavailable]'), 'the explanation')
     expect(document.querySelector('[data-ask-unavailable]')!.textContent).toContain('can’t read end-to-end encrypted tasks')
     expect(document.querySelector('[data-ask-composer]')).toBeNull()
     await r.unmount()
@@ -96,18 +107,22 @@ describe('Ask screen (3.4)', () => {
     const user = { id: 'u1', email: 'a@example.com', name: 'Ada', role: 'member', created_at: 0 } as unknown as User
     navigate({ view: 'inbox' })
     const r = await render(<Shell user={user} onLogout={() => {}} />)
-    await flush(30)
+    await waitFor(() => !!document.querySelector('[data-testid="sidebar-more"]'), 'the sidebar')
     // The sidebar's More group lists Ask while the assistant is available.
     const moreGroup = document.querySelector('[data-testid="sidebar-more"]')!
     expect(moreGroup).not.toBeNull()
     await click(moreGroup.querySelector('button[aria-expanded]')!)
-    await flush(10)
+    await waitFor(() => !!moreGroup.querySelector('[data-destination="ask"]'), 'Ask in the More group')
     expect(moreGroup.querySelector('[data-destination="ask"]')).not.toBeNull()
     await key(document.body, 'g')
     await key(document.body, 'k')
-    await flush(30)
-    expect(document.querySelector('[data-ask-screen]')).toBeTruthy()
-    expect(document.activeElement?.hasAttribute('data-ask-input')).toBe(true)
+    await waitFor(() => !!document.activeElement?.hasAttribute('data-assistant-composer'), 'focus in the page composer')
+    expect(document.querySelector('[data-assistant-page]')).toBeTruthy()
+    // On the page, opening the assistant (Shift+I, Ask) opens no sheet: the page is the conversation.
+    openAssistantWith({ text: 'What is due?' })
+    await waitFor(() => document.querySelector<HTMLTextAreaElement>('[data-assistant-page] [data-assistant-composer]')?.value === 'What is due?', 'the request in the page composer')
+    await flush()
+    expect(document.querySelector('[data-assistant-panel]')).toBeNull()
     await r.unmount()
   })
 })

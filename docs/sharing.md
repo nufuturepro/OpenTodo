@@ -12,7 +12,7 @@ card: comments
 
 <picture><source srcset="images/share-dialog-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/share-dialog-light.webp" alt="The Share dialog for Home renovation: an email field, a role menu set to editor, and the member list with the owner and one editor."></picture>
 
-Share a project with people who have an account on the same OpenTodo server: your partner for the house move, your team for a launch. Everyone sees the same tasks, edits sync within seconds, and each task has a comment thread.
+Share a project with people who have an account on the same OpenTodo server: your partner for the house move, a [workspace](workspaces.md) team. Everyone sees the same tasks, edits sync within seconds, and each task has a comment thread.
 
 ## Share a project
 
@@ -20,7 +20,7 @@ Share a project with people who have an account on the same OpenTodo server: you
 2. Type the person's email address.
 3. Pick a role and select **Share**.
 
-The project appears on their devices the next time they sync, with all its tasks. Shared projects show a people icon in the sidebar.
+It reaches their devices at their next sync, with its tasks; new contacts [accept first](roles-and-assignments.md#when-someone-is-asked-first). Shared projects show a people icon in the sidebar.
 
 Email works only for people with an account on your server; anyone else gets an invite link (next section).
 
@@ -30,7 +30,7 @@ An invite link adds one person to the project, with or without an account. In **
 
 ### Who can bring new people
 
-A link creates a new account only when its creator is the owner or an admin of the server, open sign-up is on, or the server owner switched on **Invite new people** (**Settings → People → Project invite links**). See [Who can bring new people](invite-people.md#who-can-bring-new-people).
+A link creates an account only when its creator is the server's owner or admin, open sign-up is on, or the server owner switched on **Invite new people** (**Settings → People → Access policies → Project invite links**). See [Who can bring new people](invite-people.md#who-can-bring-new-people).
 
 ## Share with a public link
 
@@ -42,7 +42,7 @@ Viewers see the project and comment, editors also change tasks and the project's
 
 ## Invite someone new
 
-Sign-up is closed by default. An invite link is the quickest way in; the owner or an admin of the server can also create a server invitation under **Settings → People → Members**. See [Invite people](invite-people.md#invite-someone-new).
+Sign-up is closed by default. An invite link is the quickest way in; the owner or an admin of the server can also create a server invitation under **Settings → People → Users and invitations**. See [Invite people](invite-people.md#invite-someone-new).
 
 ## Leave or hand over a project
 

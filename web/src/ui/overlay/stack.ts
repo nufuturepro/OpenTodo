@@ -3,14 +3,15 @@
 // page behind, and focus capture / restore. Kept free of React so it is unit-tested
 // with plain objects.
 import { useSyncExternalStore } from 'react'
+import { createSignal } from '../../lib/store'
 
 interface Entry { id: number; onEscape: () => void }
 const stack: Entry[] = []
 let nextId = 1
 let listening = false
 // Who wants to know when a sheet opens or closes (the phone tab bar hides meanwhile).
-const depthListeners = new Set<() => void>()
-const notifyDepth = () => depthListeners.forEach((fn) => fn())
+const depth = createSignal()
+const notifyDepth = depth.notify
 
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || e.isComposing) return
@@ -56,7 +57,7 @@ export function overlayDepth(): number {
 
 /** How many overlays are open, live (app-shell "Phone navigation": the tab bar and the add button hide while a sheet is open). */
 export function useOverlayDepth(): number {
-  return useSyncExternalStore((fn) => { depthListeners.add(fn); return () => { depthListeners.delete(fn) } }, overlayDepth, () => 0)
+  return useSyncExternalStore(depth.subscribe, overlayDepth, () => 0)
 }
 
 // ------------------------------------------------------------------ scroll lock
@@ -148,7 +149,7 @@ export function trapTab(e: KeyboardEvent | React.KeyboardEvent, panel: HTMLEleme
 
 // ------------------------------------------------------------------ viewport
 
-const WIDE = '(min-width: 640px)'
+const WIDE = '(min-width: 40rem)'
 const FINE = '(pointer: fine)'
 const subscribers = new Map<string, (cb: () => void) => () => void>()
 function mediaSubscriber(query: string) {

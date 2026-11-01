@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import { Button, Field, Input, Notice } from '../ui'
+import { InstanceMark, InstanceWordmark } from './InstanceBrand'
 import { api, ApiError, isNetworkError } from '../lib/api'
 import { formatInstant } from '../lib/dates'
 import { useOnline } from '../lib/online'
@@ -18,8 +19,8 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
     <div className="flex min-h-full items-center justify-center bg-canvas p-6">
       <div className="w-full max-w-sm space-y-3 rounded-card border border-default bg-surface p-6 shadow-1">
         <div className="flex items-center gap-3">
-          <img src="/favicon.svg" alt="" className="h-9 w-9" />
-          <p className="text-h3 font-semibold">{t('OpenTaskKit')}</p>
+          <InstanceMark size={32} />
+          <p className="text-h3 font-semibold"><InstanceWordmark /></p>
         </div>
         <h1 className="text-body font-medium text-strong">{title}</h1>
         {children}
@@ -62,7 +63,7 @@ export function ForgotScreen({ enabled, user }: { enabled: boolean; user: User |
     return (
       <Card title={t('You are signed in')}>
         <p className="text-meta text-muted">{t('Change your password in Settings → Account → Password. To reset the password of another account, sign out first.')}</p>
-        <Button variant="secondary" onClick={() => navigate({ view: 'settings', section: 'account', anchor: 'security' })}>{t('Open Account settings')}</Button>
+        <Button variant="secondary" onClick={() => navigate({ view: 'settings', section: 'account', page: 'security' })}>{t('Open Account settings')}</Button>
       </Card>
     )
   }
@@ -248,4 +249,54 @@ export function VerifyView({ state, user, busy, online, onCreate, onRetry, onLog
         </Card>
       )
   }
+}
+
+/** The message for a refused email confirmation. */
+function confirmEmailError(err: unknown): string {
+  if (isNetworkError(err)) return t('Confirming needs a connection.')
+  if (err instanceof ApiError && err.code === 'forbidden') return t('This link belongs to another account. Sign in to that account and open it again.')
+  if (err instanceof ApiError && err.code === 'invalid_token') return t('This link is not valid any more. Ask for a new one.')
+  return (err as Error).message
+}
+
+/**
+ * /confirm-email/<token> (OpenSpec change settings-refresh, account-profile
+ * "Changing the email"): the link sent to a new address. Signed in, the button
+ * applies the change for this account; the server refuses another account's link.
+ */
+export function ConfirmEmailScreen({ token, onDone }: { token: string; onDone: () => void }) {
+  const online = useOnline()
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      setDone((await api.confirmEmail(token)).user.email)
+      onDone()
+    } catch (err) {
+      setError(confirmEmailError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (done) {
+    return (
+      <Card title={t('Email changed')}>
+        <p className="text-meta text-muted">{t('You now sign in with {email}.', { email: done })}</p>
+        <Button variant="primary" onClick={() => navigate({ view: 'settings', section: 'account' }, { replace: true })}>{t('Open Settings')}</Button>
+      </Card>
+    )
+  }
+  return (
+    <Card title={t('Confirm your new email')}>
+      <p className="text-meta text-muted">{t('Use this address to sign in from now on.')}</p>
+      {error && <Notice tone="danger">{error}</Notice>}
+      <div className="flex gap-2">
+        <Button variant="primary" busy={busy} disabled={!online} onClick={() => void confirm()} data-confirm-email>{t('Confirm email')}</Button>
+        <Button variant="secondary" onClick={() => navigate({ view: 'inbox' }, { replace: true })}>{t('Back to my tasks')}</Button>
+      </div>
+    </Card>
+  )
 }

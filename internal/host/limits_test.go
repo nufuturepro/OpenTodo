@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/config"
 )
 
 func rejected(out map[string]any) map[string]string {
@@ -119,6 +119,35 @@ func TestRequestLimit(t *testing.T) {
 	}
 }
 
+// TestRequestLimitPerClient (hosted-demo-limits): one client over the rate,
+// signed in or not, does not lock out the tenant's other clients.
+func TestRequestLimitPerClient(t *testing.T) {
+	f := newFixture(t, nil)
+	f.create("busy", config.Limits{RequestsPerMinute: 3})
+	c := f.client("busy")
+	from := func(addr string) int {
+		req := c.request("GET", "/healthz", nil)
+		req.Header.Set("X-Forwarded-For", addr)
+		resp, err := c.send(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 0; i < 3; i++ {
+		if code := from("198.51.100.7"); code != http.StatusOK {
+			t.Fatalf("request %d: %d", i, code)
+		}
+	}
+	if code := from("198.51.100.7"); code != http.StatusTooManyRequests {
+		t.Fatalf("flooding client: %d", code)
+	}
+	if code := from("203.0.113.20"); code != http.StatusOK {
+		t.Fatalf("another client of the same tenant: %d", code)
+	}
+}
+
 // TestImportLimit (5.1): an import above the tenant's size answers 413
 // limit_import.
 func TestImportLimit(t *testing.T) {
@@ -141,6 +170,39 @@ func TestImportLimit(t *testing.T) {
 	b.ReadFrom(resp.Body)
 	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(b.String(), "limit_import") {
 		t.Fatalf("import: %d %s", resp.StatusCode, b.String())
+	}
+}
+
+// TestCompactionLowersOperationTotal (op-log-compaction 2.3): a tenant at its
+// operation limit writes again once compaction removed old note versions,
+// without being reopened.
+func TestCompactionLowersOperationTotal(t *testing.T) {
+	f := newFixture(t, nil)
+	c := f.client("notes")
+	c.register("notes@example.com", f.create("notes", config.Limits{OpsTotal: 6}))
+	now := time.Now().UnixMilli()
+	var notes []any
+	for i := 0; i < 4; i++ {
+		notes = append(notes, map[string]any{"id": fmt.Sprintf("n%d", i), "entity": "task", "entityId": "t0", "field": "notes_doc",
+			"value": "ydoc:v1:" + strings.Repeat("QUJD", i+1), "ts": now + int64(i), "device": "dev"})
+	}
+	if got := rejected(c.sync("dev", append(taskOps("t0", "Note"), notes...))); len(got) != 0 {
+		t.Fatalf("first batch: %v", got)
+	}
+	if got := rejected(c.sync("dev", taskOps("t1", "Full"))); len(got) != 2 {
+		t.Fatalf("at the limit: %v", got)
+	}
+	tn, release, err := f.h.pool.acquire(context.Background(), "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := tn.Sync.CompactNotes(context.Background(), time.Now().Add(31*24*time.Hour), 0, time.Hour)
+	release()
+	if err != nil || res.OpsRemoved != 3 {
+		t.Fatalf("compaction: %+v, %v", res, err)
+	}
+	if got := rejected(c.sync("dev", taskOps("t1", "Room"))); len(got) != 0 {
+		t.Fatalf("after compaction: %v", got)
 	}
 }
 

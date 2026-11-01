@@ -25,39 +25,67 @@ function changes(files) {
 
 // path(s) → expected outputs of scripts/ci-changes.sh
 const table = [
-  [['internal/sync/ops.go'], { code: 'true', docs: 'false' }],
-  [['web/src/app/App.tsx'], { code: 'true', docs: 'false' }],
-  [['go.sum'], { code: 'true', docs: 'false' }],
-  [['Dockerfile'], { code: 'true', docs: 'false' }],
-  [['.github/workflows/ci.yml'], { code: 'true', docs: 'false' }],
-  [['skills/opentodo-cli/SKILL.md'], { code: 'true', docs: 'false' }],
-  [['skills/skills.go'], { code: 'true', docs: 'false' }],
-  [['deploy/coolify/opentodo.yaml'], { code: 'true', docs: 'false' }],
-  [['scripts/deploy/casaos.mjs'], { code: 'true', docs: 'false' }],
-  [['scripts/deploy-check.mjs'], { code: 'true', docs: 'false' }],
-  [['scripts/ci-changes.sh'], { code: 'true', docs: 'false' }],
-  [['scripts/repo-checks.test.mjs'], { code: 'true', docs: 'false' }],
-  [['docker-compose.yml'], { code: 'true', docs: 'false' }],
-  [['scripts/coolify-template-check.mjs'], { code: 'true', docs: 'false' }],
-  [['scripts/e2e-views.mjs'], { code: 'true', docs: 'false' }],
-  [['.github/dependabot.yml'], { code: 'true', docs: 'false' }],
-  [['.dockerignore'], { code: 'true', docs: 'false' }],
-  [['templates/trip-planning/template.yaml'], { code: 'true', docs: 'false' }],
-  [['scripts/templates-check.mjs'], { code: 'true', docs: 'false' }],
-  [['docs/self-hosting/docker.md'], { code: 'false', docs: 'true' }],
-  [['web/src/generated/help.json'], { code: 'false', docs: 'true' }],
-  [['README.md'], { code: 'false', docs: 'true' }],
-  [['CHANGELOG.md'], { code: 'false', docs: 'true' }],
-  [['openspec/changes/x/proposal.md'], { code: 'false', docs: 'true' }],
-  [['docs/api.md', 'web/src/generated/help.json'], { code: 'false', docs: 'true' }],
-  [['docs/api.md', 'internal/httpapi/router.go'], { code: 'true', docs: 'true' }],
-  [['skill/README.md'], { code: 'false', docs: 'false' }],
-  [['LICENSE'], { code: 'false', docs: 'false' }],
+  [['internal/sync/ops.go'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['web/src/app/App.tsx'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['go.sum'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['Dockerfile'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['.github/workflows/ci.yml'], { code: 'true', docs: 'false', mobile: 'true', ios: 'true' }],
+  [['skills/opentodo-cli/SKILL.md'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['skills/skills.go'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['deploy/coolify/opentodo.yaml'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/deploy/casaos.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/deploy-check.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/release/prepare.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/ci-changes.sh'], { code: 'true', docs: 'false', mobile: 'true', ios: 'true' }],
+  [['scripts/repo-checks.test.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['docker-compose.yml'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/coolify-template-check.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/e2e-views.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/e2e-offline.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['.github/dependabot.yml'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['.dockerignore'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['templates/trip-planning/template.yaml'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['scripts/templates-check.mjs'], { code: 'true', docs: 'false', mobile: 'false' }],
+  [['docs/self-hosting/docker.md'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['web/src/generated/help.json'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['README.md'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['CHANGELOG.md'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['openspec/changes/x/proposal.md'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['docs/api.md', 'web/src/generated/help.json'], { code: 'false', docs: 'true', mobile: 'false' }],
+  [['docs/api.md', 'internal/httpapi/router.go'], { code: 'true', docs: 'true', mobile: 'false' }],
+  [['skill/README.md'], { code: 'false', docs: 'false', mobile: 'false' }],
+  [['LICENSE'], { code: 'false', docs: 'false', mobile: 'false' }],
+  [['mobile/android/app/src/main/java/app/opentodo/Bridge.kt'], { code: 'false', docs: 'false', mobile: 'true', ios: 'false' }],
+  [['mobile/README.md', 'mobile/android/app/build.gradle.kts'], { code: 'false', docs: 'false', mobile: 'true', ios: 'false' }],
+  [['mobile/android/store/permissions.txt', 'internal/httpapi/router.go'], { code: 'true', docs: 'false', mobile: 'true' }],
+  [['mobile/ios/OpenTodo/Bridge.swift'], { code: 'false', docs: 'false', mobile: 'false', ios: 'true' }],
+  [['mobile/ios/project.yml', 'mobile/android/app/build.gradle.kts'], { code: 'false', docs: 'false', mobile: 'true', ios: 'true' }],
+  [['mobile/README.md'], { code: 'false', docs: 'false', mobile: 'false', ios: 'false' }],
 ]
 
-for (const [files, want] of table) {
-  test(`ci-changes: ${files.join(' + ')}`, () => {
-    assert.deepEqual(changes(files), want)
+// The tier outputs (ci-speed): which pull request jobs a change runs.
+const tiers = [
+  [['web/src/app/App.tsx'], { ui: 'true', layout: 'true', extension: 'false', skill: 'false' }],
+  [['web/src/ui/Button.stories.tsx'], { ui: 'true', layout: 'true' }],
+  [['web/src/lib/sync.ts'], { ui: 'true', layout: 'true' }],
+  [['web/vitest.contract.config.ts'], { ui: 'false', layout: 'true' }],
+  [['internal/sync/ops.go'], { ui: 'false', layout: 'true', extension: 'false', skill: 'false' }],
+  [['internal/store/migrations/0099_x.sql'], { ui: 'false', layout: 'true' }],
+  [['scripts/ui-check/a11y.mjs'], { ui: 'true', layout: 'false' }],
+  [['scripts/e2e-smoke.mjs'], { ui: 'false', layout: 'true' }],
+  [['deploy/coolify/opentodo.yaml'], { ui: 'false', layout: 'false', extension: 'false', skill: 'false' }],
+  [['extension/popup.js'], { ui: 'false', layout: 'false', extension: 'true', skill: 'false' }],
+  [['skills/opentodo-cli/SKILL.md'], { ui: 'false', layout: 'false', extension: 'false', skill: 'true' }],
+  [['docs/api.md'], { code: 'false', docs: 'true', ui: 'false', layout: 'false', extension: 'false', skill: 'false' }],
+  [['openspec/changes/x/proposal.md'], { code: 'false', docs: 'true', ui: 'false', layout: 'false' }],
+  [['web/src/generated/help.json'], { code: 'false', ui: 'false', layout: 'false' }],
+  [['.github/workflows/ci.yml'], { ui: 'true', layout: 'true', extension: 'true', skill: 'true', mobile: 'true', ios: 'true' }],
+]
+
+const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k]]))
+for (const [files, want] of [...table, ...tiers]) {
+  test(`ci-changes: ${files.join(' + ')} → ${Object.keys(want).join(',')}`, () => {
+    assert.deepEqual(pick(changes(files), Object.keys(want)), want)
   })
 }
 
@@ -155,6 +183,44 @@ test('every action is pinned to a full commit SHA with its release in a comment'
   }
 })
 
+// Supply chain (2026-10 audit, wave 2): an expression pasted into a script is
+// shell code when it expands to attacker-chosen text (a branch name, a PR
+// title), so run steps read such values from env: instead.
+test('no ${{ }} expression inside a run step', () => {
+  for (const f of workflowFiles()) {
+    const lines = read(f).split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^(\s*)(- )?run:\s*(.*)$/)
+      if (!m) continue
+      const indent = m[1].length + (m[2] ? 2 : 0)
+      const block = [[i, m[3]]]
+      if (/^[|>]-?$/.test(m[3].trim())) {
+        for (let j = i + 1; j < lines.length && (lines[j].trim() === '' || lines[j].length - lines[j].trimStart().length > indent); j++) block.push([j, lines[j]])
+      }
+      for (const [n, text] of block) assert.ok(!text.includes('${{'), `${f}:${n + 1}: move the expression into env: (${text.trim()})`)
+    }
+  }
+})
+
+test('Dependabot waits a cooldown before proposing a release', () => {
+  const entries = read('.github/dependabot.yml').split(/\n(?=  - package-ecosystem: )/).slice(1)
+  assert.ok(entries.length >= 5)
+  for (const e of entries) {
+    const eco = e.match(/package-ecosystem: (\S+)/)[1]
+    assert.match(e, /\n {4}cooldown:\n {6}default-days: ([7-9]|[1-9]\d)\n/, `${eco}: cooldown of at least 7 days`)
+  }
+})
+
+test('CodeQL (Go and TypeScript) and a pinned gosec run on every pull request', () => {
+  const sec = read('.github/workflows/security.yml')
+  assert.match(sec, /^ {2}pull_request:/m)
+  assert.match(sec, /language: go\n/)
+  assert.match(sec, /language: javascript-typescript\n/)
+  assert.match(sec, /run: make gosec-sarif/)
+  assert.match(read('Makefile'), /^GOSEC_VERSION := v\d+\.\d+\.\d+$/m, 'gosec runs at one exact version')
+  assert.match(read('web/.npmrc'), /^min-release-age=\d+$/m, 'npm installs only releases older than a few days')
+})
+
 test('every workflow has a concurrency group and every job a timeout', () => {
   for (const f of workflowFiles()) {
     const text = read(f)
@@ -184,17 +250,44 @@ test('base and job images are pinned by digest', () => {
   }
 })
 
+// The runner's apt mirror sometimes serves a job at a few kB/s, so no job installs
+// browsers or their system packages: every job that uses Playwright runs in the pinned
+// Playwright image, and every Playwright package is the Makefile's PLAYWRIGHT_VERSION.
+test('Playwright jobs run in the pinned image at one version', () => {
+  const version = read('Makefile').match(/^PLAYWRIGHT_VERSION := (\S+)$/m)?.[1]
+  assert.ok(version, 'Makefile sets PLAYWRIGHT_VERSION')
+  const files = [...workflowFiles(), 'Makefile', 'scripts/README.md', 'docs/design-system.md']
+  for (const f of files) {
+    for (const [, v] of read(f).matchAll(/playwright(?:\/test)?@(\d[\w.-]*)/g)) {
+      assert.equal(v, version, `${f}: Playwright ${v} must be the Makefile's PLAYWRIGHT_VERSION`)
+    }
+  }
+  for (const f of workflowFiles()) {
+    for (const [id, block] of Object.entries(jobsOf(read(f)))) {
+      assert.doesNotMatch(block, /playwright install|--with-deps/, `${f}: job ${id} must not install browsers or apt packages`)
+      if (/playwright(?:\/test)?@/.test(block)) {
+        assert.match(block, /^ {4}container: mcr\.microsoft\.com\/playwright:/m, `${f}: job ${id} uses Playwright, so it runs in the pinned Playwright image`)
+      }
+    }
+  }
+})
+
 test('the image, stable tag and release are published only after every gate', () => {
   const jobs = jobsOf(read('.github/workflows/ci.yml'))
-  const publishing = ['docker', 'release']
+  // claude-plugin publishes the Claude Code marketplace after the release (claude-plugin D5).
+  const publishing = ['docker', 'release', 'claude-plugin']
   for (const p of publishing) assert.ok(jobs[p], `ci.yml has a ${p} job`)
+  assert.deepEqual(needsOf(jobs['claude-plugin']), ['release'], 'the plugin is published only after the release')
   const gates = Object.keys(jobs).filter((j) => !publishing.includes(j))
   for (const g of gates) {
     assert.ok(needsOf(jobs.docker).includes(g), `the docker (publish) job must need ${g}`)
     assert.ok(needsOf(jobs.release).includes(g), `the release job must need ${g}`)
   }
   assert.ok(needsOf(jobs.release).includes('docker'), 'the release waits for the image')
-  assert.match(jobs.docker, /^ {4}if: github\.event_name != 'pull_request'$/m, 'pull requests never publish')
+  // Pull requests never publish; a gate skipped by the pull request tier never blocks
+  // publishing, a failed or cancelled one always does (ci-speed).
+  assert.match(jobs.docker, /^ {4}if: \$\{\{ !cancelled\(\) && !failure\(\) && github\.event_name != 'pull_request' \}\}$/m, 'pull requests never publish, and a failed gate stops publishing')
+  assert.match(jobs.release, /^ {4}if: \$\{\{ !cancelled\(\) && !failure\(\) && startsWith\(github\.ref, 'refs\/tags\/v'\) \}\}$/m, 'a failed gate stops the release')
   assert.match(jobs.docker, /type=raw,value=stable,/, 'stable moves only in the gated publish job')
 })
 
@@ -270,12 +363,36 @@ test('the OpenSpec CLI runs at one exact version', () => {
 
 test('browser end-to-end checks run in CI and the race detector nightly', () => {
   const jobs = jobsOf(read('.github/workflows/ci.yml'))
-  assert.match(jobs.layout, /run: make e2e$/m, 'the layout job runs make e2e')
-  const e2e = read('Makefile').match(/^e2e:[^\n]*\n((?:\t.*\n)+)/m)?.[1] ?? ''
-  assert.match(e2e, /e2e-smoke e2e-views/, 'make e2e runs the two-device and saved-view scripts')
+  // CI's image has no make, so the layout job runs what `make e2e` runs.
+  assert.match(jobs.layout, /^ {10}scripts\/e2e\.sh$/m, 'the layout job runs scripts/e2e.sh')
+  assert.match(read('Makefile'), /^e2e: cli\n\tscripts\/e2e\.sh$/m, 'make e2e builds bin/ot and runs scripts/e2e.sh')
+  assert.match(read('scripts/e2e.sh'), /e2e-smoke e2e-views e2e-offline/, 'scripts/e2e.sh runs the two-device, saved-view and offline-start scripts')
+  // The built service worker and manifest tests run after the build, where they cannot skip.
+  const build = jobsOf(read('.github/workflows/ci.yml'))['web-build'] ?? ''
+  assert.ok(build.indexOf('run: npm run test:built') > build.indexOf('run: npm run build'), 'the web-build job runs npm run test:built after npm run build')
+  // The report-only interface audit runs nightly and on demand, off every critical path (ci-speed).
+  const audit = read('.github/workflows/ux-audit.yml')
+  assert.match(audit, /^ {2}schedule:\n {4}- cron: /m, 'the interface audit runs nightly')
+  assert.match(audit, /^ {2}workflow_dispatch:$/m, 'the interface audit runs on demand')
+  assert.match(audit, /run: node scripts\/ux-audit\/tour\.mjs$/m)
+  assert.ok(!jobsOf(read('.github/workflows/ci.yml'))['ux-audit'], 'the push run does not wait for the interface audit')
   const nightly = read('.github/workflows/nightly.yml')
   assert.match(nightly, /^ {2}schedule:\n {4}- cron: /m)
   assert.match(nightly, /go test -race /)
+  assert.match(nightly, /run: scripts\/fuzz\.sh /, 'the fuzz targets run nightly')
+  // A red night opens or updates the ci-nightly issue; a green one closes it.
+  const alert = jobsOf(nightly).alert ?? ''
+  assert.match(alert, /^ {4}if: \$\{\{ always\(\) /m, 'the nightly alert runs whatever the other jobs did')
+  assert.match(alert, /^ {6}issues: write$/m, 'the nightly alert may write issues')
+  assert.match(alert, /run: \.\/scripts\/nightly-alert\.sh$/m)
+  for (const id of Object.keys(jobsOf(nightly))) {
+    if (id !== 'alert') assert.ok(needsOf(alert).includes(id), `the nightly alert must need ${id}`)
+  }
+})
+
+test('the sync client contract tests run against the built server', () => {
+  const server = jobsOf(read('.github/workflows/ci.yml')).server ?? ''
+  assert.ok(server.indexOf('run: npm run test:contract') > server.indexOf('-o bin/opentodo ./cmd/opentodo'), 'the server job runs npm run test:contract after building bin/opentodo')
 })
 
 test('Dependabot keeps every pinned ecosystem current', () => {
@@ -293,7 +410,7 @@ test('sensitive paths have a code owner and SECURITY.md names private reporting'
   for (const p of ['/.github/', '/Dockerfile', '/internal/auth/', '/internal/httpapi/', '/internal/e2ee/', '/internal/store/migrations/']) {
     assert.match(owners, new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}\\s+@pixari$`, 'm'), `CODEOWNERS covers ${p}`)
   }
-  assert.match(read('SECURITY.md'), /https:\/\/github\.com\/pixari\/opentodo\/security\/advisories\/new/)
+  assert.match(read('SECURITY.md'), /https:\/\/github\.com\/OpenTodoApp\/OpenTodo\/security\/advisories\/new/)
 })
 
 /** Paths the .dockerignore excludes (the subset of its syntax we use: names, dir/, *.ext at the root, !negation). */

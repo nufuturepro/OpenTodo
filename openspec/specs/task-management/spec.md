@@ -6,11 +6,11 @@ Defines the task entity and its lifecycle: capture, editing of its fields, prior
 ## Requirements
 
 ### Requirement: Task fields
-A task SHALL have a title, description, optional project, priority 1 (highest) to 4 (lowest, default), optional due date, labels, optional assignee, sort position, creation time, optional completion and deletion times, and an optional opaque `ical_extra` text of calendar properties the app does not model. Fields without an interface yet SHALL still be stored and synced. Every field SHALL be editable offline and converge by per-field last-writer-wins.
+A task SHALL have a title, description, optional project, priority 1 (highest) to 4 (lowest, default), optional due date, labels, optional assignee, sort position, creation time, optional completion and deletion times, an optional opaque `ical_extra` text of calendar properties the app does not model, and an additive `workspace_id` that places a task without a project in a workspace's Inbox (absent or null means the default workspace; ignored while the task has a project, whose workspace it then follows). Fields without an interface yet SHALL still be stored and synced. Every field SHALL be editable offline and converge by per-field last-writer-wins.
 
 #### Scenario: Default values on creation
 - **WHEN** a task is created with only a title
-- **THEN** it has priority 4, no project (Inbox), no due date, no assignee, empty description and labels, no `ical_extra`, and is neither completed nor deleted
+- **THEN** it has priority 4, no project (the Inbox of the workspace it was created in), no due date, no assignee, empty description and labels, no `ical_extra`, and is neither completed nor deleted
 
 #### Scenario: Invalid field values
 - **WHEN** a client submits a priority outside 1 to 4, a non-string title, or a due date that is not `YYYY-MM-DD` with an optional `HH:MM` time
@@ -19,6 +19,14 @@ A task SHALL have a title, description, optional project, priority 1 (highest) t
 #### Scenario: Opaque field survives offline edits
 - **WHEN** a task carries `ical_extra` and a device edits the task's title while offline, then syncs
 - **THEN** the task keeps its `ical_extra` value and the new title on every device
+
+#### Scenario: Workspace of a task with a project
+- **WHEN** a task carries `workspace_id` of "Personal" and is in the project "Website" of "Work"
+- **THEN** every view treats it as a task of Work, and no client rewrites its `workspace_id`
+
+#### Scenario: Invalid workspace value
+- **WHEN** a client submits a `workspace_id` that is not a string or null
+- **THEN** the write is rejected as invalid and the task is unchanged
 
 ### Requirement: Custom field values of a task
 A task SHALL have a `fields` map of custom field values keyed by definition id (OpenSpec `custom-fields`), empty on creation. Every entry SHALL be its own field: editable offline and converging by per-field last-writer-wins. An entry that is an object or an array SHALL be rejected as invalid.
@@ -70,7 +78,7 @@ The client SHALL offer a single-line quick-add input in every task view that cre
 - **THEN** the input is cleared, all chips are gone and focus remains in the input
 
 ### Requirement: Edit task fields
-The user SHALL be able to change a task's title, description, project, priority, due date and due time from a detail panel. Each change SHALL be applied locally at once and recorded as an operation for sync.
+The user SHALL be able to change a task's title, description, project, priority, due date and due time from the task page (see `web-app` "Task page"). Each change SHALL be applied locally at once and recorded as an operation for sync.
 
 #### Scenario: Change priority with the keyboard
 - **WHEN** a task is selected in a list and the user presses `1`, `2`, `3` or `4`
@@ -273,7 +281,7 @@ A task SHALL record in `completed_by` the account id of whoever completed it, or
 - **THEN** every device shows the same `completed_at` and the `completed_by` written in the same batch as it
 
 ### Requirement: Task origin
-A task SHALL have an optional `origin`: where it came from, as one value `{kind, provider?, id?, url?, title?}` with `kind` one of `url`, `email`, `issue`, `import`. The default SHALL be none. It SHALL be stored, synced and converge by last-writer-wins as one whole value, like `due`: two devices that set it concurrently end with one of the two origins on every device, never a mix. It SHALL be set and removed offline and survive edits to any other field.
+A task SHALL have an optional `origin`: where it came from, as one value `{kind, provider?, id?, url?, title?}` with `kind` one of `url`, `email`, `issue`, `import`. The default SHALL be none. It SHALL be stored, synced and converge by last-writer-wins as one whole value, like `due`: two devices that set it concurrently end with one of the two origins on every device, never a mix. It SHALL be set and removed offline and survive edits to any other field. An `email` origin MAY carry a `url` and a `provider` when it comes from a message open in a web mail client (`gmail`, `outlook`): it then opens that message, while an `email` origin without a `url` (email to task) has no link to open.
 
 #### Scenario: Default on creation
 - **WHEN** a task is created with only a title
@@ -286,6 +294,14 @@ A task SHALL have an optional `origin`: where it came from, as one value `{kind,
 #### Scenario: Origin survives other edits
 - **WHEN** a task with an origin is retitled and rescheduled on another device while this one is offline, then both sync
 - **THEN** the task keeps its origin and takes the new title and date on every device
+
+#### Scenario: Web mail origin
+- **WHEN** a task carries `{kind: "email", provider: "gmail", id: "18f2c3", url: "https://mail.google.com/mail/u/0/#inbox/18f2c3", title: "Boiler service quote"}`
+- **THEN** every device shows an origin chip reading "Gmail" with the title as its tooltip that opens the message in a new tab, and `origin: gmail` lists the task in a filter
+
+#### Scenario: Email origin without a link
+- **WHEN** a task carries `{kind: "email", id: "<a1@mail.example>"}`
+- **THEN** the chip reads "Email" and has no link to open, as before
 
 ### Requirement: Origin validation
 The sync and API write paths SHALL accept an origin only when `kind` is from the closed list, `url` (when present) is an `http` or `https` URL with a host, `provider` (when present) is 1 to 32 lower-case letters, digits or hyphens, and no other member is present. Anything else SHALL be refused as invalid and change nothing.
@@ -324,3 +340,14 @@ An origin's `url` SHALL be at most 2048, `id` at most 512 and `title` at most 50
 #### Scenario: Ciphertext accepted
 - **WHEN** an encrypted account's device submits `origin: "enc:v1:…"`
 - **THEN** the write is accepted and served unchanged
+
+### Requirement: Origin links open only http(s)
+The app SHALL make a task's origin chip a link, and open it from any command, only when the origin's URL as the device reads it, after any decryption, is `http` or `https`. Any other URL SHALL show the chip without a link. The server validates plaintext origins, but cannot check an encrypted one. This needs no connection and changes nothing that syncs.
+
+#### Scenario: Encrypted origin with an unsafe scheme
+- **WHEN** an encrypted account's task origin decrypts on the device to `javascript:alert(1)`
+- **THEN** the chip shows without a link and activating it opens nothing
+
+#### Scenario: Ordinary link
+- **WHEN** a task's origin is `{kind: "url", url: "https://example.com/page"}`
+- **THEN** the chip links to `https://example.com/page` in a new tab without referrer

@@ -17,15 +17,19 @@ Tick tasks, then act on all of them in one go.
 
 - **Keyboard:** press <kbd>x</kbd> (or <kbd>Space</kbd>) to tick the selected task, <kbd>Shift</kbd>+<kbd>↓</kbd> or <kbd>Shift</kbd>+<kbd>↑</kbd> to extend the range, and <kbd>Ctrl</kbd>+<kbd>A</kbd> (<kbd>⌘</kbd>+<kbd>A</kbd>) to tick the whole list once something is ticked. <kbd>Esc</kbd> clears the ticks (after closing the panel).
 - **Mouse:** <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+click a task to tick it without opening it, Shift+click to tick a range. Once a task is ticked, every row shows a checkbox in place of its circle until the selection is cleared; otherwise the circle always completes the task.
-- **Touch:** tap **Select** above the list to show every checkbox, and **Done** when you are finished.
+- **Touch:** press and hold a task to tick it and show every checkbox, or choose **Select tasks** in the page menu; tap **Done** in the bar to hide the boxes. Hold a ticked task and move to drag the selection.
 
 ## Choose an action
 
-While tasks are ticked, a bar above the list says how many and offers **Actions** (or press <kbd>.</kbd>): complete or reopen, priority, labels (added to all, or removed from all), a date (today, tomorrow, next week, none, or one you pick), move to a project or section, assign, and move to the Trash. The usual keys work on the whole selection too: <kbd>c</kbd>, <kbd>1</kbd> to <kbd>4</kbd>, <kbd>L</kbd>, <kbd>Shift</kbd>+<kbd>A</kbd> and <kbd>Delete</kbd>. With nothing ticked, <kbd>.</kbd> opens the same menu for the selected task. It works in projects, the Inbox, Today, Upcoming, the Filter view and saved views, also offline.
+While tasks are ticked, a bar above the list says how many and offers **Actions** (or press <kbd>.</kbd>): complete or reopen, priority, labels (added to all, or removed from all), a date (today, tomorrow, next week, none, or one you pick), move to a project or section, assign, and move to the Trash. The usual keys work on the whole selection too: <kbd>c</kbd>, <kbd>1</kbd> to <kbd>4</kbd>, <kbd>L</kbd>, <kbd>Shift</kbd>+<kbd>A</kbd> and <kbd>Delete</kbd>. With nothing ticked, <kbd>.</kbd> opens the same menu for the selected task. With one task ticked, **Actions** is that task's full menu, including **Start tracking** and **Start focus** ([Focus](focus.md)): on a phone, hold the task, then tap **Actions**. The hold vibrates only while haptic feedback is on. It works in projects, the Inbox, Today, Upcoming, the Filter view and saved views, also offline.
 
 ## Preview and undo
 
-Moving and assigning show the changes first, task by task, because they can change who sees a task or notify someone: <kbd>Enter</kbd> applies the checked ones, <kbd>Esc</kbd> changes nothing. Everything else applies at once, and a notice with **Undo** stays for ten seconds (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> works too). Undo puts every task back in one step, except a task someone changed again since, which keeps the newer value and is named. See also [Undo a bulk action](trash-and-history.md#undo-a-bulk-action).
+Moving and assigning show the changes first, task by task, because they can change who sees a task or notify someone: <kbd>Enter</kbd> applies the checked ones, <kbd>Esc</kbd> changes nothing. Everything else applies at once, and a notice with **Undo** stays for ten seconds (<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> works too). Undo puts every task back in one step, except a task someone changed again since, which keeps the newer value and is named; the notice then says what came back and leaves after five seconds. Its **×** button, or <kbd>Esc</kbd> while it has focus, closes it sooner. See also [Undo a bulk action](trash-and-history.md#undo-a-bulk-action).
+
+## A whole group at once
+
+Today's **Earlier** group has two actions in its header: **Move all to today** and **Reschedule…** (today, tomorrow, next week or a day you pick). They change every task of the group as one batch, with the same Undo, and leave your ticked tasks alone. A task you can only view is left as it is and counted ("3 of 4 tasks moved to today"). The palette offers both as **Move earlier tasks to today** and **Reschedule earlier tasks…**.
 
 ## Drop on the sidebar
 

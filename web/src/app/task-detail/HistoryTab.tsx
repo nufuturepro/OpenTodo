@@ -3,20 +3,19 @@
 // field changes"): change sets from the server's op log as versions with a summary,
 // readable diffs and restore. Read live from the server; offline it says so and
 // shows nothing stale. Loaded lazily with its tab.
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Skeleton } from '../../ui'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { isNetworkError } from '../../lib/api'
 import { zoneCity } from '../../lib/dates'
 import { useAllLabels, useMemberships, useReferenceNames } from '../../lib/localData'
 import { canRestoreField, deviceLabel, fetchHistory, fieldLabel, formatValue, parentRefs, restoreValue } from '../../lib/history'
-import { summarizeVersion, toVersions, type Version, type VersionChange } from '../../lib/historyVersions'
+import { firstDailyNoteVersion, summarizeVersion, toVersions, type Version, type VersionChange } from '../../lib/historyVersions'
 import { useOnline } from '../../lib/online'
 import { getDeviceId } from '../../lib/ops'
-import { currentUserId, memberName } from '../../lib/sharing'
+import { memberName, useMe } from '../../lib/sharing'
 import { syncNow } from '../../lib/sync'
 import type { ChangeSet, Label } from '../../lib/types'
-import { Avatar } from '../../ui'
+import { PersonAvatar } from '../PersonAvatar'
 import { Button } from '../../ui'
 import { Badge } from '../../ui'
 import { Icon } from '../../ui'
@@ -27,6 +26,7 @@ import { useDateTimeFormat } from '../DateTimePrefsProvider'
 import { useFieldDefs } from '../useFields'
 import { RelativeTime } from './RelativeTime'
 import { t, msg, translatedMap, currentLanguage } from '../../lib/i18n'
+import { messageOf } from '../../lib/errorText'
 
 const PRIORITY_HUE: Record<number, HueName> = { 1: 'red', 2: 'orange', 3: 'blue', 4: 'slate' }
 const EMPTY_REF = translatedMap<string>({ project_id: msg('Inbox'), parent_id: msg('No parent'), section_id: msg('No section'), assignee_id: msg('Unassigned') })
@@ -109,7 +109,7 @@ function VersionItem({ v, props }: { v: Version; props: HistoryViewProps }) {
   return (
     <div data-version={v.id}>
       <div className="flex items-start gap-3">
-        <Avatar id={who.id || 'unknown'} name={who.name || who.device} size="md" />
+        <PersonAvatar id={who.id || 'unknown'} name={who.name || who.device} size="md" />
         <div className="min-w-0 flex-1">
           <button type="button" aria-expanded={open} onClick={() => setOpen((x) => !x)}
             className="inline-flex max-w-full items-start gap-1 rounded-chip text-left text-body font-medium text-default hover:underline focus-visible:outline-2 focus-visible:outline-focus">
@@ -167,6 +167,7 @@ function VersionItem({ v, props }: { v: Version; props: HistoryViewProps }) {
 
 export function HistoryView(props: HistoryViewProps) {
   const { state, versions, canLoadOlder, onLoadOlder, message } = props
+  const daily = firstDailyNoteVersion(versions, props.now ?? Date.now())
   if (state === 'offline') return <EmptyState icon="history" title={t('History needs a connection to the server')} body={t('The history is read from the server; reconnect to see it.')} />
   if (state === 'empty') return <EmptyState icon="history" title={t('No history on the server yet')} body={t('Changes appear here once this task has synced.')} />
   return (
@@ -176,7 +177,12 @@ export function HistoryView(props: HistoryViewProps) {
       {message && <p role="status" className="text-meta text-success">{message}</p>}
       {versions.length > 0 && (
         <ol className="space-y-4" aria-label={t('Versions')}>
-          {versions.map((v) => <li key={v.id}><VersionItem v={v} props={props} /></li>)}
+          {versions.map((v) => (
+            <li key={v.id}>
+              {v === daily && <p className="mb-3 text-meta text-faint" data-testid="history-notes-daily">{t('Older note versions are kept one per day (UTC).')}</p>}
+              <VersionItem v={v} props={props} />
+            </li>
+          ))}
         </ol>
       )}
       {canLoadOlder && <Button variant="ghost" size="sm" onClick={onLoadOlder}>{t('Older changes')}</Button>}
@@ -201,7 +207,7 @@ export function HistoryTab({ taskId, readOnly, onRestored }: HistoryTabProps) {
   const [state, setState] = useState<HistoryViewProps['state']>('idle')
   const [device, setDevice] = useState('')
   const [message, setMessage] = useState<string | null>(null)
-  const me = useLiveQuery(() => currentUserId(), [], null)
+  const me = useMe()
   const memberships = useMemberships()
   const labelRows = useAllLabels()
   const labels = useMemo(() => new Map(labelRows.map((l) => [l.id, l])), [labelRows])
@@ -259,7 +265,7 @@ export function HistoryTab({ taskId, readOnly, onRestored }: HistoryTabProps) {
       const id = await restoreValue('task', taskId, field, value)
       await afterRestore(id, changeLabel(field).toLowerCase())
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
+      setMessage(messageOf(err))
     }
   }
 

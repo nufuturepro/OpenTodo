@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
 )
 
 // App passwords (OpenSpec change `caldav`, design D2) are CalDAV-only
@@ -37,7 +37,7 @@ func (s *Service) CreateAppPassword(ctx context.Context, userID, name string) (*
 		name = "Calendar app"
 	}
 	plain := AppPasswordPrefix + ids.Secret(32)
-	p := &AppPassword{ID: ids.New(), Name: truncate(name, 100), CreatedAt: time.Now().UnixMilli()}
+	p := &AppPassword{ID: ids.New(), Name: textutil.Truncate(name, 100), CreatedAt: s.clock().UnixMilli()}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, "", err
@@ -91,7 +91,7 @@ func (s *Service) RevokeAppPassword(ctx context.Context, userID, id string) erro
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE app_passwords SET revoked_at = ? WHERE id = ?`, time.Now().UnixMilli(), id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE app_passwords SET revoked_at = ? WHERE id = ?`, s.clock().UnixMilli(), id); err != nil {
 		return err
 	}
 	if err := s.audit.RecordTx(ctx, tx, audit.AppPasswordRevoked(userID, id, name)); err != nil {
@@ -125,7 +125,7 @@ func (s *Service) UserByAppPassword(ctx context.Context, email, secret string) (
 	if normalizeEmail(email) != u.Email {
 		return nil, "", ErrNotFound
 	}
-	if now := time.Now().UnixMilli(); lastUseStale(lastUsed, now) {
+	if now := s.clock().UnixMilli(); lastUseStale(lastUsed, now) {
 		_, _ = s.db.ExecContext(ctx, `UPDATE app_passwords SET last_used_at = ? WHERE id = ?`, now, id)
 	}
 	return &u, id, nil

@@ -1,11 +1,13 @@
 // node --test scripts/deploy/render.test.mjs  (OpenSpec change platform-catalogs)
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { configVariables, loadFacts, readText } from './common.mjs'
+import { configVariables, loadFacts, readText, releaseVersion } from './common.mjs'
 import { BLUEPRINT, BUTTON_URL, check, checkBlueprint, checkLinks, DOCS, README } from './render.mjs'
 
 const facts = loadFacts()
 const ctx = { facts, configVars: configVariables(), changelog: readText('CHANGELOG.md') }
+/** The latest release in CHANGELOG.md, which the pinned templates name. */
+const V = releaseVersion(ctx.changelog)
 const text = readText(BLUEPRINT)
 const has = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}, got:\n${errors.join('\n')}`)
 const sub = (a, b) => {
@@ -23,16 +25,16 @@ test('render: strict YAML and Blueprint fields', () => {
   has(sub('services:\n', 'servics: []\nservices:\n'), /not a Blueprint root field/)
   has(sub('    healthCheckPath', '    healthcheckPath: /healthz\n    healthCheckPath'), /"healthcheckPath" is not a Render Blueprint field/)
   has(sub('    healthCheckPath', '    numInstances: 2\n    healthCheckPath'), /does not use "numInstances" \(a service with a disk/)
-  has(sub('    healthCheckPath', '    repo: https://github.com/pixari/opentodo\n    healthCheckPath'), /does not use "repo"/)
+  has(sub('    healthCheckPath', '    repo: https://github.com/OpenTodoApp/OpenTodo\n    healthCheckPath'), /does not use "repo"/)
   has(sub('type: web\n    name', 'type: pserv\n    name'), /type must be web/)
   has(sub('runtime: image', 'runtime: docker'), /runtime must be image/)
   has(sub('healthCheckPath: /healthz', 'healthCheckPath: /'), /healthCheckPath must be \/healthz/)
-  has(sub('      url: ghcr.io/pixari/opentodo:stable', '      url: ghcr.io/pixari/opentodo:stable\n      creds: x'), /image must be \{ url/)
+  has(sub('      url: ghcr.io/opentodoapp/opentodo:stable', '      url: ghcr.io/opentodoapp/opentodo:stable\n      creds: x'), /image must be \{ url/)
 })
 
 test('render: image policy, port and data path', () => {
-  has(sub('opentodo:stable', 'opentodo:latest'), /image must be ghcr\.io\/pixari\/opentodo:stable/)
-  has(sub('opentodo:stable', 'opentodo:0.9.0'), /image must be ghcr\.io\/pixari\/opentodo:stable/)
+  has(sub('opentodo:stable', 'opentodo:latest'), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
+  has(sub('opentodo:stable', `opentodo:${V}`), /image must be ghcr\.io\/opentodoapp\/opentodo:stable/)
   has(sub('value: "8080"', 'value: "10000"'), /port must be 8080/)
   has(sub('value: "8080"', 'value: 8080'), /PORT: value must be a quoted string/)
   has(sub('      - key: PORT\n        value: "8080"\n', ''), /PORT must be set/)

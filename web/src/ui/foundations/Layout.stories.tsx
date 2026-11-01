@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Section } from './tokens'
 
+// Motion has its own page: Foundations → Motion (motion-v2).
+
 function Spacing() {
   return (
     <Section title="Spacing (4 px base; rhythm 8 / 12 / 16 / 24 / 32)">
@@ -44,21 +46,8 @@ function Elevation() {
   )
 }
 
-function Motion() {
-  return (
-    <Section title="Motion">
-      <p className="text-meta text-muted">UI 120 ms and emphasis 250 ms, eased with ease-calm. With reduced motion, movement and scaling become instant.</p>
-      <div className="flex gap-4">
-        <button type="button" className="btn-secondary transition duration-(--duration-ui) ease-calm hover:-translate-y-0.5">Hover: UI 120 ms</button>
-        <button type="button" className="btn-secondary transition duration-(--duration-emphasis) ease-calm hover:scale-105">Hover: emphasis 250 ms</button>
-      </div>
-    </Section>
-  )
-}
-
 const meta: Meta = { title: 'Foundations/Layout and motion' }
 export default meta
 export const SpacingScale: StoryObj = { name: 'Spacing', render: () => <Spacing /> }
 export const RadiusScale: StoryObj = { name: 'Radius', render: () => <Radius /> }
 export const ElevationScale: StoryObj = { name: 'Elevation', render: () => <Elevation /> }
-export const MotionTokens: StoryObj = { name: 'Motion', render: () => <Motion /> }

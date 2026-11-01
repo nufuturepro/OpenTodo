@@ -24,7 +24,7 @@ The built-in views are at the top of the sidebar, the less frequent ones under *
 
 ## Plan your day with Today
 
-Overdue tasks first, then today's by time, with **This Evening** and **Blocked** below. Anything you add here is due today. See [Today and Upcoming](today-and-upcoming.md#plan-your-day-with-today).
+Tasks from earlier days first under **Earlier**, then today's by time, with **This Evening** and **Blocked** below. Anything you add here is due today. See [Today and Upcoming](today-and-upcoming.md#plan-your-day-with-today).
 
 ## Plan your week with Upcoming
 
@@ -48,7 +48,7 @@ The **Filter** action in a list's header shows only quick wins, tasks under 30 m
 
 ## Save your own views
 
-Describe what you want in the **Filter** view, press <kbd>s</kbd> and name it. The saved view is pinned to the sidebar with a live count and syncs to all your devices. See [Saved views](saved-views.md#save-your-own-views).
+Describe what you want on the **New view** page, press <kbd>s</kbd> and name it. The saved view is pinned to the sidebar with a live count and syncs to all your devices. See [Saved views](saved-views.md#save-your-own-views).
 
 ## Build a dashboard
 
@@ -60,7 +60,7 @@ A dashboard puts up to six saved views side by side, for a morning review on one
 
 ## Choose where the app opens
 
-Each device can open on a different view, a display included: pick it in **Settings → General → Start view**, or with **Start view on this device** in a saved view's menu. If that view is deleted, the device opens on the Inbox.
+Each device can open on a different view, a display included: pick it in **Settings → General → Start view and briefing**, or with **Start view on this device** in a saved view's menu. If that view is deleted, the device opens on the Inbox.
 
 ## Tips
 

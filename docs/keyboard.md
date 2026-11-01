@@ -49,7 +49,11 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | Keys | What it does |
 | --- | --- |
 | <kbd>Ctrl+K</kbd> / <kbd>⌘+K</kbd> | Search and commands: find any task, project, label, view or setting, or run a command by name (also while typing, except in notes) |
-| <kbd>q</kbd> | Quick add a task |
+| <kbd>q</kbd> | Quick add a task (the command bar in Add mode on screens without a quick add) |
+| <kbd>+</kbd> · <kbd>&gt;</kbd> · <kbd>?</kbd> | First character in the command bar: add a task, run a command, ask the assistant; the same character again returns to Search |
+| <kbd>Ctrl+Enter</kbd> / <kbd>⌘+Enter</kbd> | In the command bar: add what you typed as a task |
+| <kbd>Shift+Enter</kbd> | In the command bar's Add mode: add the task and open it |
+| <kbd>↓</kbd> / <kbd>↑</kbd> | In the command bar's Add mode: move over the fields; Tab edits the highlighted one |
 | <kbd>Shift+I</kbd> | Open the assistant (when the server owner has turned it on): ask about your tasks, review proposed changes; Enter sends, Esc closes |
 | <kbd>Enter</kbd> / <kbd>Esc</kbd> | Proposed changes: apply the checked changes / discard the proposal; Space toggles an item |
 | <kbd>Shift+V</kbd> | Dictate into quick add (turn voice capture on in Settings first); Esc or a pause stops, Enter saves |
@@ -72,9 +76,9 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>g</kbd> then <kbd>a</kbd> | Go to Assigned to me |
 | <kbd>g</kbd> then <kbd>c</kbd> | Go to Completed |
 | <kbd>g</kbd> then <kbd>l</kbd> | Go to Labels |
-| <kbd>g</kbd> then <kbd>Shift+P</kbd> | Go to All projects: the whole tree, find a project, archived projects |
-| <kbd>g</kbd> then <kbd>f</kbd> | Go to Filter |
-| <kbd>g</kbd> then <kbd>v</kbd> | Go to Filters: saved views, boards and dashboards |
+| <kbd>g</kbd> then <kbd>Shift+P</kbd> | Go to All projects: every project with its health, find a project, archived projects |
+| <kbd>g</kbd> then <kbd>f</kbd> | Open New view: build a query, then save it as a view |
+| <kbd>g</kbd> then <kbd>v</kbd> | Go to Views: saved views and boards |
 | <kbd>g</kbd> then <kbd>d</kbd> | Go to the Calendar as Day (the sidebar opens it as last used) |
 | <kbd>g</kbd> then <kbd>w</kbd> | Go to the Calendar as Week |
 | <kbd>g</kbd> then <kbd>m</kbd> | Go to the Calendar as Month |
@@ -82,7 +86,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>g</kbd> then <kbd>x</kbd> | Go to the Trash |
 | <kbd>g</kbd> then <kbd>p</kbd> | Process the Inbox one task at a time |
 | <kbd>g</kbd> then <kbd>h</kbd> | Go to Updates: what changed in your shared projects |
-| <kbd>g</kbd> then <kbd>k</kbd> | Go to Ask: the assistant’s composer and skills (when the assistant is on) |
+| <kbd>g</kbd> then <kbd>k</kbd> | Go to the Assistant page: the conversation and its skills (when the assistant is on) |
 | <kbd>g</kbd> then <kbd>s</kbd> | Go to Settings |
 | <kbd>g</kbd> then <kbd>Shift+I</kbd> | Go to Settings → Data → Import data |
 | <kbd>g</kbd> then <kbd>?</kbd> | Open Help: the user guide, offline, with search |
@@ -91,7 +95,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>g</kbd> then <kbd>Shift+L</kbd> | Go to the Loop home: the five moves of Open Loops at a glance |
 | <kbd>g</kbd> then <kbd>Shift+N</kbd> | Go to Next: the next action of every project, by context |
 | <kbd>g</kbd> then <kbd>Shift+W</kbd> | Go to Waiting: what is assigned to someone else or blocked |
-| <kbd>g</kbd> then <kbd>Shift+R</kbd> | Go to the Daily check: the Inbox, what is overdue, today's focus |
+| <kbd>g</kbd> then <kbd>Shift+R</kbd> | Go to the Daily check: the Inbox, what is open from earlier, today's focus |
 | <kbd>g</kbd> then <kbd>Shift+D</kbd> | Close the day: how it went, carry over what is left, a line for tomorrow |
 | <kbd>g</kbd> then <kbd>Shift+F</kbd> | Go to Focus: one task, a timer, a break when you need one |
 | <kbd>g</kbd> then <kbd>/</kbd> | Find a project, label or filter in the sidebar (opens the sidebar when it is collapsed or a drawer) |
@@ -113,11 +117,13 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>Alt+Shift+↑</kbd> | Move it to the top of its list |
 | <kbd>Alt+Shift+↓</kbd> | Move it to the bottom of its list |
 | <kbd>Drag</kbd> (touch: drag the row's grip, or press and hold) | Reorder tasks in project lists, boards and the Inbox, and projects in the sidebar; drop on the middle of a row to nest it; Esc cancels |
+| <kbd>Swipe</kbd> then <kbd>a</kbd> then <kbd>task</kbd> | Touch: right completes, left schedules; the same two actions start the task's menu |
 | <kbd>Press</kbd> then <kbd>and</kbd> then <kbd>hold</kbd> then <kbd>the</kbd> then <kbd>grip</kbd> | Touch: tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them |
 | Today, Upcoming, Assigned, Completed, labels, filters | Sorted by date (or their own rule): no drag or Alt moves there |
-| <kbd>←</kbd> | Collapse the subtasks of the selected task (or go to its parent), or the sub-projects of the focused sidebar project |
-| <kbd>→</kbd> | Expand the subtasks of the selected task, or the sub-projects of the focused sidebar project |
-| <kbd>v</kbd> | Cycle the current project through list, board and timeline (remembered per project on this device) |
+| <kbd>→</kbd> | Show the details of the selected task under its row (unfold its subtasks first when they are folded), or the sub-projects of the focused sidebar project |
+| <kbd>←</kbd> | Hide the details of the selected task, else fold its subtasks (or go to its parent), or the sub-projects of the focused sidebar project |
+| <kbd>p</kbd> | In the Inbox: process its tasks one at a time |
+| <kbd>v</kbd> | Cycle the current project through list, board, timeline and calendar (remembered per project on this device) |
 | <kbd>Shift+S</kbd> | Share the current project: add members by email, change roles, remove, leave, transfer |
 | <kbd>Shift+F</kbd> | Manage the custom fields of the current project: add, rename, reorder, delete |
 | <kbd>Shift+P</kbd> | Edit the current project’s note (Esc saves and closes it) |
@@ -138,10 +144,14 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>Shift+N</kbd> | Defer the selected task: type its start date, Enter |
 | <kbd>Shift+E</kbd> | Toggle This Evening on the selected task |
 | <kbd>s</kbd> | Schedule the selected task: Day view in placement mode |
+| <kbd>Tab</kbd> | From a task, reach its Schedule, Priority and More actions (wide screens with a mouse; in a tree list Tab indents) |
 | <kbd>Shift+K</kbd> | Recurring task: skip the current occurrence of the selected recurring task |
 | <kbd>Shift+O</kbd> | Recurring task: this occurrence only (standalone copy, series moves on) |
 | <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Move the selected task (and its subtasks), or the ticked tasks, to the Trash |
 | <kbd>z</kbd> | Task panel open: fix a timed due to your time zone, or release it to a floating time |
+| <kbd>j</kbd> | On a task page: open the next task of the list it was opened from |
+| <kbd>k</kbd> | On a task page: open the previous task of that list |
+| <kbd>Esc</kbd> | On a task page: back to the list, with the task selected where it was |
 
 ### Board and timeline
 
@@ -167,11 +177,14 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selected task 15 minutes earlier / later (a lane task gets a time); with nothing selected, select the first task |
 | <kbd>←</kbd> / <kbd>→</kbd> | Move the selected task one day earlier / later |
 | <kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd> | Shorten / lengthen the estimate by 15 minutes |
+| <kbd>Alt+Shift+↑</kbd> / <kbd>Alt+Shift+↓</kbd> | Start 15 minutes earlier / later, keeping the end |
 | <kbd>u</kbd> | Unschedule the selected task (keep the date) |
 | <kbd>p</kbd> | Placement mode for the selected task: arrows move the ghost, Enter places it, Esc cancels |
 | <kbd>Enter</kbd> | Open the selected task |
+| <kbd>Shift+Enter</kbd> | While placing over a slot: add the task to the slot |
 | <kbd>e</kbd> | Edit the estimate of the selected task |
 | <kbd>c</kbd> | Complete the selected task |
+| <kbd>q</kbd> | In Day and Week: add a task due on the focused day (the selected task's day, else today) |
 | <kbd>[</kbd> | Previous day or week |
 | <kbd>]</kbd> | Next day or week |
 | <kbd>t</kbd> | Back to today |
@@ -193,17 +206,17 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>]</kbd> | In Plan: the span one week later |
 | <kbd>t</kbd> | In Plan: back to today |
 
-### Filter, saved filters and boards
+### Views and boards
 
 | Keys | What it does |
 | --- | --- |
-| <kbd>Enter</kbd> / <kbd>Esc</kbd> | In Filter: jump from the query to the first result / back to the query |
-| <kbd>s</kbd> | In Filter results: save the Filter query as a view, pinned to the sidebar |
+| <kbd>Enter</kbd> / <kbd>Esc</kbd> | In New view: jump from the query to the first result / back to the query |
+| <kbd>s</kbd> | In New view results: save the query as a view, pinned to the sidebar |
 | <kbd>/</kbd> | In a saved view: edit the query of a saved view; Enter saves it, Esc discards |
 | <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> | On a dashboard: move between panels; j / k inside a panel, Enter opens, o opens the view |
 | <kbd>Shift+←</kbd> | On a board: move the selected card to the previous panel that has a rule, applying it (the card stays selected) |
 | <kbd>Shift+→</kbd> | On a board: move the selected card to the next panel that has a rule, applying it |
-| <kbd>↑</kbd> / <kbd>↓</kbd> | In the filter query: recall recent queries on this device |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | In the query of New view: recall recent queries on this device |
 
 ### Trash and projects
 
@@ -256,13 +269,16 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>q</kbd> | Project walk: add a next action to the project |
 | <kbd>Enter</kbd> | Project walk: open the project |
 | <kbd>a</kbd> | Project walk: archive the project, then the next one |
+| <kbd>e</kbd> | Project walk: choose how often you review the project |
+| <kbd>m</kbd> | Project walk: put the project in maintenance or end it |
 | <kbd>j</kbd> / <kbd>Space</kbd> | Project walk: skip to the next project |
 | <kbd>k</kbd> | Project walk: back to the previous project |
 | <kbd>f</kbd> | Daily check: put the selected task in today's focus (up to three), or take it out |
-| <kbd>t</kbd> | Close the day: carry the selected task over to tomorrow |
-| <kbd>p</kbd> | Close the day: pick a day for the selected task |
-| <kbd>y</kbd> | Close the day: move the selected task to Someday |
-| <kbd>h</kbd> | Close the day: keep the selected task in Today |
+| <kbd>t</kbd> | Close the day: carry the task on the card over to tomorrow |
+| <kbd>p</kbd> | Close the day: pick a day for the task on the card |
+| <kbd>y</kbd> | Close the day: move the task on the card to Someday |
+| <kbd>h</kbd> | Close the day: keep the task on the card in Today |
+| <kbd>d</kbd> | Close the day: the task on the card was done already (completed with the carry-over) |
 
 ### Display mode
 
@@ -284,20 +300,26 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>Tab</kbd> / <kbd>Enter</kbd> | In the thread: in the Comments tab: reach Reply, Edit and Delete; in the Activity tab: expand a group or load older activity |
 | <kbd>←</kbd> / <kbd>→</kbd> | On the task tabs: switch between Comments, Activity and History in the task panel |
 | <kbd>Shift+H</kbd> | Show or hide the project activity; Tab reaches the person and kind filters |
-| <kbd>Ctrl+B</kbd> / <kbd>Ctrl+I</kbd> / <kbd>Ctrl+Shift+X</kbd> / <kbd>Ctrl+E</kbd> / <kbd>Ctrl+K</kbd> | In the notes: bold, italic, strikethrough, inline code, link (⌘ on a Mac) |
-| <kbd>Ctrl+Alt+1</kbd> / <kbd>Ctrl+Alt+2</kbd> / <kbd>Ctrl+Alt+3</kbd> / <kbd>Ctrl+Alt+0</kbd> | In the notes: heading 1–3 / normal text |
+| <kbd>Ctrl+B</kbd> / <kbd>Ctrl+I</kbd> / <kbd>Ctrl+Shift+X</kbd> / <kbd>Ctrl+E</kbd> / <kbd>Ctrl+K</kbd> | In the notes and comments: bold, italic, strikethrough, inline code, link (⌘ on a Mac) |
+| <kbd>Ctrl+Alt+1</kbd> / <kbd>Ctrl+Alt+2</kbd> / <kbd>Ctrl+Alt+3</kbd> / <kbd>Ctrl+Alt+0</kbd> | In the notes and comments: heading 1–3 / normal text |
 | <kbd>Ctrl+Shift+8</kbd> / <kbd>Ctrl+Shift+7</kbd> / <kbd>Ctrl+Shift+9</kbd> | In the notes: bullet, numbered, check list; Ctrl+Enter ticks a check item; Tab / Shift+Tab indent |
-| <kbd>-</kbd> · <kbd>1.</kbd> · <kbd>#</kbd> · <kbd>[</kbd> then <kbd>]</kbd> · <kbd>**x**</kbd> | Typed in the notes: markdown typing becomes formatting; Shift+Enter is a line break, Esc leaves the notes |
+| <kbd>Ctrl+Shift+Enter</kbd> / <kbd>⌘+Shift+Enter</kbd> | On a check-list line: in a task's notes: make the check-list line a subtask (Ctrl+Z takes it back) |
+| <kbd>/</kbd> | At the start of a line or after a space: in the notes and comments: the command menu (headings, lists, table, quote, code, link, image, date, mention); ↑ / ↓ move, Enter applies, Esc closes |
+| <kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> | In a table: in a table: next / previous cell; Tab in the last cell adds a row |
+| <kbd>-</kbd> · <kbd>1.</kbd> · <kbd>#</kbd> · <kbd>[</kbd> then <kbd>]</kbd> · <kbd>&gt;</kbd> · <kbd>```</kbd> · <kbd>**x**</kbd> | Typed in the notes: markdown typing becomes formatting (``` and Enter starts a code block); Shift+Enter is a line break, Esc leaves the notes |
 
 ### Settings
 
 | Keys | What it does |
 | --- | --- |
-| <kbd>Enter</kbd> | Focused invitation: Settings → People → Members: copy the invite link created in this session |
-| <kbd>Delete</kbd> | Focused invitation: Settings → People → Members: revoke the focused pending invitation |
+| <kbd>/</kbd> | Settings: focus the search field, which finds sections and single settings by name |
+| <kbd>Enter</kbd> | Focused invitation: Settings → People → Users and invitations: copy the invite link created in this session |
+| <kbd>Delete</kbd> | Focused invitation: Settings → People → Users and invitations: revoke the focused pending invitation |
+| <kbd>←</kbd> / <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd> | In the picture dialog: Settings → Account → Profile, picture dialog: move the picture inside the circle |
+| <kbd>+</kbd> / <kbd>-</kbd> | In the picture dialog: Settings → Account → Profile, picture dialog: zoom in or out |
 | <kbd>d</kbd> / <kbd>r</kbd> / <kbd>Delete</kbd> | Focused user: Settings → People → Users: deactivate or reactivate, create a reset link, delete the focused user (each confirms) |
 | <kbd>e</kbd> | Focused table: Settings → Server → Audit log: export with the current filters while the table has focus |
-| <kbd>Tab</kbd> | Settings → Account → Passkeys: add, rename (Enter saves, Esc cancels) or remove passkeys |
+| <kbd>Tab</kbd> | Settings → Account → Security → Passkeys: add, rename (Enter saves, Esc cancels) or remove passkeys |
 
 ### Vim keybindings
 

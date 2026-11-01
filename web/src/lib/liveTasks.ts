@@ -8,17 +8,26 @@
 // The snapshot is shared: callers treat the array and its tasks as read-only (sort
 // a copy, never the array itself).
 import { liveSnapshot } from './liveSnapshot'
-import { visibleTasks } from './trash'
+import { visibleTaskSets } from './trash'
 import type { Task } from './types'
 
 /** Stable empty list for callers that render before the first snapshot arrives. */
 export const NO_TASKS: Task[] = []
 
-const tasks = liveSnapshot('tasks', visibleTasks)
+// One read of the tasks table for both: every workspace's visible tasks (the
+// workspace switcher's counts, the palette) and the current workspace's, the
+// list everything else shows (OpenSpec change workspaces). With one workspace
+// both are the same array.
+const both = liveSnapshot('tasks', visibleTaskSets)
 
-/** Every visible task (not deleted, project not in the Trash), live; undefined until loaded. */
+/** Every visible task of every workspace, live; undefined until loaded. */
+export function useTasksOfEveryWorkspace(): Task[] | undefined {
+  return both.use()?.every
+}
+
+/** Every visible task (not deleted, project not in the Trash) of the current workspace, live; undefined until loaded. */
 export function useLiveTasks(): Task[] | undefined {
-  return tasks.use()
+  return both.use()?.here
 }
 
 // Derived lists are computed once per snapshot and shared by every caller.
@@ -53,8 +62,14 @@ export function openCountsByProject(tasks: Task[]): Map<string, number> {
   return counts
 }
 
-/** Number of open tasks in a project, live (0 until loaded). */
-export function useOpenTaskCount(projectId: string): number {
+/** Number of open tasks in a project, live; undefined until the first snapshot arrives. */
+export function useOpenTaskCount(projectId: string): number | undefined {
   const all = useLiveTasks()
-  return all ? openCountsByProject(all).get(projectId) ?? 0 : 0
+  return all ? openCountsByProject(all).get(projectId) ?? 0 : undefined
+}
+
+/** Number of open tasks in a project now: the shared snapshot, or one read when nothing holds it yet. */
+export async function openTaskCount(projectId: string): Promise<number> {
+  const here = both.read()?.here ?? (await visibleTaskSets()).here
+  return openCountsByProject(here).get(projectId) ?? 0
 }

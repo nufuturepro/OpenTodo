@@ -5,15 +5,15 @@
   "exposable": true,
   "dynamic_config": true,
   "port": 8400,
-  "tipi_version": 6,
-  "version": "0.9.0",
+  "tipi_version": 19,
+  "version": "0.18.1",
   "categories": [
     "utilities"
   ],
   "short_desc": "A to-do app that runs on your own server, even offline.",
   "description": "OpenTodo is an open-source, local-first task manager. Plan your day, keep projects in order, set reminders and share lists with your family or your team, from your phone and your computer. The first person to open it creates the owner account; after that the owner invites people. One small container with its data in one folder, no required settings.",
   "author": "pixari",
-  "source": "https://github.com/pixari/opentodo",
+  "source": "https://github.com/OpenTodoApp/OpenTodo",
   "website": "https://open-todo.app",
   "form_fields": [
     {

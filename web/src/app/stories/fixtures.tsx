@@ -7,6 +7,8 @@
 import type { Decorator, StoryObj } from '@storybook/react-vite'
 import { db, setMeta } from '../../lib/db'
 import { setDateTime } from '../../lib/dates'
+import { createFrame } from '../../lib/frames'
+import { createSlot } from '../../lib/slots'
 import { createLabel } from '../../lib/labels'
 import { createProject, createSubtask, createTask, resetDeviceId, updateTask } from '../../lib/ops'
 import { createSection, saveViewMode } from '../../lib/sections'
@@ -50,6 +52,26 @@ export function stubNetwork(): void {
   const stub = async () => new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } })
   ;(stub as unknown as { storyStub: true }).storyStub = true
   if ((window.fetch as unknown as { storyStub?: true }).storyStub) return
+  window.fetch = stub as typeof fetch
+}
+
+/**
+ * Requests a screen makes by token (a preview, a public list), answered from
+ * fixtures: the longest matching path prefix gives the status and the JSON body,
+ * every other request answers 404 (OpenSpec change screen-stories-rare, design D3).
+ * Install it in `beforeEach`; `withClock` and a seed keep it.
+ */
+export function answerRequests(routes: Record<string, { status?: number; body: unknown }>): void {
+  const prefixes = Object.keys(routes).sort((a, b) => b.length - a.length)
+  const stub = async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const path = new URL(url, location.origin).pathname
+    const hit = prefixes.find((p) => path.startsWith(p))
+    const answer = hit ? routes[hit] : { status: 404, body: {} }
+    return new Response(JSON.stringify(answer.body), { status: answer.status ?? 200, headers: { 'content-type': 'application/json' } })
+  }
+  // Marked as the workbench's stub, so `withClock` and a seed keep it.
+  ;(stub as unknown as { storyStub: true }).storyStub = true
   window.fetch = stub as typeof fetch
 }
 
@@ -158,7 +180,7 @@ export async function seedTracking(): Promise<void> {
 }
 
 /** Projects and labels every list story shares. */
-async function seedBase() {
+export async function seedBase() {
   seeded.work = await createProject({ name: 'Work', color: HEX.blue })
   seeded.website = await createProject({ name: 'Website launch', color: HEX.violet, parent_id: seeded.work })
   seeded.home = await createProject({ name: 'Home', color: HEX.green })
@@ -219,6 +241,20 @@ export async function seedProjectWithSections(board = true): Promise<void> {
   if (board) await saveViewMode(p, 'board')
 }
 
+/** The website project as a timeline: a bar across today, an overdue one, one past its deadline, a short one and one that only started (surfaces-v2, precision-boards-timeline). */
+export async function seedProjectTimeline(): Promise<void> {
+  await seedBase()
+  const p = seeded.website
+  await createTask({ title: 'Draft the launch plan', project_id: p, start: '2026-10-05', due: { date: '2026-10-09' } })
+  await createTask({ title: 'Redesign the homepage', project_id: p, start: '2026-10-08', due: { date: '2026-10-20' }, deadline: '2026-10-22' })
+  await createTask({ title: 'Collect testimonials', project_id: p, start: '2026-10-06', deadline: '2026-10-12' })
+  await createTask({ title: 'Publish the pricing page', project_id: p, start: '2026-10-16', due: { date: '2026-10-23' } })
+  await createTask({ title: 'Book the photographer', project_id: p, due: { date: '2026-10-16' } })
+  await createTask({ title: 'Sort the image library', project_id: p, start: '2026-10-07' })
+  await createTask({ title: 'Write the press release', project_id: p })
+  await saveViewMode(p, 'timeline')
+}
+
 /** A week of timed tasks around the frozen day, with an all-day task and one overlap. */
 export async function seedCalendarWeek(): Promise<void> {
   await seedBase()
@@ -237,6 +273,37 @@ export async function seedCalendarWeek(): Promise<void> {
 }
 
 /**
+ * Slots (calendar-slots): the calendar week with "Admin" today from 14:00 for two hours
+ * holding six small tasks (one done), so the block shows two rows and "+4", and an
+ * overfull "Errands" slot on Monday (past, dimmed): 50 minutes of tasks in 45.
+ */
+export async function seedCalendarSlots(): Promise<void> {
+  await seedCalendarWeek()
+  const small = ['Reply to Marco', 'Pay the invoice', 'Book the venue', 'Renew the domain', 'Send the slides', 'File the receipt']
+  const ids: string[] = []
+  for (const [i, title] of small.entries()) ids.push(await createTask({ title, due: { date: TODAY }, estimate_minutes: 5 + (i % 3) * 5, project_id: seeded.work }))
+  await updateTask(ids[0], { completed_at: Date.parse('2026-10-14T11:00:00Z') })
+  const admin = await createSlot({ date: TODAY, start: '14:00', minutes: 120, title: 'Admin', color: hue('teal') })
+  await db.slots.update(admin.id, { task_ids: ids })
+  const errands = [await createTask({ title: 'Post office', due: { date: '2026-10-12' }, estimate_minutes: 30 }), await createTask({ title: 'Pharmacy', due: { date: '2026-10-12' }, estimate_minutes: 20 })]
+  const late = await createSlot({ date: '2026-10-12', start: '17:00', minutes: 45, title: 'Errands', color: hue('orange') })
+  await db.slots.update(late.id, { task_ids: errands })
+}
+
+/**
+ * Frames (calendar-frames): the calendar week with "Deep work" on weekdays from 09:00
+ * to 11:00 planning from the Website project, "Admin" Monday to Thursday late in the
+ * afternoon and "Calls" on Wednesday overlapping it, so one column splits two bands.
+ */
+export async function seedCalendarFrames(): Promise<void> {
+  await seedCalendarWeek()
+  const none = { source: '', from_date: null, until_date: null }
+  await createFrame({ ...none, title: 'Deep work', weekdays: '1,2,3,4,5', start: '09:00', end: '11:00', color: hue('violet'), source: `project:${seeded.website}` })
+  await createFrame({ ...none, title: 'Admin', weekdays: '1,2,3,4', start: '16:00', end: '16:45', color: hue('teal') })
+  await createFrame({ ...none, title: 'Calls', weekdays: '3', start: '16:30', end: '17:30', color: hue('orange') })
+}
+
+/**
  * The Plan (planner-view D10): the calendar week, a weekly Monday report of 45
  * minutes (one row on the 19th, a projection on the 26th) and a subscribed
  * calendar's meeting tomorrow, so a column shows the three-segment bar.
@@ -248,6 +315,26 @@ export async function seedCalendarPlan(): Promise<void> {
   await db.calendarSubscriptions.put({ id: 'story-sub', name: 'Work calendar', color: hue('blue'), enabled: true, lastSuccessAt: Date.parse('2026-10-14T11:00:00') })
   await db.calendarEvents.put({ id: 'story-ev', subscriptionId: 'story-sub', uid: 'story-ev', summary: 'Team sync', location: 'Room 4', start: { date: TOMORROW, time: '13:00' }, end: { date: TOMORROW, time: '14:30' }, allDay: false, free: false })
   await setMeta('calendar.events.window', { from: '2026-10-01', to: '2026-11-30', fetchedAt: Date.parse('2026-10-14T11:00:00') })
+}
+
+/**
+ * Calendar clarity (calendar-clarity D1, D3): the calendar week with labels and
+ * priorities on its tasks, a deadline on Friday for a task planned today ("Submit the
+ * grant"), a task due on its deadline day ("Pay the rent", Thursday), and the device's
+ * Colour by set to `mode`.
+ */
+export function seedCalendarClarity(mode: 'project' | 'label' | 'priority'): () => Promise<void> {
+  return async () => {
+    await seedCalendarWeek()
+    const byTitle = async (title: string) => (await db.tasks.toArray()).find((t) => t.title === title)!.id
+    await updateTask(await byTitle('Write the release notes'), { labels: [seeded.deepWork], priority: 1 })
+    await updateTask(await byTitle('Design review'), { labels: [seeded.waiting, seeded.deepWork], priority: 2 })
+    await updateTask(await byTitle('Lunch run'), { labels: [seeded.errand], priority: 3 })
+    await updateTask(await byTitle('Market'), { labels: [seeded.errand] })
+    await createTask({ title: 'Submit the grant', due: { date: TODAY, time: '15:00' }, estimate_minutes: 60, deadline: '2026-10-16', project_id: seeded.work, priority: 1 })
+    await createTask({ title: 'Pay the rent', due: { date: TOMORROW }, deadline: TOMORROW, project_id: seeded.home })
+    await setMeta('calendar.colorBy', mode)
+  }
 }
 
 /** A comment and an attachment on a task, for the count chips (fixture rows, not ops). */

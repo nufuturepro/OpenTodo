@@ -3,8 +3,8 @@ package agenttools
 import (
 	"fmt"
 
-	"github.com/pixari/opentodo/internal/recurrence"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // ---- write tools (offered only through the permission gate, design D3) ----
@@ -54,7 +54,7 @@ func writeDef(name, title, desc string, schema map[string]any, destructive, idem
 
 func init() {
 	register(tool{def: func(Caller) Definition {
-		item := object([]string{"title"}, map[string]any{
+		item := object([]string{"title"}, addPlanningProps(map[string]any{
 			"title": titleProp, "description": descProp,
 			"project_id":       map[string]any{"type": "string", "description": "Project id (see list_projects); omit for no project (the Inbox while the task is not scheduled)."},
 			"section_id":       map[string]any{"type": "string", "description": "Section id inside that project."},
@@ -67,13 +67,14 @@ func init() {
 			"fields":           fieldsProp,
 			"origin_url":       originURLProp,
 			"id":               chosenIDProp,
-		})
+			"workspace_id":     map[string]any{"type": []string{"string", "null"}, "description": "For a task without a project: its workspace (see list_workspaces); default the default workspace."},
+		}))
 		return writeDef("create_tasks", "Create tasks",
-			fmt.Sprintf("Create up to %d tasks in one call. Returns their ids in order.", PerCall),
+			fmt.Sprintf("Create up to %d tasks in one call. Returns their ids in order. Plan with the fields: due is the day to do it, deadline the day it must be done by, start the day it shows up (or someday to park it), evening This Evening, day_part the part of the day, energy deep, medium or low, blocked_by what it waits for, location where.", PerCall),
 			object([]string{"items"}, map[string]any{
 				"items":             map[string]any{"type": "array", "minItems": 1, "maxItems": PerCall, "items": item},
 				"client_request_id": requestIDProp,
-			}), false, false, []string{"title", "description", "origin_url", "origin"}, true)
+			}), false, false, []string{"title", "description", "origin_url", "origin", "location"}, true)
 	}, plan: (*Registry).planCreateTasks})
 
 	register(tool{def: func(c Caller) Definition {
@@ -87,16 +88,17 @@ func init() {
 		}
 		props["title"] = titleProp
 		props["description"] = descProp
-		desc := fmt.Sprintf("Change the title, description, priority, labels, estimate, recurrence or custom field values of up to %d tasks", PerCall)
+		addPlanningProps(props)
+		desc := fmt.Sprintf("Change the title, description, priority, labels, estimate, recurrence, deadline, start (a date or someday), evening, day part, energy, blockers, location or custom field values of up to %d tasks", PerCall)
 		if !c.Encrypted {
 			props["origin_url"] = originURLClearProp
-			desc = fmt.Sprintf("Change the title, description, priority, labels, estimate, recurrence, origin or custom field values of up to %d tasks", PerCall)
+			desc = fmt.Sprintf("Change the title, description, priority, labels, estimate, recurrence, deadline, start (a date or someday), evening, day part, energy, blockers, location, origin or custom field values of up to %d tasks", PerCall)
 		}
-		desc += ". Use schedule_tasks for due dates, move_tasks for projects and complete_tasks to complete."
+		desc += ". Every field is written as sent: parking with start someday keeps the due date. Use schedule_tasks for due dates, move_tasks for projects and complete_tasks to complete."
 		return writeDef("update_tasks", "Update tasks", desc,
 			object([]string{"updates"}, map[string]any{
 				"updates": map[string]any{"type": "array", "minItems": 1, "maxItems": PerCall, "items": object([]string{"id"}, props)},
-			}), true, true, []string{"title", "description", "origin_url", "origin"}, false)
+			}), true, true, []string{"title", "description", "origin_url", "origin", "location"}, false)
 	}, plan: (*Registry).planUpdateTasks})
 
 	register(tool{def: func(Caller) Definition {
@@ -137,6 +139,8 @@ func init() {
 				"color":             map[string]any{"type": "string", "description": "Colour as #rrggbb, optional."},
 				"icon":              iconProp,
 				"parent_id":         map[string]any{"type": "string", "description": "Parent project id, optional."},
+				"workspace_id":      workspaceIDProp,
+				"flow_mode":         projectFlowProp,
 				"client_request_id": requestIDProp,
 				"id":                chosenIDProp,
 			}), false, false, []string{"name"}, true)

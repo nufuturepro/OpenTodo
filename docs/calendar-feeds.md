@@ -16,13 +16,17 @@ Calendar feeds work in both directions:
 - **Other calendars in OpenTodo.** Subscribe to the iCal address of a Google, Outlook, Apple, Fastmail or Nextcloud calendar, and its events appear next to your tasks in [Day and Week](calendar-views.md). You see your real free time while you plan.
 - **Your tasks in your calendar app.** Create a private feed address, then subscribe to it from Google Calendar, Outlook or Apple Calendar. Your dated tasks show up there as events.
 
-Both directions are read-only. Events from other calendars can't be moved or edited in OpenTodo, and calendar apps can't change your tasks. For two-way sync with apps that support it, use [CalDAV](caldav.md).
+Both directions are read-only. Events from other calendars can't be moved or edited in OpenTodo, and calendar apps can't change your tasks. For two-way sync with the calendar you use (iCloud, Fastmail, Nextcloud or Google Calendar), use [calendar sync](calendar-sync.md): moving an event there moves the task. For to-do apps that speak CalDAV, use [CalDAV](caldav.md).
 
 Calendar feeds are off until the server owner turns them on under **Settings → Integrations → Calendar feeds**. The server fetches the calendar addresses itself; private network addresses follow the owner's webhooks setting.
 
 ## Subscribe to another calendar
 
 Copy the calendar's iCal or `webcal://` address from its app, then open **Settings → Integrations → Calendar feeds**, choose **Add calendar** and paste it, with a name and a colour if you like. The server fetches the calendar straight away and then on its own schedule, and its events appear in Day and Week beside your tasks. [Other calendars in Day and Week](other-calendars.md) has the steps for each calendar app, what the events look like, how refreshing works, and the limits.
+
+### Exchange on-premises
+
+Outlook on the web on your organisation's own Exchange server refuses non-browser requests with error 400. When a calendar answers 400, 403 or 406, OpenTodo retries once as a desktop browser and keeps doing so for that calendar. If **http_400** stays, check the calendar is still published.
 
 ## Your tasks as a calendar
 

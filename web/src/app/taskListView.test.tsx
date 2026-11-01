@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { setDateTime } from '../lib/dates'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
-import { click, flush, render, mockFetch, noPublicLinks } from '../ui/test-utils'
+import { click, flush, render, mockFetch, noPublicLinks, waitFor } from '../ui/test-utils'
 import { TaskListView } from './TaskListView'
 
 // The project header asks the server for its public links.
@@ -26,13 +26,8 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   setDateTime({ date_format: 'system', time_format: 'system', week_start: 'system' })
-  document.body.innerHTML = ''
 })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 /** The page's children before the one holding the first task row. */
 function chromeBeforeFirstTask(container: HTMLElement): Element[] {
@@ -110,15 +105,17 @@ describe('list chrome', () => {
 describe('selection', () => {
   const press = (el: Element) => el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
 
-  it('a press on empty space clears the selection and closes the panel; rows, controls and overlays keep it', async () => {
-    const { panelTaskId } = await import('./panel')
-    await createTask({ title: 'Renew passport' })
-    const r = await render(<main><TaskListView route={{ view: 'inbox' }} /></main>)
+  it('a press on empty space clears the selection; rows, controls and overlays keep it', async () => {
+    // A project list: the Inbox keeps its split from 1024 px and shows the task beside it instead (inbox-split).
+    const pid = await createProject({ name: 'Home' })
+    await createTask({ title: 'Renew passport', project_id: pid })
+    const r = await render(<main><TaskListView route={{ view: 'project', id: pid }} /></main>)
     await waitFor(() => r.container.textContent!.includes('Renew passport'))
     const title = () => r.container.querySelector<HTMLButtonElement>('[data-task-id] [data-row-open]')!
     await click(title())
     await waitFor(() => !!r.container.querySelector('[data-task-id][aria-current]'))
-    expect(panelTaskId()).toBeTruthy()
+    // The click opened the task as its page (task-full-page); the list keeps the row selected.
+    expect(location.pathname.startsWith('/task/')).toBe(true)
 
     // A row, a control and an overlay do not clear.
     press(title())
@@ -133,7 +130,6 @@ describe('selection', () => {
     // The empty page does.
     press(r.container.querySelector('[data-list-page]')!)
     await waitFor(() => !r.container.querySelector('[data-task-id][aria-current]'))
-    expect(panelTaskId()).toBeNull()
     await r.unmount()
   })
 

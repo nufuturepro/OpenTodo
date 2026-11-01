@@ -8,12 +8,11 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/mcp"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/mcp"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // MCP endpoint (OpenSpec changes `mcp-server` and `mcp-write-tools`):
@@ -26,39 +25,35 @@ import (
 // mcpMaxBody caps an MCP request body (spec "Limits and no outbound calls").
 const mcpMaxBody = 1 << 20
 
-// WithMCPSettings shares the owner's MCP toggle with the caller (main seeds the
-// OPENTODO_MCP preset through it). Without it New builds its own.
-func WithMCPSettings(m *mcp.Settings) Option { return func(s *Server) { s.mcpSettings = m } }
-
 func (s *Server) registerMCPRoutes(mux *routes) {
-	if s.mcpSettings == nil {
-		s.mcpSettings = mcp.NewSettings(s.sync.DB())
-	}
 	s.agentAccess = agenttools.NewAccess(s.sync.DB())
+	s.agentExclusions = agenttools.NewExclusions(s.sync.DB())
 	s.agentTools = agenttools.New(s.sync, agenttools.Options{
-		Audit: s.audit, Log: s.log,
-		LocalToday: func() string { return localToday(time.Now()) },
+		Audit: s.audit, Log: s.log, Exclusions: s.agentExclusions,
+		LocalToday: func() string { return localToday(s.now()) },
 		// Relative reminders follow a new due date (deadline reminders a new
-		// deadline), as for a REST write.
+		// deadline), as for a REST write, and a task that gets a due date gets
+		// the person's default reminder (default-reminders D6).
 		ExtraOps: func(ctx context.Context, uid string, c agenttools.Change, ts int64, device string) ([]opsync.Op, error) {
-			if c.Entity != "task" || c.Create {
+			if c.Entity != "task" {
 				return nil, nil
 			}
-			return s.reminderOpsForTaskAs(ctx, uid, c.EntityID, c.Patch, ts, device)
+			return s.agentReminderOps(ctx, uid, c.EntityID, c.Create, c.Patch, ts, device)
 		},
 	})
 	s.mcp = mcp.New(s.sync, mcp.Options{Version: s.version, Log: s.log, Tools: s.agentTools, IssuesResource: s.issuesResource})
 	// Every method reaches the handler so a disabled endpoint is 404 for all of
 	// them and an enabled one can answer 405 for anything but POST.
-	mux.handle("/mcp", public("assistants authenticate with a bearer token in the handler").demoDenied(), s.handleMCP)
+	mux.handle("/mcp", public("assistants authenticate with a bearer token in the handler").DemoDenied(), s.handleMCP)
 	// Status for every signed-in user (the AI assistants section shows it to
 	// members too); changing it is owner only.
 	mux.handle("GET /api/v1/settings/mcp", signedIn, s.handleGetMCPSettings)
-	mux.handle("PUT /api/v1/settings/mcp", ownerOnly("manage the AI assistants (MCP) setting").demoDenied(), s.handlePutMCPSettings)
+	mux.handle("PUT /api/v1/settings/mcp", ownerOnly("manage the AI assistants (MCP) setting").Credential().DemoDenied(), s.handlePutMCPSettings)
 	// The user's own "Allow AI assistants to make changes" switch: sessions and
 	// full tokens only, so an assistant can never flip it (mcp-write-tools D3).
-	mux.handle("GET /api/v1/me/agent-access", signedIn.fullTokens(), s.handleGetAgentAccess)
-	mux.handle("PUT /api/v1/me/agent-access", signedIn.fullTokens().demoDenied(), s.handlePutAgentAccess)
+	mux.handle("GET /api/v1/me/agent-access", signedIn.FullTokens(), s.handleGetAgentAccess)
+	mux.handle("PUT /api/v1/me/agent-access", signedIn.FullTokens().DemoDenied(), s.handlePutAgentAccess)
+	s.registerAgentExclusionRoutes(mux)
 }
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {

@@ -61,12 +61,16 @@ func (n *Node) Attr(local string) string {
 var ErrBadXML = errors.New("malformed XML body")
 
 // ParseXML reads one XML document into a tree. An empty body returns nil, nil.
-func ParseXML(r io.Reader) (*Node, error) {
-	data, err := io.ReadAll(io.LimitReader(r, MaxXMLBytes+1))
+func ParseXML(r io.Reader) (*Node, error) { return ParseXMLLimit(r, MaxXMLBytes) }
+
+// ParseXMLLimit is ParseXML with another size bound (calendar sync reads
+// multistatus answers that carry calendar data).
+func ParseXMLLimit(r io.Reader, max int) (*Node, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(max)+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > MaxXMLBytes {
+	if len(data) > max {
 		return nil, fmt.Errorf("%w: too large", ErrBadXML)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
@@ -76,6 +80,9 @@ func ParseXML(r io.Reader) (*Node, error) {
 	dec.Strict = true
 	var root *Node
 	var stack []*Node
+	// The text of each open element, joined once when it closes: text comes in
+	// pieces between comments and CDATA, and += per piece is quadratic.
+	var texts []*strings.Builder
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
@@ -100,11 +107,13 @@ func ParseXML(r io.Reader) (*Node, error) {
 				p.Children = append(p.Children, n)
 			}
 			stack = append(stack, n)
+			texts = append(texts, &strings.Builder{})
 		case xml.EndElement:
-			stack = stack[:len(stack)-1]
+			stack[len(stack)-1].Text = texts[len(texts)-1].String()
+			stack, texts = stack[:len(stack)-1], texts[:len(texts)-1]
 		case xml.CharData:
-			if len(stack) > 0 {
-				stack[len(stack)-1].Text += string(t)
+			if len(texts) > 0 {
+				texts[len(texts)-1].Write(t)
 			}
 		}
 	}

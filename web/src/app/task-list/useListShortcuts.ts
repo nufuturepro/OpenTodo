@@ -14,12 +14,16 @@ import type { Priority, Task } from '../../lib/types'
 import type { Tree } from '../../lib/tree'
 import { act } from '../actionError'
 import { runBulk } from '../bulk/BulkActions'
-import { setPanelTaskId as setOpenId } from '../panel'
+import { panelTaskId, setPanelTaskId as setOpenId, sidePanelDocks, taskSplitDocks } from '../panel'
+import { closeSidePanelFrom } from '../sidePanel'
+import { navigate } from '../router'
+import { openTaskPage } from '../taskTrail'
 import type { useSelection } from '../selection'
 import { blockedByFocus, deadlineFocus, deferFocus, estimateFocus, placeInDay } from '../signals'
 import { isActivationTarget, isTypingTarget, useShortcutScope } from '../shortcuts'
 import { deleteWithUndo, parkWithUndo } from '../undoable'
 import type { ListRoute } from './useListModel'
+import { dayPartFields } from '../../lib/dayParts'
 
 /** The list's transient UI state the keys open and close. */
 export interface ListUi {
@@ -32,7 +36,8 @@ export interface ListUi {
   addingUnder: string | null
   setAddingUnder: Dispatch<SetStateAction<string | null>>
   setAddingTo: Dispatch<SetStateAction<string | null>>
-  openActions: (picker?: string | null) => void
+  /** `from`: the row's More button, where the menu then opens. */
+  openActions: (picker?: string | null, from?: HTMLElement | null) => void
 }
 
 export interface ShortcutContext {
@@ -50,6 +55,10 @@ export interface ShortcutContext {
   setSelectedId: (id: string | null) => void
   openId: string | null
   manual: boolean
+  /** A keyboard move while another order is shown switches the list to manual order first (list-display-options D4). */
+  onReorder?: () => void
+  /** A list with its own order (a label page, view-manual-order D4): one step within the task's group. */
+  moveInView?: (id: string, step: Step) => Promise<boolean>
   treeView: boolean
   projectReadOnly: boolean
   projectEditable: boolean
@@ -66,6 +75,9 @@ export interface ShortcutContext {
   toggleViewMode: () => void
   /** F2: edit the selected task's title in place (inline-task-editing). */
   editInline?: (id: string) => void
+  /** The row whose details are shown under it, and its setter (row-expand D1, D4). */
+  expandedId: string | null
+  setExpandedId: (id: string | null) => void
 }
 
 /** Selecting tasks moves keyboard attention to the list: a sidebar project left
@@ -73,6 +85,11 @@ export interface ShortcutContext {
  * attribute, not the translated group name, so it holds in every language. */
 function leaveSidebar() {
   if ((document.activeElement as HTMLElement | null)?.closest?.('[data-project-row]')) (document.activeElement as HTMLElement).blur()
+}
+
+/** The key was pressed on a row's revealed actions (rows-v2 D7): Tab keeps its browser meaning there. */
+function inRowActions(e: KeyboardEvent): boolean {
+  return !!(e.target as HTMLElement | null)?.closest?.('[data-row-actions]')
 }
 
 export function useListShortcuts(c: ShortcutContext) {
@@ -116,6 +133,8 @@ export function useListShortcuts(c: ShortcutContext) {
   const moveBy = (how: Step) => () => {
     // Keyboard moves (manual-ordering): only in manually ordered views; the selection stays on the moved task; edges do nothing.
     if (!c.manual || !selectedId) return false
+    if (c.moveInView) { act(c.moveInView(selectedId, how)); return }
+    c.onReorder?.()
     act(moveTaskBy(selectedId, how))
   }
   /** The selected (or open) task, for occurrence keys; false when it is missing or read-only. */
@@ -123,18 +142,28 @@ export function useListShortcuts(c: ShortcutContext) {
     const id = row?.task.id ?? openId
     return !id || isReadOnly(row?.task ?? c.taskMap.get(id)) ? null : id
   }
-  useShortcutScope('view', { 'project.view-mode': () => { if (!c.projectId) return false; c.toggleViewMode() } }, { view: c.route.view })
+  useShortcutScope('view', {
+    'project.view-mode': () => { if (!c.projectId) return false; c.toggleViewMode() },
+    // P processes the Inbox one task at a time (inbox-split D3), as its primary action does.
+    'inbox.process': () => { if (c.route.view !== 'inbox' || rows.length === 0) return false; navigate({ view: 'triage' }) },
+  }, { view: c.route.view })
   useShortcutScope('list', {
-    'list.quick-add': () => { if (c.projectReadOnly) return false; c.quickAddRef.current?.focus() },
     'list.escape': (e) => {
       const target = e.target as HTMLElement | null
       if (isTypingTarget(target)) target!.blur()
+      // Escape inside the side panel closes it (task-side-panel D4).
+      else if (closeSidePanelFrom(target)) return
       else if (ui.pickerFor) ui.setPickerFor(null)
       else if (ui.assignFor) ui.setAssignFor(null)
       else if (ui.prompt) ui.setPrompt(null)
       else if (ui.addingUnder) ui.setAddingUnder(null)
-      else if (openId) setOpenId(null)
+      else if (openId && !taskSplitDocks()) setOpenId(null)
+      // The details of an expanded row close before the selection clears (row-expand D1).
+      else if (c.expandedId) c.setExpandedId(null)
       else if (selection.ticked.size) selection.clear()
+      // On the Inbox's split the pane follows the cursor: Escape clears both (inbox-split D1);
+      // the side panel keeps its task (task-side-panel D4).
+      else if (openId && !sidePanelDocks()) { setOpenId(null); setSelectedId(null) }
       else setSelectedId(null)
     },
     'list.move-up': moveBy(-1), 'list.move-down': moveBy(1), 'list.move-top': moveBy('top'), 'list.move-bottom': moveBy('bottom'),
@@ -145,32 +174,45 @@ export function useListShortcuts(c: ShortcutContext) {
     'list.actions': () => { if (!ticked.length && !selectedId) return false; ui.openActions() },
     'list.down': () => { leaveSidebar(); setSelectedId(rows[Math.min(rows.length - 1, idx + 1)]?.task.id ?? null) },
     'list.up': () => { leaveSidebar(); setSelectedId(rows[Math.max(0, idx - 1)]?.task.id ?? null) },
+    // ← shows less, → shows more (row-expand D1): the details close first and open last, around the subtasks.
     'list.collapse': () => {
-      if (!row || !c.treeView) return false
-      if (row.hasChildren && !row.collapsed) c.toggleCollapsed(row.task.id, true)
+      if (!row) return false
+      if (c.expandedId === row.task.id) c.setExpandedId(null)
+      else if (!c.treeView) return false
+      else if (row.hasChildren && !row.collapsed) c.toggleCollapsed(row.task.id, true)
       else if (row.parent) setSelectedId(row.parent)
     },
     'list.expand': () => {
-      if (!row || !c.treeView) return false
-      if (row.hasChildren && row.collapsed) c.toggleCollapsed(row.task.id, false)
+      if (!row) return false
+      if (c.treeView && row.hasChildren && row.collapsed) c.toggleCollapsed(row.task.id, false)
+      else if (!c.board) c.setExpandedId(row.task.id)
+      else return false
     },
     'list.open': (e) => {
       if (ui.prompt) { c.acceptPrompt(); return }
       // Enter on a focused button or link is that control's own (the panel's tabs, a version's expander).
       if (!selectedId || isActivationTarget(e.target)) return false
-      setOpenId(selectedId)
+      // On the Inbox's split the task is already beside the list: Enter opens its page (inbox-split D1).
+      // The side panel shows it first, then opens its page (task-side-panel D4).
+      if (taskSplitDocks() && (!sidePanelDocks() || panelTaskId() === selectedId)) openTaskPage(selectedId)
+      else setOpenId(selectedId)
     },
     'list.add-subtask': () => {
       if (!row || !writable) return false
       c.toggleCollapsed(row.task.id, false)
       ui.setAddingUnder(row.task.id)
     },
-    'list.indent': () => { if (!row || !writable || !c.treeView) return false; indent(row, idx) },
-    'list.outdent': () => { if (!row || !writable || !c.treeView) return false; outdent(row) },
+    // Tab inside a row's revealed actions moves between them (rows-v2 D7), never indents.
+    'list.indent': (e) => { if (!row || !writable || !c.treeView || inRowActions(e)) return false; indent(row, idx) },
+    'list.outdent': (e) => { if (!row || !writable || !c.treeView || inRowActions(e)) return false; outdent(row) },
     'list.complete': () => {
       if (ticked.length) { act(runBulk(ticked, { kind: 'complete' })); return }
       if (!row || !writable) return false
-      act(c.toggleComplete(row.task.id, !row.task.completed_at))
+      const completing = !row.task.completed_at
+      // The cursor moves on at once (motion-v2 D2): the next completion never waits for the row
+      // to leave. A repeating task stays in the list with its next date, and so does the cursor.
+      if (completing && !row.task.recurrence) setSelectedId((rows[idx + 1] ?? rows[idx - 1])?.task.id ?? null)
+      act(c.toggleComplete(row.task.id, completing))
     },
     'list.priority': (e) => {
       const priority = Number(e.key) as Priority
@@ -222,7 +264,7 @@ export function useListShortcuts(c: ShortcutContext) {
     'list.blocked-by': openFor(blockedByFocus),
     // Park or un-park (someday-and-evening D5).
     'list.park': () => { if (!row || !writable) return false; act(row.task.start === 'someday' ? unparkTask(row.task.id) : parkWithUndo(row.task.id)) },
-    'list.evening': () => { if (!row || !writable) return false; act(updateTask(row.task.id, { evening: !row.task.evening })) },
+    'list.evening': () => { if (!row || !writable) return false; act(updateTask(row.task.id, dayPartFields(row.task.evening ? null : 'evening'))) },
     // Duplicate the task and its open subtasks right below it (project-templates D6).
     'list.duplicate': () => { if (!row || !writable) return false; act(duplicateTask(row.task.id).then((id) => setSelectedId(id))) },
   })

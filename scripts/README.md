@@ -9,6 +9,18 @@ make cli-smoke                 # builds bin/opentodo and bin/ot, then runs the s
 OPENTODO_SMOKE_PORT=18081 ./scripts/cli-smoke.sh
 ```
 
+## `fuzz.sh`
+
+Runs every Go fuzz target (`func FuzzXxx` in a `*_test.go` file) one after another, for 30 seconds each by default. The targets cover the parsers of untrusted input: quick add, recurrence, filters, passkey data (WebAuthn), email, calendar feeds, CalDAV and calendar sync XML, imports and the vault's Markdown. Their seed inputs, and any failing input committed under `<package>/testdata/fuzz/`, also run in every plain `go test`. The nightly workflow runs this script with a minute per target.
+
+```bash
+make web                                   # the Go tests need the web build
+scripts/fuzz.sh                            # 30s per target
+scripts/fuzz.sh 5m ./internal/email        # one package, longer
+```
+
+When a target fails, Go writes the input to `<package>/testdata/fuzz/<FuzzXxx>/`; commit it with the fix so it stays a regression test.
+
 ## `e2e-smoke.mjs`
 
 Drives the production binary in headless Chromium through the whole walking skeleton: owner setup, capture, natural-language quick add (preview chips, then the parsed date and priority checked on the server), projects, detail edits, keyboard shortcuts, views, sync verified through the REST API, a second device, an offline edit that uploads on reconnect, settings and tokens, mobile layout. Selectors are scoped by role and label (a task row is the button whose name starts with its title; detail fields are looked up inside the detail panel), so the Parent task picker and subtask lists never make them ambiguous. Pass a directory as the first argument to also save screenshots of the run.
@@ -39,6 +51,18 @@ node scripts/e2e-views.mjs [screenshot-dir]
 CHROMIUM_PATH=/path/to/chrome node scripts/e2e-views.mjs
 ```
 
+## `e2e-offline.mjs`
+
+Offline start of the built app, run by `make e2e`: it sets up the owner on a **fresh** server, adds a task, waits until the built service worker controls the page and checks the web app manifest, then turns the network off and reloads. The app must open from the precache with the task from IndexedDB, a request to `/api/*` must fail rather than be answered from a cache, and a task added offline must reach the server once the network is back.
+
+```bash
+make build
+OPENTODO_DATA_DIR=$(mktemp -d) ./bin/opentodo &
+node scripts/e2e-offline.mjs
+```
+
+The unit tests of the built service worker and manifest (`web/src/lib/serviceWorker.test.ts`, `web/src/ui/workbench.test.ts`) skip without a build; `npm run test:built` (in `web/`, after `npm run build`) runs them with `REQUIRE_BUILT=1`, which fails instead of skipping. CI runs it after the web build.
+
 ## `e2e-network.mjs`
 
 Network audit for locations and maps (OpenSpec change `task-locations`, task 7.1), run by `make e2e`. It starts a fake tile and Photon provider on localhost and two fresh servers of its own (`OPENTODO_BIN`, default `bin/opentodo`), one with `OPENTODO_MAPS=off` and one with maps on, both pointed at the fake with `OPENTODO_MAPS_TILES_URL` and `OPENTODO_MAPS_GEOCODER_URL`, so nothing reaches OpenFreeMap or Photon. In each it opens a task with a location, its location editor (searching an address when maps are on) and the Locations page, and fails when the browser contacts any origin but the server's, when the server contacts the provider with maps off, or when a provider request with maps on lacks the server's User-Agent or carries the viewer's cookie, token or address. The map draws through SwiftShader WebGL, so tiles are really requested.
@@ -59,9 +83,41 @@ npm i -g playwright@1.56.1 && playwright install chromium webkit   # once
 node scripts/e2e-layout.mjs [report-dir]
 ```
 
-Environment: `OPENTODO_URL`, `ENGINES` (default `chromium,webkit`), `WIDTHS` (`360,390,768`), `THEMES` (`light,dark`), `ONLY` (screen names), `CONCURRENCY` (3), `SHOTS=all` (also save a screenshot of every screen and overlay), `CHROMIUM_PATH`, `WEBKIT_PATH`, `OPENTODO_LANG` (an interface language such as `de`: the run writes the synced language preference before capturing, to find labels that a longer translation makes overflow). When you add a screen or an overlay, add it to the `screens()` and `OVERLAYS` tables in the script.
+Environment: `OPENTODO_URL`, `ENGINES` (default `chromium,webkit`), `WIDTHS` (`360,390,768`), `THEMES` (`light,dark`), `ONLY` (screen names), `CONCURRENCY` (3), `SHOTS=all` (also save a screenshot of every screen and overlay), `CHROMIUM_PATH`, `WEBKIT_PATH`, `OPENTODO_LANG` (an interface language such as `de`: the run writes the synced language preference before capturing, to find labels that a longer translation makes overflow). When you add a screen or an overlay, add it to the `screens()` and `OVERLAYS` tables in `scripts/ux-audit/layout-screens.mjs` and an entry to the screen inventory. The seed (`ux-audit/seed.mjs`), the screens and overlay openers (`ux-audit/layout-screens.mjs`) and the page measurements (`ux-audit/measure.mjs`) are shared with the interface audit. With `OPENTODO_LANG` set to another language, each screen is checked once a heading, a task row or an alert shows, without its overlays or layout switches (their openers find controls by English names); CI runs a German leg at 360 px.
 
 Every screen, and every overlay on its own, is also run through axe-core in light and dark; serious and critical issues (colour contrast below WCAG AA, missing names and labels, invalid roles or ARIA) fail the check. The check also covers the in-app Help (OpenSpec change `user-documentation`): Help is opened offline from the service worker's precache (Chromium), and the contextual help panel is opened over the share dialog with an email typed into it, which must still be there after the panel closes. axe-core comes from `web/node_modules` (run `npm ci` in `web/`); the context uses `bypassCSP` so it can be injected.
+
+## `ux-audit/`
+
+The interface audit (OpenSpec change `ux-audit-three-widths`); what it measures is in [Design system](../docs/design-system.md#the-interface-audit).
+
+- `screens.json`: the screen inventory, one entry per screen or overlay: `id`, `route` (a router view), `kind` (`screen`, `overlay`, `settings`, `signed-out`, `display`), `seed`, `frequency` (`daily`, `weekly`, `rare`), `core` (true exactly for daily and weekly), `layoutCheck` (the layout check's screen name or overlay key) or `layoutCheckReason` with `path` and `ready` (a CSS selector), `story` (the story title that shows it), and for overlays `on` (the screen it opens on) and `open` (`overlay`, a layout-check opener, and `steps`: `click`, `clickIfVisible`, `focus`, `type`). `tour: false` marks the two entries no tour can reach.
+- To add a route: add its entry; if the layout check opens it, name its screen; otherwise give the reason, a `path` (`{home}`, `{quotes}` and the other seed ids are filled in) and a `ready` selector. Mark it daily or weekly only if it is, and then give it a story.
+- `ux-audit.test.mjs` (in `make ui-lint`): every router view has an entry, every `layoutCheck` name exists, `core` matches the frequency, overlays say how they open, and `screens.mjs` shots name inventory entries; plus the report's ranking.
+- `stories.mjs` (in `make ui-lint`): every core entry's story title exists.
+- `tour.mjs`, `report.mjs`, `audit-measures.mjs`, `measure.test.mjs` (fixture tests in Chromium, run by the CI job).
+- `settings-heights.mjs` (OpenSpec change `settings-subpages`): the height of every Settings section and sub-page at 1280×800 and 390×844, as the owner of a throwaway server with every owner feature on, as a Markdown table. `TEXT_SIZE`, `SHOTS=<dir>` (a screenshot of each whole page), `THEME=dark`, `JSON=1`, `LIMIT` and `STRICT=1` (exit 1 when a page is taller than `LIMIT` screens, 1.5 by default).
+
+```bash
+make ux-audit                                        # builds, runs the tour, prints the report path
+ONLY=inbox,today WIDTHS=1280 LANGS=en node scripts/ux-audit/tour.mjs   # a quick local look
+```
+
+Environment: `OUT_DIR` (`ux-audit-report`), `ONLY`, `WIDTHS` (`360,768,1280`), `THEMES` (`light,dark`), `LANGS` (`en,de`), `CONCURRENCY` (2), `CHROMIUM_PATH`, `OPENTODO_BIN` (`bin/opentodo`), `UX_AUDIT_STRICT=1`.
+
+## `caldav-clients/`
+
+The CalDAV verification scenario against real clients (OpenSpec change `caldav-interop`, task 5.2); its results are the rows of the verification table in [Calendar apps](../docs/caldav.md#limits). `run.sh` starts a fresh server on port 18080 with CalDAV on, a recording proxy on 18081 (every request and answer in `$WORK/traffic.jsonl`, the source of the fixtures in `internal/caldav/testdata/<client>/`), then drives the client and prints one `PASS`/`FAIL` line per check: served due forms, deadlines, date shapes, estimates, alarms, completing a repeating task, moves, deletion and incremental sync. Server state is read back through the REST API.
+
+- `thunderbird`: downloads Thunderbird from Mozilla into `$WORK` and runs it headless with Marionette (`mn.py`); `tblib.js` calls its CalDAV provider through the item APIs its task list and task dialog use. Linux only.
+- `todoman`: todoman edits a local vdir and vdirsyncer syncs it (both installed into a venv in `$WORK`; `tm.sh` holds their configuration).
+
+```bash
+make build && scripts/caldav-clients/run.sh thunderbird
+scripts/caldav-clients/run.sh todoman
+```
+
+Environment: `OPENTODO_BIN` (`bin/opentodo`), `WORK` (`/tmp/opentodo-caldav-clients`). Needs `python3` with `venv`, `curl` and `fuser`. Not part of CI: it downloads a client and takes a few minutes.
 
 ## `e2e-docs.mjs`
 

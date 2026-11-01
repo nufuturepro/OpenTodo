@@ -3,13 +3,15 @@ package agenttools
 import (
 	"context"
 	"errors"
-	"github.com/pixari/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/flow"
+	"github.com/OpenTodoApp/opentodo/internal/inbox"
 	"sort"
 	"strings"
 	"time"
 
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/zoned"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
 // ---- read tools (always offered) ----
@@ -49,16 +51,20 @@ func init() {
 			"List the user's projects (their own and shared ones they are a member of) with the number of open tasks in each. Archived projects are left out unless include_archived is true.",
 			object(nil, map[string]any{
 				"include_archived": map[string]any{"type": "boolean", "default": false, "description": "Also return archived projects."},
+				"workspace":        workspaceProp,
 			})),
 		read: (*Registry).listProjects,
 	})
 	register(tool{
 		def: readDef("list_tasks", "List tasks",
-			"List tasks with filters. view: all (default), inbox (open tasks without a project that are not scheduled: no do-on date, start date or Someday), today (open tasks due today or overdue, overdue first) or upcoming (open tasks due after today). "+
+			"List tasks with filters. view: all (default), inbox (open tasks without a project that are not scheduled: no do-on date, start date or Someday), today (open tasks due today or overdue, overdue first), upcoming (open tasks due after today), someday (open tasks parked in Someday) or anytime (open tasks with no do-on date, deadline or start). blocked: true lists only tasks waiting for an open task, false only the others. available: true lists only tasks that can be done now (open, not blocked, not waiting for an earlier step of a sequential project or section, neither in Someday nor starting later), false only the others. "+
 				"Tasks of archived projects are left out unless project_id names that project. Results are paged: pass next_cursor back as cursor.",
 			object(nil, map[string]any{
-				"view":              map[string]any{"type": "string", "enum": []string{"all", "inbox", "today", "upcoming"}, "default": "all"},
+				"view":              map[string]any{"type": "string", "enum": []string{"all", "inbox", "today", "upcoming", "someday", "anytime"}, "default": "all"},
+				"blocked":           map[string]any{"type": "boolean", "description": "true: only tasks waiting for an open task; false: only tasks that are not."},
+				"available":         map[string]any{"type": "boolean", "description": "true: only tasks that can be done now; false: only tasks that cannot."},
 				"project_id":        map[string]any{"type": "string", "description": "Only tasks of this project (see list_projects)."},
+				"workspace":         workspaceProp,
 				"label":             map[string]any{"type": "string", "description": "Only tasks carrying this label (name, case-insensitive, or id)."},
 				"priority":          map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "description": "Only tasks of this priority: 1 is the highest, 4 the default."},
 				"due_from":          map[string]any{"type": "string", "format": "date", "description": "Only tasks due on or after this date (YYYY-MM-DD)."},
@@ -86,6 +92,7 @@ func init() {
 			"Find tasks whose title or description contains the query (case-insensitive). Open tasks only unless include_completed is true. Paged like list_tasks.",
 			object([]string{"query"}, map[string]any{
 				"query":             map[string]any{"type": "string", "minLength": 1, "description": "Text to look for."},
+				"workspace":         workspaceProp,
 				"include_completed": completedArg,
 				"timezone":          timezoneProp,
 				"limit":             limitProp,
@@ -95,7 +102,7 @@ func init() {
 	})
 	register(tool{
 		def: readDef("today_summary", "Today summary",
-			"One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project.",
+			"One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting.",
 			object(nil, map[string]any{
 				"timezone": timezoneProp,
 			})),
@@ -119,6 +126,8 @@ type nameText struct {
 type projectText struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// Workspace is the name of the project's workspace (OpenSpec change workspaces).
+	Workspace string `json:"workspace,omitempty"`
 }
 
 type projectOut struct {
@@ -126,15 +135,21 @@ type projectOut struct {
 	Untrusted projectText `json:"untrusted_text"`
 	// Encrypted marks a project whose name or note is end-to-end encrypted:
 	// the server shows the placeholder instead.
-	Encrypted bool    `json:"encrypted"`
-	Color     string  `json:"color,omitempty"`
-	Archived  bool    `json:"archived"`
+	Encrypted bool   `json:"encrypted"`
+	Color     string `json:"color,omitempty"`
+	Archived  bool   `json:"archived"`
+	// FlowMode is how the project's tasks flow: parallel, sequential or area (project-flow-modes).
+	FlowMode string `json:"flow_mode"`
+	// Status is active or maintenance (project-review-cadence).
+	Status    string  `json:"status"`
 	ParentID  *string `json:"parent_id,omitempty"`
 	Shared    bool    `json:"shared"`
 	Role      string  `json:"role,omitempty"`
 	OpenCount int     `json:"open_count"`
 	// Fields are the project's live custom field definitions (custom-fields).
 	Fields []fieldOut `json:"fields"`
+	// WorkspaceID is the project's workspace (OpenSpec change workspaces).
+	WorkspaceID string `json:"workspace_id,omitempty"`
 }
 
 // inboxCount counts the Inbox tasks (internal/inbox): open, no project, not scheduled.
@@ -162,19 +177,26 @@ func (snap *snapshot) openCounts() map[string]int {
 func (snap *snapshot) renderProject(p opsync.Entity, counts map[string]int) projectOut {
 	id := str(p, "id")
 	out := projectOut{ID: id, Untrusted: projectText{Name: str(p, "name"), Description: str(p, "description")}, Color: str(p, "color"),
-		Archived: boolean(p, "archived"), ParentID: strPtr(p, "parent_id"), OpenCount: counts[id], Fields: snap.renderFields(id),
+		Archived: boolean(p, "archived"), FlowMode: flow.ProjectFlow(str(p, "flow_mode")), Status: statusOf(str(p, "status")), ParentID: strPtr(p, "parent_id"), OpenCount: counts[id], Fields: snap.renderFields(id),
 		Encrypted: e2ee.IsCiphertext(rawStr(p, "name")) || e2ee.IsCiphertext(rawStr(p, "description"))}
 	if acc, ok := snap.shared[id]; ok {
 		out.Shared, out.Role = true, acc.Role
 	}
+	if len(snap.workspaces) > 0 {
+		out.WorkspaceID = snap.partition().Project(id)
+		out.Untrusted.Workspace = snap.workspaceName(out.WorkspaceID)
+	}
 	return out
 }
 
-func (r *Registry) projectsPayload(snap *snapshot, includeArchived bool) map[string]any {
+func (r *Registry) projectsPayload(snap *snapshot, includeArchived bool, workspace string) map[string]any {
 	counts := snap.openCounts()
 	items := []keyed[projectOut]{}
 	for _, p := range snap.projList {
 		if !includeArchived && boolean(p, "archived") {
+			continue
+		}
+		if workspace != "" && snap.partition().Project(str(p, "id")) != workspace {
 			continue
 		}
 		items = append(items, keyed[projectOut]{key: sortableFloat(num(p, "position")) + "|" + sortableFloat(num(p, "created_at")), id: str(p, "id"), v: snap.renderProject(p, counts)})
@@ -196,18 +218,31 @@ func (r *Registry) listProjects(ctx context.Context, userID string, a args) (map
 	if err != nil {
 		return nil, err
 	}
+	arg, err := a.str("workspace")
+	if err != nil {
+		return nil, err
+	}
 	snap, err := r.load(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return r.projectsPayload(snap, includeArchived), nil
+	ws, err := snap.resolveWorkspace("workspace", arg)
+	if err != nil {
+		return nil, err
+	}
+	return r.projectsPayload(snap, includeArchived, ws), nil
 }
 
 // ---- list_tasks ----
 
 type taskQuery struct {
-	view             string
+	view string
+	// blocked filters by the derived blocked state when set (agent-planning-fields).
+	blocked *bool
+	// available filters by the derived available state when set (project-flow-modes).
+	available        *bool
 	projectID        string
+	workspace        string
 	label            string
 	priority         int
 	dueFrom, dueTo   string
@@ -229,14 +264,31 @@ func parseTaskQuery(a args) (taskQuery, error) {
 	switch q.view {
 	case "":
 		q.view = "all"
-	case "all", "inbox", "today", "upcoming":
+	case "all", "inbox", "today", "upcoming", "someday", "anytime":
 	default:
-		return q, argErr("view: must be one of all, inbox, today, upcoming")
+		return q, argErr("view: must be one of all, inbox, today, upcoming, someday, anytime")
+	}
+	if a.present("blocked") {
+		b, err := a.boolean("blocked")
+		if err != nil {
+			return q, err
+		}
+		q.blocked = &b
+	}
+	if a.present("available") {
+		b, err := a.boolean("available")
+		if err != nil {
+			return q, err
+		}
+		q.available = &b
 	}
 	if q.projectID, err = a.str("project_id"); err != nil {
 		return q, err
 	}
 	if q.label, err = a.str("label"); err != nil {
+		return q, err
+	}
+	if q.workspace, err = a.str("workspace"); err != nil {
 		return q, err
 	}
 	p, has, err := a.integer("priority")
@@ -295,6 +347,10 @@ func (r *Registry) queryTasks(snap *snapshot, q taskQuery) (map[string]any, erro
 			return nil, argErr("project_id: no such project")
 		}
 	}
+	ws, err := snap.resolveWorkspace("workspace", q.workspace)
+	if err != nil {
+		return nil, err
+	}
 	var wantLabels map[string]bool
 	if q.label != "" {
 		if wantLabels = snap.labelIDs(q.label); len(wantLabels) == 0 {
@@ -303,9 +359,16 @@ func (r *Registry) queryTasks(snap *snapshot, q taskQuery) (map[string]any, erro
 	}
 	items := []keyed[taskOut]{}
 	inInbox := snap.inboxRule()
+	var flows flow.States
+	if q.available != nil {
+		flows = snap.flowStates(today)
+	}
 	for _, t := range snap.tasks {
 		pid := str(t, "project_id")
 		if q.projectID != "" && pid != q.projectID {
+			continue
+		}
+		if ws != "" && snap.partition().Task(str(t, "id")) != ws {
 			continue
 		}
 		if !snap.visible(t, q.projectID != "") {
@@ -330,6 +393,20 @@ func (r *Registry) queryTasks(snap *snapshot, q taskQuery) (map[string]any, erro
 			if d == nil || date <= today || !open {
 				continue
 			}
+		case "someday":
+			if !inbox.Someday(plannedOf(t)) {
+				continue
+			}
+		case "anytime":
+			if !inbox.Anytime(plannedOf(t)) {
+				continue
+			}
+		}
+		if q.blocked != nil && snap.blockedNow(t) != *q.blocked {
+			continue
+		}
+		if q.available != nil && flows.Available(str(t, "id")) != *q.available {
+			continue
 		}
 		if !open && !q.includeCompleted && q.completedAfter == 0 && q.completedBefore == 0 {
 			continue
@@ -542,7 +619,15 @@ func (r *Registry) searchTasks(ctx context.Context, userID string, a args) (map[
 	if err != nil {
 		return nil, err
 	}
+	wsArg, err := a.str("workspace")
+	if err != nil {
+		return nil, err
+	}
 	snap, err := r.load(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := snap.resolveWorkspace("workspace", wsArg)
 	if err != nil {
 		return nil, err
 	}
@@ -551,6 +636,9 @@ func (r *Registry) searchTasks(ctx context.Context, userID string, a args) (map[
 	items := []keyed[taskOut]{}
 	for _, t := range snap.tasks {
 		if !snap.visible(t, false) || (!includeCompleted && !isOpen(t)) {
+			continue
+		}
+		if ws != "" && snap.partition().Task(str(t, "id")) != ws {
 			continue
 		}
 		// Encrypted content (OpenSpec `e2ee`) cannot be searched server-side; the
@@ -586,6 +674,7 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 	}
 	today := r.today(loc)
 	var overdueItems, todayItems []keyed[taskOut]
+	var todayRows []opsync.Entity
 	inbox := 0
 	perProject := map[string]int{}
 	inInbox := snap.inboxRule()
@@ -609,9 +698,20 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 		case date < today:
 			item.v = snap.render(t, loc, today, false)
 			overdueItems = append(overdueItems, item)
+			todayRows = append(todayRows, t)
 		case date == today:
 			item.v = snap.render(t, loc, today, false)
 			todayItems = append(todayItems, item)
+			todayRows = append(todayRows, t)
+		}
+	}
+	// Today's closed list (today-closed-list): which of these wait for a slot.
+	limit, rev := r.todayLimit(ctx, userID)
+	waiting := snap.waitingForSlot(limit, rev, today, loc, todayRows)
+	for _, list := range [][]keyed[taskOut]{overdueItems, todayItems} {
+		for i := range list {
+			w := waiting[list[i].id]
+			list[i].v.WaitingForSlot = &w
 		}
 	}
 	overdue, _, _ := page(overdueItems, "", MaxItems)
@@ -631,6 +731,7 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 	out := map[string]any{
 		"timezone": loc.String(), "today": today,
 		"overdue": overdue, "due_today": dueToday,
+		"today_limit": nullableInt(limit),
 		"counts": map[string]any{
 			"overdue": len(overdueItems), "due_today": len(todayItems), "inbox": inbox, "per_project": counts,
 		},
@@ -640,4 +741,10 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 		out["truncated"] = true
 	}
 	return out, nil
+}
+
+// plannedOf is the part of a task the Someday and Anytime rules read.
+func plannedOf(t opsync.Entity) inbox.Planned {
+	return inbox.Planned{Start: rawStr(t, "start"), HasDue: taskDue(t) != nil, HasDeadline: rawStr(t, "deadline") != "",
+		Completed: !isOpen(t), Deleted: deleted(t)}
 }

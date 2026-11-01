@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	opsync "github.com/pixari/opentodo/internal/sync"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Row outcomes in a preview or job.
@@ -49,8 +49,15 @@ type State struct {
 	TimeEntries []opsync.Entity
 	// Places (including deleted ones) let own-export rows detect existing ids (task-locations).
 	Places []opsync.Entity
+	// Rules are the account's automation rules (automation-rules).
+	Rules []opsync.Entity
 	// UserID is the importing account (own-export assignees are kept only for it).
 	UserID string
+	// Partition places the account's entities in its workspaces, and Workspace
+	// is the import's target (import-workspace); nil and "" (tests) match and
+	// stamp nothing by workspace.
+	Partition *opsync.Partition
+	Workspace string
 	// Remembered maps source ids recorded by earlier, not undone imports of the
 	// same profile to the entity ids they created.
 	Remembered map[string]string
@@ -193,8 +200,6 @@ func str(e opsync.Entity, f string) string {
 	return s
 }
 
-func isNull(v json.RawMessage) bool { return len(v) == 0 || string(v) == "null" }
-
 // validateFields runs the op schema check on every field so a row that the op log
 // would refuse is reported as a row error instead of failing a whole batch.
 func validateFields(entity, id string, fields []field) error {
@@ -263,7 +268,7 @@ func sectionKey(projectID, name string) string {
 func BuildPlan(parsed *Parsed, opts Options, st *State, now time.Time, newID func() string) *Plan {
 	pl := &planner{opts: opts, st: st, now: now.UnixMilli(), newID: newID, position: now.UnixMilli(), files: parsed.Files,
 		byKind: map[string]map[string]opsync.Entity{KindProject: {}, KindLabel: {}, KindTask: {},
-			KindSection: {}, KindReminder: {}, KindView: {}, KindUserPrefs: {}, KindAttachment: {}, KindTimeEntry: {}, KindPlace: {}, KindField: {}, KindReview: {}, KindProjectPrefs: {}},
+			KindSection: {}, KindReminder: {}, KindView: {}, KindRule: {}, KindUserPrefs: {}, KindAttachment: {}, KindTimeEntry: {}, KindPlace: {}, KindField: {}, KindReview: {}, KindProjectPrefs: {}},
 		projectByName: map[string]string{}, labelByName: map[string]string{}, fingerprints: map[string]string{},
 		implicitProj: map[string]*implicit{}, implicitByID: map[string]*implicit{}, implicitLbl: map[string]*implicit{},
 		sectionByKey: map[string]string{}, implicitSec: map[string]*implicit{}, createdBySource: map[string]string{}}
@@ -271,14 +276,14 @@ func BuildPlan(parsed *Parsed, opts Options, st *State, now time.Time, newID fun
 		st.Remembered = map[string]string{}
 	}
 	for kind, list := range map[string][]opsync.Entity{KindProject: st.Projects, KindLabel: st.Labels, KindTask: st.Tasks,
-		KindSection: st.Sections, KindReminder: st.Reminders, KindView: st.Views, KindUserPrefs: st.UserPrefs, KindAttachment: st.Attachments, KindTimeEntry: st.TimeEntries, KindPlace: st.Places, KindField: st.Fields, KindReview: st.Review, KindProjectPrefs: st.ProjectPrefs} {
+		KindSection: st.Sections, KindReminder: st.Reminders, KindView: st.Views, KindRule: st.Rules, KindUserPrefs: st.UserPrefs, KindAttachment: st.Attachments, KindTimeEntry: st.TimeEntries, KindPlace: st.Places, KindField: st.Fields, KindReview: st.Review, KindProjectPrefs: st.ProjectPrefs} {
 		for _, e := range list {
 			id := str(e, "id")
 			pl.byKind[kind][id] = e
 		}
 	}
 	for _, e := range st.Projects {
-		if n := strings.ToLower(strings.TrimSpace(str(e, "name"))); n != "" && !e.Deleted() {
+		if n := strings.ToLower(strings.TrimSpace(str(e, "name"))); n != "" && !e.Deleted() && pl.inTarget(KindProject, e) {
 			if _, ok := pl.projectByName[n]; !ok {
 				pl.projectByName[n] = str(e, "id")
 			}
@@ -292,23 +297,27 @@ func BuildPlan(parsed *Parsed, opts Options, st *State, now time.Time, newID fun
 		}
 	}
 	for _, e := range st.Labels {
-		if n := strings.ToLower(strings.TrimSpace(str(e, "name"))); n != "" && !e.Deleted() {
+		if n := strings.ToLower(strings.TrimSpace(str(e, "name"))); n != "" && !e.Deleted() && pl.inTarget(KindLabel, e) {
 			if _, ok := pl.labelByName[n]; !ok {
 				pl.labelByName[n] = str(e, "id")
 			}
 		}
 	}
 	for _, e := range st.Tasks {
-		if e.Deleted() || !isNull(e["completed_at"]) {
+		if e.Deleted() || !opsync.IsNull(e["completed_at"]) {
 			continue
 		}
 		var due struct {
 			Date string `json:"date"`
 		}
-		if v := e["due"]; !isNull(v) {
+		if v := e["due"]; !opsync.IsNull(v) {
 			_ = json.Unmarshal(v, &due)
 		}
-		key := fingerprint(str(e, "title"), str(e, "project_id"), due.Date)
+		place := str(e, "project_id")
+		if place == "" && st.Partition != nil {
+			place = fingerprintPlace("", st.Partition.Task(str(e, "id")))
+		}
+		key := fingerprint(str(e, "title"), place, due.Date)
 		if _, ok := pl.fingerprints[key]; !ok {
 			pl.fingerprints[key] = str(e, "id")
 		}
@@ -330,6 +339,7 @@ func BuildPlan(parsed *Parsed, opts Options, st *State, now time.Time, newID fun
 		}
 	} else {
 		p.changes = pl.planForeign(parsed.Rows)
+		pl.stampWorkspace(p.changes)
 	}
 	for i := range pl.results {
 		r := &pl.results[i]
@@ -359,18 +369,18 @@ func BuildPlan(parsed *Parsed, opts Options, st *State, now time.Time, newID fun
 		if c.created && c.entity == KindLabel {
 			p.Totals.NewLabels++
 		}
-		live := isNull(c.value("deleted_at"))
+		live := opsync.IsNull(c.value("deleted_at"))
 		switch {
 		case c.created && c.entity == KindField && live:
 			p.Totals.Fields++
 		case c.created && c.entity == KindSection && live:
 			p.Totals.NewSections++
-		case c.entity == KindTask && live && !isNull(c.value("recurrence")):
+		case c.entity == KindTask && live && !opsync.IsNull(c.value("recurrence")):
 			p.Totals.Recurring++
 		case c.created && c.entity == KindReminder && live:
 			p.Totals.Reminders++
 		}
-		if c.entity == KindTask && live && !isNull(c.value("deadline")) {
+		if c.entity == KindTask && live && !opsync.IsNull(c.value("deadline")) {
 			p.Totals.Deadlines++
 		}
 		if c.created && c.entity == KindAttachment && live {

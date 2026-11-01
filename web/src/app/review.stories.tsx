@@ -1,10 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { createProject, createTask, REVIEW_DEFAULTS, setTaskCompleted } from '../lib/ops'
+import { createProject, createTask, mutate, REVIEW_DEFAULTS, setTaskCompleted, updateProject } from '../lib/ops'
 import { db } from '../lib/db'
 import type { EmailDigest, Task, TimeEntry } from '../lib/types'
 import { DigestView, type DigestState } from './DigestCard'
 import { CloseDay } from './review/CloseDay'
+import { DailyCheck } from './review/DailyCheck'
+import FocusPicker from './focus/FocusPicker'
+import { DoneForToday } from './review/DoneForToday'
+import { PageBody, PageHeader } from '../ui'
 import { ReviewView } from './review/ReviewView'
+import { StatTile } from './review/charts'
 import { StatsContent } from './review/StatsView'
 import { HEX, project, seeded, task, TODAY, withClock, withSeed } from './stories/fixtures'
 
@@ -88,6 +93,18 @@ async function seedReview() {
 }
 
 /** The review on its first unfinished step, Get clear, with two Inbox tasks. */
+/** The tile states (surfaces-v2 D10): up, down, the same, and "–" with its reason, at the display step. */
+export const StatisticsTileStates: StoryObj = {
+  render: () => (
+    <dl className="grid grid-cols-1 gap-3 min-[21.25rem]:grid-cols-2 lg:grid-cols-4">
+      <StatTile testId="up" label="Done" value="42" change={{ text: '+12 % vs last week', direction: 'up' }} note="including each day of a recurring task" />
+      <StatTile testId="down" label="Tracked" value="6h 30m" change={{ text: '−1h 15m vs last week', direction: 'down' }} note="against 8h estimated" />
+      <StatTile testId="same" label="On time" value="80 %" change={{ text: 'same as last week', direction: 'same' }} note="of 10 tasks with a due date" />
+      <StatTile testId="none" label="On time" value="–" note="No due dates in this period" />
+    </dl>
+  ),
+}
+
 export const WeeklyReview: StoryObj = {
   ...withSeed(seedReview),
   render: () => <ReviewView userId="u-ada" />,
@@ -105,10 +122,85 @@ export const WeeklyReviewProjects: StoryObj = {
   render: () => <ReviewView userId="u-ada" step="projects" />,
 }
 
+/**
+ * A walk card with an interval and Maintenance (project-review-cadence): Garden is
+ * reviewed every month, is due and in maintenance; Car, reviewed every quarter, waits
+ * for the end of the walk.
+ */
+export const WeeklyReviewProjectsMaintenance: StoryObj = {
+  ...withSeed(async () => {
+    seeded.garden = await createProject({ name: 'Garden', color: HEX.green })
+    seeded.car = await createProject({ name: 'Car', color: HEX.blue })
+    await createTask({ title: 'Water the roses', project_id: seeded.garden })
+    await updateProject(seeded.garden, { status: 'maintenance' })
+    await mutate('project_prefs', seeded.garden, { reviewed_at: new Date('2026-09-10T18:00:00').getTime(), review_every: 'month' })
+    await mutate('project_prefs', seeded.car, { reviewed_at: new Date('2026-10-01T18:00:00').getTime(), review_every: 'quarter' })
+  }),
+  render: () => <ReviewView userId="u-ada" step="projects" />,
+}
+
 /** Every step done: the all-clear card, and Finish review as the primary action. */
 export const WeeklyReviewAllClear: StoryObj = {
   ...withSeed(async () => {}),
   render: () => <ReviewView userId="u-ada" />,
+}
+
+/**
+ * The Daily check in Bento (bento-daily-check D5, D8): three slot rows above the
+ * list, an empty slot in the faint tone; `filled` is how many slots hold a task.
+ */
+function seedBento(filled: 0 | 2 | 3) {
+  return async () => {
+    seeded.work = await createProject({ name: 'Work', color: HEX.blue })
+    await mutate('user_prefs', 'me', { focus_style: 'bento' })
+    const large = await createTask({ title: 'Write the quarterly report', project_id: seeded.work, due: { date: TODAY }, estimate_minutes: 120 })
+    const medium = await createTask({ title: 'Plan the team offsite', project_id: seeded.work, due: { date: TODAY }, estimate_minutes: 45 })
+    const small = await createTask({ title: 'Call the bank', due: { date: TODAY }, estimate_minutes: 15 })
+    await createTask({ title: 'Reply to Mara about the workshop', due: { date: TODAY } })
+    await createTask({ title: 'Send the invoice to Northwind', project_id: seeded.work, due: { date: '2026-10-12' }, priority: 1 })
+    const ids = filled === 3 ? [large, medium, small] : filled === 2 ? [large, small] : []
+    const slots = filled === 3 ? `L:${large},M:${medium},S:${small}` : filled === 2 ? `L:${large},S:${small}` : ''
+    await db.review.put({ ...REVIEW_DEFAULTS, id: 'me', focus_date: TODAY, focus: ids.join(','), focus_slots: slots, _clock: {} })
+  }
+}
+
+export const DailyCheckBentoEmpty: StoryObj = {
+  name: 'Daily check · Bento empty',
+  ...withSeed(seedBento(0)),
+  render: () => <DailyCheck />,
+}
+
+export const DailyCheckBentoPartly: StoryObj = {
+  name: 'Daily check · Bento partly filled',
+  ...withSeed(seedBento(2)),
+  render: () => <DailyCheck />,
+}
+
+export const DailyCheckBentoFull: StoryObj = {
+  name: 'Daily check · Bento full',
+  ...withSeed(seedBento(3)),
+  render: () => <DailyCheck />,
+}
+
+/** Three tasks by touch (phone-touch-focus): one task in today's focus and the Add to focus row under it. */
+async function seedThreeWithRoom() {
+  await seedBento(0)()
+  await mutate('user_prefs', 'me', { focus_style: 'three' })
+  const first = (await db.tasks.toArray()).find((x) => x.title === 'Call the bank')!
+  await db.review.put({ ...REVIEW_DEFAULTS, id: 'me', focus_date: TODAY, focus: first.id, _clock: {} })
+}
+
+export const DailyCheckThreeWithRoom: StoryObj = {
+  name: 'Daily check · Three tasks with room',
+  ...withSeed(seedThreeWithRoom),
+  render: () => <DailyCheck />,
+}
+
+/** The picker of an empty Large slot (phone-touch-focus D4): today's tasks, the long ones first. */
+export const FocusPickerLargeSlot: StoryObj = {
+  name: 'Focus picker · Large slot',
+  ...withSeed(seedBento(0)),
+  render: () => <FocusPicker request={{ mode: 'task', slot: 'L' }} onClose={() => {}} />,
 }
 
 async function seedCloseDay() {
@@ -126,18 +218,37 @@ async function seedCloseDay() {
   await db.review.put({ ...REVIEW_DEFAULTS, id: 'me', focus_date: TODAY, focus: done.slice(0, 2).join(','), _clock: {} })
 }
 
-/** Close the day on Carry over: every unfinished task of Today with its decision, Tomorrow by default. */
+/** Close the day's first step (close-the-day-v2 D5): the day's figures as one sentence, Back and Next inside the card. */
+export const CloseTheDaySummary: StoryObj = {
+  name: 'Close the day · how it went',
+  ...withSeed(seedCloseDay),
+  render: () => <CloseDay />,
+}
+
+/** Close the day on Carry over (close-the-day-v2 D2): one task on the card with its five decisions, the decisions so far below. */
 export const CloseTheDay: StoryObj = {
   name: 'Close the day',
   ...withSeed(seedCloseDay),
   render: () => <CloseDay initialStep="carry" />,
 }
 
-/** Close the day's last step: the line for tomorrow and the primary "Close the day". */
+/** Close the day's last step: the note for tomorrow morning with its preview, and the primary "Close the day". */
 export const CloseTheDayNote: StoryObj = {
   name: 'Close the day · note',
   ...withSeed(seedCloseDay),
   render: () => <CloseDay initialStep="note" />,
+}
+
+/** Done for today (moments-and-onboarding D6): the calm final state after the close. */
+export const CloseTheDayDone: StoryObj = {
+  name: 'Close the day · done for today',
+  render: () => (
+    <PageBody width="list">
+      <PageHeader title="Close the day" icon="moon" meta="Day closed, 18:42" />
+      <DoneForToday figures={{ time: '18:42', planned: 9, done: 5, carried: { tomorrow: 3, day: 0, someday: 0, keep: 0, done: 0 }, kept: 1, note: 'Start with the invoice' }}
+        onBack={() => {}} onReopen={() => {}} />
+    </PageBody>
+  ),
 }
 
 const digest: EmailDigest = {

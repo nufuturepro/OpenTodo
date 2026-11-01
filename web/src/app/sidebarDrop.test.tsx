@@ -10,11 +10,12 @@ import { db } from '../lib/db'
 import { setFavourite } from '../lib/favourites'
 import { createLabel } from '../lib/labels'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
+import { toggleCollapsedProject } from '../lib/projects'
 import { saveViewMode } from '../lib/sections'
 import type { Task, User } from '../lib/types'
 import { addLabelUndoable, moveManyUndoable } from '../lib/undoActions'
 import { undoBatch } from '../lib/undo'
-import { flush, render } from '../ui/test-utils'
+import { render, waitFor } from '../ui/test-utils'
 import { hideBulkToast } from './bulk/toastStore'
 import { resetPanel } from './panel'
 import { navigate } from './router'
@@ -38,14 +39,9 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
   resetPanel()
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const shell = async (route: Parameters<typeof navigate>[0]) => { navigate(route); return render(<Shell user={user} onLogout={() => {}} />) }
 const row = (id: string) => document.querySelector<HTMLElement>(`[data-task-id="${id}"]`)!
 const target = (value: string) => document.querySelector<HTMLElement>(`[data-task-drop="${value}"]`)!
@@ -88,7 +84,7 @@ describe('drop a task on a project', () => {
     const r = await shell({ view: 'inbox' })
     await waitFor(() => !!row(id) && !!target(`project:${home}`))
     await drag(row(id), target(`project:${home}`), { escape: true })
-    await flush(50)
+    await waitFor(() => !document.querySelector('[data-drag-ghost]'), 'the drag ended')
     expect((await task(id)).project_id ?? null).toBeNull()
     await r.unmount()
   })
@@ -111,12 +107,13 @@ describe('drop a task on a project', () => {
     const mine = await createProject({ name: 'Mine' })
     const id = await createTask({ title: 'Keep me' })
     const r = await shell({ view: 'inbox' })
-    await waitFor(() => !!row(id) && !!document.querySelector(`[data-project-row="${shared}"]`) && !!target(`project:${mine}`))
+    // The task row too: under load it can render after the sidebar.
+    await waitFor(() => !!document.querySelector(`[data-project-row="${shared}"]`) && !!target(`project:${mine}`) && !!row(id))
     const viewerRow = document.querySelector(`[data-project-row="${shared}"]`)!
     expect(viewerRow.hasAttribute('data-task-drop')).toBe(false)
     const { active } = await drag(row(id), viewerRow)
     expect(active).toBe(false)
-    await flush(50)
+    await waitFor(() => !document.querySelector('[data-drag-ghost]'), 'the drag ended')
     expect((await task(id)).project_id ?? null).toBeNull()
     await r.unmount()
   })
@@ -176,5 +173,35 @@ describe('drop a task on a label', () => {
     const r = await addLabelUndoable(ids, waiting, 'waiting')
     for (const id of ids) expect((await task(id)).labels).toEqual([waiting])
     expect(r.entry?.count).toBe(2)
+  })
+})
+
+describe('drag a project in the sidebar (issue 544)', () => {
+  const projectRow = (id: string) => document.querySelector<HTMLElement>(`[data-project-row="${id}"]`)!
+
+  it('shows one indicator: the drop line at the level the project lands on, without the drop-target ring', async () => {
+    const clients = await createProject({ name: 'Clients' })
+    const acme = await createProject({ name: 'Acme', parent_id: clients })
+    await toggleCollapsedProject(clients, false)
+    const r = await shell({ view: 'inbox' })
+    await waitFor(() => !!projectRow(acme) && !!projectRow(clients))
+    // Without layout every row is zero high, so the pointer is in its top quarter: before Clients, at the top level.
+    document.elementFromPoint = () => projectRow(clients)
+    await act(async () => {
+      projectRow(acme).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 }))
+      window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: 40, clientY: 60 }))
+    })
+    await waitFor(() => !!document.querySelector('[data-drop-indicator]'), 'the drop line')
+    const lines = document.querySelectorAll<HTMLElement>('[data-drop-indicator]')
+    expect(lines).toHaveLength(1)
+    expect(lines[0].getAttribute('data-drop-indicator')).toBe('before')
+    expect(lines[0].getAttribute('data-drop-level')).toBe('0')
+    expect(projectRow(clients).className).not.toContain('data-drop-active:ring')
+    expect(projectRow(clients).className).not.toContain('ring-2')
+    await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, pointerType: 'mouse', clientX: 40, clientY: 60 })) })
+    await waitFor(async () => (await db.projects.get(acme))?.parent_id === null, 'Acme at the top level')
+    // A task dragged over a project still rings it.
+    await waitFor(() => projectRow(clients).className.includes('data-drop-active:ring-2'), 'the task-drop ring back')
+    await r.unmount()
   })
 })

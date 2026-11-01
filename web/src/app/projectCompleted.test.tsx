@@ -7,22 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { createProject, createTask, resetDeviceId, setTaskCompleted } from '../lib/ops'
 import { createSection, loadShowCompleted, saveShowCompleted, saveViewMode } from '../lib/sections'
-import { click, flush, render, mockFetch, noPublicLinks } from '../ui/test-utils'
+import { click, render, mockFetch, noPublicLinks, waitFor } from '../ui/test-utils'
 import { TaskListView } from './TaskListView'
 
 // The project header asks the server for its public links.
 beforeEach(() => mockFetch(noPublicLinks))
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(() => { vi.unstubAllGlobals() })
 beforeEach(async () => {
   await db.delete()
   await db.open()
   resetDeviceId()
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 const group = (c: HTMLElement) => c.querySelector<HTMLElement>('[data-completed-group]')
 const titlesIn = (el: Element | null) => [...(el?.querySelectorAll('[data-task-id]') ?? [])].map((e) => e.textContent?.match(/Milk|Eggs|Bread|Apples/)?.[0])
@@ -35,7 +31,9 @@ async function groceries() {
   const bread = await createTask({ title: 'Bread', project_id: pid })
   await createTask({ title: 'Apples', project_id: pid })
   await setTaskCompleted(milk, true)
-  await flush(5)
+  // Eggs is completed after Milk: a later millisecond.
+  const at = Date.now()
+  await waitFor(() => Date.now() > at, 'the next millisecond')
   await setTaskCompleted(eggs, true)
   return { pid, milk, eggs, bread }
 }
@@ -58,6 +56,8 @@ describe('Completed group in a project', () => {
     await waitFor(() => group(r.container) !== null)
     expect(group(r.container)!.textContent).toContain('Completed')
     expect(group(r.container)!.textContent).toContain('2')
+    // The count is read as completed tasks, not open ones.
+    expect(group(r.container)!.querySelector('[data-group-count] .sr-only')?.textContent).toBe('2 completed tasks')
     expect(toggleOf(r.container).getAttribute('aria-expanded')).toBe('false')
     expect(titlesIn(group(r.container))).toEqual([])
     await click(toggleOf(r.container))
@@ -110,7 +110,7 @@ describe('Completed group in a project', () => {
     await saveViewMode(pid, 'board')
     await waitFor(() => group(r.container) === null)
     await click(r.container.querySelector('button[aria-label="Project menu"]')!)
-    await flush(30)
+    await waitFor(() => document.querySelectorAll('[role^="menuitem"]').length > 0, 'the project menu')
     expect(item()).toBeNull()
     await r.unmount()
   })

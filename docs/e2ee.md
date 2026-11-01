@@ -11,7 +11,9 @@ order: 70
 
 Optional, per account, off by default (OpenSpec change `e2ee`). When it is on, your devices encrypt the *content* of your tasks before it is synced, so the server, its backups and every server-side integration hold only ciphertext for it. Sync, offline use and conflict-free merging keep working because ciphertext travels through the unchanged operation log as an ordinary string value.
 
-Turn it on in **Settings → Account → Encryption**.
+Turn it on in **Settings → Account → End-to-end encryption**.
+
+[Automation rules](automations.md) work with encryption: their conditions and actions use ids and dates. Only the comment action is unavailable.
 
 ## What is encrypted, what is not
 
@@ -30,7 +32,7 @@ Encrypted, in your personal data (Inbox, your own projects, labels, saved views)
 | time entry | `note` (the [time entry](time-tracking.md)'s note) |
 | review | `tomorrow_note` (the line for tomorrow you leave when you [close the day](method/rhythms.md#close-the-day)) |
 
-Everything else stays **plaintext**, because views sort and group by it, reminders and calendars schedule with it, and the server needs it to merge and authorize: `due` (date, time, zone), `priority`, `completed_at`, `deleted_at`, `created_at`, `position`, `project_id`, `parent_id`, `section_id`, `labels` (the list of label ids on a task), `recurrence`, `estimate_minutes`, `assignee_id`, number and checkbox values of [custom fields](custom-fields.md), a custom field's `type` and `project_id`, project `color` and `archived`, reminder times, the review record's times and today's focus (`completed_at`, `daily_at`, `monthly_at`, `closed_at`, `focus_date`, `focus`), a time entry's `task_id`, `user_id`, `started_at`, `ended_at`, `device_id`, `created_at` and `deleted_at` (so the server can total and export tracked time; its CSV and AI assistants show `[encrypted]` for the note), an attachment's `size` and `sha256` (of the encrypted file) and `encrypted` flag, and all timestamps and device ids of operations.
+Everything else stays **plaintext**, because views sort and group by it, reminders and calendars schedule with it, and the server needs it to merge and authorize: `due` (date, time, zone), `priority`, `completed_at`, `deleted_at`, `created_at`, `position`, `project_id`, `parent_id`, `section_id`, `labels` (the list of label ids on a task), `recurrence`, `estimate_minutes`, `energy`, `assignee_id`, number and checkbox values of [custom fields](custom-fields.md), a custom field's `type` and `project_id`, project `color` and `archived`, reminder times, the review record's times and today's focus (`completed_at`, `daily_at`, `monthly_at`, `closed_at`, `focus_date`, `focus`), a time entry's `task_id`, `user_id`, `started_at`, `ended_at`, `device_id`, `created_at` and `deleted_at` (so the server can total and export tracked time; its CSV and AI assistants show `[encrypted]` for the note), an attachment's `size` and `sha256` (of the encrypted file) and `encrypted` flag, a comment's reactions (`reactions.<account id>`: who reacted with which of six names) and a task's `note_mentions` (the members its notes mention; the mention itself, like every table and image in the note, stays inside the encrypted `notes_doc`), and all timestamps and device ids of operations. An image embedded in a note or comment names its attachment; the device downloads the encrypted file and decrypts it to show it, and a locked device shows "Encrypted image".
 
 Empty values (`""`) and `null` are not encrypted. The length of a ciphertext reveals the approximate length of the text.
 
@@ -99,8 +101,13 @@ Content larger than 48,000 bytes (UTF-8) in one field is refused before an opera
 - **Lock this device** (Settings): forgets the key and pauses sync until unlocked.
 - **The command-line client**: `ot encryption unlock` unwraps the key with the passphrase (or `--recovery`) on your computer and keeps it in an owner-only file next to the CLI's configuration, so [`ot mcp --decrypt`](cli.md#mcp-bridge-and-encryption) can let a local AI assistant read and write your text. The passphrase and the key never reach the server; the assistant's AI provider does receive the plaintext it reads. `ot encryption lock` deletes the key file, and a passphrase change elsewhere makes it stale until you unlock again.
 - **Offline unlock** works once the device has seen the key record.
+- **Unlock with a fingerprint** (Android app): see [below](#unlock-with-a-fingerprint).
 - A device that did not know encryption had been enabled notices the first ciphertext it receives, checks the key record and locks itself without applying the batch.
 - **Key record missing**: only you can turn encryption off on a device, never an answer from the server. When the server says it has no key record while the device encrypts (the server was restored from an older backup, another device turned encryption off, or the server misbehaves), the device stops syncing and nothing leaves it, not even the re-send after a server restore. A screen explains it and offers three choices: **Restore the key record from this device** (uploads the copy the device kept; same passphrase and recovery key; a device without the key asks for the passphrase first), **Turn off encryption on this device** (your content is uploaded in plaintext again), or **Sign out**.
+
+### Unlock with a fingerprint
+
+In the [Android app](android-app.md), on a phone with a fingerprint or face unlock, the unlock screen offers **Unlock with fingerprint or face next time**. After you unlock with the passphrase, the app keeps a copy of the account key encrypted by Android's keystore under a key that opens only with your fingerprint or face; from then on the unlock screen shows **Unlock with fingerprint or face**, and the passphrase still works. The copy never leaves the phone. It is deleted when you sign out, change or reset the passphrase on this phone, turn encryption off, or when the account key changes; Android makes it unusable when fingerprints or faces are added or removed. **Lock this device** keeps it, so the next unlock can use the fingerprint.
 
 ## Passphrase change, recovery, losing both
 
@@ -117,6 +124,8 @@ Content larger than 48,000 bytes (UTF-8) in one field is refused before an opera
 
 ## Server-side reads and integrations
 
+Workspace names, members and groups are server data in plaintext, like project members; with encryption on you can create [workspaces](workspaces.md) and move things between them, but not add members, groups or invite links yet.
+
 The server cannot decrypt. Each feature that needs content degrades explicitly:
 
 | Feature | Behaviour for an encrypted account |
@@ -130,6 +139,7 @@ The server cannot decrypt. Each feature that needs content degrades explicitly:
 | Calendar feed URL | Encrypted titles appear as "Encrypted item" in calendar apps; dates, times, estimates and recurrence are served as stored. |
 | Subscribed calendars | Events fetched from other calendars are stored on the server unencrypted, like any data the server fetches for the account. The settings panel says so. |
 | MCP (assistants) | Encrypted titles, descriptions, project, label, section and custom field names and text values of custom fields read as "Encrypted item" with `"encrypted": true`; `search_tasks` never matches them. Dates, priorities and structure are still reported. A task's origin is left out (`origin: null`). Text arguments of write tools accept only ciphertext envelopes and plain text is refused with `encryption_enabled`; scheduling, completing, moving, priorities, labels, colours, icons and order still work. On your own computer, [`ot mcp --decrypt`](mcp.md#encrypted-accounts-on-your-computer) decrypts and encrypts for an assistant (see below). For a cloud connector, a device you opt in can [answer for it](mcp.md#cloud-connectors-through-your-device): the key stays on that device, but the text the connector asks for passes through the server's memory, never stored, logged or audited, capped at 5,000 values an hour by the device. |
+| In-app assistant | The server never runs it for an encrypted account. When the owner allows it, it runs [on your device](assistant-encrypted.md): the device reads its own decrypted tasks and calls the provider you set up there with your own key; the server sees no content and no key. |
 | Issue connections | Refused: creating or enabling a GitHub or GitLab connection answers 409 `encryption_enabled`, because every poll would write issue titles and bodies into the history in plaintext. Turning encryption on stops the account's connections (`encrypted_account`) and the encryption screen names them; tasks already created stay and are re-written as ciphertext like the rest. See [Issue import](issue-import.md). |
 | Email to task | Creates plaintext Inbox tasks (the mail crossed mail servers in the clear anyway); encrypted on sight; purge removes the plaintext operations. |
 | Webhooks | Payloads carry the stored value: ciphertext for encrypted fields. |
@@ -138,6 +148,7 @@ The server cannot decrypt. Each feature that needs content degrades explicitly:
 | Revision history, activity | Served as stored; the web app decrypts values for display. |
 | Sharing | First share of a project refused with 409 `encryption_enabled`. |
 | Filters | Evaluated on the device on plaintext; nothing server-side. |
+| Markdown vault | [`ot vault`](vault.md) decrypts on your computer with the key stored by `ot encryption unlock` and encrypts what it sends, so the server sees ciphertext; the vault's files hold plaintext. It refuses to sync without the key (`encryption_enabled`). |
 
 ## API
 

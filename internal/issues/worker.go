@@ -11,17 +11,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/e2ee"
-	ob "github.com/pixari/opentodo/internal/outbound"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	ob "github.com/OpenTodoApp/opentodo/internal/outbound"
+	"github.com/OpenTodoApp/opentodo/internal/poll"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Worker pacing and bounds (design D9, spec "Connection limits per server").
 const (
-	PollInterval = 30 * time.Second
-	InFlight     = 2
-	MaxPages     = 10
-	sweepEvery   = time.Hour
+	InFlight = 2
+	MaxPages = 10
 )
 
 // PollError is a failed poll with the reason stored on the connection; Until
@@ -107,31 +106,8 @@ func (w *Worker) lock(id string) *sync.Mutex {
 	return w.locks[id]
 }
 
-// Run polls until ctx ends and sweeps tokens without a connection hourly.
-func (w *Worker) Run(ctx context.Context) {
-	t := time.NewTicker(PollInterval)
-	defer t.Stop()
-	var swept time.Time
-	for {
-		if time.Since(swept) >= sweepEvery {
-			swept = time.Now()
-			if n, err := w.Tokens.Sweep(ctx, w.Store); err != nil {
-				w.log().Error("issue connections: sweep tokens", "err", err)
-			} else if n > 0 {
-				w.log().Debug("issue connections: removed tokens without a connection", "count", n)
-			}
-		}
-		w.RunOnce(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-	}
-}
-
-// RunOnce polls the connections due now, at most InFlight at a time, and
-// waits for them.
+// RunOnce polls the connections due now, at most InFlight at a time (Poll also
+// shares its slots with hand-triggered syncs), and waits for them.
 func (w *Worker) RunOnce(ctx context.Context) {
 	if w.Enabled != nil && !w.Enabled(ctx) {
 		return
@@ -141,16 +117,7 @@ func (w *Worker) RunOnce(ctx context.Context) {
 		w.log().Error("issue connections: due", "err", err)
 		return
 	}
-	var wg sync.WaitGroup
-	for i := range due {
-		c := due[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, _ = w.Poll(ctx, &c)
-		}()
-	}
-	wg.Wait()
+	poll.Each(due, InFlight, func(c *Connection) { _, _ = w.Poll(ctx, c) })
 }
 
 // Check asks the provider for the token's account and records the result on

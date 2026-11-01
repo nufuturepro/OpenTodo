@@ -2,9 +2,11 @@
 // and sort options, pinned to the sidebar, composed into dashboards. Every write is
 // an op through mutate(); evaluation reuses the filter compiler from lib/filter, so a
 // saved view behaves exactly like the same query typed into the Filter view.
+import { useLiveQuery } from 'dexie-react-hooks'
 import { addDaysISO, compareDue, formatDateHeading, localDate, localDueOf } from './dates'
+import type { RowLayout } from './rowLayout'
 import { db, getMeta, setMeta } from './db'
-import { compile, parse, type FilterContext, type Node } from './filter'
+import { compile, filterScope, mentionsState, namesWorkspace, parse, withCompletedTasks, type FilterContext, type Node } from './filter'
 import type { BoardTemplate } from './boardTemplates'
 import { activeLabels } from './labels'
 import { VIEW_DEFAULTS, getDeviceId, mutate, mutateMany, mutationTables, type Change } from './ops'
@@ -12,11 +14,13 @@ import { knownRule } from './rules'
 import { buildProjectTree } from './projects'
 import { ancestors, flattenTree } from './tree'
 import {
-  GROUP_BY_OPTIONS, SORT_BY_OPTIONS, SORT_DIR_OPTIONS, VIEW_KINDS,
-  type GroupBy, type OnDropRule, type Project, type SortBy, type SortDir, type Task, type View, type ViewKind,
+  GROUP_BY_OPTIONS, ROW_PROPERTIES, SORT_BY_OPTIONS, SORT_DIR_OPTIONS, VIEW_KINDS, VIEW_LAYOUTS,
+  type GroupBy, type OnDropRule, type Project, type RowProperty, type SortBy, type SortDir, type Task, type View, type ViewKind, type ViewLayout,
 } from './types'
 import { t, msg } from './i18n'
 import { uuid } from './ids'
+import { workspaceFields } from './workspaces'
+import { compareManual, orderRank } from './viewOrder'
 
 // ---- Today and Upcoming selection (OpenSpec change `deadlines`, design D3) ----
 // One definition shared by the list, its grouping and the sidebar count.
@@ -107,6 +111,14 @@ export interface ViewOptions {
   sortDir: SortDir
 }
 
+/** A list view's display options (views-and-display D2), read like viewOptions. */
+export interface DisplayOptions {
+  layout: ViewLayout
+  showCompleted: boolean
+  /** Row properties the view hides; names this build does not know are left out. */
+  hidden: RowProperty[]
+}
+
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback
 }
@@ -122,6 +134,16 @@ export function viewOptions(v: Pick<View, 'kind' | 'group_by' | 'sort_by' | 'sor
     groupBy: pick(v.group_by, GROUP_BY_OPTIONS, VIEW_DEFAULTS.group_by as GroupBy),
     sortBy: pick(v.sort_by, SORT_BY_OPTIONS, VIEW_DEFAULTS.sort_by as SortBy),
     sortDir: pick(v.sort_dir, SORT_DIR_OPTIONS, VIEW_DEFAULTS.sort_dir as SortDir),
+  }
+}
+
+/** The display options of a view; a row written before views-and-display (no fields) shows everything as before. */
+export function displayOptions(v: Partial<Pick<View, 'layout' | 'show_completed' | 'hidden_props'>>): DisplayOptions {
+  const hidden = Array.isArray(v.hidden_props) ? v.hidden_props : []
+  return {
+    layout: pick(v.layout, VIEW_LAYOUTS, 'list'),
+    showCompleted: v.show_completed === true,
+    hidden: ROW_PROPERTIES.filter((p) => hidden.includes(p)),
   }
 }
 
@@ -155,6 +177,11 @@ export interface NewView {
   sort_dir?: SortDir
   pinned?: boolean
   color?: string
+  layout?: ViewLayout
+  show_completed?: boolean
+  hidden_props?: RowProperty[]
+  /** One line or detailed rows (row-layouts); absent follows the account's choice. */
+  row_layout?: RowLayout
 }
 
 /** Create a view, last in sidebar order. Pinned unless told otherwise (the Filter view's "Save view"). */
@@ -177,20 +204,30 @@ export async function createView(input: NewView): Promise<string> {
     position,
     color: input.color ?? VIEW_DEFAULTS.color,
     panels: [],
+    // Display options only when they differ from the defaults, so a plain view's ops stay as before.
+    ...(input.layout && input.layout !== 'list' ? { layout: input.layout } : {}),
+    ...(input.show_completed ? { show_completed: true } : {}),
+    ...(input.hidden_props?.length ? { hidden_props: input.hidden_props } : {}),
+    ...(input.row_layout ? { row_layout: input.row_layout } : {}),
+    ...(await workspaceFields()),
     created_at: now,
     deleted_at: null,
   })
   return id
 }
 
-export type ViewPatch = Partial<Pick<View, 'name' | 'query' | 'group_by' | 'sort_by' | 'sort_dir' | 'color' | 'position'>>
+export type ViewPatch = Partial<Pick<View, 'name' | 'query' | 'group_by' | 'sort_by' | 'sort_dir' | 'color' | 'position' | 'layout' | 'show_completed' | 'hidden_props' | 'row_layout' | 'icon'>>
 
 /** Edit a view: one op per changed field. The kind is fixed at creation; panels go through setPanels. */
 export async function updateView(id: string, patch: ViewPatch): Promise<void> {
   const view = await db.views.get(id)
   if (!view || view.deleted_at) throw new Error('View not found')
   const next: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(patch)) if ((view as unknown as Record<string, unknown>)[k] !== v) next[k] = v
+  for (const [k, v] of Object.entries(patch)) {
+    const cur = (view as unknown as Record<string, unknown>)[k]
+    // A list compares by its items: the same hidden properties are no change.
+    if (Array.isArray(v) && Array.isArray(cur) ? v.join() !== cur.join() : cur !== v) next[k] = v
+  }
   if (typeof next.name === 'string') {
     next.name = next.name.trim()
     if (!next.name) throw new Error(t('A view needs a name'))
@@ -353,10 +390,22 @@ interface Compiled {
   ok: true
   test: (task: Task) => boolean
   warnings: string[]
+  /** The query names a workspace: the view looks at every workspace's tasks (group-mentions D6). */
+  every: boolean
 }
 
-/** Parse and compile a stored query; a query that no longer parses yields its error. */
-export function compileView(view: Pick<View, 'query'>, ctx: FilterContext): Compiled | { ok: false; error: string } {
+/** The context a compiled view lists from: every workspace's data when it names a workspace. */
+export function viewScope<C extends ViewContext>(c: Pick<Compiled, 'every'>, ctx: C): C {
+  return c.every && ctx.everyWorkspace ? { ...ctx, ...ctx.everyWorkspace } : ctx
+}
+
+/**
+ * Parse and compile a stored query; a query that no longer parses yields its error.
+ * `withCompleted` (the view's "Completed tasks: Show", views-and-display D4) lists
+ * completed matches too: the query is read as `(query) & (open | completed)`, so a
+ * query that names a state itself is unchanged.
+ */
+export function compileView(view: Pick<View, 'query'>, given: FilterContext, withCompleted = false): Compiled | { ok: false; error: string } {
   let ast: Node | null
   try {
     ast = parse(view.query)
@@ -364,6 +413,8 @@ export function compileView(view: Pick<View, 'query'>, ctx: FilterContext): Comp
     return { ok: false, error: (e as Error).message }
   }
   if (!ast) return { ok: false, error: t('This view has no query') }
+  if (withCompleted && !mentionsState(ast)) ast = withCompletedTasks(ast)
+  const ctx = filterScope(ast, given)
   // Like the Filter view and the other cross-project views, tasks of archived projects stay out.
   const archived = new Set(ctx.projects.filter((p) => p.archived && !p.deleted_at).map((p) => p.id))
   let compiled: ReturnType<typeof compile>
@@ -374,7 +425,7 @@ export function compileView(view: Pick<View, 'query'>, ctx: FilterContext): Comp
     return { ok: false, error: (e as Error).message }
   }
   const { test, warnings } = compiled
-  return { ok: true, warnings, test: (task) => !(task.project_id && archived.has(task.project_id)) && test(task) }
+  return { ok: true, warnings, every: !!given.everyWorkspace && namesWorkspace(ast), test: (task) => !(task.project_id && archived.has(task.project_id)) && test(task) }
 }
 
 function byTitle(a: Task, b: Task): number {
@@ -405,11 +456,33 @@ export function compareTasks(sortBy: SortBy, dir: SortDir): (a: Task, b: Task) =
       return (a, b) => sign * (a.created_at - b.created_at) || fallback(a, b)
     case 'title':
       return (a, b) => sign * byTitle(a, b) || fallback(a, b)
+    case 'deadline':
+      // Like the due date: tasks without a deadline come last in either direction.
+      return (a, b) => {
+        if (!a.deadline || !b.deadline) return (a.deadline ? -1 : b.deadline ? 1 : 0) || fallback(a, b)
+        return sign * (a.deadline < b.deadline ? -1 : a.deadline > b.deadline ? 1 : 0) || fallback(a, b)
+      }
   }
 }
 
-/** Split sorted tasks into headed groups; headings come in a fixed, meaningful order. */
-export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: FilterContext): ViewGroup[] {
+/**
+ * A saved view's comparator (OpenSpec change view-manual-order): its sort, where
+ * Manual order is the view's own stored order, then the other tasks by position;
+ * descending reverses it.
+ */
+export function viewComparator(view: Pick<View, 'manual_order'>, sortBy: SortBy, dir: SortDir): (a: Task, b: Task) => number {
+  if (sortBy !== 'position') return compareTasks(sortBy, dir)
+  const asc = compareManual(orderRank(view.manual_order))
+  return dir === 'desc' ? (a, b) => asc(b, a) : asc
+}
+
+/**
+ * Split sorted tasks into headed groups; headings come in a fixed, meaningful order.
+ * `once` (a project or label page, list-display-options D3): a task with several
+ * labels is listed once, under the first of them in label order, since a list page
+ * selects, drags and opens a task by its id.
+ */
+export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: Pick<FilterContext, 'today' | 'labels' | 'projects'>, once = false): ViewGroup[] {
   const buckets = new Map<string, Task[]>()
   const put = (key: string, task: Task) => {
     const list = buckets.get(key)
@@ -441,7 +514,7 @@ export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: FilterContext):
         }
       }
       return emit([
-        ['overdue', t('Overdue')], ['today', t('Today')], ['tomorrow', t('Tomorrow')],
+        ['overdue', t('Earlier')], ['today', t('Today')], ['tomorrow', t('Tomorrow')],
         ...[...dates].sort().map((d): [string, string] => [d, formatDateHeading(d, today)]),
         ['none', t('No date')],
       ])
@@ -453,7 +526,8 @@ export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: FilterContext):
       for (const tVar of tasks) {
         const own = [...new Set(tVar.labels.filter((id) => known.has(id)))]
         if (own.length === 0) put('none', tVar)
-        for (const id of own) put(id, tVar)
+        else if (once) put(labels.find((l) => own.includes(l.id))!.id, tVar)
+        else for (const id of own) put(id, tVar)
       }
       return emit([...labels.map((l): [string, string] => [l.id, l.name]), ['none', t('No label')]])
     }
@@ -474,11 +548,12 @@ export function groupTasks(tasks: Task[], groupBy: GroupBy, ctx: FilterContext):
 
 /** Evaluate one list view: its query through the filter compiler, then its sort and grouping. */
 export function runView(view: View, ctx: ViewContext): ViewResult {
-  const c = compileView(view, ctx)
+  const c = compileView(view, ctx, displayOptions(view).showCompleted)
   if (!c.ok) return c
   const { groupBy, sortBy, sortDir } = viewOptions(view)
-  const tasks = ctx.tasks.filter(c.test).sort(compareTasks(sortBy, sortDir))
-  return { ok: true, tasks, groups: groupTasks(tasks, groupBy, ctx), warnings: c.warnings }
+  const scoped = viewScope(c, ctx)
+  const tasks = scoped.tasks.filter(c.test).sort(viewComparator(view, sortBy, sortDir))
+  return { ok: true, tasks, groups: groupTasks(tasks, groupBy, scoped), warnings: c.warnings }
 }
 
 export type ViewSummary =
@@ -493,24 +568,26 @@ export type ViewSummary =
  */
 export function evaluateViews(views: View[], ctx: ViewContext, limit = PANEL_TASKS): Map<string, ViewSummary> {
   const out = new Map<string, ViewSummary>()
-  const live: { view: View; test: (task: Task) => boolean; warnings: string[]; matches: Task[] }[] = []
+  const live: { view: View; test: (task: Task) => boolean; warnings: string[]; matches: Task[]; every: boolean }[] = []
   for (const view of views) {
     if (view.deleted_at || isDashboard(view)) continue
     const c = compileView(view, ctx)
     if (!c.ok) out.set(view.id, c)
-    else live.push({ view, test: c.test, warnings: c.warnings, matches: [] })
+    else live.push({ view, test: c.test, warnings: c.warnings, matches: [], every: c.every })
   }
-  if (live.length > 0) {
-    for (const tk of ctx.tasks) for (const l of live) if (l.test(tk)) l.matches.push(tk)
-  }
+  // One pass over the current workspace's tasks, and one over every workspace's for views that name a workspace.
+  const here = live.filter((l) => !l.every)
+  const every = live.filter((l) => l.every)
+  for (const tk of here.length ? ctx.tasks : []) for (const l of here) if (l.test(tk)) l.matches.push(tk)
+  for (const tk of every.length ? ctx.everyWorkspace!.tasks : []) for (const l of every) if (l.test(tk)) l.matches.push(tk)
   for (const l of live) {
     const { groupBy, sortBy, sortDir } = viewOptions(l.view)
-    const sorted = l.matches.sort(compareTasks(sortBy, sortDir))
+    const sorted = l.matches.sort(viewComparator(l.view, sortBy, sortDir))
     const firstN: Task[] = []
     if (limit > 0) {
       // Grouping by label can list a task twice; a panel shows each task once.
       const seen = new Set<string>()
-      for (const g of groupTasks(sorted, groupBy, ctx)) {
+      for (const g of groupTasks(sorted, groupBy, l.every ? viewScope(l, ctx) : ctx)) {
         for (const item of g.tasks) {
           if (firstN.length >= limit) break
           if (!seen.has(item.id)) {
@@ -617,4 +694,9 @@ export async function resolveStartView(): Promise<ResolvedStart> {
     return { kind: 'display', path }
   }
   return { kind: 'builtin', view: (BUILTIN_START_VIEWS as readonly string[]).includes(v) ? (v as BuiltinStartView) : 'inbox', removed: false }
+}
+
+/** This device's start view (local meta, never synced). */
+export function useStartView(): StartView {
+  return useLiveQuery(() => getStartView(), [], 'inbox' as StartView)
 }

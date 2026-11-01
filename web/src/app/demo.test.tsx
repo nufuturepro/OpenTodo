@@ -126,23 +126,25 @@ describe('expired sandbox', () => {
 describe('Settings', () => {
   it('shows every card on a demo instance, disabling the refused ones under one note, and disables Import', () => {
     setDemo(info)
-    const page = (section: 'account' | 'general' | 'data') => renderToStaticMarkup(<SettingsView user={user} onLogout={() => {}} section={section} />)
-    const account = page('account')
+    const page = (section: 'account' | 'general' | 'data', sub?: string) => renderToStaticMarkup(<SettingsView user={user} onLogout={() => {}} section={section} page={sub} />)
+    expect(page('account').match(/data-testid="demo-restricted"/g)).toHaveLength(1)
+    const account = page('account', 'security')
     expect(account.match(/data-testid="demo-restricted"/g)).toHaveLength(1)
     expect(account).toContain('id="password-heading"')
     expect(account).toMatch(/<fieldset disabled=""[^>]*data-demo-disabled/)
     const data = page('data')
-    expect(data).toMatch(/<button[^>]*disabled=""[^>]*>Import data…<\/button>/)
+    expect(data).toMatch(/<button[^>]*disabled=""[^>]*>Import data<\/button>/)
     expect(data).toContain('Import: Disabled on this demo instance.')
     expect(data).not.toContain('href="/settings/import"')
     // Local preferences and the export keep working.
     expect(data).toContain('Download export (JSON)')
-    expect(page('general')).toContain('Vim keybindings')
+    expect(page('general', 'keyboard')).toContain('Vim keybindings')
+    expect(page('general', 'keyboard')).not.toContain('demo-restricted')
     expect(page('general')).not.toContain('demo-restricted')
   })
 
   it('shows every section without the note on a normal server', () => {
-    const account = renderToStaticMarkup(<SettingsView user={user} onLogout={() => {}} section="account" />)
+    const account = renderToStaticMarkup(<SettingsView user={user} onLogout={() => {}} section="account" page="security" />)
     expect(account).not.toContain('demo-restricted')
     expect(account).not.toContain('data-demo-disabled')
     expect(account).toContain('id="password-heading"')

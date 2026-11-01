@@ -4,9 +4,10 @@
 // below mirror those rules so the UI only offers what will be accepted.
 import { db } from './db'
 import { mutate } from './ops'
-import { commitFiles, planFiles } from './attachments'
+import { commitFiles, planFiles, type PlannedFile } from './attachments'
+import { embeddedIds } from './markdown'
 import { currentUserId } from './sharing'
-import type { Comment, Membership, ProjectMember, ProjectRole } from './types'
+import type { Comment, Membership, ProjectMember, ProjectRole, WorkspaceGroup } from './types'
 import { t } from './i18n'
 import { uuid } from './ids'
 
@@ -15,24 +16,31 @@ import { uuid } from './ids'
  * Files become attachments of the comment, written in the same batch
  * (OpenSpec attachments); a comment with files may have no text.
  */
-export async function createComment(input: { taskId: string; body: string; parentId?: string | null; mentions?: string[]; files?: File[] }): Promise<string> {
+export async function createComment(input: {
+  taskId: string; body: string; parentId?: string | null; mentions?: string[]; files?: File[]
+  /** The id the composer planned images under (editor-everywhere D5), with those images. */
+  id?: string; embeds?: PlannedFile[]
+}): Promise<string> {
   const body = input.body.trim()
   const files = input.files ?? []
   if (!body && files.length === 0) throw new Error(t('a comment needs some text'))
   const author = await currentUserId()
   if (!author) throw new Error(t('sign in to comment'))
-  const id = uuid()
+  const id = input.id ?? uuid()
+  // Images embedded in the body are written with the comment; ones deleted from the text are dropped.
+  const used = new Set(embeddedIds(body))
+  const embeds = (input.embeds ?? []).filter((e) => used.has(e.blob.id))
   // task_id and author_id first: they place and authorize the comment.
   const patch = {
     task_id: input.taskId, author_id: author, body, parent_id: input.parentId ?? null,
     mentions: [...new Set(input.mentions ?? [])], created_at: Date.now(), edited_at: null, deleted_at: null,
   }
-  if (files.length === 0) {
+  if (files.length === 0 && embeds.length === 0) {
     await mutate('comment', id, patch)
     return id
   }
   // Limits are checked before anything is written.
-  const planned = await planFiles(input.taskId, files, { commentId: id })
+  const planned = [...embeds, ...(files.length ? await planFiles(input.taskId, files, { commentId: id }) : [])]
   await commitFiles(planned, [{ entity: 'comment', entityId: id, patch }])
   return id
 }
@@ -113,6 +121,63 @@ export async function commentCounts(): Promise<Map<string, number>> {
   return out
 }
 
+// ---- reactions (editor-everywhere D8) ----
+
+/** The closed set of reactions, in display order (same list as sync.ReactionNames). */
+export const REACTION_NAMES = ['thumbs_up', 'heart', 'check', 'eyes', 'party', 'question'] as const
+export type ReactionName = (typeof REACTION_NAMES)[number]
+
+/** One reaction under a comment: its name and who chose it, in account id order. */
+export interface ReactionCount {
+  name: ReactionName
+  accounts: string[]
+}
+
+/** The reactions on a comment by name, only those someone chose, in REACTION_NAMES order. */
+export function reactionCounts(c: Pick<Comment, 'reactions'>): ReactionCount[] {
+  const byName = new Map<ReactionName, string[]>()
+  for (const [account, names] of Object.entries(c.reactions ?? {})) {
+    for (const name of Array.isArray(names) ? names : []) {
+      if (!(REACTION_NAMES as readonly string[]).includes(name)) continue
+      const list = byName.get(name as ReactionName) ?? []
+      list.push(account)
+      byName.set(name as ReactionName, list)
+    }
+  }
+  return REACTION_NAMES.filter((n) => byName.has(n)).map((name) => ({ name, accounts: byName.get(name)!.sort() }))
+}
+
+/** The account's own reactions on a comment. */
+export function myReactions(c: Pick<Comment, 'reactions'>, me: string | null): ReactionName[] {
+  const mine = me ? c.reactions?.[me] : undefined
+  return (Array.isArray(mine) ? mine : []).filter((n): n is ReactionName => (REACTION_NAMES as readonly string[]).includes(n))
+}
+
+/**
+ * Replace the account's own reactions on a comment: one `reactions.<account>` op,
+ * applied locally and queued, so it works offline and never touches another
+ * account's reactions. An unchanged list writes nothing.
+ */
+export async function setMyReactions(commentId: string, names: ReactionName[]): Promise<void> {
+  const me = await currentUserId()
+  if (!me) throw new Error(t('sign in to react'))
+  const c = await db.comments.get(commentId)
+  if (!c || c.deleted_at) return
+  const next = REACTION_NAMES.filter((n) => names.includes(n))
+  const before = myReactions(c, me)
+  if (before.length === next.length && before.every((n, i) => n === next[i])) return
+  await mutate('comment', commentId, { [`reactions.${me}`]: next })
+}
+
+/** Add or remove one of the account's reactions on a comment. */
+export async function toggleReaction(commentId: string, name: ReactionName): Promise<void> {
+  const me = await currentUserId()
+  const c = await db.comments.get(commentId)
+  if (!c) return
+  const mine = myReactions(c, me)
+  await setMyReactions(commentId, mine.includes(name) ? mine.filter((n) => n !== name) : [...mine, name])
+}
+
 // ---- mentions ----
 
 /** The @word being typed at the caret, or null: `{ query, start }` with start at the `@`. */
@@ -123,21 +188,62 @@ export function mentionAt(text: string, caret: number): { query: string; start: 
   return { query: m[2], start: caret - m[2].length - 1 }
 }
 
-/** Members whose name or email starts with (or contains) the query, best matches first. */
-export function mentionCandidates(members: Pick<ProjectMember, 'userId' | 'name' | 'email'>[], query: string, me?: string | null): Pick<ProjectMember, 'userId' | 'name' | 'email'>[] {
+/**
+ * Something an @mention can name: a project member, or a workspace group
+ * (OpenSpec change group-mentions, D4) whose `userId` is `group:<group id>`, with
+ * no email and the number of people it reaches.
+ */
+export interface MentionTarget extends Pick<ProjectMember, 'userId' | 'name' | 'email'> {
+  group?: { size: number }
+}
+
+/** The prefix of a group in a mention list (the server's sync.GroupMentionPrefix). */
+export const GROUP_MENTION_PREFIX = 'group:'
+
+/** Whether a mention id names a group. */
+export const isGroupMention = (id: string): boolean => id.startsWith(GROUP_MENTION_PREFIX)
+
+/** People whose name or email starts with (or contains) the query, best matches first, then groups (group-mentions D4). */
+export function mentionCandidates<T extends MentionTarget>(targets: readonly T[], query: string, me?: string | null): T[] {
   const q = query.toLowerCase()
-  const scored = members
-    .filter((m) => m.userId !== me)
+  const rank = (list: T[], limit: number) => list
     .map((m) => {
       const name = (m.name || m.email).toLowerCase()
-      const score = name.startsWith(q) ? 0 : m.email.toLowerCase().startsWith(q) ? 1 : name.includes(q) ? 2 : -1
+      const score = name.startsWith(q) ? 0 : m.email.toLowerCase().startsWith(q) && m.email ? 1 : name.includes(q) ? 2 : -1
       return { m, score }
     })
     .filter((x) => x.score >= 0)
-  return scored.sort((a, b) => a.score - b.score || (a.m.name || a.m.email).localeCompare(b.m.name || b.m.email)).slice(0, 6).map((x) => x.m)
+    .sort((a, b) => a.score - b.score || (a.m.name || a.m.email).localeCompare(b.m.name || b.m.email))
+    .slice(0, limit)
+    .map((x) => x.m)
+  const people = targets.filter((m) => !m.group && m.userId !== me)
+  const groups = targets.filter((m) => !!m.group)
+  return [...rank(people, 6), ...rank(groups, 3)]
 }
 
-/** The token inserted for a member: their name without spaces, else the email's local part. */
+/**
+ * Who a comment or note on a task of `projectId` may mention: the members of its
+ * shared project, then the groups of the project's workspace that reach at least
+ * one other member (group-mentions D4). None for a personal task.
+ */
+export function mentionTargets(
+  projectId: string | null | undefined, memberships: Map<string, Membership>, groups: readonly WorkspaceGroup[],
+  workspaceOfProject: (id: string) => string, me: string | null,
+): MentionTarget[] {
+  const members = mentionableMembers(projectId, memberships)
+  if (!projectId || members.length === 0) return members
+  const ws = workspaceOfProject(projectId)
+  const onProject = new Set(members.map((m) => m.userId))
+  const out: MentionTarget[] = [...members]
+  for (const g of groups) {
+    if (g.workspaceId !== ws) continue
+    const size = g.members.filter((id) => onProject.has(id)).length
+    if (g.members.some((id) => id !== me && onProject.has(id))) out.push({ userId: GROUP_MENTION_PREFIX + g.id, name: g.name, email: '', group: { size } })
+  }
+  return out
+}
+
+/** The token inserted for a member or a group: the name without spaces, else the email's local part. */
 export function mentionToken(m: Pick<ProjectMember, 'name' | 'email'>): string {
   const base = (m.name || m.email.split('@')[0]).replace(/\s+/g, '')
   return base || m.email

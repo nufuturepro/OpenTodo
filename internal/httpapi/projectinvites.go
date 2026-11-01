@@ -8,12 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/e2ee"
-	"github.com/pixari/opentodo/internal/mail"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/e2ee"
+	"github.com/OpenTodoApp/opentodo/internal/mail"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Project invite links (OpenSpec change `project-invite-links`). Managing a
@@ -23,30 +22,19 @@ import (
 // account data: nothing here writes an op except the membership change, which
 // goes through sync.AddMemberTx like adding a member by email.
 
-// membersInviteKey is the owner switch "Members can invite new people with
-// project links" (design D6): a JSON boolean, false when unset.
-const membersInviteKey = "project_invites.members_create_accounts"
-
 func (s *Server) registerProjectInviteRoutes(mux *routes) {
 	s.projectInviteLimiter = newRateLimiter(20, time.Hour)
-	mux.handle("GET /api/v1/projects/{id}/invites", signedIn.demoDenied(), s.handleListProjectInvites)
-	mux.handle("POST /api/v1/projects/{id}/invites", signedIn.recent().demoDenied(), s.handleCreateProjectInvite)
-	mux.handle("DELETE /api/v1/projects/{id}/invites/{inviteId}", signedIn.demoDenied(), s.handleRevokeProjectInvite)
-	mux.handle("GET /api/v1/project-invites/{token}", public("someone with an invite link previews the project before joining").demoDenied(), s.handlePreviewProjectInvite)
-	mux.handle("POST /api/v1/project-invites/{token}/accept", signedIn.demoDenied(), s.handleAcceptProjectInvite)
-	mux.handle("GET /api/v1/settings/project-invites", signedIn, s.handleGetProjectInviteSettings)
-	mux.handle("PUT /api/v1/settings/project-invites", ownerOnly("manage the project invite setting").demoDenied(), s.handlePutProjectInviteSettings)
+	mux.handle("GET /api/v1/projects/{id}/invites", signedIn.DemoDenied(), s.handleListProjectInvites)
+	mux.handle("POST /api/v1/projects/{id}/invites", signedIn.Recent().DemoDenied(), s.handleCreateProjectInvite)
+	mux.handle("DELETE /api/v1/projects/{id}/invites/{inviteId}", signedIn.DemoDenied(), s.handleRevokeProjectInvite)
+	mux.handle("GET /api/v1/project-invites/{token}", public("someone with an invite link previews the project before joining").DemoDenied(), s.handlePreviewProjectInvite)
+	mux.handle("POST /api/v1/project-invites/{token}/accept", signedIn.DemoDenied(), s.handleAcceptProjectInvite)
+	s.switchRoutes(mux, "/api/v1/settings/project-invites", switchRoute{sw: s.membersInviteOn, field: "membersCanInviteNewPeople",
+		get: signedIn, put: ownerOnly("manage the project invite setting").DemoDenied()})
 }
 
 // membersMayInvite reads the owner switch; an unreadable setting counts as off.
-func (s *Server) membersMayInvite(ctx context.Context) bool {
-	var on bool
-	if _, err := settings.New(s.sync.DB()).Get(ctx, membersInviteKey, &on); err != nil {
-		s.log.Error("read project invite setting", "err", err)
-		return false
-	}
-	return on
-}
+func (s *Server) membersMayInvite(ctx context.Context) bool { return s.membersInviteOn.On(ctx) }
 
 // projectManager answers the request and returns "" unless the caller is the
 // owner or an admin of the project; otherwise it returns the caller's role and
@@ -265,9 +253,13 @@ func (s *Server) projectJoiner(ctx context.Context, tx *sql.Tx, inviterID, proje
 }
 
 // projectInviteError maps acceptance failures onto the envelope. Rights that
-// changed between the preview and the acceptance answer the uniform 404.
+// changed between the preview and the acceptance answer the uniform 404; an
+// account outside the project's workspace learns that, so the screen can say
+// whom to ask (workspaces 6.3: the link already showed the project's name).
 func (s *Server) projectInviteError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, opsync.ErrNotInWorkspace):
+		writeError(w, http.StatusConflict, "not_in_workspace", "this account is not a member of the project's workspace; ask the workspace owner to add you first")
 	case errors.Is(err, auth.ErrInvitationInvalid), errors.Is(err, opsync.ErrForbidden), errors.Is(err, opsync.ErrNotFound), errors.Is(err, opsync.ErrInvalidMember),
 		errors.Is(err, opsync.ErrProjectIDConflict):
 		writeError(w, http.StatusNotFound, "invitation_invalid", auth.ErrInvitationInvalid.Error())
@@ -328,29 +320,6 @@ func (s *Server) registerWithProjectInvite(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusCreated, map[string]any{"user": u, "projectId": inv.ProjectID, "role": inv.Role})
 }
 
-func (s *Server) handleGetProjectInviteSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"membersCanInviteNewPeople": s.membersMayInvite(r.Context())})
-}
-
-func (s *Server) handlePutProjectInviteSettings(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		MembersCanInviteNewPeople *bool `json:"membersCanInviteNewPeople"`
-	}
-	if err := readJSON(r, &in); err != nil || in.MembersCanInviteNewPeople == nil {
-		badBodyWith(w, err, "invalid_input", `body must be {"membersCanInviteNewPeople": true|false}`)
-		return
-	}
-	before := s.membersMayInvite(r.Context())
-	if err := settings.New(s.sync.DB()).Set(r.Context(), membersInviteKey, *in.MembersCanInviteNewPeople); err != nil {
-		s.internal(w, err)
-		return
-	}
-	if before != *in.MembersCanInviteNewPeople {
-		s.audit.Record(r.Context(), audit.SettingsChanged(userFrom(r.Context()).ID, membersInviteKey, boolText(before), boolText(*in.MembersCanInviteNewPeople)))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"membersCanInviteNewPeople": *in.MembersCanInviteNewPeople})
-}
-
 // redactPath keeps link secrets out of the request log: a path segment that
 // carries an invitation, project invite, sign-up verification or reset secret
 // is replaced, and so is a task page's secret, which is the segment after /t/ or
@@ -373,7 +342,7 @@ func redactPath(p string) string {
 	}
 	parts := strings.Split(p, "/")
 	for i, part := range parts {
-		if strings.HasPrefix(part, auth.ProjectInviteSecretPrefix) || strings.HasPrefix(part, "oti_") || strings.HasPrefix(part, "otv_") || strings.HasPrefix(part, "otr_") || strings.HasPrefix(part, auth.PublicLinkSecretPrefix) {
+		if strings.HasPrefix(part, auth.ProjectInviteSecretPrefix) || strings.HasPrefix(part, auth.WorkspaceInviteSecretPrefix) || strings.HasPrefix(part, "oti_") || strings.HasPrefix(part, "otv_") || strings.HasPrefix(part, "otr_") || strings.HasPrefix(part, auth.PublicLinkSecretPrefix) {
 			parts[i] = "[redacted]"
 		}
 	}

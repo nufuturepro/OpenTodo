@@ -13,11 +13,33 @@ The client SHALL ship a web app manifest and a service worker that precaches the
 - **THEN** the shell loads and shows locally stored tasks
 
 ### Requirement: Standard views
-The client SHALL provide Inbox (open tasks without a project), Today (open tasks due today or earlier, with overdue tasks grouped first), Upcoming (open tasks due after today grouped by date), Completed (completed tasks newest first, grouped by the day they were completed), and one view per project (its open tasks). "Today" in these views is the user's logical today (OpenSpec `date-time-preferences`, "Logical today"): the calendar date, or the previous one while the local time is before the user's day start.
+The client SHALL provide Inbox (the Inbox tasks of OpenSpec `project-organization`, "Inbox is the default container": open, without a project and not scheduled), Today (open tasks due today or earlier, with the tasks due before today grouped first under "Earlier"), Upcoming (open tasks due after today grouped by date), Completed (completed tasks newest first, grouped by the day they were completed), and one view per project (its open tasks). The Inbox list SHALL end with a group "Planned, no project" with its count while at least one open scheduled task without a project exists. The group SHALL be folded by default, and whether it is open SHALL be remembered on the device; open, it SHALL list those tasks as ordinary rows (open, complete, act on them, drag them onto a project), ordered by their do-on date, then their start date, with Someday last. Its header SHALL offer "Open as filter", which opens the Filter view with the query `no project`. The group SHALL NOT count as part of the Inbox: the Inbox's empty state, Process the Inbox and its count read only the Inbox's own tasks, and with only planned tasks left the Inbox shows its empty state with the folded group below it, as one quiet line without the Inbox zero illustration (the illustration is kept for an Inbox with nothing below it). The group is derived from synced task fields, so it shows the same tasks on every device once they have synced, and offline it shows what the device holds. When quick add in the Inbox creates a task that is scheduled (its line sets a date, a start or Someday), the client SHALL announce where it went (for example "Added to Friday") with a control that opens that view, instead of leaving the user to wonder why it did not appear. "Today" in these views is the user's logical today (OpenSpec `date-time-preferences`, "Logical today"): the calendar date, or the previous one while the local time is before the user's day start.
+
+The Earlier group of Today SHALL carry two actions in its header, visible at all times: **Move all to today**, which sets today as the due date of every task in the group keeping each task's time of day, and **Reschedule…**, which opens the date choices of the bulk Actions menu (today, tomorrow, next week, pick a date) and applies the choice to every task in the group. Both SHALL write one batch with the Undo toast of bulk actions, apply locally at once, work offline and converge per task and field. A task in the group because of a past deadline only SHALL get a due date and keep its deadline; a repeating task SHALL move its occurrence as a single date change does. The same two actions SHALL be command palette commands, "Move earlier tasks to today" and "Reschedule earlier tasks…", offered while Today's Earlier group is not empty, with no key of their own.
 
 #### Scenario: Overdue grouping
 - **WHEN** Today is opened and there are tasks due before today
-- **THEN** they are listed under an "Overdue" heading above today's tasks
+- **THEN** they are listed under an "Earlier" heading above today's tasks (the group is named Earlier; "overdue" is not a word of the interface, see `task-list-presentation` "Words for tasks that are late")
+
+#### Scenario: Move all to today
+- **WHEN** Earlier holds a task due Monday at 09:30 and a task due Tuesday without a time, and the user activates "Move all to today"
+- **THEN** both are due today, the first at 09:30, they join today's group at once, the Earlier group is gone, and a toast reads "2 tasks moved to today" with Undo
+
+#### Scenario: Reschedule offline
+- **WHEN** the device is offline and the user chooses Reschedule… → Tomorrow on an Earlier group of four tasks
+- **THEN** the four tasks are due tomorrow at once, leave Today, are queued as one batch and reach the other devices after the next sync
+
+#### Scenario: Undo
+- **WHEN** the user moved three earlier tasks to today and activates Undo within ten seconds
+- **THEN** each task has its previous due date again and is back in Earlier, as one batch
+
+#### Scenario: Deadline-only task
+- **WHEN** Earlier holds a task with no due date whose deadline was yesterday and the user activates "Move all to today"
+- **THEN** the task is due today and its deadline is unchanged
+
+#### Scenario: Palette command
+- **WHEN** Earlier holds two tasks and the user opens the command palette and types "earlier"
+- **THEN** "Move earlier tasks to today" and "Reschedule earlier tasks…" are offered, and neither is offered while Earlier is empty
 
 #### Scenario: Upcoming grouping
 - **WHEN** Upcoming is opened
@@ -25,22 +47,65 @@ The client SHALL provide Inbox (open tasks without a project), Today (open tasks
 
 #### Scenario: Today after midnight with a day start
 - **WHEN** the user's day start is `04:00`, it is 01:30 on Thursday, and tasks are due on Wednesday and on Thursday
-- **THEN** Today lists Wednesday's tasks under "Today" and none under "Overdue", and Upcoming lists Thursday's under "Tomorrow"
+- **THEN** Today lists Wednesday's tasks under "Today" and none under "Earlier", and Upcoming lists Thursday's under "Tomorrow"
+
+#### Scenario: Where planned tasks went
+- **WHEN** the Inbox holds two tasks and three tasks without a project are due later this week
+- **THEN** the Inbox lists its two tasks, then a folded group "Planned, no project" with the count 3; opening it lists the three tasks in place, and its "Open as filter" opens Filter with `no project`
+
+#### Scenario: Inbox zero with planned tasks
+- **WHEN** every task without a project has a date, a start date or Someday
+- **THEN** the Inbox shows its empty state as one line, "Inbox zero: every task has a place.", without the illustration, and Process the Inbox is not offered, with the folded group "Planned, no project" below it
+
+#### Scenario: The group remembers being opened
+- **WHEN** the user opens the group, leaves the Inbox and comes back on the same device
+- **THEN** the group is still open; on another device it is folded until opened there
+#### Scenario: Quick add with a date in the Inbox
+- **WHEN** the user types `Call the bank friday` in the Inbox quick add and presses Enter
+- **THEN** the task is created due Friday without a project, it is not listed in the Inbox, and an announcement reads "Added to Friday" with a control that opens Upcoming at Friday
 
 ### Requirement: Task detail panel
-Opening a task SHALL show a panel in the shell's panel slot (see `app-shell`) for editing title, notes, project, priority, dates and every other task property, with complete, delete and close actions. The panel SHALL show only the properties that have a value and offer the rest from an Add menu. A task SHALL open in the panel from Enter on a selected row, from Open details or `Shift+Enter` in the inline editor, and from a click on a row's title when the inline editor does not apply (see `task-list-presentation` "Inline title editing"). On narrow screens the panel SHALL open as a full-screen sheet over the list.
+Opening a task SHALL show it as its own page at `/task/<id>` (see "Task page") for editing title, notes, project, priority, dates and every other task property, with complete, delete and close actions. The page SHALL show every property in its facts column, a property without a value as a quiet action that sets it (see "Task facts column"). A task SHALL open from Enter on a selected row, from Open details or `Shift+Enter` in the inline editor, and from a click on a row's title when the inline editor does not apply (see `task-list-presentation` "Inline title editing"). Only a page that keeps a split SHALL show the task in the shell's panel slot beside its content instead, and only from 1024 px; below that it opens the page too. The pages that keep a split are Process the Inbox, the Inbox itself (see `inbox-triage` "Inbox list and detail"), and, for a user who chose the side panel (`appearance-preferences` "Task opening preference"), the lists of "Task details in a side panel". On the Inbox the task under the cursor shows beside the list, a click on a title shows it there instead of editing it in place, and Enter opens its page. Where another capability says the task panel or the detail panel, it means the task page, or the docked panel on a page that keeps a split.
 
 #### Scenario: Open from the list
 - **WHEN** the user presses Enter on a selected task, or taps a task's title on a touch screen
-- **THEN** the detail panel opens with that task's fields and the address carries the task id
+- **THEN** the task opens as its page, the address is `/task/<id>`, and nothing is docked beside the list
 
 #### Scenario: Click edits in place on a desktop
-- **WHEN** the panel is closed and the user clicks a task's title with a mouse on a 1280 px wide screen
-- **THEN** the title becomes editable in the list and the panel does not open
+- **WHEN** the user clicks a task's title in Today with a mouse on a 1280 px wide screen
+- **THEN** the title becomes editable in the list and the task page does not open
 
 #### Scenario: Empty task shows few things
 - **WHEN** the user opens a task with a title, a project and nothing else
-- **THEN** the panel shows the title, the notes placeholder, the project, the When and priority values, the subtask line and the Add menu, and no other property
+- **THEN** the facts column shows the priority and the project as values, every other fact as a quiet action such as "Set a deadline", and no empty form field
+
+#### Scenario: Open on a phone
+- **WHEN** the user opens a task from Today on a 390×844 phone
+- **THEN** the task page fills the screen with Back to Today in the bar, the facts under the notes, and no tab bar or add button
+
+#### Scenario: Drag the handle to close
+- **WHEN** the user opens a task on a 390 px phone
+- **THEN** it opens as its page with no handle and no scrim, and Back in the bar returns to the list where it was
+
+#### Scenario: Reading comments does not close the sheet
+- **WHEN** the user scrolls the task page down to the comments and drags down on a comment
+- **THEN** the page scrolls and nothing closes
+
+#### Scenario: Scrim and Close
+- **WHEN** the user chooses Close on the task page, or Back on a phone
+- **THEN** the list it was opened from shows with the task's row selected
+
+#### Scenario: Triage keeps its split
+- **WHEN** the user presses Enter on the card in Process the Inbox on a 1280 px wide screen
+- **THEN** the task opens in the panel beside the card, and Escape closes it and returns to the card
+
+#### Scenario: The Inbox keeps its split
+- **WHEN** the user selects a task in the Inbox on a 1280 px wide screen, then presses Enter
+- **THEN** the task shows in the panel beside the list, then opens as its page at `/task/<id>`
+
+#### Scenario: Side panel chosen
+- **WHEN** a user who chose the side panel presses Enter on a selected task in Today on a 1280 px wide screen
+- **THEN** the task shows in the panel beside Today and no page opens
 
 ### Requirement: Keyboard navigation
 Every primary action SHALL be reachable from the keyboard: `q` quick add, `j`/`k` (or arrows) move, Enter opens, `F2` edits the selected task's title in place, `c` completes or reopens, `1`–`4` set priority, Delete deletes, `g` then `i`/`t`/`u`/`c`/`s` navigates, `g` then `p` opens Inbox triage, Escape closes the panel or clears the selection, `?` lists shortcuts, and `Ctrl`/`⌘`+`K` opens the palette. Shortcuts SHALL not fire while typing in a field, except `Ctrl`/`⌘`+`K` outside the notes editor.
@@ -241,11 +306,11 @@ When Vim keybindings are enabled the `?` overlay SHALL include a Vim section lis
 - **THEN** the overlay shows only the default shortcuts and a hint that Vim keybindings can be enabled in Settings
 
 ### Requirement: Overlays fit every screen
-Every menu, popover, picker, dialog and toast SHALL be fully inside the viewport from 360 px wide up, with its close control visible and usable. Below 640 px menus, popovers and pickers SHALL open as bottom sheets across the screen width; from 640 px up they SHALL open next to their trigger, shifted or flipped to stay inside the viewport. A dialog taller than the screen SHALL become a full-screen sheet with a pinned header and close button.
+Every menu, popover, picker, dialog and toast SHALL be fully inside the viewport from 360 px wide up, with its close control visible and usable. Below 640 px menus, popovers and pickers SHALL open as bottom sheets across the screen width with a drag handle, at most 90 percent of the viewport height, closing on a drag down on the handle as well as on their close control and a tap outside; from 640 px up they SHALL open next to their trigger, shifted or flipped to stay inside the viewport. A dialog taller than the screen SHALL become a full-screen sheet with a pinned header and close button. A toast SHALL never cover the focused control (it sits above the tab bar on a phone and moves up while a sheet is open).
 
 #### Scenario: Notifications on a phone
 - **WHEN** a user on a 390 px wide screen taps the bell
-- **THEN** the notifications open as a bottom sheet across the screen, every entry is fully visible and the sheet closes with its close button or a tap outside
+- **THEN** the notifications open as a bottom sheet across the screen with a drag handle, every entry is fully visible and the sheet closes with its close button, a drag down on the handle or a tap outside
 
 #### Scenario: Menu near the edge on a tablet
 - **WHEN** a menu's trigger sits near the left edge of a 768 px screen
@@ -254,6 +319,10 @@ Every menu, popover, picker, dialog and toast SHALL be fully inside the viewport
 #### Scenario: Long dialog
 - **WHEN** a dialog's content is taller than the screen
 - **THEN** it opens full screen, its content scrolls and its close button stays visible at the top
+
+#### Scenario: Toast above the tab bar
+- **WHEN** the user completes a task on a phone and the Undo toast appears
+- **THEN** the toast sits above the tab bar and covers no row, and Undo is at least 48 px tall
 
 ### Requirement: Consistent overlay behaviour
 All overlays SHALL close with Escape and, except destructive confirmations, with a tap outside; move focus into themselves when opened and back to their trigger when closed; keep the page behind from scrolling while open; respect device safe areas; and expose their role and label to assistive technology.
@@ -267,19 +336,27 @@ All overlays SHALL close with Escape and, except destructive confirmations, with
 - **THEN** only the sheet scrolls and the page behind it does not move
 
 ### Requirement: Phone layout rules
-From 360 px wide up no screen SHALL scroll horizontally, except designated regions (board columns, week grid, wide tables) that scroll inside themselves. On touch screens interactive controls SHALL be at least 44×44 px and controls shown on hover SHALL always be visible. Long words and URLs SHALL wrap, layouts SHALL follow the visible viewport height and safe areas, and the on-screen keyboard SHALL not hide the focused field.
+From 360 px wide up no screen SHALL scroll horizontally, in every interface language, except designated regions (board columns, week grid, wide tables) that scroll inside themselves. On touch screens interactive controls SHALL be at least 48×48 px, or at least 44×44 px with 8 px of space to the next control, and controls shown on hover SHALL always be visible. Long words and URLs SHALL wrap, layouts SHALL follow the visible viewport height and safe areas, and the on-screen keyboard SHALL not hide the focused field, inside a sheet included. A fixed control SHALL NOT cover content: a list reserves the room a floating control needs under its last row.
 
 #### Scenario: Narrow phone
 - **WHEN** any screen is shown 360 px wide
 - **THEN** the page has no horizontal scrollbar and nothing is cut off at the edges
 
+#### Scenario: Narrow phone in German
+- **WHEN** the interface language is German or French and Today, a project, Settings and the drawer are shown 360 px wide
+- **THEN** no page scrolls sideways and no control is clipped, with the longer labels wrapped or truncated with their full name in the accessible name
+
 #### Scenario: Row menu on a touch screen
 - **WHEN** a touch-screen user looks at the sidebar views or labels
-- **THEN** their menu buttons are visible without hovering and at least 44 px in both directions
+- **THEN** their menu buttons are visible without hovering and at least 48 px in both directions
 
 #### Scenario: Long URL in a comment
 - **WHEN** a comment contains a 120-character URL
 - **THEN** it wraps inside the comment and the page does not scroll sideways
+
+#### Scenario: Keyboard over a sheet
+- **WHEN** the user focuses the comment composer at the bottom of the task sheet on a phone
+- **THEN** the sheet scrolls so the composer stays above the keyboard and the sticky header stays visible
 
 ### Requirement: Automated layout check
 CI SHALL open every screen and every overlay at 360, 390 and 768 px wide, in light and dark themes, in Chromium and in WebKit, and SHALL fail when a page scrolls horizontally outside designated regions, an overlay or its close control is outside the viewport or not clickable, an overlay does not close with Escape and its close button, or a touch target is smaller than 44×44 px.
@@ -293,22 +370,42 @@ CI SHALL open every screen and every overlay at 360, 390 and 768 px wide, in lig
 - **THEN** the layout job fails for WebKit
 
 ### Requirement: Task panel layout
-The panel SHALL show, top to bottom: a sticky header with the task's checkbox, the editable title wrapping to at most two lines, a menu holding Delete, Copy link, Expand, Attach and the less frequent actions, and Close; the notes (a single placeholder line until focused, the editor otherwise, clamped at rest when long); the facet lines and the Add control; the subtasks as a checklist with its count; the attachments list only when there are attachments; and the tabbed area with Comments, Activity and History.
+The task page SHALL show, top to bottom: a compact header with the breadcrumb (the list the task was opened from as a link back to it, the task's project, its parent task when it has one, and the task), the task's place in the list it was opened from ("4 / 12") with the next and previous task, a menu holding Delete, Copy link, Attach and the less frequent actions, and Close; then the content column with the task's checkbox and editable title, the notes (never clamped), an Attach control, the project's custom fields, the subtasks as one bordered block with their count and progress, the attachments list only when there are attachments, and the tabbed area with Comments, Activity, History and Time, the comment composer pinned to the bottom; and the facts column beside the content from 1024 px, above the notes below that. The docked panel of a page that keeps a split SHALL keep the earlier panel layout: the sticky header with the checkbox, the title, the menu (with Expand) and Close, the facet lines with Add, the custom fields, the subtasks, the attachments, the notes in full and the tabs.
 
 #### Scenario: Delete from the header menu
-- **WHEN** the user opens the header menu and chooses Delete
-- **THEN** the task moves to the Trash, the panel closes and a toast offers Undo
+- **WHEN** the user opens the header menu on the task page and chooses Delete
+- **THEN** the task moves to the Trash, the page returns to the list it was opened from, and a toast offers Undo
 
 #### Scenario: Scrolled panel keeps its context
-- **WHEN** the user scrolls the panel down to the comments
-- **THEN** the checkbox and title stay visible at the top of the panel
+- **WHEN** the user scrolls the task page down to the comments
+- **THEN** the header with the breadcrumb, the place in the list and Close stays visible, and on a wide screen so does the facts column
 
 #### Scenario: Long title
-- **WHEN** the user opens a task whose title is wider than the panel
-- **THEN** the title wraps onto a second line in the header and remains editable in place, and no subtask count is shown in the header
+- **WHEN** the user opens a task whose title is wider than the content column
+- **THEN** the title wraps under the checkbox and remains editable in place, and the breadcrumb shortens its last crumb with an ellipsis
+
+#### Scenario: Back to the list from the breadcrumb
+- **WHEN** the user opens a task of the project "Home" from Today on a wide screen and activates the first crumb, "Today"
+- **THEN** Today shows with that task selected at the same scroll position, as with Esc or Close
+
+#### Scenario: Opened from its own project
+- **WHEN** the user opens a task from its project "Home"
+- **THEN** the breadcrumb starts with "Home", once, and activating it returns to the project with the task selected
+
+#### Scenario: No list to return to
+- **WHEN** the user opens a link to a task that has no project
+- **THEN** the breadcrumb starts with "Inbox" as a link, which opens the Inbox with the task selected
+
+#### Scenario: Properties first in the panel
+- **WHEN** the user opens, in the docked panel, a task with a forty-line note, two subtasks and an attachment
+- **THEN** the panel body shows, top to bottom, the facet lines, the subtasks, the attachments, the whole note and the tabs, and the facet lines are at the same height as for a task without notes
+
+#### Scenario: Facts above the notes on a narrow task page
+- **WHEN** the user opens a task as a page at 768 px wide
+- **THEN** the facts card is shown between the title and the notes
 
 ### Requirement: Task panel tabs
-The tabbed area SHALL offer Comments (with the comment count), Activity, History and Time as tabs reachable with the keyboard (arrow keys between tabs, Tab into the content). Comments SHALL be the default tab; the last chosen tab SHALL be remembered on the device only. The task's created and completed times SHALL be the first entries of Activity. The tab bar SHALL follow "Conversation tabs stay reachable".
+The tabbed area SHALL offer Comments (with the comment count), Activity, History and Time (with the tracked total when there is one) as tabs reachable with the keyboard (arrow keys between tabs, Tab into the content). Comments SHALL be the default tab; the last chosen tab SHALL be remembered on the device only. The task's created and completed times SHALL be the first entries of Activity. The Time tab SHALL hold the task's time entries as the time-tracking capability defines them.
 
 #### Scenario: Remembered tab
 - **WHEN** the user opens the Activity tab, closes the panel and opens another task
@@ -318,20 +415,28 @@ The tabbed area SHALL offer Comments (with the comment count), Activity, History
 - **WHEN** the user opens the Activity tab of a completed task
 - **THEN** its created time and its completed time are the first entries
 
+#### Scenario: Time tab by keyboard
+- **WHEN** the panel is open on a task with 35 minutes tracked and the user moves to the tabs and presses the right arrow until "Time · 35m"
+- **THEN** the Time tab shows the entries, Tab reaches Start tracking first, and Enter starts an entry whose row appears at the top with a ticking duration
+
 ### Requirement: Task panel comment composer
-The comment composer SHALL be pinned to the bottom of the panel while Comments is shown, resting as a single line that expands to the full composer (attach, submit, the submit key hint) when focused, when it holds a draft or a reply target, or when `Shift+C` is pressed; `Shift+C` SHALL switch to Comments and focus the composer.
+The comment composer SHALL be pinned to the bottom of the task page's content column (of the panel when docked) while Comments is shown, resting as a single line that expands to the full composer (the rich-text editor, attach, the submit key hint and the round Send control of the shared composer frame, see `comments` "Composer behaviour") when focused, when it holds a draft or a reply target, or when `Shift+C` is pressed; `Shift+C` SHALL switch to Comments and focus the composer. The editor's own keys SHALL apply only while the composer has focus and SHALL never fire a page shortcut.
 
 #### Scenario: Shortcut to the composer
 - **WHEN** the History tab is open and the user presses `Shift+C` outside a text field
-- **THEN** the Comments tab is shown, the composer is expanded and has focus
+- **THEN** the Comments tab is shown, the composer is expanded with the editor and has focus
 
 #### Scenario: Composer without scrolling
 - **WHEN** a task with thirty comments is opened
-- **THEN** the composer line is visible at the bottom of the panel before the user scrolls
+- **THEN** the composer line is visible at the bottom of the page before the user scrolls
 
 #### Scenario: At rest
 - **WHEN** a task without a draft is opened and nothing is focused
 - **THEN** the composer is one line reading "Write a comment…" with no buttons under it, and the Comments list has the space the full composer used
+
+#### Scenario: Editor keys stay in the editor
+- **WHEN** the composer has focus and the user presses `c` or `1`
+- **THEN** the character is typed into the comment and the task is neither completed nor reprioritised
 
 ### Requirement: Task panel in viewer mode
 For a viewer of a shared project every property row SHALL render as read-only text without an editor, the header SHALL omit Complete and Delete, and the Comments tab SHALL remain writable because viewers may comment.
@@ -545,17 +650,6 @@ Each part SHALL be in the tab order; Enter or Space SHALL open its editor; `1` t
 - **WHEN** the user tabs to the first part of the When line and presses Tab, then Enter
 - **THEN** focus moves to the next part of the same line and its editor opens; Escape closes it with focus back on that part
 
-### Requirement: Task panel notes clamp
-In the panel, notes that are not focused SHALL be clamped to about eight lines with a "Show all" control when they are longer; focusing the notes or choosing Show all SHALL expand them for the rest of the time the task is open. The task page SHALL never clamp.
-
-#### Scenario: Long note in the panel
-- **WHEN** the user opens a task whose notes are forty lines long on a 1280×800 screen
-- **THEN** the panel shows the first lines of the notes, a "Show all" line, and the facet lines below it without scrolling
-
-#### Scenario: Editing expands
-- **WHEN** the user clicks into the clamped notes
-- **THEN** the whole note is shown and stays shown after the editor loses focus, until another task is opened
-
 ### Requirement: Popover triggers toggle
 Activating the control that opened an anchored popover (a facet part, a picker trigger, a menu button) while that popover is open SHALL close it in one step, and it SHALL NOT reopen. Activating it while closed SHALL open it. A click on the trigger SHALL never count as a click outside the popover.
 
@@ -608,3 +702,375 @@ The tab bar of Comments, Activity, History and Time SHALL stay pinned under the 
 #### Scenario: Tabs pinned
 - **WHEN** the user scrolls the panel past the subtasks into the comments
 - **THEN** the tab bar stays visible directly under the sticky header
+
+### Requirement: Keyboard navigation to Focus
+Outside text fields, `g` then `Shift+F` SHALL open the Focus screen (OpenSpec change `focus-mode`), like the other `g` navigation keys, and the `?` cheat sheet SHALL list it under "Go to a view". On the Focus screen itself Space, Enter, Esc, `b` and `n` SHALL be the view's own keys and SHALL not run any list or panel shortcut.
+
+#### Scenario: Navigate to Focus
+- **WHEN** focus is not in a text field and the user presses `g` then `Shift+F`
+- **THEN** the Focus screen opens on the first task of today's focus, or on its task picker when there is none
+
+#### Scenario: No list keys on the Focus screen
+- **WHEN** the Focus screen is shown and the user presses `c` or `j`
+- **THEN** nothing happens, because the screen hosts no task list
+
+### Requirement: App icons
+The installed app's icons SHALL be the colour variant of the brand mark: the SVG favicon, the 192 and 512 px manifest icons, a 512 px maskable icon and the Apple touch icon, all generated from the one brand source and served under the same paths as today so that installed apps and bookmarks update their icon on the next load without a manifest path change. The sign-in, setup, reset, invitation and email screens SHALL show the mono mark beside the wordmark instead of an image of the icon. The precached shell SHALL include the new icon files, so an installed app shows its icon offline.
+
+#### Scenario: Installed icon updates
+- **WHEN** a person who installed the app before this version opens it after the update
+- **THEN** the home screen or dock icon shows the brand mark on the slate square after the browser's next icon refresh, and the app's manifest lists the same icon paths as before
+
+#### Scenario: Sign-in shows the mark
+- **WHEN** a visitor opens the sign-in screen in light and in dark
+- **THEN** the card starts with the mono mark at 32 px and the wordmark, and no raster icon is requested for the screen
+
+#### Scenario: Offline icon
+- **WHEN** the installed app is opened without network
+- **THEN** the shell and its icons load from the precache and the browser shows the brand mark in the title bar
+
+### Requirement: Overlay motion
+Each overlay kind SHALL enter and leave with a fixed motion: a dialog from 640 px up fades and scales up slightly within the emphasis duration and leaves in about three quarters of it; a phone sheet slides up within the emphasis duration and slides down in about three quarters of it; the task panel slides in from its edge within the emphasis duration when opened from closed and slides out in about three quarters of it, and switching the task it shows SHALL NOT replay the slide; a toast slides up within the emphasis duration and fades out; menus, popovers, tooltips and the command palette fade in within the interface duration and close at once. Entrances SHALL use the spring ease-out; an overlay SHALL accept input from its first frame; focus SHALL move as "Consistent overlay behaviour" requires regardless of motion. Under reduced motion every overlay fades only; under no motion it appears and disappears at once.
+
+#### Scenario: Dialog on a desktop
+- **WHEN** the user opens the share dialog at 1280 px
+- **THEN** the dialog fades in and scales from slightly smaller to its size within 250 ms and its first field has focus before the animation ends
+
+#### Scenario: Panel switches tasks without replaying
+- **WHEN** the task panel is open on one task and the user presses the open key on another row
+- **THEN** the panel's content changes with no slide
+
+#### Scenario: Menu closes at once
+- **WHEN** the user picks an item in a row menu
+- **THEN** the menu disappears with no exit animation and the action's effect is visible immediately
+
+#### Scenario: Reduced motion
+- **WHEN** reduced motion is requested and the user opens a phone sheet
+- **THEN** the sheet fades in with no slide and closes with a fade
+
+### Requirement: Interface audit tour
+The repository SHALL provide one command that opens every entry of the screen inventory on the built web app with a seeded account at 360, 768 and 1280 px wide, in light and dark, in English and German, saves a screenshot of each, measures the interface budget (rows of chrome above a list's first item, task properties visible by default, primary sidebar destinations, vertical scroll regions), WCAG 2.2 AA violations, each audited interface rule (OpenSpec `design-system` "Audited interface rules"), the time from navigation to the first task row rendered from the local copy while the server is unreachable, and story coverage of the core screens, and writes a JSON report and an HTML contact sheet. The tour SHALL change nothing in the app or the repository, SHALL run in CI as a non-blocking job that uploads the report at least nightly on the default branch and on demand on any branch, without delaying the checks of a pull request or the image publishing of a push, and SHALL have a strict mode that fails on budget, overflow, story-coverage and reduced-motion violations once the maintainer turns it on. Under reduced motion the tour SHALL watch every overlay of the inventory as it opens, at 1280 px with a mouse and at 360 px as a touch device, completing a task in Today, and dragging a card to the next board column, a task to the next day of the Plan and a block down an hour in the Week, from before the action until it settles, so a movement that ends before a snapshot is still reported. Each violation SHALL name the screen, the width, the theme, the language, the rule and the element.
+
+#### Scenario: Full tour on a code change
+- **WHEN** a change under `web/src` is merged and the nightly run starts on the default branch
+- **THEN** the audit job uploads a report with one screenshot per inventory entry, width, theme and language, and a ranked list of violations, without failing anything
+
+#### Scenario: Tour on demand for a pull request
+- **WHEN** a contributor starts the audit workflow on a pull request's branch
+- **THEN** it uploads the same report for that branch, and the pull request's checks neither wait for it nor fail on it
+
+#### Scenario: Strict mode on a budget violation
+- **WHEN** strict mode is on and a screen renders three rows of chrome above its first task at 1280 px
+- **THEN** the audit fails naming the screen, the width and the rule
+
+#### Scenario: Server unreachable on a second visit
+- **WHEN** the tour loads the Inbox a second time with the server stopped
+- **THEN** the report records the time to the first task row rendered from the local copy, and the screen is captured as it is shown offline
+
+#### Scenario: Story coverage in the report
+- **WHEN** a core screen has no story
+- **THEN** the report lists it under story coverage, and strict mode fails on it
+
+#### Scenario: Tour on a developer's machine
+- **WHEN** a contributor runs the audit command with a Chromium on disk
+- **THEN** the report and the contact sheet are written to a directory the command names, and the command exits non-zero only in strict mode
+
+#### Scenario: A sheet slides under reduced motion
+- **WHEN** a change gives the phone task sheet a 120 ms slide without a reduced-motion rule and the tour runs
+- **THEN** the report lists a movement under reduced motion for the task panel at 360 px naming the sheet and `transform`, and strict mode fails on it
+
+#### Scenario: A drag placeholder moves
+- **WHEN** the board's drop placeholder grows its height while a card is dragged under reduced motion
+- **THEN** the report lists a movement for the board drag naming the placeholder and `height`
+
+#### Scenario: A push to main does not wait for the audit
+- **WHEN** a pull request is merged and CI runs for the push to `main`
+- **THEN** the push run does not run the audit and publishes the image once its other checks passed, and the next nightly audit covers `main`
+
+### Requirement: Day page briefing
+
+Today and Upcoming SHALL show a briefing under the title: a bold lead sentence, then at most one more sentence. The briefing SHALL be computed on the device from the local rows: the tasks of projects that are not archived, the in-app notification cache, the close of the day, the calendar grid's day length and the logical today. It SHALL need no network and no model, SHALL work offline, and SHALL follow changes from other devices as they sync and the clock as the day rolls over, like the list under it. Two devices with the same rows and the same day length SHALL show the same briefing. The briefing writes nothing.
+
+On Today with tasks in the list, the briefing SHALL name at most three things that stand out, in this order:
+- **Late:**
+  - the overdue tasks Today lists, leaving out blocked tasks;
+  - one late task is named with how many days late it is, counted from its due date, or from a passed deadline when that is older;
+  - more than one is a count;
+  - in the danger tone.
+- **Load:**
+  - when the estimates of Today's tasks (late ones included) exceed the day length, today's planned time against the day length;
+  - otherwise, the first of the next seven days whose estimates reach the day length, by weekday;
+  - in the warning tone.
+- **Replies:**
+  - unread notifications of a mention or a reply on a task page;
+  - one is named by who answered and about which task, using the device's own copy of the title when the notification carries none;
+  - more than one is a count.
+
+The lead SHALL say how many things matter today, and the facts SHALL follow as one sentence. With nothing to name, the briefing SHALL say that nothing stands out, how many tasks are planned and, when there are estimates, the planned time.
+
+When Today's list is empty, the lead SHALL be "All done for today." if the day was closed or a task was completed on the logical today, and otherwise that nothing is planned for today. It SHALL be followed by tomorrow: how many tasks Upcoming lists for tomorrow and the first of them by due time then priority, with its time; or that nothing is planned for tomorrow yet.
+
+On Upcoming the lead SHALL say how many tasks the next seven days hold. When there are any, it SHALL be followed by:
+- every one of those days that is already full, or that every day still has room;
+- and tomorrow as above.
+
+The parts of the briefing SHALL lead to what they name. A task the briefing names (one late task, the task a reply is about, tomorrow's first task) SHALL open that task's page, returning to the page it was opened from. A count of late tasks SHALL tick exactly those tasks in Today's list, as bulk selection does, and scroll to the first; from any other page it SHALL open Today first. The ticks SHALL be an ordinary selection: the selection bar SHALL offer its actions and Escape SHALL clear it. A full day SHALL open Upcoming scrolled to that day; where the briefing names several full days, each day's name SHALL be its own link to that day, inside the one sentence the language's list pattern and plural build, while a single full day links its whole clause. Replies that are not about one named task SHALL open the notifications. Each part SHALL keep its tone, SHALL be reachable with the keyboard, SHALL be underlined on hover and keyboard focus, and SHALL have an accessible name that says where it leads. Following a part writes nothing.
+
+The day page's menu on Today and Upcoming SHALL offer to hide the briefing and, once hidden, to show it again, and Settings → General SHALL offer the same choice as a "Show the briefing" switch. The choice SHALL be a synced preference of the account (`user_prefs.briefing`, "hidden" or shown): it SHALL work offline, reach the account's other devices with sync and converge by last-writer-wins; an empty or unknown value SHALL read as shown. With the briefing hidden the day head SHALL keep its title and date. The Daily check SHALL keep its opening sentence either way.
+
+#### Scenario: Three things
+- **WHEN** "Renew the passport" was due two days ago, Monday's estimates fill the eight-hour day, and Mia's unread mention is about "Boiler"
+- **THEN** Today's briefing reads "Three things matter today. Renew the passport is 2 days late, Monday is already full, and Mia answered about Boiler."
+- **AND** the late part is in the danger tone, the full day in the warning tone, and the titles are shown as written
+
+#### Scenario: A calm day
+- **WHEN** Today lists two tasks for today with 45 minutes estimated, nothing is late, no later day is full and no reply is unread
+- **THEN** the briefing reads "Nothing stands out today. 2 tasks are planned, about 45m in all."
+
+#### Scenario: Today past the day length
+- **WHEN** today's tasks hold nine hours of estimates and the day length is eight hours
+- **THEN** the briefing names today's nine hours against the eight-hour day instead of a later full day
+
+#### Scenario: Blocked late task
+- **WHEN** the only late task waits for an open blocker
+- **THEN** the briefing names nothing late
+
+#### Scenario: All done
+- **WHEN** the user completed the last task of Today, and tomorrow holds four tasks, the first "Standup" at 09:30
+- **THEN** the briefing reads "All done for today. Tomorrow starts with 4 tasks; the first is Standup at 9:30 AM." in the user's time format
+
+#### Scenario: A clear day
+- **WHEN** nothing was due today and nothing was completed today
+- **THEN** the briefing starts "Nothing is planned for today." and goes on with tomorrow
+
+#### Scenario: Upcoming
+- **WHEN** the next seven days hold six tasks, Friday and Monday are full and tomorrow holds one task, "Groceries"
+- **THEN** Upcoming's briefing reads "6 tasks in the next seven days. Friday and Monday are already full. Tomorrow starts with one task; the first is Groceries."
+
+#### Scenario: Offline and after sync
+- **WHEN** the device is offline and another device completed the late task earlier
+- **THEN** the briefing still names it until the completion syncs, and drops it as soon as it arrives, without a reload
+
+#### Scenario: Reply read
+- **WHEN** the user opens the task the unread reply was about
+- **THEN** the reply leaves the briefing
+
+#### Scenario: Open the late tasks
+- **WHEN** Today's briefing reads "Two things matter today. 2 tasks are late and Mia answered about Boiler." and the user activates "2 tasks are late"
+- **THEN** exactly those two tasks are ticked in Today's list, the first is scrolled into view, the selection bar offers its actions, and nothing was changed
+
+#### Scenario: The late tasks stay a selection
+- **WHEN** the user activates "2 tasks are late" and then presses Escape
+- **THEN** the selection bar showed "2 selected" with its actions, and Escape clears both ticks and the bar
+
+#### Scenario: Open a named task
+- **WHEN** the user activates "Renew the passport" in the briefing and then presses Escape
+- **THEN** the task's page opens, and Escape returns to Today
+
+#### Scenario: Open a full day
+- **WHEN** the user activates "Monday is already full" on Today
+- **THEN** Upcoming opens scrolled to Monday's group
+
+#### Scenario: Open one of several full days
+- **WHEN** Upcoming's briefing reads "Friday and Monday are already full." and the user activates "Monday"
+- **THEN** Upcoming scrolls to Monday's group; "Friday" and "Monday" are separate links named "Friday, open in Upcoming" and "Monday, open in Upcoming"
+
+#### Scenario: Several full days in another language
+- **WHEN** the interface is in Italian and Friday and Monday are full
+- **THEN** the clause reads "Venerdì e lunedì sono già al completo" with "Venerdì" and "lunedì" as the two links
+
+#### Scenario: Open the replies
+- **WHEN** the briefing says "3 replies are waiting" and the user activates it on a phone
+- **THEN** the drawer opens with the notifications list open
+
+#### Scenario: Keyboard
+- **WHEN** the user tabs into the briefing
+- **THEN** each part is a stop in reading order, underlined while focused, and announced with where it leads
+
+#### Scenario: Hide the briefing
+- **WHEN** the user chooses "Hide briefing" in Today's menu while offline
+- **THEN** Today shows its title and date without the sentence, Upcoming does too, and after sync the user's other devices hide it as well
+
+#### Scenario: Show it again
+- **WHEN** the briefing is hidden and the user chooses "Show briefing" in Upcoming's menu
+- **THEN** the sentence is back on Today and Upcoming
+
+#### Scenario: Daily check while hidden
+- **WHEN** the briefing is hidden and the user opens the Daily check
+- **THEN** the Daily check still opens with Today's briefing
+
+#### Scenario: The switch in Settings
+- **WHEN** the user turns off "Show the briefing" in Settings → General while offline
+- **THEN** Today and Upcoming show their title and date without the sentence, the day pages' menu offers "Show briefing", and after sync the user's other devices hide it as well
+
+### Requirement: Task page
+A task opened from a list SHALL remember that list: its address, its name, its tasks in display order and its scroll position. The page SHALL show the task's place in that list as "n / m" with controls for the next and previous task, and `j` and `k` SHALL open the next and previous task in place, so Escape still returns in one step. Escape (outside a text field and outside an overlay), Close and the phone's Back SHALL return to that list with the task selected and the list scrolled where it was. A task opened from outside a list (a reminder, a notification, the command palette) SHALL return to the task's own list (its project, or the Inbox); a task opened from its address alone (a reload, a link) SHALL show no place in a list and SHALL return to the task's own list with the task selected. Addresses of the form `?task=<id>` SHALL keep working and open the task's page over the page in the address.
+
+#### Scenario: Step through a list
+- **WHEN** the user opens the second of three tasks in a project and presses `j`
+- **THEN** the third task's page shows "3 / 3", the next control is disabled, and a further `j` does nothing
+
+#### Scenario: Back to the same spot
+- **WHEN** the user scrolled Upcoming down, opened a task, stepped to the next one with `j` and pressed Escape
+- **THEN** Upcoming shows at the same scroll position with the task last shown selected, and the browser's history holds no extra entry
+
+#### Scenario: Opened from a link
+- **WHEN** the user opens `/task/<id>` of a task in the Inbox from a bookmark and chooses Close
+- **THEN** the Inbox opens with that task selected
+
+#### Scenario: Older link
+- **WHEN** the user opens `/upcoming?task=<id>`
+- **THEN** the task's page opens, and Escape returns to Upcoming
+
+### Requirement: Task facts column
+The task page SHALL show the task's properties in a facts column of labelled rows under the headings Schedule (Do, Start, Deadline, Reminder, Repeat), Details (Priority, Estimate, Assignee when the account can assign, Blocked by, Blocks when something waits for the task, Location), Labels and Project (project, section when the project has sections or the task has one, parent task, origin when it has one). A row with a value SHALL read in the list row's words; a row without one SHALL read as the action that sets it ("Set a deadline", "Add a place", "Doesn’t repeat") in a quiet tone. Activating a row SHALL open the same editor the facet part opens (see "Facet editors are popovers"), anchored to the row, and write the same operation. The list keys that open an editor (`d`, `Shift+N`, `b`, `e`) SHALL open the task page with that row's editor open. For a viewer every row SHALL be text and rows without a value SHALL be hidden. Below 768 px the facts SHALL be one card of rows at least 44 px tall, without the group headings: each row the fact's icon and name on the left and its value or action at the right. The card SHALL first show the facts with a value, Do and Deadline whether set or not, and Priority only when it is above 4, with labels as one row when the task has any; a "More properties" row SHALL show every other fact in place, and an editor opened for a fact that is not shown yet (from a list key) SHALL show them all.
+
+#### Scenario: Stacked facts on a phone
+- **WHEN** a task due today with a 15:00 reminder, assigned to Mia Lang in "Home renovation" and without a deadline, is opened on a 390×844 phone
+- **THEN** the facts are one card of 44 px rows reading Do · Today, Deadline · Set a deadline, Reminder · 15:00, Assignee · Mia Lang and Project · Home renovation, followed by "More properties", and no group heading is shown
+
+#### Scenario: More properties
+- **WHEN** the user taps "More properties" on that card
+- **THEN** Start, Repeat, Priority 4, Estimate, Blocked by, Location, Parent task and Labels are added in place, the unset ones as actions, and "More properties" is gone
+
+#### Scenario: Set a deadline from its row
+- **WHEN** the user activates "Set a deadline" on a task's page
+- **THEN** the When editor opens on its Deadline segment anchored to the row, and a picked date reads in the row afterwards
+
+#### Scenario: Deadline from the list
+- **WHEN** a task is selected in Today and the user presses `d`
+- **THEN** the task's page opens with the When editor on its Deadline segment and the date field focused
+
+#### Scenario: Viewer
+- **WHEN** a viewer of a shared project opens one of its tasks
+- **THEN** the facts read as text, no row opens an editor, and no unset fact is listed
+
+### Requirement: A timed due with an estimate reads as its block
+Where the task page, the task panel's facet line and the phone's facts card show a task's due (the Do row), a due with a time and an estimate SHALL read as the block the calendar draws: the day, the start time and the end time ("Today 12:00–13:30"), in the user's time format, followed by the zone's city when the time is fixed to a zone. The end SHALL stay on the due's day (23:59 at the latest), as on the calendar. A due with a time and no estimate SHALL read as the day and the time only; a due without a time, as the day only. The Start row stays the date from which the task is available and is not the block's start.
+
+#### Scenario: Placed on the calendar
+- **WHEN** the user drags a task with a 90-minute estimate to today at 12:00 in the Week and opens the task from its project
+- **THEN** the Do row reads "Today 12:00–13:30", and the Start row is unchanged
+
+#### Scenario: No estimate
+- **WHEN** a task is due tomorrow at 15:00 with no estimate
+- **THEN** the Do row reads "Tomorrow 15:00"
+
+#### Scenario: Fixed to a zone
+- **WHEN** a task is due tomorrow at 15:00 fixed to New York with a one-hour estimate, for a viewer in New York
+- **THEN** the Do row reads "Tomorrow 15:00–16:00 New York"
+
+### Requirement: Task details in a side panel
+For a user who chose the side panel (`appearance-preferences` "Task opening preference"), the following lists SHALL keep a side panel in the shell's panel slot from 1024 px of screen width: Inbox, Today, Upcoming, Anytime, Someday, Completed, Assigned to me, Next, Waiting, projects (list, board and timeline), labels, places, the Filter view and saved views. The panel SHALL show the docked task as "Task panel layout" describes it: the checkbox, the title, the menu with Expand, Close, the notes, the facets, the custom fields, the subtasks, the attachments and the Comments, Activity, History and Time tabs.
+
+The panel SHALL be either open or closed. Its state SHALL be kept on the device across lists and reloads, and it SHALL be open the first time.
+
+While the panel is open:
+- A click on a task's row or title, Enter on a selected row whose task is not shown, and moving the cursor (`j`, `k`, the arrow keys, a click) SHALL show that task in the panel. While rows are ticked for a bulk action the panel SHALL keep its task.
+- A click on a title SHALL show the task rather than edit the title in place; `F2` still edits it in place.
+- Enter on the row whose task is shown SHALL open the task page.
+- With no task shown the panel SHALL read "No task selected" and "Select a task to see its details here." (the Inbox keeps its own sentence, `inbox-triage` "Inbox list and detail"), with the same Close and resize handle. A list with no rows SHALL show no empty pane.
+
+The panel SHALL never close by itself. Escape on the list and a click on the empty part of the list clear the cursor and leave the panel as it is. Completing the shown task and ticking rows leave it too. Going to another list leaves the panel open, showing "No task selected" until a task is chosen there. A task that is deleted leaves the empty pane in its place. Only the panel's Close button, or Escape while focus is inside the panel, SHALL close it.
+
+While the panel is closed:
+- Moving the cursor SHALL show nothing.
+- A click on a task's row or title, Enter on a selected row, Open details, a task chosen in the command palette, and a link to a task in a note SHALL open the panel again with that task.
+
+Below 1024 px, and on the screens not listed (the calendar's Day, Week, Month and Plan, dashboards, the review screens, Close the day), a task SHALL open as its page whatever the preference. Expanding a row's details in place (`task-list-presentation` "Expanded rows") SHALL work as it does without the panel, and the rows SHALL lay out by their own width as the panel narrows the list. The panel SHALL read and edit the task through the same operations as the task page, so it works offline and converges like any edit.
+
+#### Scenario: Click shows the task beside a project
+- **WHEN** a user with the side panel opens a project on a 1440 px wide screen and clicks the title of "Order the tiles"
+- **THEN** "Order the tiles" shows in the panel beside the list with its notes, subtasks and Comments tab, the title is not edited in place, and no page opens
+
+#### Scenario: The panel follows the keyboard
+- **WHEN** the panel shows a task in a label's list and the user presses `j` twice
+- **THEN** the panel shows the task two rows down, and focus stays on the list
+
+#### Scenario: Never closes by itself
+- **WHEN** the panel shows a task in Upcoming and the user presses Escape on the list, clicks the empty space under the last row, then completes the shown task with its checkbox
+- **THEN** no row is selected and the panel still shows the task, now completed
+
+#### Scenario: Closed stays closed
+- **WHEN** the user closes the panel with its Close button, moves the cursor with `j` and `k`, and reloads the page
+- **THEN** no panel opens at any point
+
+#### Scenario: Reopen with a click or Enter
+- **WHEN** the panel is closed and the user selects a task with `j` and presses Enter
+- **THEN** the panel opens with that task, and a second Enter opens the task's page at `/task/<id>`
+
+#### Scenario: Escape inside the panel
+- **WHEN** focus is in the panel's Comments tab and the user presses Escape outside a text field
+- **THEN** the panel closes, focus returns to the list, and moving the cursor opens nothing
+
+#### Scenario: Another list
+- **WHEN** the panel shows a task in Today and the user goes to the Filter view
+- **THEN** the panel stays open beside the results and reads "No task selected" until the user selects a result
+
+#### Scenario: Offline edit in the panel
+- **WHEN** the device is offline and the user changes the shown task's notes in the panel
+- **THEN** the change applies at once, and reaches the other devices on the next sync like an edit on the task page
+
+#### Scenario: Narrow window
+- **WHEN** a user with the side panel presses Enter on a selected task in a 900 px wide window
+- **THEN** the task opens as its page and no panel is shown
+
+#### Scenario: Calendar keeps its planning list
+- **WHEN** a user with the side panel double-clicks a task in Month
+- **THEN** the task opens as its page as before
+
+#### Scenario: A row still expands in place
+- **WHEN** the panel shows a task and the user presses → on another selected row of the same list
+- **THEN** that row's details open under it in the list, and the panel shows the selected row's task
+
+### Requirement: The panel slot stays in place while it fills
+When the open panel shows "No task selected" and a task is chosen, the panel SHALL stay on screen at its width at every moment until the task shows, so the list beside it never widens and narrows again. Showing that task SHALL NOT replay the panel's slide-in, which belongs to opening from closed. This holds after going to another list, on a first selection, and while the task is still being read from the device. It changes no data, so it needs no network.
+
+#### Scenario: First task after changing projects
+- **WHEN** a user with the side panel opens "Home", goes to the project "Work" so the panel reads "No task selected", and clicks the title of "Order the tiles"
+- **THEN** the panel is on screen at its width in every frame until "Order the tiles" shows in it, the list's width never changes, and the panel does not fade or slide in
+
+#### Scenario: Opening from closed still slides in
+- **WHEN** the side panel is closed and the user presses Enter on a selected task
+- **THEN** the panel opens with that task and slides in from its edge, as "Overlay motion" describes
+
+#### Scenario: A task that does not exist
+- **WHEN** the panel reads "No task selected" and a link to a task that was deleted is opened
+- **THEN** the empty pane stays in place and no task panel appears
+
+### Requirement: Task panel notes in full
+In the docked panel the notes SHALL be shown in full at rest, with no clamp, fade or "Show all" control, as on the task page. Long notes SHALL grow inside the panel's one scrolling body and SHALL NOT get a scroll region of their own, so the screen keeps its scroll-region budget. Opening another task SHALL show its notes in full too; nothing about the notes is remembered per task.
+
+#### Scenario: Long note in the panel
+- **WHEN** the user opens a task whose notes are forty lines long on a 1280×800 screen
+- **THEN** the facet lines are in view at the top of the panel body, the whole note follows the attachments without a "Show all" control, and scrolling the panel body reaches the end of the note and then the tabs
+
+#### Scenario: No extra scroll region
+- **WHEN** the project screen shows the list with the panel open on a task with a two-hundred-line note
+- **THEN** the screen has at most three vertical scroll regions (the sidebar, the list and the panel body) and the note itself does not scroll
+
+#### Scenario: Next task
+- **WHEN** the user reads a long note in the panel and presses `j`
+- **THEN** the next task's facet lines are at the top of the panel body and its note is shown in full
+
+### Requirement: The keyboard cursor stays in sight
+When the keyboard moves the selection in a task list (project lists, the standard views, saved views, the New view page), the selected row SHALL be scrolled fully into view below everything pinned at the top of the list, such as the sticky page header or a group header, and above the bottom edge, scrolling only as far as that needs. Moving to the first row SHALL scroll the list to its very top.
+
+#### Scenario: Moving up a long list
+- **WHEN** the user moves to the last of 40 tasks with the down arrow and then back up with the up arrow
+- **THEN** every selected row is fully visible below the page header, never behind it
+
+#### Scenario: Back at the first task
+- **WHEN** the user reaches the first task with the up arrow
+- **THEN** the list is scrolled to the top and the page header and quick add show again
+
+### Requirement: Copy buttons work without https
+Every Copy button SHALL put its text on the clipboard whether the app is opened over https, on localhost or over plain http at another address, using the Clipboard API where the browser offers it and the browser's copy command otherwise. A button SHALL confirm the copy only once the text is on the clipboard; when the browser refuses both ways, it SHALL say so and suggest copying by hand where the text is shown.
+
+#### Scenario: MCP address over plain http
+- **WHEN** the owner opens Settings → Integrations → AI assistants (MCP) at `http://192.168.1.10:8080` and clicks Copy URL
+- **THEN** pasting gives `http://192.168.1.10:8080/mcp` and the button reads "Copied"
+
+#### Scenario: Recovery key is not reported copied when it was not
+- **WHEN** the browser refuses every way of copying and the user clicks Copy on the encryption recovery key
+- **THEN** the panel does not mark the key as copied

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/inbox"
-	"github.com/pixari/opentodo/internal/origin"
-	"github.com/pixari/opentodo/internal/quickadd"
-	"github.com/pixari/opentodo/internal/recurrence"
+	"github.com/OpenTodoApp/opentodo/internal/inbox"
+	"github.com/OpenTodoApp/opentodo/internal/origin"
+	"github.com/OpenTodoApp/opentodo/internal/quickadd"
+	"github.com/OpenTodoApp/opentodo/internal/recurrence"
 )
 
 // stringList is a repeatable string flag.
@@ -27,10 +27,13 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 type listOptions struct {
 	inbox, today, upcoming, completed, all bool
+	someday, anytime, blocked, available   bool
 	project                                string
 	limit                                  int
 	// Completion range (OpenSpec change completed-date-filters, design D6).
 	completedAfter, completedBefore string
+	// todayAll is `ot today --all` (today-closed-list D7): no waiting heading.
+	todayAll bool
 }
 
 func (o *listOptions) bind(fs *flag.FlagSet) {
@@ -40,6 +43,10 @@ func (o *listOptions) bind(fs *flag.FlagSet) {
 	fs.BoolVar(&o.completed, "completed", false, "completed tasks, most recent first")
 	fs.BoolVar(&o.all, "all", false, "open and completed tasks")
 	fs.StringVar(&o.project, "project", "", "tasks of one project (name or id)")
+	fs.BoolVar(&o.someday, "someday", false, "open tasks parked in Someday")
+	fs.BoolVar(&o.anytime, "anytime", false, "open tasks with no due date, deadline or start")
+	fs.BoolVar(&o.blocked, "blocked", false, "open tasks waiting for an open task")
+	fs.BoolVar(&o.available, "available", false, "open tasks that can be done now (not blocked, not waiting for an earlier step, not in Someday or starting later)")
 	fs.IntVar(&o.limit, "limit", 0, "print at most n tasks")
 	fs.StringVar(&o.completedAfter, "completed-after", "", "only tasks completed at or after: YYYY-MM-DD (local), an RFC 3339 time or Unix ms")
 	fs.StringVar(&o.completedBefore, "completed-before", "", "only tasks completed before: YYYY-MM-DD (local), an RFC 3339 time or Unix ms")
@@ -128,6 +135,9 @@ func viewAlias(name string) func(a *App, ctx context.Context, g *globalFlags, ar
 	return func(a *App, ctx context.Context, g *globalFlags, args []string) error {
 		fs := a.flagSet(name, g)
 		var o listOptions
+		if name == "today" {
+			fs.BoolVar(&o.todayAll, "all", false, "with a Today limit: every task in one list, without the waiting heading")
+		}
 		fs.IntVar(&o.limit, "limit", 0, "print at most n tasks")
 		pos, err := a.parse(g, fs, name, args)
 		if err != nil {
@@ -153,11 +163,19 @@ func runList(a *App, ctx context.Context, g *globalFlags, o *listOptions) error 
 	if err != nil {
 		return err
 	}
-	c, _, err := a.connect(g)
+	planning, err := o.planningView()
+	if err != nil {
+		return err
+	}
+	c, t, err := a.connect(g)
 	if err != nil {
 		return err
 	}
 	projects, err := c.projects(ctx)
+	if err != nil {
+		return err
+	}
+	scope, err := a.scope(ctx, c, g, t)
 	if err != nil {
 		return err
 	}
@@ -185,13 +203,38 @@ func runList(a *App, ctx context.Context, g *globalFlags, o *listOptions) error 
 	} else {
 		tasks = filterTasks(all, projects, view, selected, today)
 	}
+	if planning != "" {
+		var available func(task) bool
+		if planning == "available" {
+			var out struct {
+				Sections []json.RawMessage `json:"sections"`
+			}
+			if err := c.getJSON(ctx, "/sections", &out); err != nil {
+				return err
+			}
+			available = availableRule(all, projects, out.Sections, today)
+		}
+		tasks = filterPlanning(tasks, all, planning, available)
+	}
+	// One workspace's tasks (workspaces); a named project is shown wherever it is.
+	if view != "project" {
+		tasks = scope.filterTasks(projects, all, tasks)
+	}
+	// Today's closed list (today-closed-list D7): the slots first, then the waiting tasks.
+	var split *todaySplit
+	if view == "today" && planning == "" && !o.ranged() {
+		if split, err = a.todayClosedList(ctx, c, all, projects, tasks, today); err != nil {
+			return err
+		}
+		tasks = split.ordered(tasks)
+	}
 	if o.limit > 0 && len(tasks) > o.limit {
 		tasks = tasks[:o.limit]
 	}
 	if g.json {
 		raws := make([]json.RawMessage, 0, len(tasks))
 		for _, t := range tasks {
-			raws = append(raws, t.Raw)
+			raws = append(raws, split.raw(t))
 		}
 		return a.printRawList(raws)
 	}
@@ -199,139 +242,16 @@ func runList(a *App, ctx context.Context, g *globalFlags, o *listOptions) error 
 		fmt.Fprintln(a.Stdout, "No tasks.")
 		return nil
 	}
-	byID := map[string]project{}
-	for _, p := range projects {
-		byID[p.ID] = p
+	if split.heading(o.todayAll) {
+		slots, waiting := split.parts(tasks)
+		a.renderTasks(slots, projects, all, today)
+		fmt.Fprintln(a.Stdout)
+		fmt.Fprintln(a.Stdout, "Waiting for a slot")
+		a.renderTasks(waiting, projects, all, today)
+		return nil
 	}
-	// The origin's id or host as a column, only when a listed task has one (task-origin).
-	showOrigin := false
-	for _, t := range tasks {
-		showOrigin = showOrigin || t.originLabel() != ""
-	}
-	headers := []string{"ID", "P", "DUE", "PROJECT", "TITLE"}
-	if showOrigin {
-		headers = []string{"ID", "P", "DUE", "PROJECT", "ORIGIN", "TITLE"}
-	}
-	tbl := newTable(headers...)
-	for _, t := range tasks {
-		dueText, overdue := describeDue(t.Due, today)
-		dueCell := plain(dueText)
-		if overdue {
-			dueCell.style = styleRed
-		} else if t.Due != nil && t.Due.Date == today {
-			dueCell.style = styleBold
-		}
-		pr := plain(fmt.Sprintf("P%d", t.Priority))
-		if t.Priority == 1 {
-			pr.style = styleRed
-		}
-		projName := ""
-		if t.ProjectID != nil {
-			if p, ok := byID[*t.ProjectID]; ok {
-				projName = p.Name
-			}
-		}
-		title := t.Title
-		if t.CompletedAt != nil {
-			title = "[done] " + title
-		}
-		cells := []cell{{text: shortID(t.ID), style: styleCyan}, pr, dueCell, plain(projName)}
-		if showOrigin {
-			cells = append(cells, plain(t.originLabel()))
-		}
-		tbl.add(append(cells, plain(title))...)
-	}
-	tbl.render(a.Stdout, a.color())
+	a.renderTasks(tasks, projects, all, today)
 	return nil
-}
-
-// filterTasks applies one view the way the web app does. Tasks of archived or
-// missing projects stay out of cross-project views.
-func filterTasks(all []task, projects []project, view string, selected *project, today string) []task {
-	visible := map[string]bool{}
-	for _, p := range projects {
-		visible[p.ID] = !p.Archived && p.DeletedAt == nil
-	}
-	out := make([]task, 0, len(all))
-	inInbox := inboxRule(all)
-	for _, t := range all {
-		if t.DeletedAt != nil {
-			continue
-		}
-		if view == "project" {
-			if t.ProjectID == nil || *t.ProjectID != selected.ID || t.CompletedAt != nil {
-				continue
-			}
-			out = append(out, t)
-			continue
-		}
-		if t.ProjectID != nil && !visible[*t.ProjectID] {
-			continue
-		}
-		open := t.CompletedAt == nil
-		switch view {
-		case "inbox":
-			if !inInbox(t) {
-				continue
-			}
-		case "today":
-			if !open || t.Due == nil || t.Due.Date > today {
-				continue
-			}
-		case "upcoming":
-			if !open || t.Due == nil || t.Due.Date <= today {
-				continue
-			}
-		case "completed":
-			if open {
-				continue
-			}
-		case "all":
-		default: // open
-			if !open {
-				continue
-			}
-		}
-		out = append(out, t)
-	}
-	switch view {
-	case "inbox", "project":
-		sort.SliceStable(out, func(i, j int) bool { return byPosition(out[i], out[j]) })
-	case "completed":
-		sort.SliceStable(out, func(i, j int) bool { return *out[i].CompletedAt > *out[j].CompletedAt })
-	default:
-		sort.SliceStable(out, func(i, j int) bool { return byDueThenPriority(out[i], out[j]) })
-	}
-	return out
-}
-
-// completedBetween lists the tasks completed in [after, before) (0 = open end),
-// most recent first: of the selected project, or of every visible one.
-func completedBetween(all []task, projects []project, selected *project, after, before int64) []task {
-	visible := map[string]bool{}
-	for _, p := range projects {
-		visible[p.ID] = !p.Archived && p.DeletedAt == nil
-	}
-	out := make([]task, 0)
-	for _, t := range all {
-		if t.DeletedAt != nil || t.CompletedAt == nil {
-			continue
-		}
-		at := int64(*t.CompletedAt)
-		if (after != 0 && at < after) || (before != 0 && at >= before) {
-			continue
-		}
-		if selected != nil {
-			if t.ProjectID == nil || *t.ProjectID != selected.ID {
-				continue
-			}
-		} else if t.ProjectID != nil && !visible[*t.ProjectID] {
-			continue
-		}
-		out = append(out, t)
-	}
-	sort.SliceStable(out, func(i, j int) bool { return *out[i].CompletedAt > *out[j].CompletedAt })
-	return out
 }
 
 func byPosition(a, b task) bool {
@@ -470,10 +390,15 @@ type taskFlags struct {
 	repeat                               string
 	// originURL is --origin-url (task-origin): the page or issue the task comes from.
 	originURL string
+	plan      planningFlags
+	// noDefault is --no-default-reminder (default-reminders D6).
+	noDefault bool
 	// add only (quick-add-recurrence D6)
 	remind  stringList
 	natural bool
 	lang    string
+	// done is --done (today-closed-list D6): log a win, created already completed.
+	done bool
 }
 
 func (f *taskFlags) bind(fs *flag.FlagSet, edit bool) {
@@ -488,10 +413,13 @@ func (f *taskFlags) bind(fs *flag.FlagSet, edit bool) {
 	fs.StringVar(&f.note, "note", "", "description")
 	fs.StringVar(&f.repeat, "repeat", "", "recurrence rule, e.g. \"every monday\" (edit: `none` clears)")
 	fs.StringVar(&f.originURL, "origin-url", "", "http(s) URL the task comes from; GitHub, GitLab, Jira and Linear issues are recognised (edit: `none` clears)")
+	f.plan.bind(fs)
+	fs.BoolVar(&f.noDefault, "no-default-reminder", false, "add no default reminder when the task gets a due date (--remind also leaves it out)")
 	if !edit {
 		fs.Var(&f.remind, "remind", "reminder: \"30 min before\", \"at 9\", \"tomorrow at 9\" (repeatable)")
 		fs.BoolVar(&f.natural, "natural", false, "parse the title like the app's quick add (dates, #project, @label, p1, every …, remind me …)")
 		fs.StringVar(&f.lang, "lang", "", "languages for --natural and --remind, e.g. de,en (default: the locale, English always)")
+		fs.BoolVar(&f.done, "done", false, "log a win: create the task already completed now (refuses --repeat and --remind)")
 	}
 }
 
@@ -588,6 +516,13 @@ func cmdAdd(a *App, ctx context.Context, g *globalFlags, args []string) error {
 	if err := f.validateLocal(set); err != nil {
 		return err
 	}
+	if err := f.plan.validateLocal(set, a.Now(), false); err != nil {
+		return err
+	}
+	// A win does not repeat or remind (today-closed-list D6).
+	if f.done && (set["repeat"] || set["remind"]) {
+		return usageErr("--done logs a win, which does not repeat or remind; drop --repeat and --remind")
+	}
 	headers, err := idempotencyHeaders(set["idempotency-key"], *key)
 	if err != nil {
 		return err
@@ -631,7 +566,7 @@ func cmdAdd(a *App, ctx context.Context, g *globalFlags, args []string) error {
 	if err := f.addOrigin(set, body); err != nil {
 		return err
 	}
-	c, _, err := a.connect(g)
+	c, t, err := a.connect(g)
 	if err != nil {
 		return err
 	}
@@ -659,7 +594,27 @@ func cmdAdd(a *App, ctx context.Context, g *globalFlags, args []string) error {
 		}
 		body["labels"] = ids
 	}
-	raw, _, err := c.do(ctx, "POST", "/tasks", body, headers)
+	// A task without a project goes to the chosen workspace's Inbox (workspaces).
+	if _, has := body["project_id"]; !has && a.workspaceChoice(g, t) != "" {
+		s, err := a.scope(ctx, c, g, t)
+		if err != nil {
+			return err
+		}
+		if id, ok := s.writeValue(); ok {
+			body["workspace_id"] = id
+		}
+	}
+	if err := f.plan.fill(ctx, a, c, set, body, func() ([]task, error) { return c.tasks(ctx) }); err != nil {
+		return err
+	}
+	if f.done {
+		// Created completed now in the one request; the server records who completed it.
+		// Recurrence and reminder phrases a --natural title held stay out.
+		delete(body, "recurrence")
+		phrases = nil
+		body["completed_at"] = a.Now().UnixMilli()
+	}
+	raw, _, err := c.do(ctx, "POST", "/tasks"+defaultReminderQuery(body, f.noDefault || len(phrases) > 0 || f.done), body, headers)
 	if err != nil {
 		return err
 	}
@@ -680,6 +635,16 @@ func cmdAdd(a *App, ctx context.Context, g *globalFlags, args []string) error {
 		fmt.Fprintf(a.Stderr, "%d reminder(s) will fire once the task has a due date\n", waiting)
 	}
 	return nil
+}
+
+// defaultReminderQuery asks the server to add the account's default reminder
+// (default-reminders D6) when the write sets a due date, unless the caller left
+// it out with --no-default-reminder or gave its own reminders with --remind.
+func defaultReminderQuery(body map[string]any, off bool) string {
+	if v, has := body["due"]; off || !has || v == nil {
+		return ""
+	}
+	return "?default_reminder=true"
 }
 
 // createReminders posts one reminder per phrase after the task, resolved
@@ -745,6 +710,9 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 	if err := f.validateLocal(set); err != nil {
 		return err
 	}
+	if err := f.plan.validateLocal(set, a.Now(), true); err != nil {
+		return err
+	}
 	patch := map[string]any{}
 	if set["title"] {
 		if strings.TrimSpace(f.title) == "" {
@@ -775,8 +743,8 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 			return err
 		}
 	}
-	if !set["title"] && !set["priority"] && !set["label"] && !set["note"] && !set["due"] && !set["time"] && !set["project"] && !set["repeat"] && !set["origin-url"] {
-		return usageErr("nothing to change; pass at least one of --title, --project, --due, --time, --priority, --label, --note, --repeat, --origin-url")
+	if !set["title"] && !set["priority"] && !set["label"] && !set["note"] && !set["due"] && !set["time"] && !set["project"] && !set["repeat"] && !set["origin-url"] && !f.plan.any(set) {
+		return usageErr("nothing to change; pass at least one of --title, --project, --due, --time, --priority, --label, --note, --repeat, --origin-url, --deadline, --start, --evening, --part, --energy, --blocked-by, --location")
 	}
 	c, _, err := a.connect(g)
 	if err != nil {
@@ -811,6 +779,9 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 			return err
 		}
 		patch["labels"] = ids
+	}
+	if err := f.plan.fill(ctx, a, c, set, patch, func() ([]task, error) { return all, nil }); err != nil {
+		return err
 	}
 	switch {
 	case clearDue:
@@ -847,7 +818,7 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 	}
 	a.target(pos[0], t.ID, t.Title, "")
 	var raw json.RawMessage
-	if err := c.patchJSON(ctx, "/tasks/"+t.ID, patch, &raw); err != nil {
+	if err := c.patchJSON(ctx, "/tasks/"+t.ID+defaultReminderQuery(patch, f.noDefault), patch, &raw); err != nil {
 		return err
 	}
 	if g.json {
@@ -855,7 +826,11 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 	}
 	var updated task
 	_ = json.Unmarshal(raw, &updated)
-	fmt.Fprintf(a.Stdout, "updated  %s  %s\n", shortID(updated.ID), updated.Title)
+	verb := "updated"
+	if patch["start"] == "someday" {
+		verb = "parked"
+	}
+	fmt.Fprintf(a.Stdout, "%s  %s  %s\n", verb, shortID(updated.ID), updated.Title)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package maps
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/pixari/opentodo/internal/location"
+	"github.com/OpenTodoApp/opentodo/internal/location"
 )
 
 // Result is one address found by search or reverse search, the shape the
@@ -124,7 +125,7 @@ func address(p map[string]any) string {
 	if street != "" {
 		parts = append(parts, street)
 	}
-	city := strings.TrimSpace(prop(p, "postcode") + " " + firstNonEmpty(prop(p, "city"), prop(p, "town"), prop(p, "village"), prop(p, "district")))
+	city := strings.TrimSpace(prop(p, "postcode") + " " + cmp.Or(prop(p, "city"), prop(p, "town"), prop(p, "village"), prop(p, "district")))
 	if city != "" {
 		parts = append(parts, city)
 	}
@@ -132,15 +133,6 @@ func address(p map[string]any) string {
 		parts = append(parts, c)
 	}
 	return truncate(strings.Join(parts, ", "), location.MaxAddress)
-}
-
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func firstLine(s string) string {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Vocabulary (OpenSpec change ux-overhaul, design D11): the feed is "Updates" at
 // /updates with /activity redirecting, Calendar is one destination, the sidebar
-// group reads "Filters", and the palette still answers to the old words.
+// group reads "Views" (views-and-display D1), and the palette still answers to the old words.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rememberCalendarMode } from '../lib/calendarMode'
@@ -11,7 +11,7 @@ import { resetDeviceId } from '../lib/ops'
 import { SHORTCUTS } from '../lib/shortcuts'
 import type { User } from '../lib/types'
 import { matchPrepared, prepare, prepareQuery } from '../ui'
-import { flush, render } from '../ui/test-utils'
+import { render, waitFor } from '../ui/test-utils'
 import { commandEntries, commands, type PaletteContext } from './palette/registry'
 import { resetPanel } from './panel'
 import { canonicalPath, parseRoute, routePath } from './router'
@@ -30,15 +30,10 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
 })
 afterEach(() => {
-  document.body.innerHTML = ''
   vi.unstubAllGlobals()
   history.replaceState(null, '', '/')
 })
 
-async function waitFor(ok: () => boolean, ms = 3000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 describe('addresses', () => {
   it('/activity opens Updates at /updates; /calendar opens the Day or Week last used', () => {
@@ -83,28 +78,29 @@ describe('old words', () => {
       return matchPrepared(prepareQuery(q), prepare(c.label, c.keywords), c.label.length).tier > 0
     }
     expect(finds('views', 'go:views')).toBe(true)
+    expect(finds('filters', 'go:views')).toBe(true)
     expect(finds('activity', 'go:feed')).toBe(true)
     expect(finds('feed', 'go:feed')).toBe(true)
     expect(finds('calendar', 'go:day')).toBe(true)
     expect(finds('calendar', 'go:week')).toBe(true)
     // The entries the palette matches on carry the aliases.
     expect(commandEntries(ctx).find((e) => e.key === 'cmd:go:feed')?.keywords).toContain('activity')
-    expect(commandEntries(ctx).find((e) => e.key === 'cmd:go:views')?.keywords).toContain('views')
+    expect(commandEntries(ctx).find((e) => e.key === 'cmd:go:views')?.keywords).toContain('filters')
   })
 
-  it('the interface says Filters, Updates and Sessions and audit log', async () => {
-    // The Filters group appears with the first saved filter (sidebar-compact-desktop).
+  it('the interface says Views, Updates and Sessions and audit log', async () => {
+    // The Views group appears with the first saved view (sidebar-compact-desktop).
     await createView({ name: 'Errands', query: 'today' })
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} />)
-    await flush(50)
-    expect(r.container.querySelector('nav[aria-label="Filters"]')).toBeTruthy()
-    expect(r.container.querySelector('nav[aria-label="Views"]')).toBeNull()
-    expect(r.container.textContent).not.toMatch(/\bViews\b/)
+    await waitFor(() => !!r.container.querySelector('nav[aria-label="Views"]'), 'the Views group')
+    expect(r.container.querySelector('nav[aria-label="Views"]')).toBeTruthy()
+    expect(r.container.querySelector('nav[aria-label="Filters"]')).toBeNull()
+    expect(r.container.textContent).not.toMatch(/\bFilters\b/)
     await r.unmount()
     expect(SETTINGS_SECTIONS.find((s) => s.id === 'account')?.description(user)).toContain('sessions')
     expect(SETTINGS_SECTIONS.find((s) => s.id === 'server')?.description(user)).toContain('audit log')
     expect(SHORTCUTS.find((s) => s.id === 'go.feed')?.description).toMatch(/Updates/)
-    expect(SHORTCUTS.find((s) => s.id === 'go.views')?.description).toMatch(/Filters/)
+    expect(SHORTCUTS.find((s) => s.id === 'go.views')?.description).toMatch(/Views/)
     expect(SHORTCUTS.some((s) => /Activity feed/.test(s.description))).toBe(false)
   })
 })

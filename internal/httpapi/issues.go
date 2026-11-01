@@ -12,18 +12,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/issues"
-	ob "github.com/pixari/opentodo/internal/outbound"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/issues"
+	ob "github.com/OpenTodoApp/opentodo/internal/outbound"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Issue import (OpenSpec change issue-import): per-user connections to GitHub
 // or GitLab whose open issues become tasks. One owner switch, off by default,
 // governs every route and the poller (design D10).
-
-const issuesSettingKey = "integrations.issues"
 
 // Hand-triggered token checks and syncs share one window per user (spec
 // "Token check", "Sync now").
@@ -31,13 +27,6 @@ const (
 	issueChecksPerHr = 12
 	maxIssueToken    = 4096
 )
-
-// WithIssues hands the server the worker that polls connections, so the
-// routes and the background job share one store, tokens file and policy.
-func WithIssues(w *issues.Worker) Option { return func(s *Server) { s.issueWorker = w } }
-
-// IssueWorker is the background poller, run by the jobs leader.
-func (s *Server) IssueWorker() *issues.Worker { return s.issueWorker }
 
 func (s *Server) allowPrivate() func(context.Context) bool {
 	if s.hooks != nil {
@@ -47,90 +36,22 @@ func (s *Server) allowPrivate() func(context.Context) bool {
 }
 
 func (s *Server) registerIssueRoutes(mux *routes) {
-	if s.issueWorker == nil {
-		s.issueWorker = issues.NewWorker(s.sync.DB(), s.cfg.DataDir, s.sync, s.allowPrivate(), s.version, s.log)
-	}
-	s.issueWorker.Enabled = s.issuesEnabled
 	s.issueLimiter = newRateLimiter(issueChecksPerHr, time.Hour)
 
-	mux.handle("GET /api/v1/settings/issues", signedIn.demoDenied(), s.handleGetIssuesSetting)
-	mux.handle("PUT /api/v1/settings/issues", ownerOnly("manage the issue connections setting").demoDenied(), s.handlePutIssuesSetting)
-	mux.handle("GET /api/v1/issues/connections", signedIn.demoDenied(), s.issuesGate(s.handleListIssueConnections))
-	mux.handle("POST /api/v1/issues/connections", signedIn.recent().demoDenied(), s.issuesGate(s.handleCreateIssueConnection))
+	s.switchRoutes(mux, "/api/v1/settings/issues", switchRoute{sw: s.issuesOn,
+		get: signedIn.DemoDenied(), put: ownerOnly("manage the issue connections setting").DemoDenied()})
+	mux.handle("GET /api/v1/issues/connections", signedIn.DemoDenied(), s.issuesGate(s.handleListIssueConnections))
+	mux.handle("POST /api/v1/issues/connections", signedIn.Recent().DemoDenied(), s.issuesGate(s.handleCreateIssueConnection))
 	// One route, one policy: the handler asks for a fresh session when the body carries a token.
-	mux.handle("PATCH /api/v1/issues/connections/{id}", signedIn.demoDenied(), s.issuesGate(s.handlePatchIssueConnection))
-	mux.handle("DELETE /api/v1/issues/connections/{id}", signedIn.demoDenied(), s.issuesGate(s.handleDeleteIssueConnection))
-	mux.handle("POST /api/v1/issues/connections/{id}/test", signedIn.demoDenied(), s.issuesGate(s.handleTestIssueConnection))
-	mux.handle("POST /api/v1/issues/connections/{id}/sync", signedIn.demoDenied(), s.issuesGate(s.handleSyncIssueConnection))
-}
-
-// issuesEnabled reads the owner switch through the cache (never on a demo instance).
-func (s *Server) issuesEnabled(ctx context.Context) bool {
-	if s.demo != nil {
-		return false
-	}
-	switch s.issuesOn.v.Load() {
-	case 1:
-		return false
-	case 2:
-		return true
-	}
-	var on bool
-	if _, err := settings.New(s.sync.DB()).Get(ctx, issuesSettingKey, &on); err != nil {
-		s.log.Error("read issue connections setting", "err", err)
-		return false
-	}
-	s.setIssuesCache(on)
-	return on
-}
-
-func (s *Server) setIssuesCache(on bool) {
-	if on {
-		s.issuesOn.v.Store(2)
-	} else {
-		s.issuesOn.v.Store(1)
-	}
-}
-
-func (s *Server) handleGetIssuesSetting(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": s.issuesEnabled(r.Context())})
-}
-
-func (s *Server) handlePutIssuesSetting(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Enabled *bool `json:"enabled"`
-	}
-	if err := readJSON(r, &in); err != nil || in.Enabled == nil {
-		badBodyWith(w, err, "invalid_input", `body must be {"enabled": true|false}`)
-		return
-	}
-	before := s.issuesEnabled(r.Context())
-	if err := settings.New(s.sync.DB()).Set(r.Context(), issuesSettingKey, *in.Enabled); err != nil {
-		s.internal(w, err)
-		return
-	}
-	s.setIssuesCache(*in.Enabled)
-	if before != *in.Enabled {
-		s.audit.Record(r.Context(), audit.SettingsChanged(userFrom(r.Context()).ID, issuesSettingKey, boolText(before), boolText(*in.Enabled)))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": *in.Enabled})
+	mux.handle("PATCH /api/v1/issues/connections/{id}", signedIn.DemoDenied(), s.issuesGate(s.handlePatchIssueConnection))
+	mux.handle("DELETE /api/v1/issues/connections/{id}", signedIn.DemoDenied(), s.issuesGate(s.handleDeleteIssueConnection))
+	mux.handle("POST /api/v1/issues/connections/{id}/test", signedIn.DemoDenied(), s.issuesGate(s.handleTestIssueConnection))
+	mux.handle("POST /api/v1/issues/connections/{id}/sync", signedIn.DemoDenied(), s.issuesGate(s.handleSyncIssueConnection))
 }
 
 // issuesGate answers 404 issues_disabled while the owner switch is off.
 func (s *Server) issuesGate(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.issuesEnabled(r.Context()) {
-			writeError(w, http.StatusNotFound, "issues_disabled", "the server owner has not enabled issue connections")
-			return
-		}
-		next(w, r)
-	}
-}
-
-// writeFieldError answers 400 invalid_input naming the field it is about, so
-// the editor shows the message beside it.
-func writeFieldError(w http.ResponseWriter, field, msg string) {
-	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_input", "message": field + ": " + msg, "field": field}})
+	return switchGate(s.issuesOn, "issues_disabled", "the server owner has not enabled issue connections")(next)
 }
 
 // withTokenSet fills token_set from the tokens file.
@@ -173,7 +94,7 @@ func (s *Server) issueConnection(ctx context.Context, uid, id string) (*issues.C
 
 // issuesResource is the MCP resource opentodo://integrations/issues.
 func (s *Server) issuesResource(ctx context.Context, uid string) (any, error) {
-	if !s.issuesEnabled(ctx) {
+	if !s.issuesOn.On(ctx) {
 		return map[string]any{"enabled": false, "connections": []any{}}, nil
 	}
 	list, err := s.issueConnections(ctx, uid)

@@ -1,4 +1,4 @@
-import { Icon, Menu } from '../ui'
+import { Icon, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Tooltip } from '../ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui'
@@ -11,13 +11,15 @@ import { EmptyState } from '../ui'
 import { ListRow } from '../ui'
 import { Notice } from '../ui'
 import { SettingRow, SettingsSection } from '../ui'
-import { api, ApiError, OIDC_START_URL } from '../lib/api'
+import { api, ApiError, OIDC_START_URL, promptReauth } from '../lib/api'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 import { useOnline } from '../lib/online'
 import type { LinkedIdentity, OidcSettings, OidcSettingsInput, OidcStatus, OidcTestResult } from '../lib/types'
-import { relativeTime } from './SecurityPanel'
 import { oidcErrorMessage, takeQueryParam } from './sso'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { relativeTime } from '../lib/dates'
 
 // Settings → Single sign-on (owner) and Linked accounts (everyone), OpenSpec
 // `oidc-login`. Both read server state that is never cached for offline use:
@@ -33,12 +35,13 @@ export interface SsoForm {
   allowProvision: boolean
   ssoOnly: boolean
   providerLogout: boolean
+  syncPictures: boolean
 }
 
 export function formFrom(s: OidcSettings): SsoForm {
   return {
     issuer: s.issuer, clientId: s.clientId, clientSecret: '', displayName: s.displayName, scopes: s.scopes,
-    allowProvision: s.allowProvision, ssoOnly: s.ssoOnly, providerLogout: s.providerLogout,
+    allowProvision: s.allowProvision, ssoOnly: s.ssoOnly, providerLogout: s.providerLogout, syncPictures: s.syncPictures ?? false,
   }
 }
 
@@ -46,7 +49,7 @@ export function formFrom(s: OidcSettings): SsoForm {
 export function saveInput(s: OidcSettings, f: SsoForm): OidcSettingsInput {
   const locked = (k: string) => s.managedBy[k] === 'env'
   const out: OidcSettingsInput = {
-    scopes: f.scopes, allowProvision: f.allowProvision, providerLogout: f.providerLogout,
+    scopes: f.scopes, allowProvision: f.allowProvision, providerLogout: f.providerLogout, syncPictures: f.syncPictures,
   }
   if (!locked('issuer')) out.issuer = f.issuer.trim()
   if (!locked('clientId')) out.clientId = f.clientId.trim()
@@ -57,8 +60,7 @@ export function saveInput(s: OidcSettings, f: SsoForm): OidcSettingsInput {
 }
 
 function describe(err: unknown): string {
-  if (err instanceof ApiError) return err.message
-  return t('Offline: single sign-on is configured on the server.')
+  return errorText(err, { capitalise: false, offline: t('Offline: single sign-on is configured on the server.') })
 }
 
 /** Container for the owner's provider settings. */
@@ -66,9 +68,8 @@ export function SsoPanel() {
   const online = useOnline()
   const [settings, setSettings] = useState<OidcSettings | null>(null)
   const [form, setForm] = useState<SsoForm | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction({ describe, onStart: () => setNotice(null) })
   const [test, setTest] = useState<OidcTestResult | null>(null)
 
   const apply = useCallback((s: OidcSettings) => {
@@ -79,20 +80,7 @@ export function SsoPanel() {
   useEffect(() => {
     if (!online) return
     api.getOidcSettings().then(apply, (err) => setError(describe(err)))
-  }, [online, apply])
-
-  async function run(fn: () => Promise<void>) {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
-      await fn()
-    } catch (err) {
-      setError(describe(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [online, apply, setError])
 
   if (!settings || !form) {
     return error ? (
@@ -166,7 +154,7 @@ export function SsoPanelView(p: SsoPanelViewProps & { configuring?: boolean }) {
         onChange={(e) => p.onChange({ [key]: e.target.value } as Partial<SsoForm>)} autoComplete="off" spellCheck={false} />
     </Field>
   )
-  const toggle = (key: 'allowProvision' | 'ssoOnly' | 'providerLogout', label: string, hint: string) => (
+  const toggle = (key: 'allowProvision' | 'ssoOnly' | 'providerLogout' | 'syncPictures', label: string, hint: string) => (
     <Checkbox checked={f[key]} disabled={disabled || locked(key)} label={<>{label}{locked(key) && <Lock />}</>} description={hint}
       onChange={(e) => p.onChange({ [key]: e.target.checked } as Partial<SsoForm>)} />
   )
@@ -175,7 +163,7 @@ export function SsoPanelView(p: SsoPanelViewProps & { configuring?: boolean }) {
       {!p.online && <Notice>{noticeCopy('sso', 'offline')}</Notice>}
       <SettingRow {...rowCopy('sso', 'status')} status={
         <span className="flex flex-wrap items-center gap-2" data-testid="sso-status">
-          <Badge hue={s.enabled ? 'green' : 'slate'}>{s.enabled ? t('On') : t('Off')}</Badge>
+          <StatusIndicator tone={toneForHue(s.enabled ? 'green' : 'slate')}>{s.enabled ? t('On') : t('Off')}</StatusIndicator>
           <span>{s.enabled ? (s.issuer ? t('The sign-in screen shows "Sign in with {name}" ({host}).', { name, host: hostOf(s.issuer) }) : t('The sign-in screen shows "Sign in with {name}".', { name })) : t('Off until you save an issuer and client id.')}</span>
           {s.ssoOnly && <Badge hue="orange">{t('SSO only')}</Badge>}
         </span>
@@ -208,6 +196,8 @@ export function SsoPanelView(p: SsoPanelViewProps & { configuring?: boolean }) {
               t('Members can sign in only with {name}; passwords and passkeys are refused for them. You keep your password as break-glass: open {path}. API tokens keep working.', { name, path: '/?owner=1' }))}
             {toggle('providerLogout', t('Sign out of {name} too', { name }),
               t('After signing out here, people who signed in with the provider are sent to its sign-out page.'))}
+            {toggle('syncPictures', t('Use profile pictures from {name}', { name }),
+              t('At sign-in the server fetches the picture the provider names and makes it the profile picture. A picture someone uploaded themselves is never replaced.'))}
           </div>
           {p.error && <Notice tone="danger">{p.error}</Notice>}
           {p.notice && <Notice tone="success">{p.notice}</Notice>}
@@ -237,8 +227,12 @@ export function LinkedAccountsPanel() {
   const online = useOnline()
   const [identities, setIdentities] = useState<LinkedIdentity[] | null>(null)
   const [provider, setProvider] = useState<OidcStatus | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction({
+    describe: (err) => errorText(err, {
+      capitalise: false, offline: t('Offline: single sign-on is configured on the server.'),
+      codes: { last_credential: t('This is your only way to sign in. Add a passkey or another linked account first.') },
+    }),
+  })
   // The link flow returns to /settings/security (this panel's section) with ?linked=1, ?reauthenticated=1 or ?error=<code>.
   const [notice] = useState<string | null>(() => {
     if (takeQueryParam('linked')) return t('Linked. You can now sign in with the provider.')
@@ -248,6 +242,16 @@ export function LinkedAccountsPanel() {
   const [callbackError] = useState(() => takeQueryParam('error'))
   const [confirmId, setConfirmId] = useState<string | null>(null)
 
+  // Linking a new identity needs a recent sign-in (credential-freshness). The
+  // server refuses a link from an older session and sends the browser back
+  // here; ask for the password or a code, then start the link again.
+  useEffect(() => {
+    if (callbackError !== 'reauth_required') return
+    void promptReauth().then((ok) => {
+      if (ok) location.assign(OIDC_START_URL)
+    })
+  }, [callbackError])
+
   const load = useCallback(async () => {
     try {
       const res = await api.listIdentities()
@@ -256,7 +260,7 @@ export function LinkedAccountsPanel() {
     } catch (err) {
       if (err instanceof ApiError) setError(err.message)
     }
-  }, [])
+  }, [setError])
 
   useEffect(() => {
     if (online) void load()
@@ -276,14 +280,10 @@ export function LinkedAccountsPanel() {
         consequence={t('You will no longer be able to sign in with {provider} using this account. Your password and passkeys keep working.', { provider: provider.displayName || 'SSO' })}
         onCancel={() => setConfirmId(null)} onConfirm={() => {
         const id = unlinking.id
-        setBusy(true)
-        setError(null)
-        api.unlinkIdentity(id)
-          .then(load)
-          .catch((err) => setError(err instanceof ApiError && err.code === 'last_credential'
-            ? t('This is your only way to sign in. Add a passkey or another linked account first.')
-            : describe(err)))
-          .finally(() => setBusy(false))
+        void run(async () => {
+          await api.unlinkIdentity(id)
+          await load()
+        })
       }} />
     )}
     </>

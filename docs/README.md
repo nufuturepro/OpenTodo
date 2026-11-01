@@ -29,6 +29,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Work from the list](work-from-the-list.md) | Add, complete and delete tasks, change them with one key, undo, and put them in the order you want, all without opening a task. |
 | &nbsp;&nbsp;↳ [Change several tasks at once](bulk-actions.md) | Tick tasks with the keyboard, mouse or touch, act on all of them from one menu, preview moves and assignments, and undo the lot in one step. |
 | &nbsp;&nbsp;↳ [Projects and sub-projects](projects.md) | Create projects and nest them, use the Project menu to colour, move, rename, archive or delete, duplicate a project or a task, and what happens when a project is done. |
+| &nbsp;&nbsp;↳ [All projects](all-projects.md) | Every project in a table with its health, progress, open tasks, next due date, people and last change; how health is worked out, sorting, the keyboard and the Archived tab. |
 | &nbsp;&nbsp;↳ [Project notes](project-notes.md) | The note at the top of a project: what it is for, who can edit it, Shift+P, folding long notes, and how the API and history see it. |
 | &nbsp;&nbsp;↳ [Completed tasks in a project](completed-in-projects.md) | Keep a project's completed tasks at the end of its list in a Completed group, for lists you tick off and reuse such as groceries. |
 | [Views](views.md) | Inbox, Today, Upcoming, Assigned to me, Completed and the calendar, plus views you save yourself, dashboards and the view each device opens on. |
@@ -37,7 +38,9 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Statistics and the weekly digest](statistics.md) | What you completed, created and let slip computed on your device, and an optional weekly digest by email. |
 | &nbsp;&nbsp;↳ [Process the Inbox](process-the-inbox.md) | Walk the Inbox one task at a time and decide each with a single key: today, schedule, move, delegate, label, Someday, complete or trash, with Undo. |
 | &nbsp;&nbsp;↳ [Focus](focus.md) | One task and a timer: Pomodoro, Flowtime or Countdown, breaks and a break reminder, and the time worked logged on the task. |
+| &nbsp;&nbsp;↳ [Focus breaks, presets and noise](focus-options.md) | The break reminder, the tone, Countdown presets, +5 or +15 minutes when a session ends, and background noise while you work. |
 | &nbsp;&nbsp;↳ [Today and Upcoming](today-and-upcoming.md) | How Today orders overdue, started, evening and blocked tasks, how deadlines and start dates bring tasks in, and how Upcoming lays out the days ahead. |
+| &nbsp;&nbsp;↳ [Calendar events in Today](calendar-events-in-today.md) | Show the day's appointments from your subscribed calendars above Today's tasks: turning it on, what the agenda shows, and how it works offline. |
 | &nbsp;&nbsp;↳ [Saved views](saved-views.md) | Turn a filter query into a view pinned to the sidebar, group and sort it, manage it from its menu, and put up to six views on one dashboard. |
 | &nbsp;&nbsp;↳ [Display mode](display-mode.md) | Show Today, Upcoming, a project or a saved view full screen in large type, for a tablet on the fridge or an e-ink panel on the wall. |
 | [Search and commands](search.md) | One box on Ctrl+K finds any task, project, label, view or setting, runs any command by name, and understands filter queries. |
@@ -49,9 +52,15 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | [Recurring tasks and reminders](recurring-and-reminders.md) | Make a task repeat every week, month or weekday, skip an occurrence, and get reminded at the right moment. |
 | &nbsp;&nbsp;↳ [Repeat rules](repeat-rules.md) | Every rule you can type into Repeat, the after-completion and end options, and what completing, skipping or splitting off one occurrence does. |
 | &nbsp;&nbsp;↳ [Task reminders](task-reminders.md) | Every kind of reminder you can add to a task, how reminders follow the due date, the deadline and a repeat rule, and what happens when one goes off. |
+| &nbsp;&nbsp;↳ [Default reminders](default-reminders.md) | A reminder added to every task that gets a date or a time, set once for all your devices, and when it is or isn't added. |
 | [Time blocking](time-blocking.md) | Estimate how long tasks take, then place them on the Day or Week calendar to see whether your plan fits the day. |
 | &nbsp;&nbsp;↳ [Day, Week and Month](calendar-views.md) | Open the calendar, read the Day and Week grids, and use the Month overview to see six weeks at once and move tasks between days. |
+| &nbsp;&nbsp;↳ [Completed tasks on the calendar](completed-on-the-calendar.md) | Show finished tasks with struck-through titles in Day, Week, Month and Plan, with a choice remembered on each device. |
+| &nbsp;&nbsp;↳ [Frames](frames.md) | Shade the hours you keep for one kind of work, such as deep work every weekday morning, behind Day and Week, and plan tasks into them. |
+| &nbsp;&nbsp;↳ [Slots](slots.md) | Put several small tasks into one block of Day and Week, such as Admin from 16:00 to 16:45, and tick them off from a checklist inside it. |
 | &nbsp;&nbsp;↳ [Place tasks on the calendar](place-tasks-on-the-calendar.md) | Drag tasks onto time slots or move them with the keyboard, change how long a block lasts, and read each day's planned hours against its capacity. |
+| &nbsp;&nbsp;↳ [Add and colour on the calendar](calendar-add-and-colour.md) | Add a task by double-clicking a time or a day, and colour the calendar and boards by project, label or priority. |
+| &nbsp;&nbsp;↳ [Filter the calendar](calendar-filter.md) | Show only the tasks a query matches in the calendar and in Upcoming, and show one project as a calendar. |
 | [Calendar feeds](calendar-feeds.md) | Show your other calendars next to your tasks in Day and Week, and subscribe to your tasks from Google Calendar, Outlook or Apple Calendar. |
 | &nbsp;&nbsp;↳ [Other calendars in Day and Week](other-calendars.md) | Subscribe to a Google, Outlook, Apple, Fastmail or Nextcloud calendar so its events appear next to your tasks: the steps per app, refreshing, what you see, and the limits. |
 | [Sharing and comments](sharing.md) | Share a project with people on your server, choose what they can do, assign tasks, and talk it through in comments with @mentions. |
@@ -69,6 +78,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Set up the assistant](assistant-setup.md) | For the server owner, allow one or more model providers, enter models and keys, test the connection and turn the assistant on for everyone. |
 | &nbsp;&nbsp;↳ [Assistant owner options](assistant-owner-options.md) | Running the assistant on a local model, letting members bring their own key, counting their keys toward the limit, and the monthly token allowance. |
 | [Notifications](notifications.md) | The bell for assignments, mentions and tasks ready to start, reminder pop-ups inside the app, and push notifications on each device when the app is closed. |
+| &nbsp;&nbsp;↳ [Delivery channels](notification-channels.md) | Send reminders and notifications to ntfy, Pushover, Gotify, or any address through a signed webhook, including Apprise and Home Assistant. |
 | &nbsp;&nbsp;↳ [Push notifications](push-notifications.md) | Turn on reminders for when the app is closed, device by device, what iPhone and iPad need, what a push message contains, and what to do when nothing arrives. |
 | &nbsp;&nbsp;↳ [Check that push works](push-delivery-check.md) | The Delivery check under Settings → Notifications, each step it lists, and what every result of a test notification means. |
 | [Offline and sync](offline-and-sync.md) | How OpenTodo keeps working without a connection, what the sync status means, and what happens when two devices change the same task. |
@@ -95,7 +105,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | Page | What it covers |
 | --- | --- |
 | [Quick add syntax](quick-add.md) | Natural-language capture in six languages, preview chips, voice capture |
-| [Filter queries](filters.md) | The filter language, the Filter view, saved views and dashboards |
+| [Filter queries](filters.md) | The filter language, the New view page, saved views and their display options, dashboards |
 | [Recurring task rules](recurrence.md) | Rule grammar, how next dates are computed, completing, skipping and detaching |
 | [Reminders reference](reminders.md) | Relative and absolute reminders, snooze, web push and its privacy |
 | [Capturing pages](capture.md) | Share sheet, bookmarklet and browser extension |
@@ -116,6 +126,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | [Running on Easypanel](self-hosting/easypanel.md) | App service or template, the setup token, the https domain, updates and backups |
 | [Running on Portainer](self-hosting/portainer.md) | App Templates, settings, the volume, https and reverse proxies, updates and backups |
 | [Running on Runtipi](self-hosting/runtipi.md) | Adding OpenTodo's app store, settings, the data folder, https, updates and backups |
+| [Running as a Home Assistant add-on](self-hosting/home-assistant-addon.md) | Home Assistant OS and Supervised: the add-on repository, options, https, updates and backups; Container installs use Docker |
 | [Running on TrueNAS](self-hosting/truenas.md) | Install via YAML or the Apps catalogue, settings, dataset permissions, https, updates and backups |
 | [Running on Umbrel](self-hosting/umbrel.md) | The App Store package, the first account, Umbrel login and the routes it lets through, settings, updates |
 | [Running on CapRover](self-hosting/caprover.md) | One-click app or pasted template, the setup token, https then the base URL, the volume, updates and backups |
@@ -126,6 +137,8 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | [Running on Synology](self-hosting/synology.md) | Container Manager project, the data folder and its owner, https with DSM's reverse proxy and Let's Encrypt, updates and backups |
 | [Public demo instance](self-hosting/demo.md) | `OPENTODO_DEMO=true`: a private sandbox per visitor, limits, expiry and the nightly reset, what is switched off, Docker and Coolify |
 | [Outgoing email](self-hosting/outgoing-email.md) | Optional SMTP for password resets, verified sign-up and invitations; Settings or `OPENTODO_SMTP_*`, providers, troubleshooting |
+| [Speech to text](self-hosting/speech-to-text.md) | Dictation on your own network with Speaches or whisper.cpp; Settings or `OPENTODO_STT_*`, what passes through the server |
+| [Branding](self-hosting/branding.md) | Your own name and logo in the tab, the installed app's icon, the sign-in screen and the sidebar; what stays OpenTodo's |
 | [Single sign-on](self-hosting/sso.md) | Connecting an OpenID Connect provider, linking, SSO-only mode, break-glass |
 | [Host mode](self-hosting/host-mode.md) | For a hosted service: many tenants in one process by host name, limits, the operator interface |
 | [Backups](backups.md) | Scheduled backups to disk, S3 or WebDAV, encryption, restore, archive format |
@@ -140,7 +153,11 @@ The full list of environment variables is in the [README](../README.md#configura
 | --- | --- |
 | [HTTP API](api.md) | Authentication, every route, entity fields, error codes, examples |
 | [Command-line client](cli.md) | `ot`: install, sign in, commands, JSON output and exit codes |
+| [Markdown vault](vault.md) | `ot vault`: a folder of Markdown files in two-way sync, for Obsidian Tasks and plain text |
 | [Webhooks](webhooks.md) | Events, payload, signature verification, retries, receiver recipes |
+| [Home Assistant](home-assistant.md) | The integration from HACS: the token, to-do lists, counts, calendar, events, Assist, automations and limits |
+| [n8n](n8n.md) | The community nodes: install, the token, task, project, label and comment operations, the signed trigger, example workflows, AI agents and limits |
+| [Calendar sync](calendar-sync.md) | Two-way sync with your own calendar: tasks as events in iCloud, Fastmail, Nextcloud, Google Calendar or any CalDAV calendar, and changes back; the Google client setup, conflicts, limits |
 | [Issue import](issue-import.md) | GitHub and GitLab issues assigned to you as tasks that follow the issue: tokens, filters, what follows, limits |
 | [AI assistants (MCP)](mcp.md) | Enabling the MCP endpoint, read-only and assistant tokens, read and write tools, limits, prompt-injection safety |
 
@@ -150,6 +167,7 @@ The full list of environment variables is in the [README](../README.md#configura
 | --- | --- |
 | [Architecture](architecture.md) | Data flow, server packages, tables, client modules, build |
 | [Sync protocol](sync.md) | Operations, schema, winner rule, exchange, sharing scopes, live updates, purge |
+| [Shared contracts](contracts.md) | The logic in both Go and TypeScript, its shared fixtures and the tests that read them |
 | [Translating OpenTodo](translating.md) | How app text is written for translation, catalogs, checks, adding a language, glossary |
 
 ## Project

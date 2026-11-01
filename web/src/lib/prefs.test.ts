@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, useDatabase } from './db'
 import { flushSeen, markSeen } from './feed'
 import { applyOps, resetDeviceId } from './ops'
 import { removeLocally } from './trash'
+import { readAddPosition, readDefaultReminders, setAddPosition, setDefaultReminder, USER_PREFS_ID } from './userPrefs'
 
 let n = 0
 beforeEach(() => {
@@ -48,10 +49,12 @@ describe('project_prefs seen marker', () => {
 
   it('repeated marks do not postpone the write', async () => {
     // A view re-rendering every 100 ms keeps calling markSeen; the first mark's timer still fires.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     for (let i = 1; i <= 8; i++) {
       markSeen('p', 1000 + i)
-      await new Promise((r) => setTimeout(r, 100))
+      await vi.advanceTimersByTimeAsync(100)
     }
+    vi.useRealTimers()
     await flushSeen()
     const values = (await db.outbox.toArray()).map((o) => o.value as number)
     expect(values.length).toBeGreaterThanOrEqual(2)
@@ -67,5 +70,46 @@ describe('project_prefs seen marker', () => {
     expect(await db.prefs.get('p')).toBeUndefined()
     expect(await db.projects.get('p')).toBeUndefined()
     expect(await db.outbox.count()).toBe(0)
+  })
+})
+
+describe('add position preference (add-position 1.2)', () => {
+  it('reads empty or unknown as bottom without rewriting the row', () => {
+    expect(readAddPosition(null)).toBe('bottom')
+    expect(readAddPosition({ add_position: '' })).toBe('bottom')
+    expect(readAddPosition({ add_position: 'middle' })).toBe('bottom')
+    expect(readAddPosition({ add_position: 'bottom' })).toBe('bottom')
+    expect(readAddPosition({ add_position: 'top' })).toBe('top')
+  })
+
+  it('writes one op on the synced row', async () => {
+    await setAddPosition('top')
+    expect(readAddPosition(await db.userPrefs.get(USER_PREFS_ID))).toBe('top')
+    const queued = (await db.outbox.toArray()).filter((o) => o.entity === 'user_prefs' && o.field === 'add_position')
+    expect(queued.map((o) => o.value)).toEqual(['top'])
+  })
+})
+
+describe('default reminder preferences (default-reminders 1.2)', () => {
+  it('reads empty, malformed or out of range as none and keeps the stored value', async () => {
+    expect(readDefaultReminders(null)).toEqual({ timed: null, dated: null })
+    expect(readDefaultReminders({ reminder_default_timed: '', reminder_default_dated: 'soon' })).toEqual({ timed: null, dated: null })
+    expect(readDefaultReminders({ reminder_default_timed: '-600000', reminder_default_dated: '1.5' })).toEqual({ timed: null, dated: null })
+    expect(readDefaultReminders({ reminder_default_timed: '0', reminder_default_dated: '-1440' })).toEqual({ timed: 0, dated: -1440 })
+    await applyOps([{ id: 'x', entity: 'user_prefs', entityId: USER_PREFS_ID, field: 'reminder_default_timed', value: 'later', ts: 1, device: 'newer-client' }])
+    const row = await db.userPrefs.get(USER_PREFS_ID)
+    expect(readDefaultReminders(row).timed).toBeNull()
+    expect(row?.reminder_default_timed).toBe('later')
+    expect(await db.outbox.count()).toBe(0)
+  })
+
+  it('writes one op per choice on the synced row, empty for none', async () => {
+    await setDefaultReminder('timed', -30)
+    await setDefaultReminder('dated', 0)
+    await setDefaultReminder('dated', null)
+    expect(readDefaultReminders(await db.userPrefs.get(USER_PREFS_ID))).toEqual({ timed: -30, dated: null })
+    const queued = (await db.outbox.toArray()).filter((o) => o.entity === 'user_prefs').map((o) => [o.field, o.value])
+    expect(queued).toEqual([['reminder_default_timed', '-30'], ['reminder_default_dated', '0'], ['reminder_default_dated', '']])
+    await expect(setDefaultReminder('timed', 600000)).rejects.toThrow()
   })
 })

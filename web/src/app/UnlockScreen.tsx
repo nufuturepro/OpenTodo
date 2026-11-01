@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { disableWithoutKey, restoreKeyRecord, turnOffAfterMissingRecord, unlock } from '../lib/e2ee'
+import { useEffect, useState } from 'react'
+import { biometricUnlockState, disableWithoutKey, enableBiometricUnlock, restoreKeyRecord, turnOffAfterMissingRecord, unlock, unlockWithBiometrics } from '../lib/e2ee'
 import { startMigration } from '../lib/e2eeSync'
 import { FileMigrationPaused, runFileMigration } from '../lib/attachments'
 import { requestSync } from '../lib/sync'
 import { encryptionMessage, LostKeysConfirm } from './EncryptionPanel'
 import { t } from '../lib/i18n'
+import { useAction } from '../lib/useAction'
 
 // The unlock screen (OpenSpec `e2ee`, design D5, task 4.2): shown instead of the
 // app while the account encrypts and this device holds no key (a new device
@@ -21,6 +22,11 @@ export interface UnlockViewProps {
   onLost: (open: boolean) => void
   onConfirmLost: () => void
   onLogout: () => void
+  /** In a native shell with biometrics (native-shells): whether to offer it, and whether it is set up. */
+  biometric?: { available: boolean; enabled: boolean }
+  remember?: boolean
+  onRemember?: (on: boolean) => void
+  onBiometric?: () => void
 }
 
 export function UnlockView(p: UnlockViewProps) {
@@ -39,9 +45,20 @@ export function UnlockView(p: UnlockViewProps) {
             <input className={`ui-input mt-1 ${p.kind === 'recovery' ? 'font-mono' : ''}`} name="secret" type={p.kind === 'passphrase' ? 'password' : 'text'}
               autoComplete={p.kind === 'passphrase' ? 'current-password' : 'off'} spellCheck={false} autoFocus required />
           </label>
+          {p.biometric?.available && (
+            <label className="flex items-center gap-2 text-body">
+              <input type="checkbox" checked={!!p.remember} onChange={(e) => p.onRemember?.(e.currentTarget.checked)} />
+              {t('Unlock with fingerprint or face next time')}
+            </label>
+          )}
           {p.error && <p role="alert" className="text-body text-danger">{p.error}</p>}
           <button className="ui-btn ui-btn--primary ui-btn--md w-full" disabled={p.busy}>{p.busy ? t('Unlocking…') : t('Unlock')}</button>
         </form>
+        {p.biometric?.enabled && (
+          <button type="button" className="ui-btn ui-btn--secondary ui-btn--md w-full" disabled={p.busy} onClick={p.onBiometric} data-biometric-unlock>
+            {t('Unlock with fingerprint or face')}
+          </button>
+        )}
         <div className="flex flex-wrap justify-between gap-2 text-body">
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--md" onClick={() => p.onKind(p.kind === 'passphrase' ? 'recovery' : 'passphrase')}>
             {p.kind === 'passphrase' ? t('Use the recovery key instead') : t('Use the passphrase instead')}
@@ -56,27 +73,41 @@ export function UnlockView(p: UnlockViewProps) {
   )
 }
 
+/** An unlock step: busy and the encryption error, then a pull once it worked. */
+function useUnlockAction() {
+  const action = useAction({ describe: encryptionMessage })
+  const act = (fn: () => Promise<void>) => action.run(async () => {
+    await fn()
+    requestSync(0)
+  })
+  return { ...action, act }
+}
+
 export function UnlockScreen({ onLogout }: { onLogout: () => void }) {
   const [kind, setKind] = useState<'passphrase' | 'recovery'>('passphrase')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, setError, act } = useUnlockAction()
   const [lost, setLost] = useState(false)
-  const act = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    setError(null)
-    try {
-      await fn()
-      requestSync(0)
-    } catch (err) {
-      setError(encryptionMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const [biometric, setBiometric] = useState<{ available: boolean; enabled: boolean }>({ available: false, enabled: false })
+  const [remember, setRemember] = useState(true)
+  const tryBiometric = () => void act(async () => {
+    if (!(await unlockWithBiometrics())) throw new Error(t('Fingerprint or face did not unlock. Enter your passphrase; you can turn biometric unlock on again below.'))
+  })
+  // In a native shell with biometrics set up, the prompt comes first (native-shells D7).
+  useEffect(() => {
+    void biometricUnlockState().then((state) => {
+      setBiometric(state)
+      if (state.enabled) tryBiometric()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, [])
   return (
     <UnlockView
       kind={kind} busy={busy} error={error} lost={lost} onKind={(k) => { setKind(k); setError(null) }} onLost={setLost} onLogout={onLogout}
-      onSubmit={(secret) => void act(() => unlock(secret, kind))}
+      onSubmit={(secret) => void act(async () => {
+        await unlock(secret, kind)
+        if (biometric.available && remember) await enableBiometricUnlock(secret, kind)
+      })}
+      biometric={biometric} remember={remember} onRemember={setRemember} onBiometric={tryBiometric}
       onConfirmLost={() => void act(() => disableWithoutKey())}
     />
   )
@@ -147,21 +178,8 @@ export function RecordMissingView(p: RecordMissingViewProps) {
 }
 
 export function RecordMissingScreen({ unlocked, onLogout }: { unlocked: boolean; onLogout: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, act } = useUnlockAction()
   const [confirmOff, setConfirmOff] = useState(false)
-  const act = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    setError(null)
-    try {
-      await fn()
-      requestSync(0)
-    } catch (err) {
-      setError(encryptionMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
   return (
     <RecordMissingView
       unlocked={unlocked} busy={busy} error={error} confirmOff={confirmOff} onConfirmOff={setConfirmOff} onLogout={onLogout}

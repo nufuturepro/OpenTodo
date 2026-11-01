@@ -11,6 +11,10 @@
             "default": false,
             "description": "Also return archived projects.",
             "type": "boolean"
+          },
+          "workspace": {
+            "description": "Only this workspace: its id or exact name (see list_workspaces). Absent: every workspace.",
+            "type": "string"
           }
         },
         "type": "object"
@@ -26,10 +30,18 @@
     {
       "name": "list_tasks",
       "title": "List tasks",
-      "description": "List tasks with filters. view: all (default), inbox (open tasks without a project that are not scheduled: no do-on date, start date or Someday), today (open tasks due today or overdue, overdue first) or upcoming (open tasks due after today). Tasks of archived projects are left out unless project_id names that project. Results are paged: pass next_cursor back as cursor.",
+      "description": "List tasks with filters. view: all (default), inbox (open tasks without a project that are not scheduled: no do-on date, start date or Someday), today (open tasks due today or overdue, overdue first), upcoming (open tasks due after today), someday (open tasks parked in Someday) or anytime (open tasks with no do-on date, deadline or start). blocked: true lists only tasks waiting for an open task, false only the others. available: true lists only tasks that can be done now (open, not blocked, not waiting for an earlier step of a sequential project or section, neither in Someday nor starting later), false only the others. Tasks of archived projects are left out unless project_id names that project. Results are paged: pass next_cursor back as cursor.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "available": {
+            "description": "true: only tasks that can be done now; false: only tasks that cannot.",
+            "type": "boolean"
+          },
+          "blocked": {
+            "description": "true: only tasks waiting for an open task; false: only tasks that are not.",
+            "type": "boolean"
+          },
           "completed_after": {
             "description": "Only tasks completed at or after this time: YYYY-MM-DD (start of that day in timezone), an RFC 3339 time or Unix milliseconds. Implies completed tasks only.",
             "type": "string"
@@ -87,8 +99,14 @@
               "all",
               "inbox",
               "today",
-              "upcoming"
+              "upcoming",
+              "someday",
+              "anytime"
             ],
+            "type": "string"
+          },
+          "workspace": {
+            "description": "Only this workspace: its id or exact name (see list_workspaces). Absent: every workspace.",
             "type": "string"
           }
         },
@@ -161,6 +179,10 @@
           "timezone": {
             "description": "IANA time zone used to decide what is today, overdue or upcoming, e.g. \"Europe/Rome\". Default: UTC. Due dates are floating, so pass the user's zone.",
             "type": "string"
+          },
+          "workspace": {
+            "description": "Only this workspace: its id or exact name (see list_workspaces). Absent: every workspace.",
+            "type": "string"
           }
         },
         "required": [
@@ -179,7 +201,7 @@
     {
       "name": "today_summary",
       "title": "Today summary",
-      "description": "One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project.",
+      "description": "One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -196,6 +218,38 @@
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "Today summary"
+      }
+    },
+    {
+      "name": "list_frames",
+      "title": "List frames",
+      "description": "List the occurrences of the user's calendar frames (recurring windows such as \"Deep work\" on weekdays 09:00-11:00) on the days from..to, with floating wall times and the planning source (project:, label: or view: id) that says which tasks belong in each. Default: the seven days from today in timezone; at most 31 days. Frames guide planning: propose ordinary due dates and times inside them.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "First day (YYYY-MM-DD). Default: today in timezone.",
+            "format": "date",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA time zone used to decide what is today, overdue or upcoming, e.g. \"Europe/Rome\". Default: UTC. Due dates are floating, so pass the user's zone.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Last day (YYYY-MM-DD), at most 30 days after from. Default: six days after from.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List frames"
       }
     },
     {
@@ -225,6 +279,38 @@
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "List icons"
+      }
+    },
+    {
+      "name": "list_slots",
+      "title": "List slots",
+      "description": "List the user's calendar slots (one block on the Day and Week grid holding a checklist of small tasks, such as \"Admin\" on Wednesday 16:00-16:45) on the days from..to, with floating wall times, the length in minutes and the tasks each holds in order (open first). Default: the seven days from today in timezone; at most 31 days. A task in a slot is an ordinary task due on the slot's day without a time.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "First day (YYYY-MM-DD). Default: today in timezone.",
+            "format": "date",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA time zone used to decide what is today, overdue or upcoming, e.g. \"Europe/Rome\". Default: UTC. Due dates are floating, so pass the user's zone.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Last day (YYYY-MM-DD), at most 30 days after from. Default: six days after from.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List slots"
       }
     },
     {
@@ -276,6 +362,23 @@
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "List time entries"
+      }
+    },
+    {
+      "name": "list_workspaces",
+      "title": "List workspaces",
+      "description": "List the user's workspaces: separate rooms with their own projects, labels and views. Each has an id, a name, the user's role and whether it is the default workspace; for workspaces the user owns, the names of the members and groups. Pass a workspace's id or name as workspace to list_projects, list_tasks or search_tasks.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List workspaces"
       }
     }
   ]

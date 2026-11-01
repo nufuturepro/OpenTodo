@@ -1,0 +1,21 @@
+package channels
+
+import (
+	"database/sql"
+	"log/slog"
+
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+)
+
+// SettingKey is the owner switch in the settings table (design D9): on unless
+// the owner turned it off.
+const SettingKey = "notifications.channels"
+
+// NewSwitch is the owner switch over db. A Service holds its own (Switch); a
+// server without the service (a demo instance) still serves the setting's routes.
+func NewSwitch(db *sql.DB, log *slog.Logger) *settings.Switch {
+	return settings.NewSwitch(db, SettingKey, settings.SwitchOptions{Default: true, Log: log})
+}
+
+// Switch is the owner switch; a change that turns it on should Wake the worker.
+func (s *Service) Switch() *settings.Switch { return s.sw }

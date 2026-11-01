@@ -1,21 +1,23 @@
-import { Badge, Select, SettingRow, SettingsSection, Dialog, Menu } from '../ui'
+import { Select, SettingRow, SettingsSection, Dialog, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Button } from '../ui'
 import { Icon } from '../ui'
 import { MenuItem } from '../ui'
 import { ConfirmDialog } from '../ui'
 import { ListRow } from '../ui'
 import { Notice } from '../ui'
-import { requestSettingsFocus } from './settingsIndex'
 import { navigate } from './router'
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, isNetworkError } from '../lib/api'
+import { useAction } from '../lib/useAction'
 import { useOnline } from '../lib/online'
 import { qrMatrix, qrPath } from '../lib/qr'
 import type { MfaPolicy, MfaStatus, TrustedDevice, User } from '../lib/types'
-import { relativeTime } from './SecurityPanel'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t, msg, translatedMap, currentLanguage } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { readJSON, writeString } from '../lib/deviceStorage'
+import { relativeTime } from '../lib/dates'
+import { copyText } from '../lib/clipboard'
 
 // Settings → Two-factor authentication and the enrolment wizard (OpenSpec
 // `mfa-totp`). The server is authoritative; the last known status is cached
@@ -26,21 +28,12 @@ import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
 const STATUS_KEY = 'opentodo.mfa'
 
 export function readCachedMfa(): MfaStatus | null {
-  try {
-    const raw = localStorage.getItem(STATUS_KEY)
-    return raw ? (JSON.parse(raw) as MfaStatus) : null
-  } catch {
-    return null
-  }
+  return readJSON<MfaStatus | null>(STATUS_KEY, null)
 }
 
 export function cacheMfa(st: MfaStatus | null) {
-  try {
-    if (st) localStorage.setItem(STATUS_KEY, JSON.stringify(st))
-    else localStorage.removeItem(STATUS_KEY)
-  } catch {
-    /* storage unavailable: the status is fetched again next time */
-  }
+  // Storage unavailable: the status is fetched again next time.
+  writeString(STATUS_KEY, st ? JSON.stringify(st) : null)
 }
 
 /** Splits a base32 secret into groups of four for typing into an app. */
@@ -125,7 +118,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
   return (
     <RecoveryCodesView
       codes={codes} acknowledged={acknowledged} copied={copied} onAcknowledge={setAcknowledged} onDone={onDone}
-      onCopy={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => setCopied(false))}
+      onCopy={() => void copyText(text).then(() => setCopied(true), () => setCopied(false))}
       onDownload={() => {
         const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
         const a = document.createElement('a')
@@ -286,7 +279,7 @@ export function TwoFactorPanelView(p: TwoFactorPanelViewProps) {
       {st && (
         <SettingRow {...rowCopy('mfa', 'status')} status={
           <span className="flex flex-wrap items-center gap-2" data-testid="mfa-status">
-            <Badge hue={st.enrolled ? (few ? 'orange' : 'green') : 'slate'}>{st.enrolled ? t('On') : t('Off')}</Badge>
+            <StatusIndicator tone={toneForHue(st.enrolled ? (few ? 'orange' : 'green') : 'slate')}>{st.enrolled ? t('On') : t('Off')}</StatusIndicator>
             {st.enrolled && <span>{t('{recoveryCodesRemaining} of 10 recovery codes left', { recoveryCodesRemaining: st.recoveryCodesRemaining })}</span>}
             {st.required && <span className="text-muted">{t('Required by the server owner')}</span>}
           </span>
@@ -328,7 +321,7 @@ export function TwoFactorPanelView(p: TwoFactorPanelViewProps) {
       )}
       {p.isOwner && (
         <p className="pt-3 text-meta text-muted" data-testid="mfa-policy-link">
-          {t.rich('Server policy: {policy}. <a>People → Access policies</a>', { policy: sentenceCase(POLICY_LABEL[p.policy ?? p.status?.policy ?? 'none']), a: (chunks) => <a className="text-accent underline" href="/settings/people" onClick={(e) => { e.preventDefault(); requestSettingsFocus('access-policies'); navigate({ view: 'settings', section: 'people' }) }}>{chunks}</a> })}
+          {t.rich('Server policy: {policy}. <a>People → Access policies</a>', { policy: sentenceCase(POLICY_LABEL[p.policy ?? p.status?.policy ?? 'none']), a: (chunks) => <a className="text-accent underline" href="/settings/people/access-policies" onClick={(e) => { e.preventDefault(); navigate({ view: 'settings', section: 'people', page: 'access-policies' }) }}>{chunks}</a> })}
         </p>
       )}
     </SettingsSection>
@@ -344,7 +337,7 @@ export function EnrolmentGate({ user, onEnrolled, onLogout }: { user: User; onEn
   const online = useOnline()
   return (
     <div className="flex min-h-full items-center justify-center bg-canvas p-6">
-      <div className="w-full max-w-lg space-y-4 rounded-card border border-default bg-surface p-6 shadow-1" data-testid="enrolment-gate">
+      <div className="w-full max-w-lg space-y-4 rounded-card border border-default bg-surface p-6 shadow-1" data-testid="enrolment-gate">{/* surface-lint-allow: the enrolment gate replaces the page */}
         <div>
           <h1 className="text-h3 font-semibold">{t('Set up two-factor authentication')}</h1>
           <p className="mt-1 text-body text-muted">
@@ -373,8 +366,10 @@ export function TwoFactorPanel({ user }: { user: User }) {
   const [devices, setDevices] = useState<TrustedDevice[] | null>(null)
   const [policy, setPolicy] = useState<MfaPolicy | null>(null)
   const [mode, setMode] = useState<'idle' | 'enrol' | { codes: string[] }>('idle')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // A cancelled re-authentication leaves reauth_required; nothing changed.
+  const { busy, error, setError, run: attempt } = useAction({
+    describe: (err) => (err instanceof ApiError && err.code === 'reauth_required' ? null : mfaMessage(err)),
+  })
 
   const load = useCallback(async () => {
     try {
@@ -386,24 +381,15 @@ export function TwoFactorPanel({ user }: { user: User }) {
     } catch (err) {
       if (!isNetworkError(err)) setError(mfaMessage(err))
     }
-  }, [isOwner])
+  }, [isOwner, setError])
   useEffect(() => {
     if (online) void load()
   }, [online, load])
 
-  const run = useCallback(async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    setError(null)
-    try {
-      await fn()
-      await load()
-    } catch (err) {
-      // A cancelled re-authentication leaves reauth_required; nothing changed.
-      if (!(err instanceof ApiError && err.code === 'reauth_required')) setError(mfaMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }, [load])
+  const run = useCallback((fn: () => Promise<unknown>) => attempt(async () => {
+    await fn()
+    await load()
+  }), [attempt, load])
 
   const [confirming, setConfirming] = useState<'disable' | 'regenerate' | null>(null)
   return (
@@ -451,7 +437,7 @@ export function MfaPolicyPanelView({ policy, online, busy, error, onPolicy }: {
   return (
     <SettingsSection {...cardCopy('mfa-policy')} testId="mfa-policy-panel">
       <SettingRow {...rowCopy('mfa-policy', 'policy')} htmlFor="mfa-policy-select"
-        status={policy ? <Badge hue={policy === 'none' ? 'slate' : 'green'}>{POLICY_LABEL[policy]}</Badge> : undefined}
+        status={policy ? <StatusIndicator tone={toneForHue(policy === 'none' ? 'slate' : 'green')}>{POLICY_LABEL[policy]}</StatusIndicator> : undefined}
         control={
           <Select id="mfa-policy-select" className="max-w-xs" value={policy ?? 'none'} disabled={!online || busy || policy === null}
             onChange={(e) => onPolicy(e.target.value as MfaPolicy)} aria-label={t('Two-factor policy for this server')}>

@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base32"
@@ -10,11 +9,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/OpenTodoApp/opentodo/internal/ids"
 )
 
 // ErrSetupCodeInvalid refuses a first registration from a public address
 // without the setup code printed in the server log.
-var ErrSetupCodeInvalid = errors.New("setting up this server from outside its local network needs the setup code printed in the server log")
+var ErrSetupCodeInvalid = errors.New("setting up this server from another machine needs the setup code printed in the server log")
 
 // setupCode guards a first registration from a public address when no
 // OPENTODO_SETUP_TOKEN is configured (OpenSpec change trusted-client-identity):
@@ -28,9 +29,7 @@ type setupCode struct {
 
 // newSetupCode is four groups of four base32 characters (80 random bits).
 func newSetupCode() string {
-	b := make([]byte, 10)
-	_, _ = rand.Read(b) // crypto/rand.Read never fails
-	return base32.StdEncoding.EncodeToString(b)
+	return base32.StdEncoding.EncodeToString(ids.Bytes(10))
 }
 
 // normalizeSetupCode accepts the code in any case, with or without the dashes
@@ -69,7 +68,7 @@ func (c *setupCode) discard() {
 // the log (XXXX-XXXX-XXXX-XXXX), or "" when none is needed. Calling it again
 // keeps the code already generated.
 func (s *Service) PrepareSetupCode(ctx context.Context) (string, error) {
-	if s.setupToken != "" {
+	if !s.SetupCodeRequired() {
 		return "", nil
 	}
 	n, err := s.UserCount(ctx)
@@ -88,7 +87,12 @@ func (s *Service) PrepareSetupCode(ctx context.Context) (string, error) {
 	return c[0:4] + "-" + c[4:8] + "-" + c[8:12] + "-" + c[12:16], nil
 }
 
-// SetupCodeRequired reports whether a first registration from a public address
-// needs the setup code: no setup token is configured. It matters only while no
-// account exists.
-func (s *Service) SetupCodeRequired() bool { return s.setupToken == "" }
+// SetSetupCodeRequired turns the setup code on (OPENTODO_SETUP_CODE=required,
+// OpenSpec change auth-hardening, D6); it is off by default.
+func (s *Service) SetSetupCodeRequired(on bool) { s.setupCodeOn = on }
+
+// SetupCodeRequired reports whether a first registration that does not come
+// from this machine needs the setup code: the code is turned on and no setup
+// token is configured (a token always wins). It matters only while no account
+// exists.
+func (s *Service) SetupCodeRequired() bool { return s.setupCodeOn && s.setupToken == "" }

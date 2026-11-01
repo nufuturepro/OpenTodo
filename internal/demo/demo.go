@@ -9,8 +9,6 @@ package demo
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,9 +16,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 const (
@@ -55,8 +54,11 @@ const (
 	TouchInterval = time.Minute
 	// TokenTTL is the lifetime of a sandbox-creation token.
 	TokenTTL = 10 * time.Minute
-	// PerAddressPerHour caps new sandboxes per client address.
+	// PerAddressPerHour caps new sandboxes per client address (an IPv6 /48).
 	PerAddressPerHour = 5
+	// GlobalPerHourFactor times the live cap is how many sandboxes the whole
+	// demo creates per hour.
+	GlobalPerHourFactor = 2
 	// OpsPerHour and OpsTotal are a sandbox's write budget.
 	OpsPerHour = 600
 	OpsTotal   = 5000
@@ -113,7 +115,9 @@ type Service struct {
 	// createMu serializes the limit checks and the reservation of a sandbox in
 	// this process; resetMu serializes resets.
 	createMu sync.Mutex
-	resetMu  sync.Mutex
+	// createdAt holds the creation times of the last hour, oldest first (under createMu).
+	createdAt []time.Time
+	resetMu   sync.Mutex
 
 	// salt hashes client addresses; it lives only in this process's memory, so
 	// stored hashes cannot be linked to an address after a restart.
@@ -127,8 +131,10 @@ type Service struct {
 
 	// touched remembers the last last_active_at write per sandbox (Unix ms).
 	touched sync.Map
+	// lastCleanup is when the demo job last deleted expired sandboxes (Unix ms).
+	lastCleanup atomic.Int64
 	// vacuumPending is set when sandboxes were deleted at startup; the jobs
-	// leader reclaims the space when its loop starts.
+	// leader reclaims the space at its first demo job run.
 	vacuumPending atomic.Bool
 }
 
@@ -137,8 +143,7 @@ func New(authSvc *auth.Service, syncSvc *opsync.Service, log *slog.Logger) *Serv
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	salt := make([]byte, 32)
-	_, _ = rand.Read(salt)
+	salt := ids.Bytes(32)
 	return &Service{auth: authSvc, sync: syncSvc, settings: settings.New(syncSvc.DB()), log: log, now: time.Now, salt: salt,
 		maxSandboxes: DefaultMaxSandboxes, maxDBBytes: DefaultMaxDBMB << 20}
 }
@@ -180,7 +185,7 @@ func (s *Service) EnsureOwner(ctx context.Context) error {
 // hidden owner, removal of the shared accounts of the first demo version, and
 // the reset when the last one predates the most recent nightly reset time (the
 // server was down at 03:00 UTC). Live sandboxes survive a plain restart. The
-// disk space of a startup reset is reclaimed by the jobs leader (Run).
+// disk space of a startup reset is reclaimed by the jobs leader (RunDue).
 func (s *Service) Start(ctx context.Context) error {
 	if err := s.loadTokenKey(ctx); err != nil {
 		return err
@@ -249,32 +254,41 @@ func (s *Service) LastReset(ctx context.Context) (time.Time, error) {
 	return time.UnixMilli(ms), nil
 }
 
-// Run is the jobs leader's loop (rolling-updates): it reclaims space left by a
-// startup reset, deletes expired sandboxes every CleanupInterval and resets
-// everything every night at ResetHour UTC, until ctx is done.
-func (s *Service) Run(ctx context.Context) {
+// NextDue is when the demo job next has work (rolling-updates: jobs leader
+// only): at once while a startup reset left space to reclaim, CleanupInterval
+// after the last cleanup, and the first ResetHour after the last reset.
+func (s *Service) NextDue(ctx context.Context) (time.Time, bool, error) {
+	if s.vacuumPending.Load() {
+		return s.now(), true, nil
+	}
+	last, err := s.LastReset(ctx)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	at := NextReset(last)
+	if c := time.UnixMilli(s.lastCleanup.Load()).Add(CleanupInterval); c.Before(at) {
+		at = c
+	}
+	return at, true, nil
+}
+
+// RunDue reclaims the space a startup reset left, resets everything when the
+// nightly reset time passed, and deletes expired sandboxes every CleanupInterval.
+func (s *Service) RunDue(ctx context.Context) {
 	if s.vacuumPending.Load() {
 		if err := s.vacuum(ctx); err != nil && ctx.Err() == nil {
 			s.log.Error("demo vacuum failed", "err", err)
 		}
 	}
-	s.cleanupLogged(ctx)
-	tick := time.NewTicker(CleanupInterval)
-	defer tick.Stop()
-	for {
-		nightly := time.NewTimer(time.Until(NextReset(s.now())))
-		select {
-		case <-ctx.Done():
-			nightly.Stop()
-			return
-		case <-tick.C:
-			nightly.Stop()
-			s.cleanupLogged(ctx)
-		case <-nightly.C:
-			if err := s.Reset(ctx); err != nil && ctx.Err() == nil {
-				s.log.Error("demo reset failed", "err", err)
-			}
+	now := s.now()
+	if last, err := s.LastReset(ctx); err == nil && !now.Before(NextReset(last)) {
+		if err := s.Reset(ctx); err != nil && ctx.Err() == nil {
+			s.log.Error("demo reset failed", "err", err)
 		}
+	}
+	if !now.Before(time.UnixMilli(s.lastCleanup.Load()).Add(CleanupInterval)) {
+		s.cleanupLogged(ctx)
+		s.lastCleanup.Store(now.UnixMilli())
 	}
 }
 
@@ -307,8 +321,4 @@ func Stale(resetAt, now time.Time) bool {
 	return resetAt.Before(last)
 }
 
-func randomPassword() string {
-	b := make([]byte, 24)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
+func randomPassword() string { return ids.Hex(24) }

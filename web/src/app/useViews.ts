@@ -1,16 +1,16 @@
 // Live data shared by the saved-view screens (OpenSpec `custom-views`): every
 // non-deleted view, task, project and label as live queries, plus the evaluation
 // context for lib/views. Local edits and synced ops re-render without a reload.
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { useAllLabels, useProjects, useViewRows } from '../lib/localData'
+import { useAllLabels, useLiveSections, useProjects, useViewRows } from '../lib/localData'
 import { logicalToday, onViewerZoneChange, viewerZone } from '../lib/dates'
 import type { Label, Project, Task, View } from '../lib/types'
-import { activeViews, getStartView, type StartView, type ViewContext } from '../lib/views'
+import { activeViews, type ViewContext } from '../lib/views'
 import { NO_TASKS, useLiveTasks } from '../lib/liveTasks'
 import { useTrackedTotals } from '../lib/timeEntries'
 import { useFieldDefs } from './useFields'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
+import { useWorkspaceFilter } from './useWorkspaceFilter'
 
 /**
  * The viewer's IANA zone (absolute-datetimes); components that show zoned dues
@@ -46,9 +46,7 @@ export function useViews(): View[] {
 }
 
 /** This device's start view (local meta, never synced). */
-export function useStartView(): StartView {
-  return useLiveQuery(() => getStartView(), [], 'inbox' as StartView)
-}
+export { useStartView } from '../lib/views'
 
 export interface ViewData {
   views: View[]
@@ -69,8 +67,11 @@ export function useViewData(): ViewData {
   const fields = useFieldDefs()
   // Tracked minutes per task, ticking while an entry runs (time-tracking D4): `tracked > 1h` views follow it live.
   const tracked = useTrackedTotals()
+  // `workspace:` views look at every workspace (group-mentions D6).
+  const ws = useWorkspaceFilter()
+  const sections = useLiveSections()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- zone: a zone change re-groups zoned dues (absolute-datetimes)
-  const ctx = useMemo(() => ({ today, labels, projects, tasks, fields, tracked }), [today, labels, projects, tasks, fields, tracked, zone])
+  const ctx = useMemo(() => ({ today, labels, projects, tasks, sections, fields, tracked, ...ws }), [today, labels, projects, tasks, sections, fields, tracked, ws, zone])
   return { views, projects, labels, tasks, ctx }
 }
 

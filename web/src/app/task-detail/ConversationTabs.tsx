@@ -14,6 +14,7 @@ import { formatMinutes } from '../../lib/duration'
 import { useTaskEntries } from '../../lib/timeEntries'
 import { useShortcutScope } from '../shortcuts'
 import { t } from '../../lib/i18n'
+import { readEnum, writeString } from '../../lib/deviceStorage'
 
 const HistoryTab = lazy(() => import('./HistoryTab'))
 
@@ -22,20 +23,11 @@ export type TaskTab = 'comments' | 'activity' | 'history' | 'time'
 const TABS: readonly TaskTab[] = ['comments', 'activity', 'history', 'time']
 
 export function readTaskTab(): TaskTab {
-  try {
-    const v = localStorage.getItem(TASK_TAB_KEY)
-    return TABS.includes(v as TaskTab) ? (v as TaskTab) : 'comments'
-  } catch {
-    return 'comments'
-  }
+  return readEnum(TASK_TAB_KEY, TABS, 'comments')
 }
 
 function writeTaskTab(tab: TaskTab) {
-  try {
-    localStorage.setItem(TASK_TAB_KEY, tab)
-  } catch {
-    // device-local convenience only
-  }
+  writeString(TASK_TAB_KEY, tab) // device-local convenience only
 }
 
 export interface ConversationTabsProps {
@@ -70,7 +62,7 @@ export function ConversationTabs({ task, userId, readOnly, onOpen, composerHost,
   const [minHeight, setMinHeight] = useState<number | undefined>(undefined)
   const [focusComment, setFocusComment] = useState<string | null>(null)
   const [focusComposer, setFocusComposer] = useState(0)
-  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const composerRef = useRef<HTMLElement | null>(null)
   const count = useLiveCommentCount(task.id)
   // Time (time-tracking D5): "Time · 35m" once something was tracked.
   const tracked = useTaskTotal(task.id)

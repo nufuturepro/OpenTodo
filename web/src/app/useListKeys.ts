@@ -1,6 +1,6 @@
 // Keyboard handling shared by the Filter view and saved views: the `list` scope
-// handlers for j / k, Enter, c, 1–4, Shift+L, Delete, e, d, n, Shift+N, Shift+E and
-// Esc (the shortcut registry names them; the shell's dispatcher resolves the keys).
+// handlers for j / k, Enter, c, 1–4, Shift+L, Delete, e, d, n, Shift+N, Shift+E, → / ←
+// and Esc (the shortcut registry names them; the shell's dispatcher resolves the keys).
 import { useEffect, useRef } from 'react'
 import { deleteTask, parkTask, setTaskCompleted, unparkTask, updateTask } from '../lib/ops'
 import type { Priority, Task } from '../lib/types'
@@ -11,6 +11,10 @@ import type { BulkList } from './bulk/useBulkList'
 import { runBulk } from './bulk/BulkActions'
 import { act } from './actionError'
 import { toggleTracking } from '../lib/timeEntries'
+import { panelTaskId, sidePanelDocks } from './panel'
+import { closeSidePanelFrom, useSidePanel } from './sidePanel'
+import { openTaskPage } from './taskTrail'
+import { dayPartFields } from '../lib/dayParts'
 
 export interface KeyRow {
   key: string
@@ -33,6 +37,13 @@ export interface ListKeys {
   paused?: boolean
   /** Bulk selection (bulk-edit D2): x / Space tick, Shift+↓/↑ extend, `.`, Ctrl/⌘+A, and the action keys on the ticked set. */
   bulk?: BulkList
+  /** The row (by key) whose details are shown under it (row-expand D1, D4); without a setter the list does not expand (a board layout). */
+  expanded?: string | null
+  setExpanded?: (key: string | null) => void
+  /** The list keeps the side panel with the preference (task-side-panel): the Filter view, saved views, Next and Waiting. */
+  sidePanel?: boolean
+  /** A saved view's own order (view-manual-order D4): one step of the row's task within its group; false at the edge. */
+  moveBy?: (row: KeyRow, step: -1 | 1 | 'top' | 'bottom') => Promise<boolean>
 }
 
 export function useListKeys(opts: ListKeys): void {
@@ -51,7 +62,13 @@ export function useListKeys(opts: ListKeys): void {
     ticked: () => ref.current.bulk?.ticked ?? [],
     tick: (ids) => ref.current.bulk?.selection.set(ids),
     openActions: (picker) => ref.current.bulk?.openActions(picker ?? null),
-    manual: () => false,
+    manual: () => !!ref.current.moveBy,
+    ownOrder: () => !!ref.current.moveBy,
+    moveBy: (id, step) => {
+      const { rows, selected, moveBy } = ref.current
+      const r = rows.find((x) => x.key === selected && x.task.id === id) ?? rows.find((x) => x.task.id === id)
+      return r && moveBy ? moveBy(r, step) : Promise.resolve(false)
+    },
     focusQuickAdd: () => false,
     toggleComplete: (id, completed) => setTaskCompleted(id, completed),
     openLabels: (id) => ref.current.setPickerFor(id),
@@ -62,10 +79,18 @@ export function useListKeys(opts: ListKeys): void {
   const b = o.bulk
   const idx = o.rows.findIndex((r) => r.key === o.selected)
   const row = idx >= 0 ? o.rows[idx].task : undefined
+  useSidePanel({ on: !!o.sidePanel, selectedTaskId: row?.id ?? null, ticking: !!b?.ticked.length, hasRows: o.rows.length > 0 })
+  // An open task closes on Escape, except in the side panel, which never closes by itself (task-side-panel D4).
+  const closable = !!o.openId && !sidePanelDocks()
   const openWith = (focus: { request(id: string): void }) => () => {
     if (!row) return false
     focus.request(row.id)
     o.setOpenId(row.id)
+  }
+  // Keyboard moves in a saved view's own order (view-manual-order); the selection stays on the row.
+  const move = (step: -1 | 1 | 'top' | 'bottom') => () => {
+    if (!o.moveBy || idx < 0) return false
+    act(o.moveBy(o.rows[idx], step))
   }
   const extend = (dir: 1 | -1) => () => {
     if (!b) return false
@@ -81,17 +106,29 @@ export function useListKeys(opts: ListKeys): void {
     'list.escape': (e) => {
       const target = e.target as HTMLElement | null
       if (isTypingTarget(target)) return false
-      if (b && b.ticked.length && !o.pickerFor && !o.openId) b.selection.clear()
+      if (closeSidePanelFrom(target)) return
+      if (b && b.ticked.length && !o.pickerFor && !closable) b.selection.clear()
       else if (o.pickerFor) o.setPickerFor(null)
-      else if (o.openId) o.setOpenId(null)
+      else if (closable) o.setOpenId(null)
+      // The details of an expanded row close before the selection clears (row-expand D1).
+      else if (o.expanded && o.setExpanded) o.setExpanded(null)
       else o.onIdleEscape()
     },
     'list.tick': () => { if (!b || !row) return false; b.selection.toggle(row.id) },
     'list.extend-down': extend(1), 'list.extend-up': extend(-1),
+    'list.move-up': move(-1), 'list.move-down': move(1), 'list.move-top': move('top'), 'list.move-bottom': move('bottom'),
     'list.actions': () => { if (!b || !(b.ticked.length || row)) return false; b.openActions() },
     'list.down': () => o.setSelected(o.rows[Math.min(o.rows.length - 1, idx + 1)]?.key ?? null),
     'list.up': () => o.setSelected(o.rows[Math.max(0, idx - 1)]?.key ?? null),
-    'list.open': (e) => { if (!row || isActivationTarget(e.target)) return false; o.setOpenId(row.id) },
+    // → shows the selected row's details, ← hides them (row-expand D1); these rows have no subtask tree.
+    'list.expand': () => { if (!row || !o.setExpanded) return false; o.setExpanded(o.selected) },
+    'list.collapse': () => { if (!row || !o.setExpanded || o.expanded !== o.selected) return false; o.setExpanded(null) },
+    'list.open': (e) => {
+      if (!row || isActivationTarget(e.target)) return false
+      // The side panel shows the task first; Enter on the task it shows opens its page (task-side-panel D4).
+      if (sidePanelDocks() && panelTaskId() === row.id) openTaskPage(row.id)
+      else o.setOpenId(row.id)
+    },
     'list.complete': () => {
       if (b?.ticked.length) { void runBulk(b.ticked, { kind: 'complete' }); return }
       if (!row) return false
@@ -122,7 +159,7 @@ export function useListKeys(opts: ListKeys): void {
     'list.blocked-by': openWith(blockedByFocus),
     // Park or un-park (someday-and-evening D5).
     'list.park': () => { if (!row) return false; void (row.start === 'someday' ? unparkTask(row.id) : parkTask(row.id)) },
-    'list.evening': () => { if (!row) return false; act(updateTask(row.id, { evening: !row.evening })) },
+    'list.evening': () => { if (!row) return false; act(updateTask(row.id, dayPartFields(row.evening ? null : 'evening'))) },
     ...o.extra,
   }, { paused: o.paused })
 }

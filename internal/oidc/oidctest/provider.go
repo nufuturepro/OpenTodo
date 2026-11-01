@@ -22,7 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/oidc"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/oidc"
 )
 
 // User is who the provider signs in at the next authorization request.
@@ -31,6 +32,8 @@ type User struct {
 	Email         string
 	EmailVerified bool
 	Name          string
+	// Picture is the `picture` claim; empty leaves the claim out.
+	Picture string
 }
 
 // Provider is a running fake identity provider.
@@ -153,7 +156,7 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 	if errCode != "" {
 		v.Set("error", errCode)
 	} else {
-		code := oidc.RandomString(16)
+		code := ids.Secret(16)
 		p.mu.Lock()
 		p.codes[code] = grant{clientID: q.Get("client_id"), redirectURI: q.Get("redirect_uri"), challenge: q.Get("code_challenge"), nonce: q.Get("nonce"), user: u}
 		p.mu.Unlock()
@@ -204,6 +207,9 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	if g.user.Email != "" {
 		claims["email"] = g.user.Email
 		claims["email_verified"] = g.user.EmailVerified
+	}
+	if g.user.Picture != "" {
+		claims["picture"] = g.user.Picture
 	}
 	if p.MutateClaims != nil {
 		p.MutateClaims(claims)

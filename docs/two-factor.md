@@ -17,10 +17,12 @@ Two-factor authentication is the second lock on your account, next to [passkeys 
 
 With two-factor authentication, signing in takes your password plus a six-digit code from an authenticator app on your phone. Any app that supports time-based codes works; your server makes and checks the codes itself, without contacting anyone.
 
-1. Open **Settings → Account → Two-factor authentication** and select **Set up two-factor authentication**.
+1. Open **Settings → Account → Security → Two-factor authentication** and select **Set up two-factor authentication**.
 2. Scan the QR code with your authenticator app, or type in the key shown under it.
 3. Enter the six-digit code the app shows.
 4. Save the **recovery codes** that appear. They're shown only once: download them as a text file or write them down and keep them somewhere safe.
+
+If you signed in more than ten minutes ago, setting it up first asks for your password ([Confirm it's you](account-security.md#confirm-its-you)).
 
 From then on, sign-in asks for a code after your password. Signing in with a passkey skips the code, because the passkey already checks it's you.
 

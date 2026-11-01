@@ -50,8 +50,10 @@ The documentation SHALL include a guide for people using the app, written as tas
 - trash and history
 - settings
 - troubleshooting
-- switching from Todoist, Things, TickTick and Linear
+- switching from Todoist, Things, TickTick, Linear, Microsoft To Do, Google Tasks, Apple Reminders, Trello, Asana and Any.do
 - the Open Loops method
+
+A switch guide for an app that has no export of its own (Microsoft To Do, Apple Reminders, Any.do) SHALL give the exact script, Shortcut or data request that produces the file the importer reads, and name what that file cannot carry. The Apple Reminders guide SHALL present the CalDAV connection first.
 
 The method chapter SHALL hold one overview page, one page per move, one page each for Places, Rhythms and Horizons, "Set up in ten minutes", and "Coming from GTD". "Coming from GTD" SHALL map GTD terms to Open Loops terms and state that Open Loops is inspired by GTD and is not affiliated with its authors. Every term on these pages SHALL be the one the app shows for the same id.
 
@@ -66,6 +68,10 @@ The method chapter SHALL hold one overview page, one page per move, one page eac
 #### Scenario: Switching from another app
 - **WHEN** a Todoist user opens the Todoist switch guide on the website or in the in-app Help
 - **THEN** it shows how to export from Todoist, how to import the file, what carries over, and what is dropped with a warning, matching the importer's documented mapping
+
+#### Scenario: Switching from an app without an export
+- **WHEN** a Microsoft To Do user opens the Microsoft To Do switch guide
+- **THEN** it gives the script that writes the file, the import steps, what carries over and what is dropped, and the importer's documented mapping matches the file that script produces
 
 #### Scenario: Method page per move
 - **WHEN** the docs are built
@@ -122,7 +128,7 @@ The Help view's landing SHALL open on the search field, followed by task-shaped 
 - **THEN** the method overview opens, with its loop diagram first and links to each move
 
 ### Requirement: Contextual help
-Every page header, the task panel menu, the share dialog, quick add (on its first three uses per device) and the import screen SHALL offer a Help action that opens the matching guide section beside the current screen (a sheet on phones) without closing it or discarding what the user entered.
+Every page header, the task panel menu, the share dialog, the import screen and the Learn more link of a Settings card SHALL offer a Help action that opens the matching guide section beside the current screen (a sheet on phones) without closing it or discarding what the user entered. The quick add SHALL carry no help link of its own: in a task list the page header's Help action is the one help control, it opens the view's guide section, and that section SHALL link to the quick-add guide in its first paragraph, so the syntax is one activation away from any list. The Help landing's "Add a task with a date" entry SHALL open the same guide. Nothing about help use SHALL be stored on the device or the account. The in-app guide is local, so this works offline. The guide section a Settings card's Learn more opens SHALL hold the explanation that left the card, so no sentence of the earlier card text is lost, and each such screen id SHALL be declared by exactly one guide page.
 
 #### Scenario: Help while sharing
 - **WHEN** a user has typed an email in the share dialog and selects Help
@@ -131,6 +137,30 @@ Every page header, the task panel menu, the share dialog, quick add (on its firs
 #### Scenario: Help from the board
 - **WHEN** the user activates Help in a project's page header while the board is shown
 - **THEN** the sections and boards guide opens in the panel slot and the board stays as it was
+
+#### Scenario: Quick-add syntax from the Inbox
+- **WHEN** a user with "Call the dentist tomorrow" typed in the Inbox's quick add activates the header's Help action and then the quick-add link in the section that opens
+- **THEN** the quick-add guide is shown in the Help panel and the typed line is still in the field
+
+#### Scenario: No help under the field
+- **WHEN** a new browser opens any task list
+- **THEN** no help link is rendered under the quick add, on the first add or any later one
+
+#### Scenario: Link kept in check
+- **WHEN** a list view's guide section loses its link to the quick-add guide
+- **THEN** the docs check fails and names the section
+
+#### Scenario: Learn more from a card
+- **WHEN** a user activates Learn more on the Recent activity card
+- **THEN** the "Check recent sign-ins" section of the account security guide opens beside Settings and says what to do about a sign-in you do not recognise, which the card no longer says in full
+
+#### Scenario: Screen id without a page
+- **WHEN** a change adds a Learn more link for screen `settings/nonsense` that no page declares
+- **THEN** the docs check fails naming the file that links it
+
+#### Scenario: Guide page stays under the limit
+- **WHEN** the moved sentences are added to the Settings: App guide
+- **THEN** the page stays under 600 words, as the docs check requires, with the longer explanations on the feature pages their cards link to
 
 ### Requirement: Accessible documentation
 The docs website and the in-app Help SHALL meet WCAG 2.2 AA: landmarks, one top heading and no skipped levels, skip link, visible focus, 4.5:1 contrast in light and dark, descriptive link text, header cells in tables, reduced motion respected, 200% zoom and 360 px width without horizontal scroll, and search results announced to screen readers. CI SHALL check this automatically.

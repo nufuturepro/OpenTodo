@@ -8,10 +8,12 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { completeTask, createProject, createTask, resetDeviceId, updateTask } from '../lib/ops'
+import type { Task } from '../lib/types'
 import { loadViewMode, nextViewMode, saveViewMode } from '../lib/sections'
 import { flush, key, render, waitFor } from '../ui/test-utils'
 import { resetPanel } from './panel'
 import { TaskListView } from './TaskListView'
+import { notePlacement } from './TimelineView'
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -26,7 +28,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
 })
 
 
@@ -37,24 +38,28 @@ async function timeline() {
 }
 
 describe('layout cycle', () => {
-  it('cycles list → board → timeline → list and reads unknown values as the list', async () => {
+  it('cycles list → board → timeline → calendar → list and reads unknown values as the list', async () => {
     expect(nextViewMode('list')).toBe('board')
     expect(nextViewMode('board')).toBe('timeline')
-    expect(nextViewMode('timeline')).toBe('list')
+    // Calendar joins the cycle after Timeline (calendar-clarity D5).
+    expect(nextViewMode('timeline')).toBe('calendar')
+    expect(nextViewMode('calendar')).toBe('list')
     const p = await createProject({ name: 'P' })
     await db.meta.put({ key: `view-mode:${p}`, value: 'gantt' } as never)
     expect(await loadViewMode(p)).toBe('list')
   })
 
-  it('v twice from the board lands on the list', async () => {
+  it('v three times from the board lands on the list, through the timeline and the calendar', async () => {
     const p = await createProject({ name: 'P' })
     await saveViewMode(p, 'board')
     const r = await render(<TaskListView route={{ view: 'project', id: p }} />)
-    await flush(80)
+    await waitFor(() => r.container.querySelector('[role="group"][aria-label="Project layout"] [aria-pressed="true"]')?.textContent === 'Board', 'the board')
     await key(document.body, 'v')
     await waitFor(() => r.container.querySelector('[data-timeline]') !== null)
     await key(document.body, 'v')
-    await waitFor(() => r.container.querySelector('[data-timeline]') === null && r.container.querySelector('[role="group"][aria-label="Project layout"] [aria-pressed="true"]')?.textContent === 'List')
+    await waitFor(() => r.container.querySelector('[data-project-calendar]') !== null, 'the calendar layout')
+    await key(document.body, 'v')
+    await waitFor(() => r.container.querySelector('[data-project-calendar]') === null && r.container.querySelector('[role="group"][aria-label="Project layout"] [aria-pressed="true"]')?.textContent === 'List')
     expect(await loadViewMode(p)).toBe('list')
     await r.unmount()
   })
@@ -80,6 +85,49 @@ describe('timeline', () => {
     const rows = [...r.container.querySelectorAll('[data-timeline-row]')].map((e) => e.getAttribute('data-timeline-row'))
     expect(rows.slice(-2).sort()).toEqual([later, none].sort())
     expect(r.container.textContent).toContain('Unscheduled')
+    await r.unmount()
+  })
+
+  it('fills bars in the project hue, dims the part before today and gives a late bar the danger edge (surfaces-v2, precision-boards-timeline D7)', async () => {
+    const p = await createProject({ name: 'Garden', color: '#16a34a' })
+    await saveViewMode(p, 'timeline')
+    // Today is 1 November: the first bar crosses it, the second only started in the past,
+    // the third missed its deadline and the fourth its due day.
+    const across = await createTask({ title: 'Across', project_id: p, start: '2026-10-29', due: { date: '2026-11-04' } })
+    const ended = await createTask({ title: 'Ended', project_id: p, start: '2026-10-25' })
+    const late = await createTask({ title: 'Late', project_id: p, start: '2026-10-20', deadline: '2026-10-30' })
+    const overdue = await createTask({ title: 'Overdue', project_id: p, start: '2026-10-25', due: { date: '2026-10-28' } })
+    const r = await render(<TaskListView route={{ view: 'project', id: p }} />)
+    await waitFor(() => r.container.querySelectorAll('[data-bar]').length === 4)
+    const bar = (id: string) => r.container.querySelector<HTMLElement>(`[data-bar="${id}"]`)!
+    expect(bar(across).className).toContain('ui-block')
+    expect(bar(across).getAttribute('data-hue')).toBe(bar(ended).getAttribute('data-hue'))
+    expect(bar(across).getAttribute('data-hue')).toBeTruthy()
+    // Two segments: the dimmed part covers the 29th to the 31st.
+    const past = bar(across).querySelectorAll<HTMLElement>('[data-bar-past]')
+    expect(past).toHaveLength(1)
+    expect(past[0].className).toContain('ui-block--past')
+    expect(past[0].style.width).toBe(`${3 * 32}px`)
+    expect(bar(ended).className).toContain('ui-block--past')
+    expect(bar(ended).querySelector('[data-bar-past]')).toBeNull()
+    // Late wins over the hue and the dimming.
+    expect(bar(late).className).toContain('ui-block--late')
+    expect(bar(late).className).not.toContain('ui-block--past')
+    expect(bar(late).querySelector('[data-bar-past]')).toBeNull()
+    // An overdue due day is late too, and every late bar says by how much (D6, D7).
+    expect(bar(overdue).className).toContain('ui-block--late')
+    const after = (id: string) => bar(id).nextElementSibling?.matches('[data-bar-after]') ? bar(id).nextElementSibling!.textContent : null
+    expect(after(late)).toBe('2 days late')
+    expect(after(overdue)).toBe('4 days late')
+    // A late bar's deadline diamond is in the overdue tone.
+    expect(bar(late).querySelector('[data-deadline-marker]')!.className).toContain('bg-danger')
+    // A short bar is followed by its length; a bar of 96 px or more carries its title.
+    expect(after(ended)).toBe('1 day')
+    expect(bar(across).querySelector('[data-bar-title]')!.textContent).toBe('Across')
+    expect(bar(ended).querySelector('[data-bar-title]')).toBeNull()
+    // Today is an accent line with its mark on the axis (D9).
+    expect(r.container.querySelector('[data-today-line]')!.className).toContain('bg-accent')
+    expect(r.container.querySelector('[data-today-mark]')!.textContent).toBe('Today')
     await r.unmount()
   })
 
@@ -110,23 +158,23 @@ describe('timeline', () => {
     const r = await render(<TaskListView route={{ view: 'project', id: p }} />)
     await waitFor(() => r.container.querySelector(`[data-bar="${id}"]`) !== null)
     const col = (d: string) => r.container.querySelector(`[data-drop-target="tl:${d}"]`)!
-    const drag = async (el: Element, to: string, fromX: number) => {
+    const drag = async (el: Element, to: string, fromX: number, done: (t: Task) => boolean) => {
       document.elementFromPoint = () => col(to)
       await act(async () => {
         el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0, clientX: fromX, clientY: 5 }))
         window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: fromX + 80, clientY: 5 }))
         window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, pointerType: 'mouse', clientX: fromX + 80, clientY: 5 }))
       })
-      await flush(50)
+      await waitFor(async () => done((await db.tasks.get(id))!), 'the drop written')
     }
     // happy-dom lays nothing out: the axis starts at x = 0, so x = 32 * n is day n of the axis.
     const axisStart = '2026-10-04'
     const dayX = (d: string) => (Math.round((Date.parse(d) - Date.parse(axisStart)) / 86400000)) * 32 + 1
-    await drag(r.container.querySelector(`[data-bar="${id}"]`)!, '2026-11-12', dayX('2026-11-10'))
+    await drag(r.container.querySelector(`[data-bar="${id}"]`)!, '2026-11-12', dayX('2026-11-10'), (t) => t.due?.date === '2026-11-12')
     let t = (await db.tasks.get(id))!
     expect(t.start).toBe('2026-11-05')
     expect(t.due).toEqual({ date: '2026-11-12', time: '09:00' })
-    await drag(r.container.querySelector(`[data-bar="${id}"] [data-bar-edge="end"]`)!, '2026-11-16', dayX('2026-11-12'))
+    await drag(r.container.querySelector(`[data-bar="${id}"] [data-bar-edge="end"]`)!, '2026-11-16', dayX('2026-11-12'), (t) => t.deadline === '2026-11-16')
     t = (await db.tasks.get(id))!
     expect(t.deadline).toBe('2026-11-16')
     expect(t.due).toEqual({ date: '2026-11-12', time: '09:00' })
@@ -157,8 +205,21 @@ describe('timeline', () => {
     expect(r.container.textContent).toContain('You can view this project but not change dates.')
     await key(document.body, 'j')
     await key(document.body, 'ArrowRight')
+    // eslint-disable-next-line test-hygiene/no-fixed-wait -- a viewer's key writes nothing, so there is no signal to wait for; give a wrong write time to land
     await flush(50)
     expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-11-10' })
     await r.unmount()
+  })
+})
+
+describe('notes beside short bars (precision-polish D4)', () => {
+  it('sits after the bar when clear', () => {
+    expect(notePlacement(0, 40, 60, 400, 1000)).toBe(48)
+  })
+  it('moves past the today line instead of crossing it', () => {
+    expect(notePlacement(0, 40, 60, 80, 1000)).toBe(88)
+  })
+  it('moves before the bar at the end of the axis', () => {
+    expect(notePlacement(900, 960, 60, null, 1000)).toBe(832)
   })
 })

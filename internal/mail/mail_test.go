@@ -11,15 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/mail/smtptest"
-	"github.com/pixari/opentodo/internal/settings"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/mail/smtptest"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 func newService(t *testing.T, env config.SMTPConfig, tr Sender) (*Service, *sql.DB, string) {
@@ -255,7 +256,7 @@ func TestTemplatesEveryKindAndLanguage(t *testing.T) {
 				if subj == "" || strings.Contains(subj, "{{") || strings.Contains(body, "{{") || !strings.Contains(body, "https://todo.example.com") {
 					t.Fatalf("%s %s: %q / %q", kind, lang, subj, body)
 				}
-				withLink := kind != KindTest && !existing
+				withLink := kind != KindTest && kind != KindEmailChangeNotice && !existing
 				if strings.Contains(body, "\n"+link+"\n") != withLink {
 					t.Fatalf("%s %s: link on its own line = %v", kind, lang, !withLink)
 				}
@@ -483,6 +484,36 @@ func TestDigestGolden(t *testing.T) {
 	_, body, _ := Render(Message{Kind: KindDigest, Lang: "de", Vars: Vars{Digest: &DigestVars{WeekStart: "2026-10-23", WeekEnd: "2026-10-23"}}}, "")
 	if !strings.Contains(body, "Fr. 23. Okt.") || !strings.Contains(body, "Nichts.") || !strings.Contains(body, "noch nie") {
 		t.Fatalf("german empty digest: %q", body)
+	}
+}
+
+// TestDigestWordsForLateTasks (page-rhythm, email-digest "Digest words for tasks that
+// are late"): the section of open tasks due before the send day is "Still open from
+// earlier" in every language, and no rendering uses "overdue" or its translation.
+// The measurements keep their words ("Completed late" and its translations).
+func TestDigestWordsForLateTasks(t *testing.T) {
+	heading := map[string]string{
+		"en": "Still open from earlier", "de": "Noch offen von früher", "fr": "Encore ouvertes d'avant",
+		"es": "Siguen abiertas de antes", "it": "Ancora aperte da prima", "pt": "Ainda abertas de antes",
+	}
+	// The old headings, matched as whole lines where the word also names a measurement.
+	old := map[string]*regexp.Regexp{
+		"en": regexp.MustCompile(`(?i)overdue`), "de": regexp.MustCompile(`(?i)überfällig`), "fr": regexp.MustCompile(`(?m)^En retard$`),
+		"es": regexp.MustCompile(`(?i)vencid`), "it": regexp.MustCompile(`(?m)^In ritardo$`), "pt": regexp.MustCompile(`(?m)^Atrasadas$`),
+	}
+	for _, lang := range Languages {
+		m := Message{Kind: KindDigest, To: "ana@example.com", Lang: lang, Origin: "https://todo.example.com",
+			Vars: Vars{Link: "https://todo.example.com/review", Digest: digestSample()}}
+		subj, body, err := Render(m, m.Origin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(body, "\n"+heading[lang]+"\n") {
+			t.Fatalf("%s digest has no %q section:\n%s", lang, heading[lang], body)
+		}
+		if old[lang].MatchString(subj + "\n" + body) {
+			t.Fatalf("%s digest still says %v:\n%s", lang, old[lang], body)
+		}
 	}
 }
 

@@ -5,14 +5,15 @@
 // when saving and shown. Server data: it needs a connection. DigestView renders
 // every state without effects (tests, stories); DigestCard loads and saves.
 import { useEffect, useState } from 'react'
-import { Badge, Button, Field, Notice, Select, SettingRow, SettingsSection, Switch } from '../ui'
+import { Button, Field, Notice, Select, SettingRow, SettingsSection, Switch, StatusIndicator, toneForHue } from '../ui'
 import { api, ApiError, isNetworkError } from '../lib/api'
-import { formatDate, formatHour, formatInstant } from '../lib/dates'
+import { formatDate, formatHour, formatInstant, weekdayName as nameOfWeekday } from '../lib/dates'
 import { useDemo } from '../lib/demo'
 import type { EmailDigest, EmailDigestInput } from '../lib/types'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t, currentLocale, preferredLanguages } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { useSettingsPending } from './settingsPending'
 
 /** The digest's languages, as the server's message templates (internal/mail). */
 export const DIGEST_LANGUAGES: Record<string, string> = { en: 'English', de: 'Deutsch', fr: 'Français', es: 'Español', it: 'Italiano', pt: 'Português' }
@@ -37,7 +38,7 @@ export function browserTimeZone(): string {
 
 /** Weekday names, 0 = Sunday (2026-10-11 is a Sunday). */
 export function weekdayName(wd: number, style: 'long' | 'short' = 'long'): string {
-  return new Intl.DateTimeFormat(currentLocale(), { weekday: style, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 9, 11 + wd)))
+  return nameOfWeekday(wd, style, currentLocale())
 }
 
 /** The state line: "On, Fridays at 07:00 (Europe/Zurich)" or "Off". */
@@ -105,7 +106,7 @@ export function DigestView(p: DigestViewProps) {
         <>
           <SettingRow {...rowCopy('email-digest', 'email')} status={
             <span className="flex flex-wrap items-center gap-2" data-testid="digest-summary">
-              <Badge hue={d!.enabled ? 'green' : 'slate'}>{digestSummary(d!)}</Badge>
+              <StatusIndicator tone={toneForHue(d!.enabled ? 'green' : 'slate')}>{digestSummary(d!)}</StatusIndicator>
               {d!.enabled && d!.nextSendAt !== null && <span className="text-muted">{t('Next: {instant}', { instant: formatInstant(d!.nextSendAt, 'long') })}</span>}
               {outcome && <span className={outcome.tone === 'warn' ? 'text-warning' : 'text-muted'} data-testid="digest-outcome">{outcome.text}</span>}
             </span>
@@ -157,6 +158,7 @@ export function DigestCard() {
   useDateTimeFormat() // re-render on a time format change
   const demo = !!useDemo()
   const [state, setState] = useState<DigestState>({ kind: 'loading' })
+  useSettingsPending(state.kind === 'loading')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({ weekday: 5, hour: 7 })

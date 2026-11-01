@@ -4,7 +4,7 @@
 // compiler sees them.
 import { createRequire } from 'node:module'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const repo = fileURLToPath(new URL('../..', import.meta.url))
@@ -22,7 +22,9 @@ export function parse(file, text = readFileSync(file, 'utf8')) {
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
 }
 
-export const rel = (f) => relative(repo, f)
+// Paths are compared and stored with forward slashes (the allow-list, the
+// committed catalogs): normalise so a Windows checkout writes the same file as CI.
+export const rel = (f) => relative(repo, f).split(sep).join('/')
 
 /** The callee name of a call: `t`, `msg`, `t.rich`, … */
 export function calleeName(call) {

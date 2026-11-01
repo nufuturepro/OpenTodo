@@ -1,16 +1,22 @@
 // Accessibility gate (OpenSpec design-system "Accessibility gate on stories"): opens
 // every workbench story from the static build in Chromium, in light and dark, runs
 // axe-core with the WCAG 2.2 AA rules and fails on any serious or critical violation,
-// naming the story, theme and rule.
+// naming the story, theme and rule. On the core-screen stories (`Screens/*`) it then
+// moves keyboard focus through every focusable element and fails on one that shows no
+// focus ring (design-system "Focus visibility in the accessibility gate"; the audit's
+// M8, scripts/ux-audit/audit-measures.mjs).
 //
 //   cd web && npm run build-storybook && node ../scripts/ui-check/a11y.mjs
 //
 // Env: STORYBOOK_DIR (default web/storybook-static), ONLY (comma-separated story ids),
-// CONCURRENCY (pages checked at once, default 4; every story still gets its own page).
+// CONCURRENCY (pages checked at once, default 4; every story still gets its own page),
+// SHARD ("i/n": only every n-th story starting at the i-th, so n jobs share the work;
+// the Screens stories, which also get the focus walk, are spread over all of them).
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { loadPlaywright, serveStatic, storyIds } from './serve.mjs'
+import { focusWalk, installHelpers } from '../ux-audit/audit-measures.mjs'
 
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const root = process.env.STORYBOOK_DIR ?? `${repo}web/storybook-static`
@@ -20,9 +26,14 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const { chromium } = await loadPlaywright()
 const server = await serveStatic(root)
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null
-const ids = (await storyIds(root)).filter((id) => !only || only.has(id))
+const [shard, shards] = (process.env.SHARD ?? '1/1').split('/').map(Number)
+if (!(shards >= 1 && shard >= 1 && shard <= shards)) throw new Error(`SHARD must be i/n with 1 <= i <= n, got ${process.env.SHARD}`)
+const ids = (await storyIds(root)).filter((id) => !only || only.has(id)).filter((_, i) => i % shards === shard - 1)
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
 const failures = []
+// Elements of the first focus run, each fixed by a follow-up that removes it from the list.
+const FOCUS_EXEMPT = JSON.parse(readFileSync(`${repo}scripts/ux-audit/focus-exempt.json`, 'utf8')).elements
+let exempted = 0
 const queue = ids.flatMap((id) => [[id, 'light'], [id, 'dark']])
 const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY ?? 4))
 
@@ -54,6 +65,13 @@ async function check(id, theme) {
       .map((v) => `${v.impact} ${v.id}: ${v.help} (${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(', ')})`)
   }, TAGS)
   for (const v of violations) failures.push(`${id} [${theme}]: ${v}`)
+  if (id.startsWith('screens-')) {
+    await installHelpers(page)
+    for (const f of await focusWalk(page)) {
+      if (FOCUS_EXEMPT.some((e) => f.element.startsWith(e))) { exempted++; continue }
+      failures.push(`${id} [${theme}]: focus without the ring: ${f.element}`)
+    }
+  }
   await page.close()
 }
 
@@ -69,4 +87,4 @@ if (failures.length) {
   console.error(`UI a11y check: ${failures.length} problem(s)\n${failures.map((f) => `  - ${f}`).join('\n')}`)
   process.exit(1)
 }
-console.log(`UI a11y check: ${ids.length} stories × 2 themes, no serious or critical violations`)
+console.log(`UI a11y check${shards > 1 ? ` (shard ${shard}/${shards})` : ''}: ${ids.length} stories × 2 themes, no serious or critical violations; focus ring on every element of the Screens stories (${exempted} listed in scripts/ux-audit/focus-exempt.json)`)

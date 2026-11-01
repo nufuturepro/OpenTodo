@@ -3,9 +3,10 @@
 // design system (OpenSpec change `web-layering`), so primitives such as the
 // Combobox and ConfirmDialog use it without importing from src/app.
 export { Dialog } from './Dialog'
+export { playExit } from './exit'
 export { Menu } from './Menu'
 export { Popover } from './Popover'
-export { ToastRegion } from './Toasts'
+export { ToastRegion, useToastClearance } from './Toasts'
 export { place } from './position'
-export { trapTab, useOverlayDepth, useFinePointer, useWide, watchVisualViewport } from './stack'
+export { overlayDepth, trapTab, useOverlayDepth, useFinePointer, useWide, watchVisualViewport } from './stack'
 export { isolate, useOverlay } from './useOverlay'

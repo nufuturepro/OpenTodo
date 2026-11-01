@@ -7,6 +7,7 @@
 import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 import noGenericAriaLabel from './eslint/no-generic-aria-label.js'
+import noFixedWait from './eslint/no-fixed-wait.js'
 
 export default [
   { ignores: ['node_modules/**', 'storybook-static/**', 'public/**', 'scripts/**'] },
@@ -38,7 +39,7 @@ export default [
   // came in. Each entry is a ceiling a little above its size then; lower it as the
   // function is split and drop the entry once it fits. Never raise one.
   ...[
-    ['src/app/Sidebar.tsx', 440], // Sidebar (426): projects tree, counts, drag and its menus in one component
+    ['src/app/Sidebar.tsx', 440], // Sidebar (440): projects tree, counts, drag and its menus in one component
     ['src/app/AuthScreen.tsx', 320], // AuthScreen (309): sign-in, setup, second factor and SSO steps
     ['src/app/TimelineView.tsx', 270], // TimelineView (263): bars, drag and keyboard of the project timeline
     ['src/app/App.tsx', 270], // App (256): boot, auth state and routing
@@ -50,6 +51,15 @@ export default [
     // database (lib/db.ts) and `use` is a local test helper; neither is a React hook.
     files: ['src/**/*.test.ts', 'src/**/*.testkit.tsx'],
     rules: { 'react-hooks/rules-of-hooks': 'off' },
+  },
+  {
+    // Tests wait for a condition, never for a fixed time (test audit F2): `await
+    // flush(40)` before an assertion passes on an idle laptop and fails on a loaded
+    // CI runner. Use waitFor from ui/test-utils. A wait that is itself the behaviour
+    // under test keeps a reasoned `eslint-disable-next-line test-hygiene/no-fixed-wait -- why`.
+    files: ['src/**/*.test.{ts,tsx}', 'src/**/*.testkit.{ts,tsx}'],
+    plugins: { 'test-hygiene': { rules: { 'no-fixed-wait': noFixedWait } } },
+    rules: { 'test-hygiene/no-fixed-wait': 'error' },
   },
   {
     // The design system stands alone (web-layering): primitives are tested and shown
@@ -69,10 +79,15 @@ export default [
       'src/app/**/*.test.{ts,tsx}', 'src/app/**/*.testkit.tsx', 'src/app/**/*.stories.tsx', 'src/app/stories/**',
     ],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [{
-        regex: '(^|/)lib/db$', allowImportNames: ['clearLocalData', 'requestPersistentStorage'],
-        message: 'Screens read local data through src/lib (lib/localData.ts, lib/liveTasks.ts), not lib/db (web-layering).',
-      }] }],
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          regex: '(^|/)lib/db$', allowImportNames: ['clearLocalData', 'requestPersistentStorage'],
+          message: 'Screens read local data through src/lib (lib/localData.ts, lib/liveTasks.ts), not lib/db (web-layering).',
+        }],
+        // Every live read is a named hook in src/lib (wave 4, M5): shared snapshots
+        // where one exists (lib/localData.ts), else a hook beside its query.
+        paths: [{ name: 'dexie-react-hooks', message: 'Screens read live data through a named hook in src/lib (lib/localData.ts or beside the query), not useLiveQuery.' }],
+      }],
       'no-restricted-syntax': ['error', {
         selector: "MemberExpression[object.name='db']",
         message: 'Screens read local data through src/lib (lib/localData.ts, lib/liveTasks.ts), not the Dexie database (web-layering).',

@@ -26,11 +26,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/blobs"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/blobs"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/settings"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // inlineTypes are the media types served inline (design D6); everything else is
@@ -46,55 +46,17 @@ func inlineType(mt string) bool {
 	return inlineTypes[mt] || strings.HasPrefix(mt, "audio/") || strings.HasPrefix(mt, "video/")
 }
 
-// registerAttachmentRoutes mounts the routes and wires the blob store into sync.
+// registerAttachmentRoutes mounts the routes (services.Build wires the blob
+// store into sync and imports).
 func (s *Server) registerAttachmentRoutes(mux *routes) {
-	if s.blobs == nil && s.cfg.DataDir != "" {
-		b, err := blobs.New(s.cfg.DataDir)
-		if err != nil {
-			s.log.Error("attachments: file store unavailable", "err", err)
-		} else {
-			s.blobs = b
-		}
-	}
-	if s.blobs != nil {
-		s.sync.SetBlobStore(s.blobs)
-		s.importer.SetBlobs(s.blobs, func(ctx context.Context, uid string) (int64, int64, error) {
-			a, err := s.attachmentSettings(ctx)
-			if err != nil || !a.Enabled {
-				return 0, 0, err
-			}
-			left := int64(-1)
-			if q := a.QuotaBytes(); q > 0 {
-				used, err := s.attachmentUsage(ctx, uid)
-				if err != nil {
-					return 0, 0, err
-				}
-				left = max(0, q-used)
-			}
-			return a.MaxFileBytes(), left, nil
-		})
-	}
-	s.sync.SetAttachmentLimit(func() int64 {
-		a, err := s.attachmentSettings(context.Background())
-		if err != nil {
-			return 0
-		}
-		return a.MaxFileBytes()
-	})
-	if err := settings.New(s.sync.DB()).SeedAttachments(context.Background(), s.cfg.AttachmentsMaxFileMB, s.cfg.AttachmentsQuotaMB); err != nil {
-		s.log.Error("attachments: presets", "err", err)
-	}
-	if s.attachmentLimiter == nil {
-		s.attachmentLimiter = newRateLimiter(120, time.Hour)
-	}
-	mux.handle("GET /api/v1/settings/attachments", signedIn.demoDenied(), s.handleGetAttachmentSettings)
-	mux.handle("PUT /api/v1/settings/attachments", ownerOnly("manage the attachment settings").demoDenied(), s.handlePutAttachmentSettings)
-	mux.handle("GET /api/v1/tasks/{id}/attachments", signedIn.demoDenied(), s.handleListAttachments)
-	mux.handle("POST /api/v1/tasks/{id}/attachments", signedIn.demoDenied(), s.handleCreateAttachment)
-	mux.handle("PUT /api/v1/attachments/{id}/content", signedIn.demoDenied(), s.handleUploadAttachment)
-	mux.handle("GET /api/v1/attachments/{id}/content", signedIn.demoDenied(), s.handleAttachmentContent)
-	mux.handle("PATCH /api/v1/attachments/{id}", signedIn.demoDenied(), s.handleRenameAttachment)
-	mux.handle("DELETE /api/v1/attachments/{id}", signedIn.demoDenied(), s.handleRemoveAttachment)
+	mux.handle("GET /api/v1/settings/attachments", signedIn.DemoDenied(), s.handleGetAttachmentSettings)
+	mux.handle("PUT /api/v1/settings/attachments", ownerOnly("manage the attachment settings").DemoDenied(), s.handlePutAttachmentSettings)
+	mux.handle("GET /api/v1/tasks/{id}/attachments", signedIn.DemoDenied(), s.handleListAttachments)
+	mux.handle("POST /api/v1/tasks/{id}/attachments", signedIn.DemoDenied(), s.handleCreateAttachment)
+	mux.handle("PUT /api/v1/attachments/{id}/content", signedIn.DemoDenied(), s.handleUploadAttachment)
+	mux.handle("GET /api/v1/attachments/{id}/content", signedIn.DemoDenied(), s.handleAttachmentContent)
+	mux.handle("PATCH /api/v1/attachments/{id}", signedIn.DemoDenied(), s.handleRenameAttachment)
+	mux.handle("DELETE /api/v1/attachments/{id}", signedIn.DemoDenied(), s.handleRemoveAttachment)
 }
 
 // WithAttachmentRateLimit replaces the per-account upload limit (tests).
@@ -103,29 +65,12 @@ func WithAttachmentRateLimit(n int, window time.Duration) Option {
 }
 
 func (s *Server) attachmentSettings(ctx context.Context) (settings.Attachments, error) {
-	a, err := settings.New(s.sync.DB()).Attachments(ctx)
-	if s.demo != nil {
-		// The demo instance refuses every attachment route (design D15).
-		a.Enabled = false
-	}
-	return a, err
+	return s.set.AttachmentSettings(ctx)
 }
 
-// attachmentUsage is the bytes an account's live, uploaded attachments take
-// (design D5: the quota counts what the account authored).
+// attachmentUsage is the bytes an account's attachments take (services.Set.AttachmentUsage).
 func (s *Server) attachmentUsage(ctx context.Context, uid string) (int64, error) {
-	rows, err := s.sync.List(ctx, uid, "attachment", false)
-	if err != nil {
-		return 0, err
-	}
-	var total int64
-	for _, a := range rows {
-		if idOf(a["author_id"]) != uid || isNullish(a["uploaded_at"]) {
-			continue
-		}
-		total += int64(numberOf(a["size"]))
-	}
-	return total, nil
+	return s.set.AttachmentUsage(ctx, uid)
 }
 
 // attachmentInfo is the /me block and the GET settings body for a member.
@@ -151,7 +96,7 @@ func (s *Server) handleGetAttachmentSettings(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handlePutAttachmentSettings(w http.ResponseWriter, r *http.Request) {
-	store := settings.New(s.sync.DB())
+	store := s.settings
 	before, err := store.Attachments(r.Context())
 	if err != nil {
 		s.internal(w, err)
@@ -263,15 +208,32 @@ func (s *Server) checkRoom(w http.ResponseWriter, r *http.Request, a settings.At
 		return false
 	}
 	if q := a.QuotaBytes(); q > 0 {
-		used, err := s.attachmentUsage(r.Context(), userFrom(r.Context()).ID)
+		uid := userFrom(r.Context()).ID
+		// Uploads in progress hold their size until the request ends, so
+		// parallel uploads cannot each fit into the same free space
+		// (attachment-client-hardening D1).
+		s.uploadsMu.Lock()
+		defer s.uploadsMu.Unlock()
+		used, err := s.attachmentUsage(r.Context(), uid)
 		if err != nil {
 			s.internal(w, err)
 			return false
 		}
-		if used+size > q {
+		if used+s.uploading[uid]+size > q {
 			writeError(w, http.StatusForbidden, "quota_exceeded", fmt.Sprintf("this upload would go over your %d MB of attachments", a.QuotaMB))
 			return false
 		}
+		if s.uploading == nil {
+			s.uploading = map[string]int64{}
+		}
+		s.uploading[uid] += size
+		context.AfterFunc(r.Context(), func() {
+			s.uploadsMu.Lock()
+			defer s.uploadsMu.Unlock()
+			if s.uploading[uid] -= size; s.uploading[uid] <= 0 {
+				delete(s.uploading, uid)
+			}
+		})
 	}
 	return true
 }
@@ -296,15 +258,24 @@ func (s *Server) writeBlobError(w http.ResponseWriter, err error) {
 }
 
 // markUploaded writes uploaded_at as the author with device "server" and wakes devices.
+// markUploaded records the server's word that the file is stored. The op's
+// timestamp beats the device's own write of the field (its creation set
+// uploaded_at to null): a phone whose clock runs ahead of the server would
+// otherwise win last-writer-wins, the op would be dropped, and the file would
+// stay "uploading" on every device for good (issue #246).
 func (s *Server) markUploaded(ctx context.Context, uid, id string) error {
-	now := time.Now().UnixMilli()
-	res, err := s.sync.ApplyStrict(ctx, uid, []opsync.Op{{ID: ids.New(), Entity: "attachment", EntityID: id, Field: "uploaded_at",
-		Value: json.RawMessage(strconv.FormatInt(now, 10)), TS: s.opTS(), Device: serverDevice}})
+	now := s.now().UnixMilli()
+	fieldTS, err := s.sync.FieldTS(ctx, uid, "attachment", id, "uploaded_at")
 	if err != nil {
 		return err
 	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, serverDevice)
+	res, err := s.applyAs(ctx, uid, serverDevice, []opsync.Op{{ID: ids.New(), Entity: "attachment", EntityID: id, Field: "uploaded_at",
+		Value: json.RawMessage(strconv.FormatInt(now, 10)), TS: s.sync.ServerTSAt(max(now, fieldTS+1)), Device: serverDevice}})
+	if err != nil {
+		return err
+	}
+	if res.Applied == 0 {
+		return fmt.Errorf("attachment %s: uploaded_at was not applied", id)
 	}
 	return nil
 }
@@ -387,7 +358,9 @@ func (s *Server) handleAttachmentContent(w http.ResponseWriter, r *http.Request)
 	h.Set("Content-Disposition", disposition+"; filename*=UTF-8''"+url.PathEscape(name))
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cache-Control", "private, max-age=31536000, immutable")
+	// Revalidated on every use (a 304 while the ETag matches), so a file is
+	// never shown from the cache without a session (attachment-client-hardening D2).
+	h.Set("Cache-Control", "private, no-cache")
 	h.Set("ETag", `"`+idOf(a["sha256"])+`"`)
 	http.ServeContent(w, r, "", info.ModTime(), f)
 }
@@ -415,31 +388,17 @@ func (s *Server) handleRemoveAttachment(w http.ResponseWriter, r *http.Request) 
 	if _, ok := s.liveAttachment(w, r); !ok {
 		return
 	}
-	s.writeAttachment(w, r, r.PathValue("id"), map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))}, http.StatusNoContent)
+	s.writeAttachment(w, r, r.PathValue("id"), map[string]json.RawMessage{"deleted_at": json.RawMessage(strconv.FormatInt(s.now().UnixMilli(), 10))}, http.StatusNoContent)
 }
 
 // writeAttachment applies attachment fields as one strict REST write.
 func (s *Server) writeAttachment(w http.ResponseWriter, r *http.Request, id string, body map[string]json.RawMessage, status int) {
 	ctx := r.Context()
 	uid := userFrom(ctx).ID
-	res, err := s.sync.ApplyStrict(ctx, uid, fieldOps("attachment", id, body, s.opTS()))
-	if err != nil {
-		var rej *opsync.RejectedError
-		switch {
-		case writeLimited(w, err):
-		case errors.Is(err, opsync.ErrInvalidOp):
-			writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonTooLarge:
-			writeError(w, http.StatusRequestEntityTooLarge, "attachment_too_large", "the file is larger than this server allows")
-		case errors.As(err, &rej):
-			writeError(w, http.StatusForbidden, "forbidden", "only the author can change an attachment; the author, project admins and the owner can remove it")
-		default:
-			s.internal(w, err)
-		}
+	if _, ok := s.applyREST(w, ctx, uid, fieldOps("attachment", id, body, s.opTS()),
+		"only the author can change an attachment; the author, project admins and the owner can remove it",
+		refusals{opsync.ReasonTooLarge: refuse(http.StatusRequestEntityTooLarge, "attachment_too_large", "the file is larger than this server allows")}); !ok {
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, serverDevice)
 	}
 	if status == http.StatusNoContent {
 		w.WriteHeader(status)
@@ -487,7 +446,7 @@ func (s *Server) handleCreateAttachment(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	body := map[string]json.RawMessage{
 		"task_id": mustJSON(taskID), "author_id": mustJSON(uid), "comment_id": json.RawMessage("null"),
 		"encrypted": json.RawMessage("false"), "created_at": json.RawMessage(strconv.FormatInt(now, 10)),
@@ -537,27 +496,13 @@ func (s *Server) handleCreateAttachment(w http.ResponseWriter, r *http.Request) 
 			ops[i].ID = idemOpID(id, ops[i].Field)
 		}
 	}
-	res, err := s.sync.ApplyStrict(ctx, uid, ops)
-	if err != nil {
+	if _, ok := s.applyREST(w, ctx, uid, ops, "you cannot attach files to this task or comment",
+		refusals{opsync.ReasonTooLarge: refuse(http.StatusRequestEntityTooLarge, "attachment_too_large",
+			fmt.Sprintf("files may be at most %d MB on this server", cfg.MaxFileMB))}); !ok {
 		if stored {
 			_ = s.blobs.Remove(id)
 		}
-		var rej *opsync.RejectedError
-		switch {
-		case writeLimited(w, err):
-		case errors.Is(err, opsync.ErrInvalidOp):
-			writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonTooLarge:
-			writeError(w, http.StatusRequestEntityTooLarge, "attachment_too_large", fmt.Sprintf("files may be at most %d MB on this server", cfg.MaxFileMB))
-		case errors.As(err, &rej):
-			writeError(w, http.StatusForbidden, "forbidden", "you cannot attach files to this task or comment")
-		default:
-			s.internal(w, err)
-		}
 		return
-	}
-	if res.Applied > 0 {
-		s.sync.NotifyApplied(res, serverDevice)
 	}
 	a, err := s.sync.Get(ctx, uid, "attachment", id)
 	if err != nil || a == nil {
@@ -667,6 +612,8 @@ func (s *Server) writeExportZip(w http.ResponseWriter, r *http.Request, doc map[
 		s.log.Error("export zip: document", "err", err)
 		return
 	}
+	// The account's profile picture (settings-refresh D10).
+	s.exportAvatar(zw, userFrom(r.Context()).ID)
 	if s.blobs == nil {
 		return
 	}

@@ -11,37 +11,37 @@ order: 10
 ## Docker Compose
 
 ```bash
-git clone https://github.com/pixari/opentodo.git
-cd opentodo
+git clone https://github.com/OpenTodoApp/OpenTodo.git
+cd OpenTodo
 cp .env.example .env        # optional
 docker compose up -d
 ```
 
-Open <http://localhost:8080>. The first visitor creates the owner account. From this machine or your local network (loopback and private addresses) that is all.
+Open <http://localhost:8080>. The first visitor creates the owner account. On a server reachable from the internet, finish setup right after starting it, or set `OPENTODO_SETUP_CODE=required`. Until the owner exists, the log repeats at every start that the first person to open the server becomes its owner.
 
 ### The setup code
 
-Opened from a public address while no owner exists, the setup screen asks for a **setup code**, so nobody on the internet can claim a fresh server before you do. The server generates the code when it starts without an owner and prints it once in its log:
+The setup code is off by default. Set `OPENTODO_SETUP_CODE=required` (in `.env`, or `-e OPENTODO_SETUP_CODE=required`) to turn it on: then, while no owner exists, the setup screen asks for a **setup code** when it is opened from another machine or through a reverse proxy, so nobody can claim a fresh server before you do. Your local network is not exempt: behind Docker's port publishing, a NAT or a rootless container, a visitor from the internet can look like a local address. Only a browser on the server itself, connecting directly, needs no code. The server generates the code when it starts without an owner and prints it once in its log:
 
 ```bash
 docker logs opentodo            # or: docker compose logs opentodo
 ```
 
 ```text
-level=WARN msg="No owner account exists yet. To create it from outside this server's local network, enter this setup code on the setup screen: ABCD-EFGH-IJKL-MNOP (from this machine or a private network no code is needed)." setup_code=ABCD-EFGH-IJKL-MNOP
+level=WARN msg="No owner account exists yet. To create it from another machine, enter this setup code on the setup screen: ABCD-EFGH-IJKL-MNOP (only a browser on this machine itself, without a proxy, needs no code)." setup_code=ABCD-EFGH-IJKL-MNOP
 ```
 
 Type it into the **Setup code** field (case and dashes do not matter). It works once: as soon as the owner exists it is discarded, and a restart without an owner prints a new one. Attempts count against the registration rate limit. On a platform without a terminal, open the container's logs in its panel.
 
-Instead of the code you can set `OPENTODO_SETUP_TOKEN` (16+ characters) in `.env`, a secret you choose: the setup screen then asks for it from every address, including your own network, and no code is printed. It has no effect once the owner exists.
+Instead of the code you can set `OPENTODO_SETUP_TOKEN` (16+ characters) in `.env`, a secret you choose: the setup screen then asks for it from every address, including your own network, and no code is printed, whatever `OPENTODO_SETUP_CODE` says. Neither has an effect once the owner exists. Any value of `OPENTODO_SETUP_CODE` other than `required`, `off` or empty stops the server at startup with a message naming the variable.
 
-To add more people, keep sign-up closed and create single-use invitation links in **Settings → People → Members** (see [Adding people](../../README.md#adding-people)). `OPENTODO_ALLOW_SIGNUP=true` opens registration to anyone who can reach the server and is rarely what you want on a public URL. If you do open it, configure [outgoing email](outgoing-email.md) too: new accounts are then created only after the person confirms their address through a mailed link.
+To add more people, keep sign-up closed and create single-use invitation links in **Settings → People → Users and invitations** (see [Adding people](../../README.md#adding-people)). `OPENTODO_ALLOW_SIGNUP=true` opens registration to anyone who can reach the server and is rarely what you want on a public URL. If you do open it, configure [outgoing email](outgoing-email.md) too: new accounts are then created only after the person confirms their address through a mailed link.
 
 - Data lives in the named volume `opentodo-data`, mounted at `/data`.
 - Change the host port with `OPENTODO_PORT` in `.env`, and the host address it is published on with `OPENTODO_BIND` (default `0.0.0.0`, every interface, so other devices on your network reach it). Behind a reverse proxy on the same machine, `OPENTODO_BIND=127.0.0.1` is the safer choice: only the proxy reaches the server.
 - Every variable in the [configuration table](../../README.md#configuration) can be set in `.env`; the compose file passes them to the container. With `docker run`, pass them with `-e`.
-- The compose file pulls `ghcr.io/pixari/opentodo:stable`, which every release moves. To stay on one release line use `:0.9` (its fixes only), to pin one version `:0.9.0`; `:latest` follows the main branch and carries unreleased changes; it reports its version as `dev+<commit>`, the commit it was built from. The running version is shown in **Settings → About**, at the bottom of the sign-in screen, at `/healthz` and in the startup log line `opentodo listening`.
-- To build locally instead of pulling: replace `image: ghcr.io/pixari/opentodo:stable` with `build: .`.
+- The compose file pulls `ghcr.io/opentodoapp/opentodo:stable`, which every release moves. To stay on one release line use `:0.18` (its fixes only), to pin one version `:0.18.1`; `:latest` follows the main branch and carries unreleased changes; it reports its version as `dev+<commit>`, the commit it was built from. The running version is shown in **Settings → About**, at the bottom of the sign-in screen, at `/healthz` and in the startup log line `opentodo listening`.
+- To build locally instead of pulling: replace `image: ghcr.io/opentodoapp/opentodo:stable` with `build: .`.
 
 ## Plain `docker run`
 
@@ -50,7 +50,7 @@ docker run -d --name opentodo \
   -p 8080:8080 \
   -v opentodo-data:/data \
   -e OPENTODO_BASE_URL=https://todo.example.com \
-  ghcr.io/pixari/opentodo:stable
+  ghcr.io/opentodoapp/opentodo:stable
 ```
 
 ## Behind a reverse proxy
@@ -79,13 +79,17 @@ The owner also sees a **Server configuration warning** at the top of **Settings*
 
 [Email to task](../email.md) needs no port, proxy rule or DNS record: OpenTodo makes one outbound IMAP connection (TLS, port 993 by default) to the mailbox you configure with `OPENTODO_EMAIL_*`. If your host restricts outbound traffic, allow that one host and port. Keep the password in a Docker secret and point `OPENTODO_EMAIL_IMAP_PASSWORD_FILE` at it (example in the guide).
 
+### Behind a login wall (Pangolin, Authelia, Authentik, Cloudflare Access, oauth2-proxy)
+
+OpenTodo has its own sign-in (password, passkeys, two-factor, [single sign-on](sso.md)), so a login wall in front of it is optional. If you keep one, browsers and the installed web app pass it like any other site, and the [Android app](../android-app.md#behind-a-login-page-pangolin-authelia-and-others) signs in to it inside the app. Give the wall a long session, or let it bypass the paths the app fetches without a page (`/healthz`, `/api/*`, the service worker and manifest files); the Android guide lists them. Calendar apps, AI assistants and calendar feeds can't pass a login page at all: bypass `/dav/`, `/.well-known/caldav`, `/mcp` and `/feeds/*` if you use them.
+
 ### Calendar apps (CalDAV) through the proxy
 
 When the owner enables [CalDAV](../caldav.md), calendar apps use `/dav/` and `/.well-known/caldav` with WebDAV methods (`PROPFIND`, `REPORT`, `MKCALENDAR`, `PROPPATCH`). Most proxies (Caddy, Traefik, nginx) forward them unchanged; make sure no rule limits methods to GET/POST or blocks `/.well-known/`, and that the `Authorization` header is passed through. App passwords travel in every request, so serve CalDAV over https only.
 
 ### Passkeys need an https base URL
 
-Passkeys (Settings → Account → Passkeys) are only offered when `OPENTODO_BASE_URL` is an `https://` URL; browsers refuse WebAuthn on plain-http origins. With no base URL or an `http://` LAN address, the server keeps working with passwords and simply hides passkeys (`auth/status` reports `passkeysAvailable: false`). For local development `http://localhost:8080` also works, because browsers treat localhost as secure.
+Passkeys (Settings → Account → Security → Passkeys) are only offered when `OPENTODO_BASE_URL` is an `https://` URL; browsers refuse WebAuthn on plain-http origins. With no base URL or an `http://` LAN address, the server keeps working with passwords and simply hides passkeys (`auth/status` reports `passkeysAvailable: false`). For local development `http://localhost:8080` also works, because browsers treat localhost as secure.
 
 On a plain-http network address (for example `http://192.168.1.10:8080` on a NAS or home server) tasks, projects, sync, sharing and attachments all work. A few features need what browsers only offer over HTTPS or on localhost: installing the app and working offline, push notifications, passkeys and end-to-end encryption. Put the server behind a reverse proxy with a certificate, or a tool such as Tailscale with HTTPS, to use them.
 
@@ -119,6 +123,10 @@ Troubleshooting "live updates disconnected" (the status pill says **Polling** in
 2. If it works but drops after a fixed time, a timeout somewhere in the chain is shorter than the heartbeat; raise it above 25 s.
 3. Nothing is lost either way: while the stream is down the app polls every 30 s exactly as before.
 
+### "Method not allowed" or "unknown API route" from a test or save
+
+A 405 `method_not_allowed` ("GET is not allowed on /api/v1/…; use POST") means the request reached OpenTodo with another method than the app sent. Almost always a redirect in front of it did that: a 301 or 302 turns a `POST` into a `GET`. Proxy `/api/` without redirects, or use 307 or 308, which keep the method. A 404 "unknown API route" names the method and path the server received; a trailing slash or a rewritten path shows up there.
+
 ## Reminders and web push
 
 Reminders are shown in the app on every device and, for devices that enable notifications in **Settings → Notifications**, sent as web push so a closed app still notifies. Nothing needs configuring: on first use the server generates a VAPID key pair at `<data>/push_vapid.pem` (mode 0600). Keep it with the database: it is included in backup archives and restored with them, and existing subscriptions only work with the key they were created for.
@@ -143,6 +151,8 @@ When it is on, the server makes outbound HTTPS requests only to the provider the
 | Compatible endpoint | the base URL the owner entered |
 
 If your host restricts outbound traffic, allow that one host (or all three built-in hosts when members may use their own provider). Members can never enter a base URL. Requests to the three built-in hosts honour the usual `HTTPS_PROXY` environment variable. A compatible base URL is checked like a webhook target: it is resolved before every connection, private, loopback, link-local and cloud-metadata addresses are refused unless the owner ticks **Allow private endpoints** (needed for Ollama or LM Studio on your network), the connection goes to the address that was checked, redirects are never followed, and no proxy is used. Requests carry the conversation and the task data the assistant reads, nothing about your instance or other users.
+
+The **on-device assistant for encrypted accounts** (off by default) makes no server request at all: the person's browser calls the provider they set up, with their own key. While the owner allows it, the page's Content-Security-Policy lets the app connect to the allowed providers' API origins and the model server origins the owner listed, so a proxy or browser policy that rewrites `Content-Security-Policy` must keep that `connect-src`. See [Assistant owner options](../assistant-owner-options.md#on-device-assistant-for-encrypted-accounts).
 
 The answer streams to the browser as server-sent events on `POST /api/v1/assistant/turn`, like the live updates stream: a proxy that buffers responses delays the answer until it is complete (see [Live updates through the proxy](#live-updates-through-the-proxy) for the same settings). The server logs one line per answer with the provider, whether it ran on the member's own key, outcome, duration and token counts, never questions, answers or task text. Turns are limited to 8 at a time on the server, one per person, and each person's monthly token allowance (answers on a member's own key are outside the allowance unless the owner counts them).
 
@@ -177,7 +187,7 @@ Deleted tasks and projects stay in the Trash, restorable, for 30 days; then the 
 
 ## Audit log
 
-The owner sees an audit log of sign-ins, failed sign-ins, sign-outs, credentials (API tokens, app passwords, passkeys, second factors), invitations, user administration, exports, backups and setting changes in **Settings → Account → Audit log** (API: [docs/api.md](../api.md#audit-log)). It is stored in `opentodo.db` inside `/data`, so it is part of every backup of the volume, and it never contains task content. Nothing needs configuring:
+The owner sees an audit log of sign-ins, failed sign-ins, sign-outs, credentials (API tokens, app passwords, passkeys, second factors), invitations, user administration, exports, backups and setting changes in **Settings → Server → Audit log** (API: [docs/api.md](../api.md#audit-log)). It is stored in `opentodo.db` inside `/data`, so it is part of every backup of the volume, and it never contains task content. Nothing needs configuring:
 
 - **Retention** defaults to 90 days (7–3650, set in Settings). Expired events are pruned at startup, hourly and right after you lower the retention.
 - **Client addresses** are not recorded unless you turn on address logging in Settings. Behind a trusted reverse proxy the address is the nearest untrusted `X-Forwarded-For` hop (the one the proxy appended; see [Which proxies are believed](#behind-a-reverse-proxy)), so make sure the proxy sets that header (Caddy, Traefik and nginx with `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` do). Turning address logging off erases every stored address immediately.
@@ -186,7 +196,7 @@ The owner sees an audit log of sign-ins, failed sign-ins, sign-outs, credentials
 
 ## Two-factor authentication
 
-Users turn on two-factor authentication in **Settings → Account → Two-factor authentication**. The owner can require it for themselves or for every account there. Nothing needs configuring, but two things are worth knowing:
+Users turn on two-factor authentication in **Settings → Account → Security → Two-factor authentication**. The owner can require it for themselves or for every account there. Nothing needs configuring, but two things are worth knowing:
 
 - **Keep the host clock right.** Codes are checked against the server's own clock with 30 seconds of tolerance either way, so a host that drifts by a minute or more rejects valid codes. Docker uses the host's clock: make sure the host runs NTP (`timedatectl` should report `System clock synchronized: yes`; Raspberry Pi OS and every major distribution do this by default). The enrolment step catches large drift straight away with a "code does not match" message.
 - **Owner locked out.** If the owner loses both their authenticator and their recovery codes, reset the second factor from the host while the container is stopped, then sign in with the password and enrol again:
@@ -201,7 +211,7 @@ Users turn on two-factor authentication in **Settings → Account → Two-factor
 
 ## Managing users
 
-The owner sees every account in **Settings → People → Users** with its role, status and last sign-in ([docs/api.md](../api.md#user-administration)). From there the owner makes trusted people **admins** (they can invite, and deactivate, reset or delete members, but never act on the owner or other admins), **deactivates** an account (signed out everywhere at once, API tokens and pending invitations revoked, data kept, sign-in blocked until reactivated), creates a **password reset link** for someone who forgot their password (single use, 24 hours, nothing is emailed: copy it and send it yourself), **deletes** an account and its data after typing its email, or **transfers ownership** to another account after re-entering the password (you become an admin). Every user changes their own password in **Settings → Account → Password**. Nothing needs configuring and no SQLite editing is ever needed.
+The owner sees every account in **Settings → People → Users and invitations** with its role, status and last sign-in ([docs/api.md](../api.md#user-administration)). From there the owner makes trusted people **admins** (they can invite, and deactivate, reset or delete members, but never act on the owner or other admins), **deactivates** an account (signed out everywhere at once, API tokens and pending invitations revoked, data kept, sign-in blocked until reactivated), creates a **password reset link** for someone who forgot their password (single use, 24 hours, nothing is emailed: copy it and send it yourself), **deletes** an account and its data after typing its email, or **transfers ownership** to another account after re-entering the password (you become an admin). Every user changes their own password in **Settings → Account → Security → Password**. Nothing needs configuring and no SQLite editing is ever needed.
 
 ### Recovering owner access
 
@@ -222,27 +232,39 @@ The command needs only the data volume: shell access to the host is the proof of
 
 **Upgrading from 0.1.0 to 0.2.0:** 0.1.0 locked the data directory exclusively, so a 0.2.0 container cannot start beside it. Plain `docker compose up -d` already stops the old container first and needs nothing special. With an orchestrator that starts the new container first, stop the old one for this one upgrade (`docker compose down && docker compose up -d`, or **Stop** then **Deploy** in Coolify); from 0.2.0 on, updates roll without stopping. If you pinned a tag such as `ghcr.io/pixari/opentodo:0.1`, change it to `0.2` (or `0.2.0`).
 
+**Upgrading to 0.19:** a database created by an earlier version is rewritten once, at a quiet moment, so the file can shrink after old note versions are removed. It needs free disk space of the database's size plus 10 % and takes about as long as a backup; writes wait meanwhile. See [Database size and compaction](../backups.md#database-size-and-compaction).
+
+### The move to OpenTodoApp
+
+The project moved from the GitHub account `pixari` to the organization [OpenTodoApp](https://github.com/OpenTodoApp) after 0.14.2. The image is now **`ghcr.io/opentodoapp/opentodo`** (the Helm chart `oci://ghcr.io/opentodoapp/charts/opentodo`), with the same tags: `stable`, `<major>.<minor>`, `<version>` and `latest`. GitHub redirects the old repository addresses; the container registry does not.
+
+The old name `ghcr.io/pixari/opentodo` (and `oci://ghcr.io/pixari/charts/opentodo`) keeps getting every image and chart, with the same digests and signed, **through the 0.16 releases**. From 0.17.0 it is no longer updated, so switch before then: replace `ghcr.io/pixari/opentodo` with `ghcr.io/opentodoapp/opentodo` in your `docker-compose.yml`, `docker run` command, Quadlet file or platform template, then pull as usual. Nothing else changes: same tags, same data volume, same configuration. Releases up to 0.14.2 were published under the old name only; 0.14.2 was copied to the new one with the same digest, so a pin such as `ghcr.io/pixari/opentodo:0.14.2@sha256:…` can move to the new name unchanged.
+
+For maintainers: the CI jobs that publish the image (`docker` in `ci.yml`), the `Promote stable` workflow and the Helm chart publish also push to the old names with `scripts/legacy-image.sh`. Packages owned by the user `pixari` may refuse the organization's `GITHUB_TOKEN`; the repository secret `GHCR_LEGACY_TOKEN`, a classic personal access token of `pixari` with the `write:packages` scope, is used when it is set. A refused legacy push prints a warning and never fails a release. The window is `legacy.publishedThrough` in [`deploy/deploy.json`](../../deploy/deploy.json).
+
 ## Verifying the image and downloads
 
 From 0.7.0, releases are signed and carry their build record. The image is signed with [cosign](https://docs.sigstore.dev/) without a long-lived key: the signature names the GitHub workflow and tag that built it. Check it before you deploy a new version:
 
 ```bash
-cosign verify ghcr.io/pixari/opentodo:<version> \
+cosign verify ghcr.io/opentodoapp/opentodo:<version> \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github\.com/pixari/opentodo/\.github/workflows/ci\.yml@refs/(tags/v|heads/main)'
+  --certificate-identity-regexp '^https://github\.com/(?i:OpenTodoApp/OpenTodo|pixari/OpenTodo)/\.github/workflows/ci\.yml@refs/(tags/v|heads/main)'
 ```
+
+Releases up to 0.14.2 were built before [the move to OpenTodoApp](#the-move-to-opentodoapp) and their signatures name `pixari/OpenTodo`; the expression accepts both. The same command works on `ghcr.io/pixari/opentodo:<version>` while that name is still updated.
 
 The image also carries a software bill of materials (SBOM) and SLSA build provenance. To read them:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/pixari/opentodo:<version> --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/pixari/opentodo:<version> --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/opentodoapp/opentodo:<version> --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/opentodoapp/opentodo:<version> --format '{{ json .Provenance }}'
 ```
 
 Every file on a GitHub release (server and `ot` binaries, the extension and agent skill zips, the site bundle) has a build provenance attestation. Verify a download with the GitHub CLI, and compare it with `SHA256SUMS`:
 
 ```bash
-gh attestation verify opentodo-linux-amd64 --repo pixari/opentodo
+gh attestation verify opentodo-linux-amd64 --repo OpenTodoApp/OpenTodo
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
@@ -254,4 +276,4 @@ Before an image is published, CI starts it the way Coolify does (health check, o
 
 ## Resource usage
 
-Idle memory is around 20 MB (18 MB measured on a fresh instance); the static binary is about 23 MB with the web app embedded, and the image adds only the distroless base (about 2 MB). A Raspberry Pi 3 or any 1 vCPU / 512 MB VPS is plenty.
+Idle memory is around 20 MB (18 MB measured on a fresh instance); the static binary is about 34 MB with the web app embedded, and the image adds only the distroless base (about 5 MB, most of it time-zone data); a pull downloads about 13 MB. A Raspberry Pi 3 or any 1 vCPU / 512 MB VPS is plenty.

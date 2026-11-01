@@ -138,6 +138,13 @@ describe('ProjectInviteView', () => {
     }
   })
 
+  it('says whom to ask when the project is in a workspace the account is not in (workspaces 6.3)', () => {
+    const html = screen({ kind: 'ready', preview: { ...preview, alreadyMember: false } }, { user: bob, join: { kind: 'not-in-workspace' } })
+    expect(html).toContain('Ask the workspace owner to add you first')
+    expect(html).not.toContain('Join project')
+    expect(html).toContain('Back to my tasks')
+  })
+
   it('warns when the link is bound to another email', () => {
     const html = screen({ kind: 'ready', preview: { ...preview, email: 'dora@example.com' } }, { user: bob })
     expect(html).toContain('issued for dora@example.com')
@@ -149,7 +156,9 @@ describe('ProjectInviteView', () => {
     expect(screen({ kind: 'invalid' })).toContain('no longer valid')
     expect(screen({ kind: 'offline' })).toContain('Retry now')
     expect(screen({ kind: 'rate-limited' })).toContain('Too many attempts')
-    expect(screen({ kind: 'loading' })).toContain('Checking')
+    // A quick answer swaps no card: "Checking…" shows only after 400 ms (motion-polish D2).
+    expect(screen({ kind: 'loading' })).toContain('aria-busy="true"')
+    expect(screen({ kind: 'loading' })).not.toContain('Checking')
   })
 })
 

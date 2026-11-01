@@ -7,11 +7,10 @@ import { applyCatalog } from '../lib/i18n/catalog'
 import it_ from '../locales/it.json'
 import { IconPicker } from './IconPicker'
 import { loadCatalogue } from './icons/catalogue'
-import { flush, key, render, type, waitFor } from './test-utils'
+import { key, render, type, waitFor } from './test-utils'
 
 afterEach(() => {
   applyCatalog('en', 'en', {})
-  document.body.innerHTML = ''
 })
 
 const field = () => document.querySelector<HTMLInputElement>('[data-icon-picker] input[role="combobox"]')!
@@ -25,7 +24,7 @@ describe('IconPicker', () => {
     await waitFor(() => document.querySelector('[data-icon-option="briefcase"]') !== null, 'catalogue rendered')
     expect(document.querySelector('[data-icon-option="none"]')?.getAttribute('aria-selected')).toBe('true')
     await type(field(), 'dog')
-    await flush(10)
+    await waitFor(() => document.querySelector('[data-icon-option]')?.getAttribute('data-icon-option') === 'dog', 'the search results')
     const listed = [...document.querySelectorAll('[data-icon-option]')].map((o) => o.getAttribute('data-icon-option'))
     expect(listed[0]).toBe('dog')
     expect(listed).toContain('paw-print')
@@ -64,7 +63,7 @@ describe('IconPicker', () => {
     const r = await render(<IconPicker value={null} onPick={() => {}} />)
     await waitFor(() => document.querySelector('[data-icon-option="briefcase"]') !== null, 'catalogue rendered')
     await type(field(), 'cibo')
-    await flush(10)
+    await waitFor(() => !!document.querySelector('[data-icon-picker] [role="listbox"] > [role="group"][aria-label="Cibo"]'), 'the Italian group')
     const groups = [...document.querySelectorAll('[data-icon-picker] [role="listbox"] > [role="group"]')].map((g) => g.getAttribute('aria-label'))
     expect(groups).toContain('Cibo')
     expect(document.querySelector('[data-icon-option="pizza"]')).not.toBeNull()

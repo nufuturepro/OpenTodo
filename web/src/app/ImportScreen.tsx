@@ -3,18 +3,22 @@ import { Skeleton } from '../ui'
 import { requestTemplateDialog } from './TemplateDialogs'
 import { ProjectPickerField } from './ProjectPickerField'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiError, isNetworkError } from '../lib/api'
-import { useProjects } from '../lib/localData'
+import { api, isNetworkError } from '../lib/api'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
+import { useProjectsOfEveryWorkspace, useWorkspaceState } from '../lib/localData'
 import { visibleProjects } from '../lib/projects'
+import { projectsIn } from '../lib/workspaces'
 import { applyImportViewHints } from '../lib/sections'
 import { useOnline } from '../lib/online'
 import { syncNow, useSyncStatus } from '../lib/sync'
 import {
-  IMPORT_FORMATS, type ImportFormat, type ImportJob, type ImportOptions, type ImportPreview, type ImportRow, type Project,
+  IMPORT_FORMATS, type ImportFormat, type ImportJob, type ImportOptions, type ImportPreview, type ImportRow, type Project, type Workspace,
 } from '../lib/types'
 import { navigate } from './router'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t, msg, translatedMap } from '../lib/i18n'
+import { readJSON, writeJSON } from '../lib/deviceStorage'
 
 /** Last fetched job list, kept per device so past summaries stay readable offline. */
 const JOBS_CACHE_KEY = 'opentodo.importJobs'
@@ -29,6 +33,12 @@ const FORMAT_LABELS = translatedMap<ImportFormat>({
   'things-db': msg('Things 3 database'),
   'ticktick-csv': msg('TickTick backup (CSV)'),
   'linear-csv': msg('Linear export (CSV)'),
+  'google-tasks-json': msg('Google Tasks (Takeout JSON)'),
+  'trello-json': msg('Trello board (JSON)'),
+  'asana-csv': msg('Asana project (CSV)'),
+  'microsoft-todo-json': msg('Microsoft To Do (JSON from the PowerShell script)'),
+  'apple-reminders-json': msg('Apple Reminders (JSON from the Shortcut)'),
+  'anydo-json': msg('Any.do (JSON from a data request)'),
   'json-items': msg('JSON: projects / sections / items'),
   'json-lists': msg('JSON: lists of tasks'),
   'json-generic': msg('JSON: task list'),
@@ -60,23 +70,14 @@ function timeZones(): string[] {
 }
 
 function readCachedJobs(): ImportJob[] | null {
-  try {
-    const raw = localStorage.getItem(JOBS_CACHE_KEY)
-    return raw ? (JSON.parse(raw) as ImportJob[]) : null
-  } catch {
-    return null
-  }
+  return readJSON<ImportJob[] | null>(JOBS_CACHE_KEY, null)
 }
 
 function cacheJobs(jobs: ImportJob[]) {
-  try {
-    localStorage.setItem(JOBS_CACHE_KEY, JSON.stringify(jobs))
-  } catch {
-    // Storage may be unavailable (private mode); the list is only a convenience.
-  }
+  writeJSON(JOBS_CACHE_KEY, jobs) // storage may be unavailable (private mode); the list is only a convenience
 }
 
-export const DEFAULT_OPTIONS: Required<Omit<ImportOptions, 'format' | 'targetProject'>> = {
+export const DEFAULT_OPTIONS: Required<Omit<ImportOptions, 'format' | 'targetProject' | 'workspace'>> = {
   timeZone: 'UTC', sections: 'section', duplicates: 'skip', errors: 'skip_rows', existing: 'skip',
 }
 
@@ -86,6 +87,14 @@ export interface ImportViewProps {
   format: ImportFormat | ''
   options: typeof DEFAULT_OPTIONS & { targetProject: string }
   projects: Project[]
+  /**
+   * The account's workspaces (OpenSpec change import-workspace); the choice is
+   * shown only with more than one. `workspace` is the chosen id, '' for "As in
+   * the export" (own exports only).
+   */
+  workspaces: Workspace[]
+  workspace: string
+  onWorkspace: (id: string) => void
   zones: string[]
   preview: ImportPreview | null
   busy: boolean
@@ -107,8 +116,19 @@ function Totals({ t: item }: { t: ImportPreview['totals'] }) {
     item.newProjects ? t('{n, plural, one {# new project} other {# new projects}}', { n: item.newProjects }) : '', item.newLabels ? t('{n, plural, one {# new label} other {# new labels}}', { n: item.newLabels }) : '',
     item.newSections ? t('{n, plural, one {# new section} other {# new sections}}', { n: item.newSections }) : '', item.recurring ? t('{n} recurring', { n: item.recurring }) : '',
     item.reminders ? t('{n, plural, one {# reminder} other {# reminders}}', { n: item.reminders }) : '', item.deadlines ? t('{n} with deadlines', { n: item.deadlines }) : '',
+    item.fields ? t('{n, plural, one {# new field} other {# new fields}}', { n: item.fields }) : '',
   ].filter(Boolean)
   return <p className="text-body text-muted">{t('{n, plural, one {# row} other {# rows}}: {summary}', { n: item.rows, summary: parts.join(' · ') })}</p>
+}
+
+/** The preview's line naming the target workspace ("3 new projects into Work"). */
+export function workspaceLine(preview: ImportPreview, workspaces: readonly Workspace[], id: string): string {
+  const w = workspaces.length > 1 ? workspaces.find((x) => x.id === id) : undefined
+  if (!w) return ''
+  const n = preview.totals.newProjects
+  return n > 0
+    ? t('{n, plural, one {# new project} other {# new projects}} into {workspace}', { n, workspace: w.name })
+    : t('Everything goes into {workspace}', { workspace: w.name })
 }
 
 function jobSummary(j: ImportJob): string {
@@ -126,6 +146,7 @@ export function ImportView(p: ImportViewProps) {
   const disabled = p.offline || p.busy
   const isOwn = (p.format || p.preview?.format) === 'opentodo'
   const actionable = p.preview ? p.preview.totals.create + p.preview.totals.update : 0
+  const into = p.preview ? workspaceLine(p.preview, p.workspaces, p.workspace) : ''
   return (
     <PageBody width="list" className="space-y-6">
       <PageHeader title={t('Import data')} help="import" back={{ label: t('Data'), href: '/settings/data', onClick: () => navigate({ view: 'settings', section: 'data' }) }} />
@@ -155,9 +176,18 @@ export function ImportView(p: ImportViewProps) {
               {IMPORT_FORMATS.map((f) => <option key={f} value={f}>{FORMAT_LABELS[f]}</option>)}
             </select>
           </label>
+          {p.workspaces.length > 1 && (
+            <label className="text-body">
+              <span className="mb-1 block text-muted">{t('Workspace')}</span>
+              <select className="ui-input" value={p.workspace} disabled={disabled} onChange={(e) => p.onWorkspace(e.target.value)} data-import-workspace>
+                {(isOwn || p.workspace === '') && <option value="">{t('As in the export')}</option>}
+                {p.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </label>
+          )}
           <div className="text-body">
             <span className="mb-1 block text-muted" aria-hidden>{t('Tasks without a project go to')}</span>
-            <ProjectPickerField label={t('Tasks without a project go to')} projects={p.projects} value={o.targetProject || null} disabled={disabled}
+            <ProjectPickerField label={t('Tasks without a project go to')} projects={p.projects} value={p.projects.some((x) => x.id === o.targetProject) ? o.targetProject : null} disabled={disabled}
               onChange={(id) => p.onOption('targetProject', id ?? '')} rankContext="import.target" />
           </div>
           <label className="text-body">
@@ -229,6 +259,7 @@ export function ImportView(p: ImportViewProps) {
             {t('Preview · {format}', { format: FORMAT_LABELS[p.preview.format] })}{p.preview.version ? ` v${p.preview.version}` : ''}
           </h2>
           <Totals t={p.preview.totals} />
+          {into && <p className="text-body" data-import-into>{into}</p>}
           {p.preview.template && (
             <p className="text-body text-muted" data-template-hint>
               {t('This file is a template. Importing it creates it once, with the ids and dates in the file. To start a fresh copy with dates moved to a start day, use')}{' '}
@@ -294,19 +325,31 @@ export function ImportView(p: ImportViewProps) {
   )
 }
 
+function describe(err: unknown): string {
+  return errorText(err, { capitalise: false, offline: t('The server could not be reached. Import needs a connection.') })
+}
+
 /** Settings → Import: owns the state, talks to the server and polls the running job. */
 export function ImportScreen() {
   const online = useOnline()
   const sync = useSyncStatus()
   const offline = !online || sync.state === 'offline'
-  const live = useProjects()
-  const projects = useMemo(() => visibleProjects(live).sort((a, b) => a.name.localeCompare(b.name)), [live])
+  const every = useProjectsOfEveryWorkspace()
+  const wsState = useWorkspaceState()
   const [file, setFile] = useState<File | null>(null)
   const [format, setFormat] = useState<ImportFormat | ''>('')
+  // null until the user picks: the current workspace, or "As in the export" for an own export.
+  const [workspaceChoice, setWorkspaceChoice] = useState<string | null>(null)
+  const [detected, setDetected] = useState<ImportFormat | null>(null)
+  const isOwn = (format || detected) === 'opentodo'
+  const workspace = workspaceChoice ?? (isOwn ? '' : wsState.current)
+  const projects = useMemo(() => {
+    const here = projectsIn({ ...wsState, current: workspace || wsState.current }, every)
+    return visibleProjects(here).sort((a, b) => a.name.localeCompare(b.name))
+  }, [every, wsState, workspace])
   const [options, setOptions] = useState<ImportViewProps['options']>({ ...DEFAULT_OPTIONS, timeZone: browserTimeZone(), targetProject: '' })
   const [preview, setPreview] = useState<ImportPreview | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction({ describe })
   const [job, setJob] = useState<ImportJob | null>(null)
   const [jobs, setJobs] = useState<ImportJob[] | null>(() => readCachedJobs())
   const [zones] = useState(timeZones)
@@ -318,41 +361,44 @@ export function ImportScreen() {
       setJobs(res.jobs)
       cacheJobs(res.jobs)
     } catch (err) {
-      if (!isNetworkError(err)) setError((err as ApiError).message)
+      if (!isNetworkError(err)) setError(describe(err))
     }
-  }, [])
+  }, [setError])
 
   useEffect(() => {
     if (!offline) void loadJobs()
   }, [offline, loadJobs])
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current) }, [])
 
-  function requestOptions(): ImportOptions {
+  function requestOptions(ws: string = workspace): ImportOptions {
     const out: ImportOptions = {
       timeZone: options.timeZone, sections: options.sections, duplicates: options.duplicates, errors: options.errors, existing: options.existing,
     }
     if (format) out.format = format
-    if (options.targetProject) out.targetProject = options.targetProject
+    if (options.targetProject && projects.some((p) => p.id === options.targetProject)) out.targetProject = options.targetProject
+    if (ws && wsState.list.length > 1) out.workspace = ws
     return out
-  }
-
-  function describe(err: unknown): string {
-    if (isNetworkError(err)) return t('The server could not be reached. Import needs a connection.')
-    return (err as ApiError).message
   }
 
   async function runPreview(f: File | null = file) {
     if (!f) return
-    setBusy(true)
-    setError(null)
-    try {
-      setPreview(await api.previewImport(f, f.name, requestOptions()))
-    } catch (err) {
-      setPreview(null)
-      setError(describe(err))
-    } finally {
-      setBusy(false)
-    }
+    // A new file's format is not known yet: the user's choice, else the
+    // current workspace unless the format was set to an own export.
+    const ws = workspaceChoice ?? (format === 'opentodo' ? '' : wsState.current)
+    await run(async () => {
+      try {
+        let res = await api.previewImport(f, f.name, requestOptions(ws))
+        if (res.format === 'opentodo' && workspaceChoice === null && ws) {
+          // An own export detected on the way: its default is "As in the export".
+          res = await api.previewImport(f, f.name, requestOptions(''))
+        }
+        setDetected(res.format)
+        setPreview(res)
+      } catch (err) {
+        setPreview(null)
+        throw err
+      }
+    })
   }
 
   function poll(id: string) {
@@ -377,35 +423,23 @@ export function ImportScreen() {
 
   async function start() {
     if (!file) return
-    setBusy(true)
-    setError(null)
-    try {
+    await run(async () => {
       const { job: j } = await api.startImport(file, file.name, requestOptions())
       await applyImportViewHints(j.viewHints)
       setJob(j)
       poll(j.id)
       void loadJobs()
-    } catch (err) {
-      setError(describe(err))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   const [undoing, setUndoing] = useState<ImportJob | null>(null)
   async function undo(j: ImportJob) {
-    setBusy(true)
-    setError(null)
-    try {
+    await run(async () => {
       const res = await api.undoImport(j.id)
       if (job?.id === j.id) setJob(res.job)
       void syncNow()
       await loadJobs()
-    } catch (err) {
-      setError(describe(err))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   const created = undoing ? undoing.totals.create + undoing.totals.newProjects + undoing.totals.newLabels : 0
@@ -417,6 +451,9 @@ export function ImportScreen() {
       format={format}
       options={options}
       projects={projects}
+      workspaces={wsState.list}
+      workspace={workspace}
+      onWorkspace={(id) => { setWorkspaceChoice(id); setPreview(null) }}
       zones={zones}
       preview={preview}
       busy={busy}
@@ -425,6 +462,7 @@ export function ImportScreen() {
       jobs={jobs}
       onPickFile={(f) => {
         setFile(f)
+        setDetected(null)
         setPreview(null)
         setJob(null)
         if (f) void runPreview(f)

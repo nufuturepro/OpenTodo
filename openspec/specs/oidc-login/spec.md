@@ -6,7 +6,7 @@ Lets the owner connect one OpenID Connect provider so members sign in with an id
 ## Requirements
 
 ### Requirement: Provider configuration
-The owner SHALL configure at most one provider through `GET`/`PUT /api/v1/settings/oidc` (issuer, client id, client secret, display name, and the provisioning, SSO-only and provider-logout switches) and check it with `POST /api/v1/settings/oidc/test`. The secret SHALL never be returned. Optional `OPENTODO_OIDC_ISSUER`, `OPENTODO_OIDC_CLIENT_ID` and `OPENTODO_OIDC_CLIENT_SECRET` pre-fill and lock those fields. Configuration is server state, not synced, unavailable offline.
+The owner SHALL configure at most one provider through `GET`/`PUT /api/v1/settings/oidc` (issuer, client id, client secret, display name, and the provisioning, SSO-only, provider-logout and profile-picture (`syncPictures`) switches) and check it with `POST /api/v1/settings/oidc/test`. The secret SHALL never be returned. Optional `OPENTODO_OIDC_ISSUER`, `OPENTODO_OIDC_CLIENT_ID` and `OPENTODO_OIDC_CLIENT_SECRET` pre-fill and lock those fields. Configuration is server state, not synced, unavailable offline.
 
 #### Scenario: Owner configures and tests
 - **WHEN** the owner saves an issuer whose discovery document is reachable and runs the test
@@ -23,6 +23,10 @@ The owner SHALL configure at most one provider through `GET`/`PUT /api/v1/settin
 #### Scenario: Environment variables lock the form
 - **WHEN** `OPENTODO_OIDC_ISSUER` is set and the owner reads the settings
 - **THEN** the response marks the issuer as managed by the environment and a `PUT` changing it is refused with `invalid_input`
+
+#### Scenario: Profile picture switch
+- **WHEN** the owner saves `syncPictures: true`
+- **THEN** the response carries `syncPictures: true`, the change is recorded as `settings.changed` (`oidc.sync_pictures`), and the next provider sign-in syncs the picture
 
 ### Requirement: Sign-in through the provider
 When a provider is configured, `GET /api/v1/auth/oidc/start` SHALL redirect to the provider using the authorization-code flow with PKCE, a single-use `state` and a `nonce`, and `GET /api/v1/auth/oidc/callback` SHALL exchange the code, verify the identity token (signature, issuer, audience, expiry, nonce) and start a session under the same cookie rules as password sign-in. Both routes SHALL be rate limited per client address.
@@ -44,15 +48,19 @@ When a provider is configured, `GET /api/v1/auth/oidc/start` SHALL redirect to t
 - **THEN** the response is a 404 `oidc_disabled` error
 
 ### Requirement: Identity to account mapping
-An identity token SHALL be matched to an account by issuer and subject first. When no link exists and the token carries an email marked as verified that matches an existing account case-insensitively, the identity SHALL be linked to that account, unless that account is the owner or an admin or has a confirmed second factor or a passkey: then the sign-in SHALL be refused with an `oidc_link_required` indication and nothing written, and the account links only from Settings while signed in. An identity linked by email during a sign-in SHALL never count as passing the account's own second factor. An email that is absent or not verified SHALL never link to an existing account. Links are server-side account data and are not synced.
+An identity token SHALL be matched to an account by issuer and subject first. When no link exists and the token carries an email marked as verified that matches an existing account case-insensitively, the identity SHALL be linked to that account, unless that account is the owner or an admin, has a confirmed second factor or a passkey, or its address was never confirmed: then the sign-in SHALL be refused with an `oidc_link_required` indication and nothing written, and the account links only from Settings while signed in. An account's address SHALL count as confirmed after a sign-up completed through an emailed link, an email change confirmed through an emailed link, or a link to a provider identity whose verified email equals the account's; an email change applied without confirmation SHALL clear it. When this rule is introduced, accounts that already have a provider identity with the same address SHALL count as confirmed. An identity linked by email during a sign-in SHALL never count as passing the account's own second factor. An email that is absent or not verified SHALL never link to an existing account. Links and the confirmation are server-side account data and are not synced.
 
 #### Scenario: Returning identity
 - **WHEN** the same issuer and subject sign in a second time, even after the email changed at the provider
 - **THEN** the same account is signed in
 
 #### Scenario: Verified email matches an existing account
-- **WHEN** a first-time identity presents a verified email that belongs to an existing member password account without a second factor or passkey
+- **WHEN** a first-time identity presents a verified email that belongs to an existing member password account without a second factor or passkey, whose address was confirmed through an emailed link
 - **THEN** the identity is linked to that account and the user is signed in
+
+#### Scenario: Address typed by someone else
+- **WHEN** a member changes their address, without confirmation, to the address of a person who has no account yet, and that person later signs in through the provider for the first time
+- **THEN** the sign-in is refused with `oidc_link_required`, no identity is linked to the member's account and no session starts
 
 #### Scenario: Unverified email
 - **WHEN** a first-time identity presents an email without a verified marker and no link exists
@@ -128,3 +136,30 @@ The authentication status response SHALL expose whether a provider is configured
 #### Scenario: Offline app start after SSO sign-in
 - **WHEN** an installed app whose last sign-in was through the provider is opened offline
 - **THEN** it opens to the user's tasks without any provider round-trip
+
+### Requirement: Profile picture from the provider
+When the owner's switch `syncPictures` is on and a provider sign-in or link carries a `picture` claim, the server SHALL fetch that address through the outbound policy (http(s) only, no private network target unless the owner allows them, at most 5 seconds and 2 MB, a PNG, JPEG or GIF of at most 4096 pixels a side), crop it to its centre square, scale it to 256×256, re-encode it as JPEG and store it as the account's profile picture, recording that it came from the provider and from which address. The server SHALL NOT replace a picture the person uploaded, SHALL NOT fetch an address it already synced for the account, and SHALL NOT fetch again an address whose picture the person removed. A fetch that fails SHALL leave the picture and the sign-in as they are. With the switch off the claim SHALL be ignored. The switch is off by default.
+
+#### Scenario: Picture synced at sign-in
+- **WHEN** the switch is on and an identity whose token names `https://pictures.example.com/me.png` (a 400×300 PNG) signs in
+- **THEN** the account's picture is a 256×256 JPEG of the centre square, its `avatarVersion` is bumped, and the picture appears to project co-members after their next sync
+
+#### Scenario: Same address not fetched twice
+- **WHEN** the same identity signs in again with the same `picture` address
+- **THEN** the server makes no request and the picture is unchanged
+
+#### Scenario: Uploaded picture kept
+- **WHEN** the person uploaded a picture in Settings and later signs in through the provider with any `picture` address
+- **THEN** the uploaded picture stays and no request is made
+
+#### Scenario: Removed picture not fetched again
+- **WHEN** the person removed the provider's picture in Settings and signs in again with the same `picture` address
+- **THEN** the account stays without a picture; a different address is fetched
+
+#### Scenario: Fetch fails
+- **WHEN** the address answers 500, is not an image, exceeds 2 MB or names a private network host the owner has not allowed
+- **THEN** the sign-in completes, the picture is unchanged and the server logs a warning without the account's name
+
+#### Scenario: Switch off
+- **WHEN** the switch is off and an identity with a `picture` claim signs in
+- **THEN** no request is made and the account's picture is unchanged

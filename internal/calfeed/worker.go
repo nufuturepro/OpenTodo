@@ -5,15 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/url"
-	"sync"
-	"time"
+
+	"github.com/OpenTodoApp/opentodo/internal/poll"
 )
 
-// Worker pacing (design D3).
-const (
-	PollInterval = 30 * time.Second
-	InFlight     = 2
-)
+// InFlight bounds the fetches of one pass (design D3).
+const InFlight = 2
 
 // Worker fetches due subscriptions in the background, under the jobs leader.
 type Worker struct {
@@ -24,20 +21,6 @@ type Worker struct {
 	// Notify wakes the user's devices when their events changed.
 	Notify func(userID string)
 	Log    *slog.Logger
-}
-
-// Run polls until ctx ends.
-func (w *Worker) Run(ctx context.Context) {
-	t := time.NewTicker(PollInterval)
-	defer t.Stop()
-	for {
-		w.RunOnce(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-	}
 }
 
 // RunOnce fetches the subscriptions due now, at most InFlight at a time, and
@@ -51,18 +34,7 @@ func (w *Worker) RunOnce(ctx context.Context) {
 		w.log().Error("calendar feeds: due", "err", err)
 		return
 	}
-	sem := make(chan struct{}, InFlight)
-	var wg sync.WaitGroup
-	for i := range due {
-		sub := due[i]
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer func() { <-sem; wg.Done() }()
-			_, _ = w.Refresh(ctx, &sub)
-		}()
-	}
-	wg.Wait()
+	poll.Each(due, InFlight, func(sub *Subscription) { _, _ = w.Refresh(ctx, sub) })
 }
 
 // Refresh fetches one subscription now and records the outcome (also used by

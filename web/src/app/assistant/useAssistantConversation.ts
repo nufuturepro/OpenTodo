@@ -14,11 +14,14 @@ import type { ProposedChange, TurnEvent } from '../../lib/assistantTypes'
 import { t } from '../../lib/i18n'
 import type { ReviewResult } from './ChangeSetReview'
 import { useSentenceAnnouncer } from './useSentenceAnnouncer'
+import { useDeviceAssistant, withDevice } from './useDeviceAssistant'
 
 export interface ConversationOptions {
   /** Light context for the turn: the current view and selected tasks. */
-  context: () => { view?: string; selected?: string[] }
+  context: () => { view?: string; selected?: string[]; projectId?: string }
   onApplied: (r: { text: string; undoId: string }) => void
+  /** The person's name for an on-device turn's instructions (the server uses the account's). */
+  userName?: string
 }
 
 type Streaming = { text: string; status: string[] }
@@ -35,14 +38,16 @@ interface StreamedAnswer {
  * stop reason, gathered into the assistant's message. A failed or stopped stream
  * keeps what arrived before it ended.
  */
-async function streamAnswer(req: TurnRequest, signal: AbortSignal, on: { text: (delta: string, all: string, status: string[]) => void; status: (line: string, all: string, lines: string[]) => void }): Promise<StreamedAnswer> {
+type TurnRunner = (req: TurnRequest, onEvent: (e: TurnEvent) => void, signal?: AbortSignal) => Promise<void>
+
+async function streamAnswer(req: TurnRequest, signal: AbortSignal, on: { text: (delta: string, all: string, status: string[]) => void; status: (line: string, all: string, lines: string[]) => void }, run: TurnRunner = streamTurn): Promise<StreamedAnswer> {
   let text = ''
   const statusLines: string[] = []
   let proposal: ProposedChange[] | null = null
   let failure: StreamedAnswer['failure']
   const answer: AssistantMessage = { role: 'assistant', text: '', at: Date.now() }
   try {
-    await streamTurn(req, (ev: TurnEvent) => {
+    await run(req, (ev: TurnEvent) => {
       switch (ev.type) {
         case 'text':
           text += ev.text
@@ -83,6 +88,8 @@ function useComposerState() {
   const [pickedSkillId, setPickedSkillId] = useState<string | null>(null)
   const [pasted, setPasted] = useState<string | null>(null)
   const selectedFor = useRef<string[] | null>(null)
+  // The same selection as state, for the tray's context chip (assistant-surface D3).
+  const [selection, setSelection] = useState<string[] | null>(null)
   const [autoSend, setAutoSend] = useState(false)
   // Opened from the composer, the Ask screen or a task's menu (assistant-skills D4).
   const pendingPrefill = useAssistantPrefill()
@@ -92,6 +99,7 @@ function useComposerState() {
     setPickedSkillId(p.skill ?? null)
     setPasted(p.pasted ?? null)
     selectedFor.current = p.selected ?? null
+    setSelection(p.selected ?? null)
     setAutoSend(!!p.send)
   }, [])
   useEffect(() => { applyPrefill(takeAssistantPrefill()) }, [applyPrefill, pendingPrefill])
@@ -101,7 +109,8 @@ function useComposerState() {
     if (found) setSkill(found)
   }, [pickedSkillId, skills])
   const chooseSkill = (sk: AssistantSkill | null) => { setPickedSkillId(sk?.id ?? null); setSkill(sk) }
-  return { draft, setDraft, skills, skill, setSkill, pickedSkillId, chooseSkill, pasted, setPasted, selectedFor, autoSend, setAutoSend }
+  const clearSelection = () => { selectedFor.current = null; setSelection(null) }
+  return { draft, setDraft, skills, skill, setSkill, pickedSkillId, chooseSkill, pasted, setPasted, selectedFor, selection, clearSelection, autoSend, setAutoSend }
 }
 
 /** Accepting the provider's terms (in-app-assistant consent), with an optional own key. */
@@ -113,7 +122,10 @@ function useConsent(status: AssistantStatus | null, setStatus: (s: AssistantStat
     setConsentBusy(true)
     setConsentError(null)
     try {
-      const next = await api.setMyAssistant({ consent: true, provider: status.provider, ...(ownKey ? { own_key: ownKey } : {}) })
+      // On a device the consent names the device's provider (assistant-on-device D6); no key goes to the server.
+      const next = status.mode === 'device'
+        ? await api.setMyAssistant({ consent: true, provider: `device:${status.provider}` })
+        : await api.setMyAssistant({ consent: true, provider: status.provider, ...(ownKey ? { own_key: ownKey } : {}) })
       setAssistantStatus(next)
       setStatus(next)
     } catch (err) {
@@ -182,9 +194,12 @@ function useReview(thread: AssistantThread | null, note: (x: AssistantThread, te
   return { review, setReview, result, setResult, reviewBusy, reviewRef, apply, discard, undo, toggle }
 }
 
-export function useAssistantConversation({ context, onApplied }: ConversationOptions) {
+export function useAssistantConversation({ context, onApplied, userName = '' }: ConversationOptions) {
   // The cached status renders at once (offline too); a fresh one follows.
-  const [status, setStatus] = useState<AssistantStatus | null>(assistantStatus)
+  const [serverStatus, setStatus] = useState<AssistantStatus | null>(assistantStatus)
+  // An encrypted account in device mode takes provider, model and consent from this device (assistant-on-device).
+  const device = useDeviceAssistant(serverStatus)
+  const status = withDevice(serverStatus, device.setup)
   const [thread, setThread] = useState<AssistantThread | null>(null)
   const [threads, setThreads] = useState<AssistantThread[] | null>(null)
   const composer = useComposerState()
@@ -241,7 +256,7 @@ export function useAssistantConversation({ context, onApplied }: ConversationOpt
     composer.setDraft('')
     composer.setSkill(null)
     composer.setPasted(null)
-    composer.selectedFor.current = null
+    composer.clearSelection()
     setError(null)
     rv.setReview(null)
     rv.setResult(null)
@@ -258,14 +273,21 @@ export function useAssistantConversation({ context, onApplied }: ConversationOpt
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     let streamed: StreamedAnswer
     try {
-      const ctx = context()
+      // projectId only drives the panel's kept-away line; the server never gets it.
+      const ctx = { ...context() }
+      delete ctx.projectId
       const req: TurnRequest = { messages: turnMessages(history, question, material ?? undefined), timezone: zone, ...ctx,
         ...(selection ? { selected: selection } : {}),
         ...(chosen ? { skill: chosen.id, workday: await workday() } : {}) }
+      // Device mode runs the loop here and calls the provider directly; the server sees nothing (assistant-on-device D7).
+      const setup = device.setup
+      const run = status?.mode === 'device' && setup
+        ? await import('../../lib/assistantDevice/loop').then(({ runDeviceTurn }) => (r: TurnRequest, on: (e: TurnEvent) => void, sig?: AbortSignal) => runDeviceTurn(r, on, sig, { setup, userName }))
+        : undefined
       streamed = await streamAnswer(req, ctl.signal, {
         text: (delta, text, lines) => { live.push(delta); setStreaming({ text, status: lines }) },
         status: (line, text, lines) => { setStatusAnnounce(line); setStreaming({ text, status: lines }) },
-      })
+      }, run)
     } catch (err) {
       streamed = { answer: { role: 'assistant', text: '', at: Date.now() }, proposal: null, failure: { err } }
     }
@@ -312,7 +334,7 @@ export function useAssistantConversation({ context, onApplied }: ConversationOpt
   }
 
   return {
-    status, thread, threads, toggleThreads, clearAll, composer, streaming, error, statusAnnounce, live, abort, consent, review: rv,
+    status, device, thread, threads, toggleThreads, clearAll, composer, streaming, error, statusAnnounce, live, abort, consent, review: rv,
     send, startNew, pickThread, stop: () => abort.current?.abort(),
   }
 }

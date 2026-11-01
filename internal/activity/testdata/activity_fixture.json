@@ -670,6 +670,16 @@
       ]
     },
     {
+      "name": "a part of the day is one edited event with both fields (day-parts)",
+      "ops": [
+        {"id":"dp1","seq":1,"actor":"alice","entity":"task","entityId":"t1","field":"day_part","value":"morning","ts":350000,"device":"da"},
+        {"id":"dp2","seq":2,"actor":"alice","entity":"task","entityId":"t1","field":"evening","value":false,"ts":350000,"device":"da"}
+      ],
+      "events": [
+        {"id":"dp1","kind":"edited","actor":"alice","entity":"task","entityId":"t1","taskId":"t1","ts":350000,"opIds":["dp1","dp2"],"changes":[{"field":"day_part","from":null,"to":"morning"},{"field":"evening","from":null,"to":false}]}
+      ]
+    },
+    {
       "name": "attachment ops derive no event (attachments)",
       "ops": [
         {"id":"at1","seq":1,"actor":"alice","entity":"attachment","entityId":"a1","field":"task_id","value":"t1","ts":400000,"device":"da"},
@@ -712,6 +722,36 @@
       "events": [
         {"id":"cf3","kind":"edited","actor":"alice","entity":"task","entityId":"t1","taskId":"t1","ts":400000,"opIds":["cf3","cf4"],"changes":[{"field":"fields.f1","from":null,"to":150}]},
         {"id":"cf5","kind":"edited","actor":"bob","entity":"task","entityId":"occ1","taskId":"occ1","ts":500000,"opIds":["cf5"],"changes":[{"field":"fields.f1","from":null,"to":40}]}
+      ]
+    },
+    {
+      "name": "a rule's change next to the user's edit stays its own event (automation-rules)",
+      "ops": [
+        {"id":"ru1","seq":1,"actor":"alice","entity":"task","entityId":"t1","field":"title","value":"Call Ana","ts":500000,"device":"da"},
+        {"id":"ru2","seq":2,"actor":"alice","entity":"task","entityId":"t1","field":"priority","value":1,"ts":501000,"device":"rule:r1"}
+      ],
+      "events": [
+        {"id":"ru1","kind":"edited","actor":"alice","entity":"task","entityId":"t1","taskId":"t1","ts":500000,"opIds":["ru1"],"changes":[{"field":"title","from":null,"to":"Call Ana"}]},
+        {"id":"ru2","kind":"edited","actor":"alice","entity":"task","entityId":"t1","taskId":"t1","ts":501000,"opIds":["ru2"],"changes":[{"field":"priority","from":null,"to":1}],"device":"rule:r1"}
+      ]
+    },
+    {
+      "name": "reaction ops derive no event (editor-everywhere)",
+      "ops": [
+        {"id":"x1","seq":1,"actor":"bob","entity":"comment","entityId":"c7","field":"reactions.bob","value":["heart"],"ts":1000,"device":"db"},
+        {"id":"x2","seq":2,"actor":"carol","entity":"comment","entityId":"c7","field":"reactions.carol","value":["thumbs_up","check"],"ts":2000,"device":"dc"}
+      ],
+      "events": []
+    },
+    {
+      "name": "note mentions fold into the note edit (editor-everywhere)",
+      "ops": [
+        {"id":"y1","seq":1,"actor":"alice","entity":"task","entityId":"t9","field":"description","value":"Ask @bob about the tiles","ts":1000,"device":"da"},
+        {"id":"y2","seq":2,"actor":"alice","entity":"task","entityId":"t9","field":"notes_doc","value":"ydoc:v1:AQLBlvjtAgAHAQ==","ts":1000,"device":"da"},
+        {"id":"y3","seq":3,"actor":"alice","entity":"task","entityId":"t9","field":"note_mentions","value":["bob"],"ts":1000,"device":"da"}
+      ],
+      "events": [
+        {"id":"y1","kind":"edited","actor":"alice","entity":"task","entityId":"t9","taskId":"t9","ts":1000,"opIds":["y1"],"changes":[{"field":"description","from":null,"to":"Ask @bob about the tiles"}]}
       ]
     }
   ]

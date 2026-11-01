@@ -4,12 +4,15 @@
 // estimates, busy calendar events, projections). Nothing here is ever written:
 // every device with the same rows draws the same plan.
 import { addDaysISO, daysBetweenISO, localDueOf } from './dates'
-import { DAY_MINUTES, eventBlocks } from './calendar'
+import { eventMinutes } from './calendar'
 import { formatMinutes } from './duration'
 import { t } from './i18n'
 import { followingOccurrence } from './recurrence'
 import { completedOccurrences, seriesRule } from './recurring'
 import type { CalendarEvent, Due, Project, Task } from './types'
+
+// The one definition of event minutes lives in calendar.ts (meeting-aware-capacity D1).
+export { eventMinutes }
 
 export type PlanSpan = 7 | 14 | 21
 export const PLAN_SPANS: readonly PlanSpan[] = [7, 14, 21]
@@ -113,40 +116,6 @@ export function columnEntries(tasks: readonly Task[], projections: readonly Proj
   return out.map(({ priority: _p, position: _q, ...entry }) => entry as PlanEntry)
 }
 
-/**
- * Busy minutes of `date` in the viewer's zone: timed, non-free events clipped to
- * the day, overlapping intervals counted once. All-day and free events count zero.
- */
-export function eventMinutes(events: readonly CalendarEvent[], date: string, zone?: string): number {
-  const busy = events.filter((ev) => !ev.free && !ev.allDay && !(ev.start.date === ev.end.date && ev.start.time === ev.end.time && ev.start.tz === ev.end.tz))
-  // eventBlocks gives a zero-length remainder a slot-high block; a part that ends at
-  // its start (an event ending at 00:00 of this day) is not inside the day.
-  const spans = eventBlocks(busy, date, zone)
-    .map((b) => ({ start: b.start, end: realEnd(b.event, date, b.start, b.end, zone) }))
-    .filter((s) => s.end > s.start)
-    .sort((a, b) => a.start - b.start)
-  let total = 0
-  let curStart = -1, curEnd = -1
-  for (const s of spans) {
-    if (s.start > curEnd) {
-      if (curEnd > curStart) total += curEnd - curStart
-      curStart = s.start
-      curEnd = s.end
-    } else curEnd = Math.max(curEnd, s.end)
-  }
-  if (curEnd > curStart) total += curEnd - curStart
-  return Math.min(total, DAY_MINUTES)
-}
-
-/** The block's end without the minimum height eventBlocks adds for drawing. */
-function realEnd(ev: CalendarEvent, date: string, start: number, end: number, zone?: string): number {
-  if (!ev.end.time) return end
-  const local = ev.end.tz ? localDueOf({ date: ev.end.date, time: ev.end.time, tz: ev.end.tz }, zone) : { date: ev.end.date, time: ev.end.time }
-  if (local.date !== date || !local.time) return end
-  const [h, m] = local.time.split(':').map(Number)
-  return Math.max(start, Math.min(end, h * 60 + m))
-}
-
 export interface PlanLoad {
   /** Estimates of the day's open tasks. */
   tasks: number
@@ -160,9 +129,12 @@ export interface PlanLoad {
   over: boolean
 }
 
-/** The load of `date` against the day length, from the three sources. */
-export function planLoad(tasks: readonly Task[], projections: readonly Projection[], events: readonly CalendarEvent[], date: string, dayLength: number, zone?: string): PlanLoad {
-  let taskMinutes = 0, projected = 0, unestimated = 0
+/**
+ * The load of `date` against the day length, from the three sources; `slots` is
+ * what the day's calendar slots change (calendar-slots D6, lib/slots `slotCapacity`).
+ */
+export function planLoad(tasks: readonly Task[], projections: readonly Projection[], events: readonly CalendarEvent[], date: string, dayLength: number, zone?: string, slots = { extra: 0, covered: 0 }): PlanLoad {
+  let taskMinutes = slots.extra, projected = 0, unestimated = -slots.covered
   for (const task of tasks) {
     if (task.completed_at || task.deleted_at || localDueOf(task.due, zone)?.date !== date) continue
     if (task.estimate_minutes) taskMinutes += task.estimate_minutes
@@ -173,6 +145,7 @@ export function planLoad(tasks: readonly Task[], projections: readonly Projectio
     if (p.estimate_minutes) projected += p.estimate_minutes
     else unestimated++
   }
+  unestimated = Math.max(0, unestimated)
   const ev = eventMinutes(events, date, zone)
   const total = taskMinutes + ev + projected
   return { tasks: taskMinutes, events: ev, projected, unestimated, total, over: total > dayLength }

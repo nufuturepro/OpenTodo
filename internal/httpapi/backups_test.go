@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -11,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/backup"
-	"github.com/pixari/opentodo/internal/config"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/backup"
+	"github.com/OpenTodoApp/opentodo/internal/config"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/tenant/services"
 )
 
 // backupEnv is newEnv plus the backup service, with the owner signed in.
@@ -27,14 +25,13 @@ func backupEnv(t *testing.T) (*env, *backup.Service, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg := config.Config{SessionTTL: time.Hour}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	syncSvc := opsync.NewService(db)
-	bk := backup.New(db, dir, backup.Options{Version: "test", Log: log})
-	h := New(cfg, auth.NewService(db, cfg.SessionTTL, false), syncSvc, nil, log, "test", WithBackups(bk))
+	set := testSet(t, config.Config{SessionTTL: time.Hour}, db, services.Options{})
+	syncSvc := set.Sync
+	bk := backup.New(db, dir, backup.Options{Version: "test", Log: set.Log})
+	set.Backups = bk
+	h := New(set, nil)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	t.Cleanup(syncSvc.Notifier().CloseAll)
 	jar, _ := cookiejar.New(nil)
 	e := &env{t: t, srv: srv, client: &http.Client{Jar: jar}, db: db, handler: h, sync: syncSvc}
 	resp, out := e.do("POST", "/api/v1/auth/register", map[string]string{"email": "owner@example.com", "name": "Owner", "password": "correct horse battery"})
@@ -183,12 +180,17 @@ func TestBackupRunConflict409(t *testing.T) {
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(unblock)
+	// The first upload reached the destination: the run has recorded its row by
+	// then (backup.Service.execute inserts it before uploading).
+	uploading := make(chan struct{})
+	var uploadOnce sync.Once
 	dav := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "MKCOL":
 			w.WriteHeader(201)
 		case "PUT":
 			io.Copy(io.Discard, r.Body)
+			uploadOnce.Do(func() { close(uploading) })
 			<-release
 			w.WriteHeader(201)
 		case "PROPFIND":
@@ -216,6 +218,13 @@ func TestBackupRunConflict409(t *testing.T) {
 	e.mustStatus(resp, 409, out)
 	if errCode(out) != "conflict" {
 		t.Fatalf("code = %s", errCode(out))
+	}
+	// The run inserts its row in the background after the 202; count once it is
+	// uploading, so a slow start is not read as a missing run.
+	select {
+	case <-uploading:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first run never reached the destination")
 	}
 	var n int
 	e.db.QueryRow(`SELECT COUNT(*) FROM backup_runs`).Scan(&n)

@@ -3,16 +3,18 @@
 // entity, written with a single mutateMany through the undo store (lib/undo.ts).
 // They reuse the single-task rules (recurring roll-forward, subtree completion and
 // trash, project moves across sharing scopes) so a batch behaves like the keys.
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { ProposedChange } from './assistantTypes'
 import { addDaysISO, logicalToday, weekStartOf } from './dates'
 import { db } from './db'
 import { getDeviceId, planCompletePlain, planProjectChange, type Change } from './ops'
 import { planCompletion, seriesRule } from './recurring'
-import { assignableIn, currentUserId, membershipMap, scopeOf } from './sharing'
+import { assignableIn, canEditTask, currentUserId, membershipMap, scopeOf } from './sharing'
 import { descendants } from './tree'
 import type { Membership, Priority, Task } from './types'
 import { applyBatch } from './undo'
 import { t } from './i18n'
+import { keepWorkspaceFor, type KeepWorkspace } from './workspaces'
 
 /** Changes merged by entity: a task reached twice (ticked and under a ticked parent) gets one patch. */
 export function mergeChanges(changes: Change[]): Change[] {
@@ -99,7 +101,7 @@ export type MoveTarget = { projectId: string | null; sectionId?: string | null }
 
 /** Per ticked (topmost) task, the changes that move it with its subtree. */
 export function planMoveGroups(tasks: readonly Task[], all: Task[], target: MoveTarget,
-  memberships: Map<string, Membership>, me: string | null, now = Date.now()): { task: Task; changes: Change[] }[] {
+  memberships: Map<string, Membership>, me: string | null, now = Date.now(), keep?: KeepWorkspace): { task: Task; changes: Change[] }[] {
   const out: { task: Task; changes: Change[] }[] = []
   for (const tk of topmost(tasks, all)) {
     const sameProject = (tk.project_id ?? null) === target.projectId
@@ -110,15 +112,15 @@ export function planMoveGroups(tasks: readonly Task[], all: Task[], target: Move
     const patch: Partial<Task> = { project_id: target.projectId, ...(target.sectionId !== undefined ? { section_id: target.sectionId } : {}) }
     const cross = scopeOf(tk.project_id, memberships) !== scopeOf(target.projectId, memberships)
       ? { assignable: assignableIn(target.projectId, memberships, me) } : undefined
-    out.push({ task: tk, changes: planProjectChange(tk, all, patch, cross, now).changes })
+    out.push({ task: tk, changes: planProjectChange(tk, all, patch, cross, now, keep).changes })
   }
   return out
 }
 
 /** Move to a project (and optionally a section); across sharing scopes as copies plus tombstones. */
 export function planMove(tasks: readonly Task[], all: Task[], target: MoveTarget,
-  memberships: Map<string, Membership>, me: string | null, now = Date.now()): Change[] {
-  return mergeChanges(planMoveGroups(tasks, all, target, memberships, me, now).flatMap((g) => g.changes))
+  memberships: Map<string, Membership>, me: string | null, now = Date.now(), keep?: KeepWorkspace): Change[] {
+  return mergeChanges(planMoveGroups(tasks, all, target, memberships, me, now, keep).flatMap((g) => g.changes))
 }
 
 export function planAssign(tasks: readonly Task[], userId: string | null): Change[] {
@@ -198,6 +200,34 @@ export async function applyBulk(ids: readonly string[], action: BulkAction, opts
   return { undoId: entry?.id ?? null, label, count: tasks.length }
 }
 
+/** The undo toast's words for a group action (page-rhythm D6): "4 tasks moved to today", "3 of 4 tasks rescheduled". */
+export function groupDueLabel(pick: Exclude<DuePick, null>, moved: number, total: number): string {
+  if (pick === 'today') {
+    return moved === total
+      ? t('{n, plural, one {# task moved to today} other {# tasks moved to today}}', { n: moved })
+      : t('{moved} of {n, plural, one {# task moved to today} other {# tasks moved to today}}', { moved, n: total })
+  }
+  return moved === total
+    ? t('{n, plural, one {# task rescheduled} other {# tasks rescheduled}}', { n: moved })
+    : t('{moved} of {n, plural, one {# task rescheduled} other {# tasks rescheduled}}', { moved, n: total })
+}
+
+/**
+ * A date for every task of a list group (page-rhythm D6, bulk-actions "Group actions
+ * are one batch"): the bulk date path on the group's ids, not the selection, as one
+ * undoable batch. Tasks the user may only view are left as they are and counted.
+ */
+export async function applyGroupDue(ids: readonly string[], pick: Exclude<DuePick, null>, opts: { today?: string } = {}): Promise<BulkResult> {
+  const today = opts.today ?? logicalToday()
+  await getDeviceId()
+  const { tasks } = await readTicked(ids)
+  const memberships = await membershipMap()
+  const editable = tasks.filter((task) => canEditTask(task, memberships))
+  const label = groupDueLabel(pick, editable.length, tasks.length)
+  const entry = editable.length ? await applyBatch(await toProposed(planDue(editable, pick, today)), { source: 'bulk', label }) : null
+  return { undoId: entry?.id ?? null, label, count: editable.length }
+}
+
 /**
  * A planned review (design D6): one item per task, worded as its visible change,
  * and the real changes of the items the person keeps checked (a move across
@@ -211,13 +241,13 @@ export interface ReviewPlan {
 export async function planMoveFor(ids: readonly string[], target: MoveTarget): Promise<ProposedChange[]> {
   const { tasks, all } = await readTicked(ids)
   const memberships = await membershipMap()
-  return toProposed(planMove(tasks, all, target, memberships, await currentUserId()), memberships)
+  return toProposed(planMove(tasks, all, target, memberships, await currentUserId(), Date.now(), await keepWorkspaceFor()), memberships)
 }
 
 export async function reviewMove(ids: readonly string[], target: MoveTarget): Promise<ReviewPlan> {
   const { tasks, all } = await readTicked(ids)
   const memberships = await membershipMap()
-  const groups = planMoveGroups(tasks, all, target, memberships, await currentUserId())
+  const groups = planMoveGroups(tasks, all, target, memberships, await currentUserId(), Date.now(), await keepWorkspaceFor())
   const shared = !!target.projectId && memberships.has(target.projectId)
   const items = groups.map(({ task }): ProposedChange => {
     const patch: Record<string, unknown> = (task.project_id ?? null) === target.projectId ? { section_id: target.sectionId ?? null } : { project_id: target.projectId, ...(target.sectionId !== undefined ? { section_id: target.sectionId } : {}) }
@@ -241,4 +271,13 @@ export function commonSharedProject(tasks: readonly Task[], memberships: Map<str
   const p = tasks[0]?.project_id ?? null
   if (!p || !memberships.has(p) || tasks.some((task) => task.project_id !== p)) return null
   return p
+}
+
+/**
+ * The ticked tasks, live, tagged with the selection `key` they were read for:
+ * until the read for this selection lands, the caller can tell it is an earlier one.
+ */
+export function useTickedTasks(ids: readonly string[], key: string) {
+  // `key` is the selection's identity (the ids joined).
+  return useLiveQuery(() => readTicked(ids).then((r) => ({ key, tasks: r.tasks })), [key])
 }

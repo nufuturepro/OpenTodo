@@ -7,7 +7,7 @@ Defines OpenTodo's visual language, its design tokens and the guarantees that co
 ## Requirements
 
 ### Requirement: Semantic design tokens
-The web app SHALL define named tokens for surfaces, text, borders, the accent, priorities p1–p4, status (success, warning, danger, info), a 12-hue palette with solid and soft steps, type sizes, spacing, radii, elevations and motion durations. Each token SHALL have a light and a dark value. Every screen, shared component and component style class SHALL style colour through these tokens instead of raw colour literals, raw palette classes or fixed white and black.
+The web app SHALL define named tokens for surfaces, text, borders (a container edge, a softer divider and a control edge), the accent, priorities p1–p4, status (success, warning, danger, info), a 12-hue palette with solid and soft steps, type sizes, spacing, radii, elevations and motion durations and curves. Each colour token SHALL have a light and a dark value. Every colour token SHALL be authored in the OKLCH colour space, either as a literal `oklch()` value inside the sRGB gamut or as a mix of other tokens in OKLCH; a hex, `rgb()`, `hsl()` or named colour inside a token block SHALL fail the token lint. Every screen, shared component and component style class SHALL style colour through these tokens instead of raw colour literals, raw palette classes or fixed white and black.
 
 #### Scenario: Theme switch
 - **WHEN** the system colour scheme changes from light to dark
@@ -29,8 +29,16 @@ The web app SHALL define named tokens for surfaces, text, borders, the accent, p
 - **WHEN** a screen passes a stored project, label or view colour to a component as data
 - **THEN** the lint does not report it, and the colour renders through the palette
 
+#### Scenario: A hex value in a token block
+- **WHEN** a contributor writes `--ot-muted: #526075;` in the light token block
+- **THEN** the token lint in `make check` fails and names the stylesheet line, and the same value written as `oklch(0.47 0.028 262)` passes
+
+#### Scenario: Divider and container edges
+- **WHEN** a list separates two groups with a hairline and a card draws its edge
+- **THEN** the hairline uses the softer divider token and the card edge the container border token, and both stay visible (at least 1.1:1) on every surface in both themes
+
 ### Requirement: OpenTodo identity is preserved
-Emerald SHALL be the default accent, and the accent SHALL come from the fixed set of themes the user can choose. Neutrals SHALL remain the slate family in every theme. The light theme SHALL keep white cards, and the dark theme SHALL keep a slate-950 canvas. Primary actions, the focus ring and the current navigation item SHALL use the accent of the current theme.
+Emerald SHALL be the default accent, and the accent SHALL come from the fixed set of themes the user can choose. Neutrals SHALL remain one slate family in every theme, with low chroma so they read calm rather than blue. The light theme SHALL keep white cards on a near-white canvas, and the dark theme SHALL keep a near-black slate canvas that is lifted off pure black so that canvas, surface and raised surface are told apart by lightness alone. Primary actions, the focus ring and the current navigation item SHALL use the accent of the current theme.
 
 #### Scenario: Primary button colour
 - **WHEN** a primary button renders in the light theme with the default theme
@@ -44,8 +52,12 @@ Emerald SHALL be the default accent, and the accent SHALL come from the fixed se
 - **WHEN** the theme is `indigo`
 - **THEN** primary buttons, the focus ring and the current navigation item are indigo, while cards, canvas, text and borders use the same slate values as with emerald
 
+#### Scenario: Dark surfaces separate by lightness
+- **WHEN** a card sits on the dark canvas and a popover opens over the card
+- **THEN** canvas, card and popover are three distinct lightness steps of the same hue, each at least 0.04 apart in OKLCH lightness, and the card is still readable with its border removed
+
 ### Requirement: Accessible contrast in both themes
-Every text token SHALL reach a WCAG 2.2 contrast of at least 4.5:1 against every surface token it is allowed on, in both themes and for every accent theme. Non-text UI tokens (borders of inputs, focus ring, priority and palette solid steps) SHALL reach at least 3:1 against the surfaces they sit on. Text placed on a palette soft step SHALL reach 4.5:1.
+Every text token SHALL reach a WCAG 2.2 contrast of at least 4.5:1 against every surface token it is allowed on, in both themes and for every accent theme. Non-text UI tokens (borders of inputs, focus ring, priority and palette solid steps) SHALL reach at least 3:1 against the surfaces they sit on. Text placed on a palette soft step SHALL reach 4.5:1. The contrast check SHALL measure the value the browser renders: a token written as an OKLCH literal or as a mix SHALL be resolved, and a translucent token SHALL be composited over the surface of the pair before the ratio is taken. Derived accent and palette steps SHALL be measured for every accent and every hue, not only the declared values.
 
 #### Scenario: A token change breaks contrast
 - **WHEN** a contributor changes the muted text token so that it falls to 4.2:1 on the canvas in dark mode
@@ -58,6 +70,14 @@ Every text token SHALL reach a WCAG 2.2 contrast of at least 4.5:1 against every
 #### Scenario: A new accent theme fails contrast
 - **WHEN** a contributor adds or changes an accent theme so that its on-accent label reaches only 3.9:1 on the accent in light mode
 - **THEN** the contrast check in `make check` fails and names the accent theme, mode, token pair and measured ratio
+
+#### Scenario: A derived step is measured
+- **WHEN** an accent's soft text step is derived by a mix and that mix yields 4.1:1 on the accent's soft surface in dark mode
+- **THEN** the contrast check fails naming the accent, the mode, the pair and the measured ratio, even though no value was written by hand
+
+#### Scenario: A translucent border is measured over its surface
+- **WHEN** the dark divider token is a translucent white
+- **THEN** the check composites it over each surface it is allowed on and measures the result, and a divider that vanishes on the raised surface fails naming that surface
 
 ### Requirement: Stored colours render through the palette
 Project, label and view colours already stored as hex strings SHALL render using the palette hue nearest to the stored value, for both its solid and soft steps, on every screen that shows them. Rendering SHALL never write an op or change the stored value. A colour picked in the UI SHALL store the chosen hue's canonical solid hex.
@@ -75,7 +95,7 @@ Project, label and view colours already stored as hex strings SHALL render using
 - **THEN** both show the blue palette hue's solid step for that project, in light and in dark
 
 ### Requirement: Bundled typeface without network access
-The web app SHALL ship its interface typeface inside the application and SHALL never request fonts from a third-party host. The font SHALL be available offline after the first load. If it fails to load, text SHALL render in the system sans-serif stack, with no invisible text.
+The web app SHALL ship its interface typeface inside the application and SHALL never request fonts from a third-party host. The font SHALL be available offline after the first load. If it fails to load, text SHALL render in the system sans-serif stack, with no invisible text. The bundled font SHALL keep its optical-size axis so that text at the display size uses the typeface's display cut, as long as the font file stays within 120 KB; above that the display cut SHALL ship as a second static instance for the display step only, declared under the same family name.
 
 #### Scenario: First load
 - **WHEN** a user opens the app on a fresh browser
@@ -89,23 +109,51 @@ The web app SHALL ship its interface typeface inside the application and SHALL n
 - **WHEN** the font file cannot be loaded
 - **THEN** text is shown immediately in the system sans-serif font
 
+#### Scenario: Display text uses the display cut
+- **WHEN** a page title renders at the display size
+- **THEN** the typeface's optical size follows the rendered size automatically, and body text keeps the text cut
+
 ### Requirement: Comfortable reading scale
-Body text rendered by shared UI components and screens SHALL be 15 px, and their secondary metadata SHALL be 13 px. Text smaller than 12 px SHALL be reserved for keyboard hints inside key badges. All text SHALL scale with the browser's font-size setting.
+List, control and navigation text rendered by shared UI components and screens SHALL be one token, the list step, 13 px at the default browser size; switching it to 14 px SHALL be a one-line change of that token. Secondary metadata SHALL be 12.5 px. Running text people read rather than scan (notes, comments being written, help articles, the day page's briefing) SHALL use the prose step, 15 px. Text smaller than 12 px SHALL be reserved for keyboard hints inside key badges, section labels and counts, all at the hint step (11.5 px, weight 500). The scale SHALL offer a 14 px header title, a 22 px page title for a task and a settings page, and one display step (28 px) for day page titles and large clocks, with tighter letter-spacing than body text; headings SHALL be weight 600, the display step weight 650, and the two largest steps SHALL carry negative letter-spacing. All text SHALL scale with the browser's font-size setting.
 
 #### Scenario: Browser zoom setting
 - **WHEN** the user sets the browser default font size to 20 px
-- **THEN** body and metadata text grow proportionally and no layout scrolls horizontally at 360 px wide
+- **THEN** list, prose and metadata text grow proportionally and no layout scrolls horizontally at 360 px wide
 
 #### Scenario: No pixel sizes in screens
 - **WHEN** a change uses an 11 px font size in a row chip
 - **THEN** the token lint fails naming the file and line
 
+#### Scenario: Display step
+- **WHEN** a screen renders a title with the display type utility
+- **THEN** it is 28 px at the default browser size, weight 650, with negative letter-spacing, and grows with the browser's font-size setting
+
+#### Scenario: Clocks derive from the display step
+- **WHEN** the Focus timer and a display route render their clocks
+- **THEN** their size is a multiple of the display or prose step and is the same size as before this change within one pixel
+
+#### Scenario: List text in one token
+- **WHEN** the list step token is changed from 13 to 14 px
+- **THEN** task rows, the sidebar, buttons and inputs all render at 14 px and nothing else in the stylesheet needs to change
+
 ### Requirement: Reduced motion
-Interface transitions SHALL last no more than 250 ms. When the system requests reduced motion, the app SHALL replace movement and scaling animations with instant changes or opacity fades.
+Interface transitions SHALL use one of three durations: 120 ms for interface feedback, 250 ms for emphasis, and one 400 ms *moment* reserved for the completion sequence, list reflow and overlay entrances; nothing SHALL last longer than 400 ms and no exit SHALL last longer than its entrance. Movement SHALL use an ease-out curve without overshoot (`--ease-spring`) or the calm ease; nothing SHALL bounce. When the system requests reduced motion, the app SHALL replace every movement, scale and height animation with an instant change or an opacity or colour fade of at most 120 ms, and SHALL skip view transitions. Under the no-motion attribute every transition and animation SHALL be instant, colour and opacity included.
 
 #### Scenario: Completing a task with reduced motion
 - **WHEN** reduced motion is requested and the user completes a task
-- **THEN** the task changes state without a movement or scale animation
+- **THEN** the check mark changes state without a scale animation, the row's opacity fades within 120 ms and the rows below take their new places at once
+
+#### Scenario: Nothing longer than a moment
+- **WHEN** any sequence in the app is measured
+- **THEN** no transition or animation is declared longer than 400 ms and every exit is shorter than or equal to its entrance
+
+#### Scenario: Moment used for a hover
+- **WHEN** a change applies the moment duration to a hover or a menu transition
+- **THEN** the token lint fails naming the file and line
+
+#### Scenario: Reduced motion skips view transitions
+- **WHEN** reduced motion is requested and a reschedule moves three rows to another group
+- **THEN** no view transition starts and the list shows its new order at once
 
 ### Requirement: Legacy component classes follow the tokens
 The legacy button, input and keyboard-hint classes SHALL take their colours, radius and type from the tokens while any screen still uses them. Once no screen uses a legacy class, it SHALL be removed from the stylesheet and a test SHALL fail if it returns. Screens SHALL use the shared button, field and key-badge primitives instead.
@@ -119,7 +167,7 @@ The legacy button, input and keyboard-hint classes SHALL take their colours, rad
 - **THEN** the token lint fails naming the file and line
 
 ### Requirement: Design workbench
-The repository SHALL include a design workbench that runs locally with one command. It SHALL show the foundations (colours with their contrast, type scale, spacing, radii, elevation, motion) and SHALL have a story for every shared UI primitive and pattern, in light and dark. It SHALL offer a switch over the shipped interface languages (OpenSpec `localization`). The workbench SHALL be a development tool only and SHALL add nothing to the shipped app or server.
+The repository SHALL include a design workbench that runs locally with one command. It SHALL show the foundations (colours with their resolved values and measured contrast, the tone scale, the border steps, the derived accent steps of every theme, the type scale including the display step, spacing, radii, elevation, and motion including the spring curve and the moment) and SHALL have a story for every shared UI primitive and pattern, in light and dark. It SHALL offer a switch over the shipped interface languages (OpenSpec `localization`). The workbench SHALL be a development tool only and SHALL add nothing to the shipped app or server.
 
 #### Scenario: Contributor opens the workbench
 - **WHEN** a contributor runs the workbench command in `web/`
@@ -132,6 +180,10 @@ The repository SHALL include a design workbench that runs locally with one comma
 #### Scenario: Story in German
 - **WHEN** a contributor switches the workbench language to German on the settings-section story at phone width
 - **THEN** the story renders with the German catalog and its layout is unchanged except for text length
+
+#### Scenario: Colours story shows what is measured
+- **WHEN** a contributor opens the Colours foundation in dark mode
+- **THEN** each swatch shows its resolved colour and the measured ratio of every pair it takes part in, and a derived accent step is shown for each of the eight themes
 
 ### Requirement: Accessibility gate on stories
 CI SHALL run an automated accessibility audit on every workbench story in light and dark. It SHALL fail on any serious or critical violation.
@@ -181,7 +233,7 @@ The client SHALL offer buttons in four emphasis levels (primary, secondary, ghos
 - **THEN** a focus ring in the accent colour is visible, with at least 3:1 contrast against the surface
 
 ### Requirement: Form controls
-Text inputs, text areas, selects, checkboxes and switches SHALL share one visual style, each with a visible label, an optional description, and an error state. The description and error are announced with the field. A binary setting that takes effect immediately SHALL be presented as a switch with switch semantics; a choice that is submitted with a form SHALL be a checkbox.
+Text inputs, text areas, selects, checkboxes and switches SHALL share one visual style, each with a visible label, an optional description, and an error state. The description and error are announced with the field. A binary setting that takes effect immediately SHALL be presented as a switch with switch semantics; a choice that is submitted with a form SHALL be a checkbox. The switch SHALL be a 32 × 18 px track with the accent when on, with a hit area of at least 44 px on touch screens. A select SHALL draw its own chevron in the muted text colour instead of the platform's arrow.
 
 #### Scenario: Error is announced
 - **WHEN** a field fails validation
@@ -190,6 +242,10 @@ Text inputs, text areas, selects, checkboxes and switches SHALL share one visual
 #### Scenario: Immediate setting is a switch
 - **WHEN** a screen reader user focuses a preference that applies immediately
 - **THEN** it is announced as a switch with its on or off state
+
+#### Scenario: Compact switch and select
+- **WHEN** the form-controls story is shown at 1280 px in light and in dark
+- **THEN** the switch is 32 × 18 px, the select shows the drawn chevron at its right in the muted colour, and the accessibility gate passes
 
 ### Requirement: Menus are keyboard navigable
 Action menus SHALL expose menu semantics. When a menu opens, focus SHALL move to its first enabled item. Arrow keys SHALL move between items, Home and End SHALL jump to the first and last item, typing a letter SHALL move to the next item starting with it, and Enter or Space SHALL activate. Activating an item SHALL close the menu and return focus to the trigger, as specified for all overlays.
@@ -291,7 +347,7 @@ The client SHALL offer shared cards, badges or chips (solid and soft variants in
 - **THEN** focus and selection move to the next tab and its panel is shown
 
 ### Requirement: Settings section and row patterns
-Settings content SHALL be built from sections and rows with a fixed anatomy. A section is a titled card with a one-sentence description and rows; it has no help link of its own and no action in its header. A row puts a label and its description beside the control from 640 px wide, stacks them below 640 px, shows the current state as a badge beside the label before any action, and places a primary action as the control of its last row. Keyboard hints live in tooltips, never as paragraphs.
+Settings content SHALL be built from sections and rows with a fixed anatomy. A section is a flat titled group with a one-line description and rows divided by hairlines; it has no help link of its own in its header and no action in its header. The description SHALL be one sentence of at most 90 characters in English and MAY end with an inline "Learn more" link that opens contextual help at the section's screen id; an option in a choice section SHALL have a label and at most 60 characters of description; anything longer belongs in Help. A row puts a label and its description beside the control from 640 px wide, stacks them below 640 px, shows the current state as a status dot with its word beside the label before any action, and places a primary action as the control of its last row. Keyboard hints live in tooltips, never as paragraphs.
 
 #### Scenario: Row stacks on phones
 - **WHEN** a settings row is shown 375 px wide
@@ -299,7 +355,15 @@ Settings content SHALL be built from sections and rows with a fixed anatomy. A s
 
 #### Scenario: Two-factor section anatomy
 - **WHEN** a user with two-factor off opens Account
-- **THEN** the Two-factor row shows an "Off" badge beside its label and "Set up" as its control, and the section header has no button or help link
+- **THEN** the Two-factor row shows an "Off" status dot beside its label and "Set up" as its control, and the section header has no button or help link
+
+#### Scenario: Learn more is part of the line
+- **WHEN** the settings-section story is shown at 1280 px with a description and a Learn more link
+- **THEN** the link sits at the end of the description line in the metadata size, is reachable with Tab after the heading and before the first control, is announced as "Learn more: <section title>", and the section header has no button
+
+#### Scenario: Literal description in a story
+- **WHEN** a story passes a literal 120-character sentence as a settings section's description instead of a copy-table entry
+- **THEN** the settings copy lint in `npm test` fails naming the story file and line
 
 ### Requirement: Confirmation dialog
 The client SHALL offer one shared confirmation dialog, used instead of the browser's native confirm prompt. It SHALL name the action and its consequence, start focus on the safe choice, cancel on Escape and return focus to the control that opened it. A destructive confirmation SHALL NOT close on an outside tap. The client SHALL NOT use the browser's native `confirm()`, `prompt()` or `alert()` anywhere: confirmations use this dialog, and a question that needs an answer (such as the address of a link in a note) uses a small dialog of the app that validates the answer before it is applied.
@@ -367,11 +431,15 @@ The client SHALL offer a page header primitive (title in the page title size, op
 - **THEN** the design-system check fails naming the file
 
 ### Requirement: Tooltip primitive
-The client SHALL offer one tooltip that opens on hover after 400 ms and on focus at once, shows a label and an optional shortcut, closes on Escape and blur, is announced as the control's description, and does not open on touch (the accessible name still applies). Icon-only buttons SHALL use it by default. The native `title` attribute SHALL not be used in screens; a lint SHALL fail on it.
+The client SHALL offer one tooltip that opens on hover after 400 ms and on focus at once, shows a label and an optional shortcut, closes on Escape and blur, is announced as the control's description, and does not open on touch (the accessible name still applies). Icon-only buttons SHALL use it by default, including a button that opens a menu. The native `title` attribute SHALL not be used in screens; a lint SHALL fail on it.
 
 #### Scenario: Keyboard user sees the hint
 - **WHEN** a keyboard user focuses the notifications button
 - **THEN** a tooltip reading "Notifications" appears at once and leaves on blur
+
+#### Scenario: Icon-only menu button
+- **WHEN** a pointer rests on a list's Filter button or a page header's More actions button
+- **THEN** after 400 ms a tooltip shows the button's name, while a menu button that shows its name as text gets no tooltip
 
 #### Scenario: Native title in a screen
 - **WHEN** a change adds `title=` to a button under the app folder
@@ -385,11 +453,23 @@ The client SHALL offer a skeleton block in the row, line and card shapes, with a
 - **THEN** the skeleton rows are static
 
 ### Requirement: Three surfaces
-Screens SHALL use three surface styles only: row (control radius, no shadow, hover tint), card (card radius, first elevation, border in dark) and overlay (card radius, third elevation, border in dark). Raw radius and shadow utilities SHALL not appear in screens; the token lint SHALL fail on them.
+Screens SHALL use five surface styles only: row (row radius, no shadow, the hover token as its hover tint), card (card radius, no shadow, a border), overlay (popover radius, the popover surface, the strong edge, the third elevation), column (card radius, sunken fill, no shadow, no border in light, border in dark; for a board column and any other container of cards), and flat section (no fill, no radius, no shadow, separated from its neighbours by vertical space and one hairline; for the secondary sections of a settings page and the panels of a dashboard). Lists and cards SHALL be flat: only overlays carry a shadow. Each style SHALL be one component class in the stylesheet. Raw radius and shadow utilities SHALL not appear in screens; the token lint SHALL fail on them.
 
 #### Scenario: Raw shadow in a screen
 - **WHEN** a change uses a raw shadow utility in a screen
 - **THEN** the token lint fails naming the file and line
+
+#### Scenario: Column surface by its class
+- **WHEN** a screen draws a container of cards with the column class
+- **THEN** it has the sunken fill, the card radius and no shadow in light, a border in dark, and the token lint passes
+
+#### Scenario: Hand-made flat section
+- **WHEN** a screen separates two sections with a raw border utility instead of the flat section class
+- **THEN** the token lint fails naming the file and line
+
+#### Scenario: Overlay on the popover surface
+- **WHEN** a menu, popover, tooltip or sheet opens over a list in dark mode
+- **THEN** it is drawn on the popover surface with the strong edge and a shadow, while the cards and rows under it have no shadow
 
 ### Requirement: Token lint covers the screens
 The token lint SHALL cover the app folder as well as the shared UI folder, with a per-file allow-list that may only shrink and reaches zero when this change is complete. Raw palette colours, hex literals, literal colour functions (`rgb()`, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` with numeric values), raw text sizes, pixel font sizes, raw radii, raw shadows and the legacy component classes SHALL each fail it. A colour mixed from tokens (`color-mix()` over `var(--ot-…)`) passes.
@@ -407,7 +487,7 @@ The token lint SHALL cover the app folder as well as the shared UI folder, with 
 - **THEN** the token lint fails naming the file, the line and the value
 
 ### Requirement: Core screens in the workbench
-The workbench SHALL have stories with fixture data for the sidebar, the shell with a list and the panel open, the task row in every state, a task list with groups, the board, the Day and Week calendar, quick add with chips, the page header and the settings page, each in light and dark at 375 and 1280 px, under the same accessibility and visual-regression gates as the primitives.
+The workbench SHALL have stories with fixture data for every core screen of the screen inventory (OpenSpec `web-app` "Interface audit tour"): at least the sidebar, the shell with a list and the panel open, the task row in every state, a task list with groups, the board, the Day, Week, Month and Plan calendars, the timeline, quick add with chips, the page header, the settings page, the Inbox triage, the Labels, Filter, Filters overview, Updates, Completed, Trash, Next, Waiting, Someday and Anytime views, the Ask screen, the task panel with each of its tabs, each in light and dark at 375 and 1280 px, under the same accessibility and visual-regression gates as the primitives. A script SHALL compare the inventory's core screens with the stories and SHALL fail naming every core screen without one; a screen SHALL be marked core in the inventory by its frequency of use (daily or weekly), not by whether a story exists. The stories of the calendars, the timeline, the settings page and the statistics SHALL show the surfaces: a Week with task blocks, an event block, a free event, an unestimated block, a dimmed past day and the now line; a Month with filled rows and a dimmed past week; a Plan row of columns with an event row, a projected row and an over-capacity header; a timeline with a bar across today and a past deadline; a settings page with its primary card and two flat sections; the statistics tiles with a positive, a negative and a "–" comparison above a flat panel.
 
 #### Scenario: Row state missing
 - **WHEN** a change adds a new chip to the task row without a story state showing it
@@ -417,19 +497,43 @@ The workbench SHALL have stories with fixture data for the sidebar, the shell wi
 - **WHEN** a change moves the panel by 8 px
 - **THEN** the shell story's visual check fails with a diff image
 
+#### Scenario: Core screen without a story
+- **WHEN** a change adds a route that the inventory marks as used weekly and adds no story for it
+- **THEN** the story-coverage check fails naming the route and the story title it expects
+
+#### Scenario: Rare screen without a story
+- **WHEN** the inventory marks the password reset screen as rarely used and it has no story
+- **THEN** the story-coverage check reports it as uncovered without failing
+
+#### Scenario: Event style regression
+- **WHEN** a change gives event blocks a hue fill
+- **THEN** the Week story's visual check fails with a diff image and the review names the "Filled blocks and bars" requirement
+
 ### Requirement: Interface budget
-Every change that touches a screen SHALL state in its design how it stays within the interface budget: at most two rows of chrome above the first item of a list, at most seven properties visible by default on a task, at most six primary sidebar destinations, at most three vertical scroll regions per screen, and every new shortcut registered without conflict. The measurable limits SHALL be enforced by tests.
+Every change that touches a screen SHALL state in its design how it stays within the interface budget: at most two rows of chrome above the first item of a list, at most seven properties with a value shown by default on an empty task, the task page's facts in at most four named groups of at most six rows (unset facts read as quiet actions, never as empty fields), at most six primary sidebar destinations, at most three vertical scroll regions per screen, and every new shortcut registered without conflict. The measurable limits SHALL be enforced by tests.
 
 #### Scenario: A feature adds a banner
 - **WHEN** a change renders a banner between the page header and the first task
 - **THEN** the budget test fails naming the view
 
+#### Scenario: The facts column grows
+- **WHEN** a change adds a seventh row to one of the task page's fact groups
+- **THEN** the budget test fails naming the group
+
 ### Requirement: Secondary text is one size
-Secondary text in screens SHALL be the metadata size only; counters and estimates SHALL use tabular figures in the interface face, never a monospace face. Two icon sizes SHALL be used in content (16 px in rows, 20 px in headers) and one in chips (12 px).
+Secondary text in screens SHALL be the metadata size only. Every time, count, duration and other number shown in the interface SHALL use tabular figures in the interface face, never a monospace face, so that digits line up and do not shift as they change; prose in notes and comments keeps proportional figures. Two icon sizes SHALL be used in content (16 px in rows, 20 px in headers) and one in chips (12 px).
 
 #### Scenario: Estimate chip
 - **WHEN** a row shows "1 h 30"
 - **THEN** it is set in the interface face at the metadata size with tabular figures
+
+#### Scenario: Numbers do not shift
+- **WHEN** the Focus clock counts from 10:00 to 09:59, and a sidebar count changes from 9 to 10
+- **THEN** the digits keep their width and the text around them does not move
+
+#### Scenario: Prose keeps proportional figures
+- **WHEN** a comment contains "meet at 3 for 2 hours"
+- **THEN** its digits render with proportional spacing like the rest of the sentence
 
 ### Requirement: One focus style
 Every interactive control in screens SHALL show the token focus ring on keyboard focus and nothing else; a control SHALL not draw its own border or colour change for focus. The accessibility gate SHALL include a focus-visibility check on the core-screen stories.
@@ -537,3 +641,360 @@ Text that stands for a longer phrase (a count read as "3 comments", an icon read
 
 - **WHEN** a component puts `aria-label` on a `span` without a role
 - **THEN** `npm run lint` fails and names the file and line
+
+### Requirement: Icon catalogue
+The icons a person can choose for their own things (projects and sections) SHALL come from one catalogue, a curated subset of the app's icon set of at least 300 icons. Each entry SHALL have a stable name (lowercase letters, digits and hyphens), one category, and search keywords. A name, once in a released catalogue, SHALL never be removed or given a different picture; a picture that changes meaning gets a new name. The catalogue SHALL be defined once in the repository; the server SHALL hold an identical list of names, and a test SHALL fail when the two differ.
+
+The icons of the interface itself SHALL be available without loading the catalogue. The rest of the catalogue SHALL load only when a picker opens or when something stored names an icon outside the interface icons, and SHALL work offline once loaded. Until it has loaded, and for any name the device does not know (written by a newer client), the place of the icon SHALL show the fallback of what carries it (a project's colour dot, nothing before a section title), and SHALL never show an error, a broken image or an empty box.
+
+The picker SHALL search as the person types, matching the name, the keywords and the category, with category names in the interface language. It SHALL list results grouped by category, offer "No icon" first, show the current choice as selected, and be fully usable from the keyboard (type to filter, arrows to move, Enter to pick, Esc to close without a change).
+
+#### Scenario: Find an icon by a keyword
+- **WHEN** the user opens the icon picker of a project and types "dog"
+- **THEN** the results include the paw and dog icons under their category, and Enter on the first result sets it as the project's icon
+
+#### Scenario: Category names in the interface language
+- **WHEN** the interface is in Italian and the user types "cibo" in the picker
+- **THEN** the icons of the Food category are listed
+
+#### Scenario: Icon from a newer client
+- **WHEN** a project carries an icon name that is not in this device's catalogue
+- **THEN** the sidebar and the page header show the project's colour dot, and the stored name is kept unchanged
+
+#### Scenario: Catalogue offline
+- **WHEN** the catalogue has been loaded once and the device goes offline, then the user opens the icon picker
+- **THEN** the picker lists and searches the whole catalogue without a network request
+
+#### Scenario: Server list drifts from the catalogue
+- **WHEN** a contributor adds an icon to the catalogue without regenerating the server's list
+- **THEN** the test suite fails and names the icon missing on the server side
+
+### Requirement: Illustrations
+The client SHALL draw illustrations for empty and finished states in one calm style: inline SVG line drawings built only from the design tokens, with round line caps and joins and no gradients, shadows, text, raster images or external files.
+- **Stroke weights:** two, a main line for the object and a fine detail line, with strokes in the muted text colour.
+- **Fills:** the surface as the object fill and the sunken surface for ground shapes. At most one accent shape, filled with the theme's accent at low opacity and outlined in the accent text colour.
+- **Motif:** every illustration SHALL sit inside the brand mark's open loop, drawn in the fine line with its opening at the upper right, and its accent shape SHALL sit in or leave through that opening.
+
+Each illustration SHALL render correctly in light and dark themes and every colour theme by following the tokens, SHALL be decorative (hidden from assistive technology, the message is in the text beside it), SHALL fit a 160 by 120 px box, SHALL weigh at most 4 KB of markup, SHALL not animate when the user prefers reduced motion, and SHALL be shown as a story in the workbench in both themes. The empty-state pattern SHALL accept an illustration in place of its icon. The first illustration SHALL be Inbox zero: an empty tray with a paper plane leaving through the loop's opening.
+
+#### Scenario: Follows the theme
+- **WHEN** the user switches from the light theme to the dark theme and to another colour theme while the Inbox zero state is shown
+- **THEN** the illustration's strokes and fill change with the tokens, and no colour stays from the previous theme
+
+#### Scenario: Not read by a screen reader
+- **WHEN** a screen reader reaches the Inbox zero state
+- **THEN** it reads the heading "Inbox zero: every task has a place." and the action, and nothing for the illustration
+
+#### Scenario: Style gate
+- **WHEN** a contributor adds an illustration that uses a hard-coded hex colour or a raster image
+- **THEN** the UI lint fails and names the file
+
+#### Scenario: Weights and fills gate
+- **WHEN** a contributor draws a line with a third stroke width, fills a shape with the canvas colour, or fills two shapes with the accent
+- **THEN** the UI lint fails naming the file and the line
+
+#### Scenario: Objects stand out in the dark theme
+- **WHEN** an empty state is shown in the dark theme
+- **THEN** the drawing's object is lighter than the canvas behind it, and the accent shape's outline is the bright accent
+
+### Requirement: Tone scale
+The four text tokens (strong, default, muted, faint) SHALL be the tone scale: the one way to make text or an icon quieter is to step down one tone. An icon SHALL take the tone of the text it accompanies. Screens and shared components SHALL NOT quiet text or icons with opacity utilities, alpha suffixes on text or border tokens, or a palette grey; the style lint SHALL refuse these, allowing a marked exception only for a dragged ghost, a disabled control and the overlay scrim. Dividers SHALL use the softer border token, container edges the border token and control edges the input border token.
+
+#### Scenario: Quieting a metadata line
+- **WHEN** a change wants a row's metadata quieter than its title
+- **THEN** it uses the muted or faint tone and the lint passes
+
+#### Scenario: Opacity on text
+- **WHEN** a change sets `opacity-60` on a label or `text-default/70` on a count
+- **THEN** the style lint in `make check` fails naming the file and line
+
+#### Scenario: Disabled control
+- **WHEN** a disabled button lowers its opacity with the documented allow marker
+- **THEN** the lint passes and the control is still identifiable as disabled by assistive technology
+
+### Requirement: Derived accent and palette steps
+An accent theme SHALL declare only its accent, its bright dark-mode text colour and its on-accent colour; its hover, soft, soft text, focus and chart base steps SHALL be derived from those by fixed mix ratios declared once in the stylesheet. A palette hue SHALL declare one solid value per mode; its soft and text steps SHALL be derived the same way. A derived step MAY be overridden by an explicit value only next to a comment naming the pair it failed, and the number of such overrides SHALL be counted by a test so it cannot grow unnoticed. Neutrals SHALL NOT be derived from the accent.
+
+#### Scenario: Adding a theme
+- **WHEN** a contributor adds a `plum` theme by declaring its three values
+- **THEN** every accent step exists in both modes, the contrast check measures them all, and no other stylesheet line is needed
+
+#### Scenario: Changing a mix ratio
+- **WHEN** the soft-step ratio is changed from 10 to 8 percent
+- **THEN** every theme's soft surface changes together and the contrast check measures every theme against the new value
+
+#### Scenario: Override is counted
+- **WHEN** a hue's light text step misses 4.5:1 and is replaced by an explicit value with its comment
+- **THEN** the test that counts overrides passes with the recorded number, and a second unexplained override fails it
+
+#### Scenario: Neutrals do not follow the accent
+- **WHEN** the user switches from the emerald to the violet theme in dark mode
+- **THEN** the canvas, surfaces, text tones and borders keep exactly the same values
+
+### Requirement: Moment motion tokens
+The tokens SHALL include a spring easing curve (an ease-out that settles without overshoot, defined as a cubic bezier with no animation library) and a moment duration of 400 ms. The moment SHALL be zero under the no-motion attribute and SHALL fall under the reduced-motion rule. The motion foundation SHALL demonstrate both.
+
+#### Scenario: No motion zeroes the moment
+- **WHEN** the root carries `data-motion="none"` and an element transitions with the moment duration
+- **THEN** it changes instantly
+
+#### Scenario: Spring on a sheet
+- **WHEN** a phone sheet opens with the spring curve at the emphasis duration
+- **THEN** the sheet reaches its resting place within 250 ms without passing it, and under reduced motion it fades in without moving
+
+### Requirement: Brand mark
+OpenTodo SHALL have one brand mark and one wordmark, kept as a single SVG source in the shared UI folder, from which every other brand asset is generated. The mark SHALL be an open loop that closes into a tick, drawn as one continuous stroke on a 24-unit grid with a 2-unit stroke, never a tick inside a square and never a generic checkbox. It SHALL exist in two variants: mono, which draws the whole mark in `currentColor` with the loop's closing segment in the accent colour, for use in the interface; and colour, which draws the mark on a filled rounded square in the brand's dark slate with the stroke in the accent, for icons on other people's surfaces (home screens, browser toolbars, store listings). The wordmark SHALL be the name "OpenTodo" set in the bundled interface typeface and SHALL never appear inside the mark. The mark SHALL stay legible at 16 px and SHALL be rendered by the app at 16, 20, 24 and 32 px only from the SVG; raster files SHALL exist only where a platform requires them (web app manifest, Apple touch icon, extension icons) and SHALL be generated by a script, never edited by hand. The mono mark SHALL meet 3:1 against every surface it is placed on in both themes and the high-contrast override; the colour mark's stroke SHALL meet 3:1 against its own square. The source SVG SHALL be under 2 KB and carry the project's licence note.
+
+#### Scenario: One source, every asset
+- **WHEN** the brand script runs after the source SVG changes
+- **THEN** the favicon, the 192 and 512 px manifest icons, the maskable icon, the Apple touch icon and the three extension icons are regenerated from it, a test compares each raster against the source and fails when one is stale, and no other brand file exists in the repository
+
+#### Scenario: Legible at 16 px
+- **WHEN** the workbench renders the mono mark at 16 px in light and dark
+- **THEN** the loop and the tick are both distinguishable in the baseline image, and the accessibility gate reports no contrast failure for the mark against the sidebar, canvas and surface tokens
+
+#### Scenario: Mono follows the text
+- **WHEN** the mark is placed in a row whose text tone changes on hover
+- **THEN** the mark's stroke changes with the text and only the closing segment stays in the accent
+
+#### Scenario: Colour variant on a home screen
+- **WHEN** the app is installed on a phone with a maskable icon
+- **THEN** the icon shows the mark on the slate square with the whole loop inside the safe zone, and no part of the stroke is cut by a circular or squircle mask
+
+#### Scenario: Not a checkbox
+- **WHEN** the mark is reviewed in the workbench's Brand story beside the row checkbox at the same size
+- **THEN** the two are different shapes: the checkbox is a closed ring or a square, the mark is an open loop whose end becomes a tick
+
+### Requirement: Illustration set
+The client SHALL provide, in the illustration style, these named illustrations, each inside the open loop with its accent in the opening:
+
+| Name | Object | Accent |
+| --- | --- | --- |
+| `inbox-zero` | an empty tray | a paper plane |
+| `today-clear` | a mug with steam | the sun |
+| `week-clear` | a desk calendar with seven open days | a kite |
+| `project-new` | an open box with a sprout | the sprout's leaf |
+| `day-done` | a closed notebook lying flat with its ribbon | a crescent moon |
+| `trash-empty` | a bin with its lid on | a drifting leaf |
+
+The empty Today, the empty Upcoming, a project with no open task, Done for today and the empty Trash SHALL show the matching one above their sentence. Each SHALL follow every rule of "Illustrations": tokens only, two stroke weights, one accent shape, 160 by 120 px, at most 4 KB, decorative, light and dark, every colour theme, and no animation under reduced motion. Each SHALL have a story in the workbench in both themes. A view SHALL name an illustration from this set only; naming an unknown one SHALL fail the type check.
+
+#### Scenario: Empty Today
+- **WHEN** Today has no task on any device
+- **THEN** the `today-clear` drawing is shown above "Nothing due today." in the muted text colour, with the sun in the theme's accent at low opacity, and a screen reader reads only the sentence and the action
+
+#### Scenario: Every theme
+- **WHEN** the user switches to the dark theme and then to the violet colour theme while the empty Trash is shown
+- **THEN** the bin's strokes follow the muted text colour and the leaf follows the new accent, with no colour left from before
+
+#### Scenario: Style gate on the set
+- **WHEN** a contributor adds a sixth drawing with a gradient or over 4 KB of markup
+- **THEN** `make ui-lint` fails naming the file
+
+### Requirement: Toast primitive
+The client SHALL show at most one toast at a time, in the toast region (bottom centre on phones, bottom right from 640 px up, clear of the home indicator and the on-screen keyboard); a new toast SHALL replace the previous one. A toast SHALL hold one sentence naming what happened, written as the result ("3 tasks rescheduled", "Moved to Home"), at most two controls, Undo first when the action can be undone, and a close button that dismisses it. It SHALL stay five seconds after one task's action and ten after a batch; after Undo it SHALL show the result ("Undone.") for five seconds and then leave; the timer SHALL pause while the pointer is over the toast or focus is inside it and restart when both leave, and a control that disappears while it has focus SHALL not keep the toast paused. Tab SHALL reach its controls; focus SHALL never move into a toast on its own; `Ctrl`/`⌘`+`Z` outside a text field SHALL activate Undo while the toast shows; Escape with focus inside the toast SHALL dismiss it and return focus to where it was before. The toast SHALL be announced politely to assistive technology. A toast SHALL never cover the element that has focus: while a toast is shown, the content column SHALL keep the focused element above the toast's height, and from 640 px up, when the region would overlap the focused element, the toast SHALL move to the opposite corner. Under reduced motion a toast SHALL only fade. Toasts are device interface state and write nothing.
+
+#### Scenario: Pause on hover
+- **WHEN** a batch toast has shown for eight seconds and the user moves the pointer onto it and reads for ten seconds
+- **THEN** the toast stays, and leaves two seconds after the pointer leaves
+
+#### Scenario: Focused row stays visible
+- **WHEN** the user completes the last row of a long list on a phone and a toast appears
+- **THEN** the next row, now focused, is fully visible above the toast, and the list scrolls only as far as that needs
+
+#### Scenario: Replacement
+- **WHEN** the user completes one task and two seconds later deletes another
+- **THEN** one toast reads "Deleted · Undo", the completion's offer is gone, and `Ctrl+Z` undoes the deletion
+
+#### Scenario: Keyboard
+- **WHEN** a toast with Undo and Open is shown and the user presses Tab
+- **THEN** focus moves to Undo, Tab again moves to Open, Enter activates the focused control, and the toast did not take focus by itself
+
+#### Scenario: Reduced motion
+- **WHEN** the system prefers reduced motion and a toast appears and leaves
+- **THEN** it only fades in and out, with no movement
+
+#### Scenario: The result of Undo leaves
+- **WHEN** the user completes a task, clicks Undo in the toast and moves the pointer away
+- **THEN** the toast reads "Undone." and leaves five seconds later
+
+#### Scenario: Dismiss
+- **WHEN** a toast is shown and the user activates its close button, or tabs into it and presses Escape
+- **THEN** the toast leaves at once, and after Escape focus is back on the element that had it before
+
+### Requirement: Motion sequences in the workbench
+The workbench SHALL have a Foundations motion story set showing the completion sequence on a row and on a card, the repeating-task completion, a list reflow and each overlay entrance, each playable with a control, in both themes. An automated check in the interface check SHALL open these stories with reduced motion emulated and fail if any running animation changes `transform`, `height`, `width` or `translate`, and SHALL open them with the no-motion attribute and fail if any animation runs at all.
+
+#### Scenario: A movement sneaks past reduced motion
+- **WHEN** a contributor adds a 200 ms slide to a toast without a reduced-motion rule and runs the interface check
+- **THEN** the check fails naming the story and the animated property
+
+#### Scenario: Stories render in both themes
+- **WHEN** the motion stories are opened in light and in dark
+- **THEN** every sequence plays and the accessibility gate passes on each story
+
+### Requirement: Screen inventory
+The repository SHALL keep one machine-readable inventory of the web app's screens: every route of the router, every settings section, the overlays reachable from each screen (dialogs, sheets, popovers, the task panel and its tabs), the display routes, the signed-out screens, the capture screen, the start guide, the command palette and the sequence spotlight. Each entry SHALL name the seed state it needs, its frequency of daily use (daily, weekly or rare), whether it is a core screen, and the name it has in the automated layout check or the reason it is not in it. A test SHALL fail when a router view is missing from the inventory, when an entry names a layout-check screen that does not exist, or when a core entry has no frequency.
+
+#### Scenario: New route without an inventory entry
+- **WHEN** a change adds a `view` to the router and no inventory entry names it
+- **THEN** the inventory test fails naming the view
+
+#### Scenario: Entry outside the layout check
+- **WHEN** an inventory entry is not in the layout check's list and gives a reason
+- **THEN** the inventory test passes and the audit tour still opens the entry
+
+#### Scenario: Stale layout-check name
+- **WHEN** an inventory entry names a layout-check screen that was renamed
+- **THEN** the inventory test fails naming the entry and the missing screen
+
+### Requirement: Audited interface rules
+Every screen of the web app SHALL satisfy, at 360, 768 and 1280 px wide, in light and dark, in every shipped interface language: no horizontal scrolling outside designated regions; every interactive control at least 24 × 24 CSS px with a fine pointer (inline links in running text and controls whose spacing to every neighbour is at least 24 px excepted) and at least 44 × 44 px on a touch screen; the token focus ring visible on every focusable element when it receives keyboard focus; truncated text carrying its full text in an accessible name, a tooltip or a nearby element; no two visible interactive controls overlapping by more than 4 px; a cumulative layout shift of at most 0.1 from navigation to idle; and, when reduced motion is requested, no running animation or transition that moves or scales an element. The audit tour SHALL measure each rule and report every violation with the screen, width, theme, language and element.
+
+#### Scenario: German label overflows
+- **WHEN** a settings row's German label makes the row wider than a 360 px viewport while the English one fits
+- **THEN** the audit reports a horizontal-overflow violation naming the screen, the language and the element
+
+#### Scenario: Small control with a fine pointer
+- **WHEN** a screen at 1280 px has a 20 × 20 px button with another control 8 px beside it
+- **THEN** the audit reports a target-size violation for that button
+
+#### Scenario: Focus without a ring
+- **WHEN** a focusable element on a screen shows no visible change when it receives keyboard focus
+- **THEN** the audit reports a focus-visibility violation naming the element
+
+#### Scenario: Truncated title without its full text
+- **WHEN** a project name is cut with an ellipsis and neither its accessible name, a tooltip nor a nearby element carries the full name
+- **THEN** the audit reports a truncation violation
+
+#### Scenario: Movement under reduced motion
+- **WHEN** reduced motion is requested and completing a task still slides the row
+- **THEN** the audit reports a reduced-motion violation naming the screen and the animated element
+
+### Requirement: Focus visibility in the accessibility gate
+The accessibility gate on stories SHALL, for every core-screen story, move keyboard focus through every focusable element and SHALL fail when an element receives focus without the token focus ring becoming visible, naming the story, the theme and the element.
+
+#### Scenario: Control with its own focus style
+- **WHEN** a core-screen story contains a control that removes the outline on focus and draws nothing else
+- **THEN** the UI check fails naming the story, the theme and the control
+
+#### Scenario: Every control shows the ring
+- **WHEN** every focusable element of the core-screen stories shows the token focus ring on keyboard focus
+- **THEN** the focus-visibility pass reports no failure
+
+### Requirement: Filled blocks and bars
+A calendar block, a month or plan row and a timeline bar that stand for a task SHALL be drawn with the soft step of the task's project hue as fill, the solid step as a 3 px edge on the leading side, and the strong text tone; the edge SHALL meet 3:1 against the grid or page it sits on and the text SHALL meet 4.5:1 against the fill in both themes, checked by the token contrast test for every palette hue. Blocks that stand for something the user cannot act on in the view (a subscribed event, a projected occurrence) SHALL NOT use a hue fill; a projected occurrence keeps its dashed outline and an event uses the sunken fill with a hatched edge. A filled block on a day before today SHALL be dimmed to the faint tone with its fill mixed toward the surface, so the past is quieter than the present.
+
+#### Scenario: Every hue passes
+- **WHEN** the token contrast test runs
+- **THEN** for each of the twelve palette hues the solid step measures at least 3:1 against the canvas and the surface, and the strong text at least 4.5:1 against the soft step, in light and in dark
+
+#### Scenario: Dimmed past keeps contrast
+- **WHEN** a block is dimmed as past
+- **THEN** its title still measures at least 4.5:1 against its lightened fill, checked by the same test with the faint tone
+
+### Requirement: Pointer on clickable elements
+With a mouse or trackpad, every element that does something when clicked SHALL show the pointing-hand cursor: enabled buttons, elements with the button, menu item, tab or option role, disclosure summaries, labels of controls, links and task rows. The rule SHALL be one base style at zero specificity, so a component can still choose another cursor that means something (grab for a draggable block, text for an editable field, not-allowed for a disabled control, progress while busy). A disabled control SHALL NOT show the hand. The interface lint SHALL fail on a component that sets the default or auto cursor without a written reason on that line or the line above.
+
+#### Scenario: A button shows the hand
+- **WHEN** the pointer rests on an enabled button, a menu item, a sidebar entry or a tab
+- **THEN** the cursor is the pointing hand
+
+#### Scenario: A task row shows the hand
+- **WHEN** the pointer rests on the empty area of a task row in a list
+- **THEN** the cursor is the pointing hand, and a click there opens the task
+
+#### Scenario: Disabled and draggable keep their own cursor
+- **WHEN** the pointer rests on a disabled button, or on a calendar block that can be dragged
+- **THEN** the cursor is not-allowed on the button and the grab hand on the block
+
+#### Scenario: Default cursor without a reason
+- **WHEN** a change adds `cursor-default` to a button in `web/src` without a reason on that line
+- **THEN** the interface lint fails naming the file and line
+
+### Requirement: Precision surface tokens
+The tokens SHALL include, in light, dark and high contrast, a popover surface (menus, popovers, tooltips, sheets, the palette), a hover tint (rows, navigation and buttons), a selected surface (the selected navigation item, an active tab or tool), a selected-row surface, and a strong hairline (popover and selected-card edges). Every text tone SHALL meet 4.5:1 on the popover, hover and selected-row surfaces; on the selected surface the strong, default and muted tones SHALL meet 4.5:1 and the faint tone SHALL NOT be used. The neutrals SHALL be a flat cool slate, darker in dark mode than the content surface they hold, and SHALL NOT be derived from the accent. Control edges SHALL keep the input border token, which meets 3:1.
+
+#### Scenario: Pairs are measured
+- **WHEN** the token contrast test runs
+- **THEN** it measures every text tone on the popover, hover and selected-row surfaces and the strong, default and muted tones on the selected surface, in light, dark and high contrast, and fails naming the pair when one is under its minimum
+
+#### Scenario: Faint text on the selected item
+- **WHEN** a change shows a count in the faint tone on the selected navigation item
+- **THEN** the change is out of the design system: the active item's count uses the muted tone
+
+#### Scenario: Neutrals ignore the accent
+- **WHEN** the user switches the accent theme from emerald to violet in dark mode
+- **THEN** the canvas, the content surface, the popover, hover, selected and selected-row surfaces and the strong hairline keep exactly the same values
+
+### Requirement: Status dot
+The design system SHALL offer a status dot: a small round dot in one of five tones (ok, warning, danger, busy, off) followed by a word that states the status, so the meaning never rests on colour alone. The dot SHALL be hidden from assistive technology and the word SHALL be read. A busy dot MAY pulse, and SHALL NOT move when reduced motion is requested. State such as on or off, working or failing, configured or not SHALL use a status dot; a category such as a role or a token scope SHALL keep a badge.
+
+#### Scenario: Read as a word
+- **WHEN** a screen reader reaches a webhook whose last delivery failed
+- **THEN** it reads "Failing" and nothing for the dot
+
+#### Scenario: Reduced motion
+- **WHEN** reduced motion is requested and a backup is running
+- **THEN** the busy dot is shown without the pulse
+
+#### Scenario: Story in both themes
+- **WHEN** the status-dot story is shown in light and in dark
+- **THEN** each of the five tones shows its dot and word, and every word meets the text contrast minimum
+
+### Requirement: Grey selection, accent for state
+A row or item the user is on (the keyboard cursor, the selected row, the current item of a list such as the workspace list, a time list or the sidebar's footer buttons) SHALL use the selected-row surface for rows and the selected surface with the strong text tone for items, never the accent tint; the selection bar above a list SHALL use the selected surface. The accent tint SHALL be kept for state: a bulk tick, a bordered choice card showing the value the user picked, a highlighted linked comment, done and now. A page header that introduces a step (as in the weekly review) SHALL NOT be tinted. A heading that receives focus from code so a screen reader announces it, and that is not a Tab stop, SHALL NOT draw a focus ring.
+
+#### Scenario: Selected row in the Trash
+- **WHEN** the user moves the cursor to an item in the Trash, in light or dark
+- **THEN** the row uses the selected-row surface, the same as a selected task row, and no green tint
+
+#### Scenario: Selection bar
+- **WHEN** three tasks are ticked
+- **THEN** "3 selected · Actions · Clear" sits on the grey selected surface with no accent border, and the ticked rows keep their accent tint
+
+#### Scenario: Weekly review step
+- **WHEN** the weekly review moves to a new step
+- **THEN** its header has no tint, its icon sits on the raised surface in the muted tone, the step title receives focus for a screen reader, and no focus ring is drawn around it
+
+### Requirement: Breakpoints follow the text size
+Every layout decision a script makes from the viewport width (phone or desktop header, drawer or sidebar, the task split, two-column settings, toast and overlay placement) SHALL use the same rem breakpoints as the stylesheet (40, 48 and 64 rem), so a browser text size other than the default moves script and stylesheet breakpoints together. The stylesheet's own media queries and the breakpoints written into class names SHALL be in rem as well. At a browser text size of 20 and 24 px, at 360 and 1280 px wide, the screens SHALL show no content running off the screen, no control squeezed below a readable width and no overlapping controls caused by the text size: where a row cannot hold its parts, the parts SHALL wrap (a field to its own line, a badge under a name, a mode switch to a second line) rather than shrink. This holds for the screens of `precision-polish` and for Settings in every section, Statistics, Focus, the Loop home, the task page, the command palette and quick add, the dialogs and menus, sign-in and display mode. At the default text size of 16 px the layout SHALL be unchanged. A control whose label would push a page title off a phone at a large text size MAY keep only its icon below 21 rem of viewport, keeping its accessible name; this includes the phone header's Process with its count.
+
+#### Scenario: Large text between 768 and 960 px
+- **WHEN** the browser's text size is 20 px and the window is 900 px wide
+- **THEN** the app uses the phone layout with the drawer, as the stylesheet does, and the sidebar is reachable from the menu button
+
+#### Scenario: Large text on a 1100 px window
+- **WHEN** the browser's text size is 20 px and the Inbox is opened in a 1100 px window
+- **THEN** selecting a task opens its page instead of docking it beside the list, because the detail pane is not shown below 64 rem
+
+#### Scenario: Process on a phone with large text
+- **WHEN** the Inbox is opened at 360 px with the browser's text size at 24 px
+- **THEN** the Process button shows its icon only, its accessible name is still "Process", and the page title "Inbox" is readable beside it
+
+#### Scenario: Date picker on a phone with large text
+- **WHEN** the When popover is opened at 360 px with the browser's text size at 24 px
+- **THEN** all seven weekday columns of the month grid are on screen, each day still a 44 px touch target
+
+#### Scenario: Share dialog with large text
+- **WHEN** the Share dialog is opened at 360 px with the browser's text size at 24 px
+- **THEN** the email field takes its own line and the role and Share sit under it
+
+#### Scenario: Statistics with large text
+- **WHEN** Statistics is opened at 360 px with the browser's text size at 20 px
+- **THEN** the tiles are one column, and at the default text size they stay two columns
+
+### Requirement: Tab rows scroll only sideways
+A tab row SHALL scroll only sideways, and only when it is wider than its space, keeping the selected tab in view. It SHALL never scroll vertically nor show a vertical scrollbar, at any width, zoom or text size. The selected tab's underline SHALL be shown at its full thickness on the row's baseline. This holds for every tab row built from the shared tabs, wherever it is used.
+
+#### Scenario: No vertical scrollbar on a tab row
+- **WHEN** the task panel is open on a desktop browser with the Comments, Activity, History and Time tabs, and its tab row fits in the panel
+- **THEN** the tab row shows no scrollbar, cannot be scrolled vertically by wheel or touch, and the selected tab's underline is drawn at its full thickness on the row's baseline
+
+#### Scenario: A narrow tab row still scrolls sideways
+- **WHEN** a tab row is wider than the screen at 360 px and the last tab is selected
+- **THEN** the row scrolls sideways to show the selected tab, and still cannot be scrolled vertically
+
+#### Scenario: Larger text
+- **WHEN** the browser's text size is 24 px and the task panel is open
+- **THEN** the tab row grows to fit its tabs and shows no vertical scrollbar

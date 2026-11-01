@@ -18,11 +18,11 @@ It is off until the server owner turns it on and chooses a model provider: Anthr
 
 ## Open the assistant
 
-Press <kbd>Shift</kbd>+<kbd>I</kbd>, select **Assistant** in the header, or type in the **Ask OpenTodo** box on **Today** or on the **Ask** screen. The button, the shortcut and the Ask box only appear when the assistant is available to you. See [Ask, review and undo](assistant-ask.md#open-the-assistant).
+Press <kbd>Shift</kbd>+<kbd>I</kbd> or select **Ask** on **Today** for the panel beside your page, or open the **Assistant** page from the sidebar (<kbd>g</kbd> then <kbd>k</kbd>). They only appear when the assistant is available to you. See [Ask, review and undo](assistant-ask.md#open-the-assistant).
 
 ## Skills
 
-Ready-made jobs: **Turn an idea into a project**, **Plan my week**, **Weekly review**, **Triage my inbox** and **Break this down**. Pick one from **Skills** in the Ask box or the panel. What each does and may touch: [Skills, pasted notes and safety](assistant-skills.md#skills).
+Ready-made jobs: **Turn an idea into a project**, **Plan my week**, **Weekly review**, **Triage my inbox** and **Break this down**. Pick one from **Skills** under the message box, or start from a card on the Assistant page. What each does and may touch: [Skills, pasted notes and safety](assistant-skills.md#skills).
 
 ## Paste notes
 
@@ -60,9 +60,9 @@ Each answer shows its tokens and its share of your monthly allowance; answers on
 
 You confirm every change, the assistant cannot touch sharing, members, settings or tokens, and text in tasks is treated as data, not instructions. See [Safety](assistant-skills.md#safety).
 
-## End-to-end encrypted accounts
+## On encrypted accounts
 
-With end-to-end encryption on, the assistant is not available: the server holds no key to your tasks. See [End-to-end encrypted accounts](assistant-privacy.md#end-to-end-encrypted-accounts).
+With end-to-end encryption on, the assistant can run on your own device with your own key, if the owner allows it. See [Assistant on encrypted accounts](assistant-encrypted.md).
 
 ## Demo instance
 

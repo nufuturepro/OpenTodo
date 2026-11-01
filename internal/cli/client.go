@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/origin"
+	"github.com/OpenTodoApp/opentodo/internal/origin"
 )
 
 // Exit codes form the contract scripts rely on.
@@ -293,15 +293,27 @@ type task struct {
 	Priority int     `json:"priority"`
 	Due      *due    `json:"due"`
 	// Start is a date, "someday" or null (start-dates); it decides Inbox membership.
-	Start       *string  `json:"start"`
-	Labels      []string `json:"labels"`
-	Position    float64  `json:"position"`
-	CreatedAt   float64  `json:"created_at"`
-	CompletedAt *float64 `json:"completed_at"`
-	DeletedAt   *float64 `json:"deleted_at"`
+	Start *string `json:"start"`
+	// Planning fields (agent-planning-fields): deadline, This Evening, the tasks
+	// it waits for and the location as stored.
+	Deadline *string `json:"deadline"`
+	Evening  bool    `json:"evening"`
+	// DayPart is "morning", "afternoon" or null (day-parts); Evening stays the flag.
+	DayPart *string `json:"day_part"`
+	// Energy is "deep", "medium", "low", or "" or absent for none (task-energy).
+	Energy      string          `json:"energy,omitempty"`
+	BlockedBy   []string        `json:"blocked_by"`
+	Location    json.RawMessage `json:"location"`
+	Labels      []string        `json:"labels"`
+	Position    float64         `json:"position"`
+	CreatedAt   float64         `json:"created_at"`
+	CompletedAt *float64        `json:"completed_at"`
+	DeletedAt   *float64        `json:"deleted_at"`
 	// Origin is null, the object or an encrypted account's ciphertext (task-origin).
 	Origin json.RawMessage `json:"origin"`
-	Raw    json.RawMessage `json:"-"`
+	// WorkspaceID is the workspace of a task without a project (workspaces).
+	WorkspaceID *string         `json:"workspace_id"`
+	Raw         json.RawMessage `json:"-"`
 }
 
 // originLabel is the origin's id or host, "" when there is none or it is encrypted.
@@ -313,14 +325,21 @@ func (t task) originLabel() string {
 }
 
 type project struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Color     string          `json:"color"`
-	Archived  bool            `json:"archived"`
-	Position  float64         `json:"position"`
-	CreatedAt float64         `json:"created_at"`
-	DeletedAt *float64        `json:"deleted_at"`
-	Raw       json.RawMessage `json:"-"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Color     string   `json:"color"`
+	Archived  bool     `json:"archived"`
+	Position  float64  `json:"position"`
+	CreatedAt float64  `json:"created_at"`
+	DeletedAt *float64 `json:"deleted_at"`
+	// ParentID and WorkspaceID place the project in a workspace (workspaces).
+	ParentID    *string `json:"parent_id"`
+	WorkspaceID *string `json:"workspace_id"`
+	// FlowMode is the stored flow (project-flow-modes); read it with flow.ProjectFlow.
+	FlowMode string `json:"flow_mode"`
+	// Status is active or maintenance (project-review-cadence); empty reads as active.
+	Status string          `json:"status"`
+	Raw    json.RawMessage `json:"-"`
 }
 
 type token struct {
@@ -493,6 +512,18 @@ func (c *client) meAuth(ctx context.Context) (*user, credential, error) {
 		return nil, credential{}, serverErr("unexpected response from server: missing user")
 	}
 	return out.User, out.Auth, nil
+}
+
+// quickPrefs reports the account's Day parts and Energy levels preferences
+// (GET /api/v1/me day_parts and energy_levels, OpenSpec changes day-parts and
+// task-energy): quick-add parsing follows them.
+func (c *client) quickPrefs(ctx context.Context) (dayParts, energy bool, err error) {
+	var out struct {
+		DayParts bool `json:"day_parts"`
+		Energy   bool `json:"energy_levels"`
+	}
+	err = c.getJSON(ctx, "/me", &out)
+	return out.DayParts, out.Energy, err
 }
 
 // normalizeURL accepts "todo.example.com", "http://host:8080/" and friends.

@@ -2,6 +2,7 @@
 // mutate()/mutateMany(); a board has no state of its own, it is a rendering of
 // sections and tasks. View mode and collapsed sections are per-device preferences
 // in the local `meta` table and are never synced (design D5).
+import { useLiveQuery } from 'dexie-react-hooks'
 import { db, getMeta, setMeta } from './db'
 import { mutate, mutateMany, type Change } from './ops'
 import { byPosition, planStep, positionAtEnd } from './ordering'
@@ -143,11 +144,11 @@ export function groupBySection<T extends Pick<Task, 'id' | 'position' | 'created
 
 // ---- per-device preferences (never synced) ----
 
-export type ProjectViewMode = 'list' | 'board' | 'timeline'
+export type ProjectViewMode = 'list' | 'board' | 'timeline' | 'calendar'
 
-/** The `v` cycle: list → board → timeline → list (month-and-timeline-views). */
+/** The `v` cycle: list → board → timeline → calendar → list (month-and-timeline-views, calendar-clarity D5). */
 export function nextViewMode(mode: ProjectViewMode): ProjectViewMode {
-  return mode === 'list' ? 'board' : mode === 'board' ? 'timeline' : 'list'
+  return mode === 'list' ? 'board' : mode === 'board' ? 'timeline' : mode === 'timeline' ? 'calendar' : 'list'
 }
 
 const modeKey = (projectId: string) => `view-mode:${projectId}`
@@ -156,7 +157,7 @@ const collapsedKey = (projectId: string) => `collapsed-sections:${projectId}`
 export async function loadViewMode(projectId: string): Promise<ProjectViewMode> {
   // Unknown values (an older or newer device's) read as the list.
   const v = await getMeta<string>(modeKey(projectId), 'list')
-  return v === 'board' || v === 'timeline' ? v : 'list'
+  return v === 'board' || v === 'timeline' || v === 'calendar' ? v : 'list'
 }
 
 export async function saveViewMode(projectId: string, mode: ProjectViewMode): Promise<void> {
@@ -221,3 +222,8 @@ export async function saveShowCompleted(projectId: string, on: boolean): Promise
 
 /** Meta keys the UI subscribes to with useLiveQuery. */
 export const prefKeys = { mode: modeKey, collapsed: collapsedKey, columns: columnsKey, completed: completedKey }
+
+/** A project's view mode, live; undefined without a project or until read. */
+export function useViewMode(projectId: string | null | undefined) {
+  return useLiveQuery(() => (projectId ? loadViewMode(projectId) : undefined), [projectId])
+}

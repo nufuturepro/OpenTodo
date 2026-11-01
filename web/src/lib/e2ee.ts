@@ -7,15 +7,17 @@
 // The device is the trust boundary (design D4): local tables hold plaintext, and
 // nothing leaves the device for an encrypted account except ciphertext for the
 // content fields below and wrapped key material.
-import { useSyncExternalStore } from 'react'
+import { OP_CONTENT_FIELDS } from '../generated/opSchema'
 import { api, ApiError } from './api'
 import {
   checkRecordParams, createKeyRecord, decryptValue, KeyRecordParamsError, isEnvelope, resetWithRecoveryKey, rewrapWithPassphrase, unlockWithPassphrase, unlockWithRecoveryKey,
-  type KeyRecord,
+  b64url, fromB64url, type KeyRecord,
 } from './crypto'
 import { db, getMeta, setMeta } from './db'
 import type { Entity, EncryptionStatus } from './types'
 import { t, msg } from './i18n'
+import { biometricForget, biometricRead, biometricStore, has as shellHas } from './shell'
+import { createStore } from './store'
 
 /** The client's ciphertext-awareness level; the server's minClientVersion is compared with it (design D9). */
 export const CLIENT_VERSION = 1
@@ -26,27 +28,7 @@ export const CLIENT_VERSION = 1
  * task.labels holds label ids, so label names are encrypted instead of the
  * array (design.md, implementation notes).
  */
-export const CONTENT_FIELDS: Partial<Record<Entity, readonly string[]>> = {
-  // A task's origin is an object, serialised and encrypted whole (task-origin D2).
-  // A task's location is an object too (task-locations D1).
-  task: ['title', 'description', 'ical_extra', 'notes_doc', 'origin', 'location'],
-  project: ['name', 'description', 'notes_doc'],
-  label: ['name'],
-  section: ['name'],
-  view: ['name', 'query'],
-  // A guest's typed name on a task page reply (task-pages D6).
-  comment: ['body', 'guest_name'],
-  // Attachments (OpenSpec attachments D8): the file bytes are an OTAT1 envelope too.
-  attachment: ['name', 'mime', 'url'],
-  // Custom field definitions (OpenSpec custom-fields, design D4).
-  field: ['name', 'options'],
-  // A time entry's note (OpenSpec time-tracking, design D1); its times stay plaintext.
-  time_entry: ['note'],
-  // The review record's line for tomorrow (OpenSpec close-the-day, design D5); its times and focus stay plaintext.
-  review: ['tomorrow_note'],
-  // A place (task-locations D1): its coordinates are one object; position and times stay plaintext.
-  place: ['name', 'address', 'geo'],
-}
+export const CONTENT_FIELDS: Partial<Record<Entity, readonly string[]>> = OP_CONTENT_FIELDS
 
 /**
  * Families of content fields named by a prefix: a task's custom field values
@@ -144,27 +126,18 @@ export interface EncryptionSnapshot {
   recordMissing: boolean
 }
 
-let snap: EncryptionSnapshot = { enabled: false, unlocked: false, keyVersion: 0, migration: null, updateRequired: false, recordMissing: false }
-const listeners = new Set<() => void>()
+const snap = createStore<EncryptionSnapshot>('encryption', { enabled: false, unlocked: false, keyVersion: 0, migration: null, updateRequired: false, recordMissing: false })
 
 export function publishEncryption(patch: Partial<EncryptionSnapshot>): void {
-  snap = { ...snap, ...patch }
-  for (const fn of listeners) fn()
+  snap.update((cur) => ({ ...cur, ...patch }))
 }
 
-export function encryptionSnapshot(): EncryptionSnapshot {
-  return snap
-}
+export const encryptionSnapshot = snap.get
 
 /** Call `fn` on every change of the snapshot; returns the unsubscribe. */
-export function onEncryptionChange(fn: () => void): () => void {
-  listeners.add(fn)
-  return () => { listeners.delete(fn) }
-}
+export const onEncryptionChange = snap.subscribe
 
-export function useEncryption(): EncryptionSnapshot {
-  return useSyncExternalStore(onEncryptionChange, () => snap, () => snap)
-}
+export const useEncryption = snap.use
 
 // ---- key storage ----
 
@@ -201,6 +174,8 @@ export async function cachedRecord(): Promise<KeyRecord | null> {
 }
 
 async function setEnabled(enabled: boolean, record: KeyRecord | null): Promise<void> {
+  // Encryption turned off: a key stored behind the device's biometrics is worthless (native-shells).
+  if (!enabled) await forgetBiometric()
   // A key kept after disabling belongs to the old record; a new record (encryption
   // enabled again, possibly elsewhere) has a new account key: lock instead of
   // producing undecryptable values.
@@ -234,7 +209,7 @@ export async function loadEncryptionState(): Promise<EncryptionSnapshot> {
   memKeys.delete(db.name)
   const [enabled, key, record, missing] = await Promise.all([isEnabled(), currentKey(), cachedRecord(), isRecordMissing()])
   publishEncryption({ enabled, unlocked: !!key, keyVersion: record?.version ?? 0, recordMissing: enabled && missing })
-  return snap
+  return snap.get()
 }
 
 /**
@@ -400,6 +375,7 @@ export async function commitEnable({ record, key }: PreparedEnable): Promise<{ d
 
 /** Change the passphrase: re-wrap only, no content op (design D1). Needs the current passphrase. */
 export async function changePassphrase(current: string, next: string, opts: { iterations?: number } = {}): Promise<void> {
+  await forgetBiometric()
   const record = await refreshFromServer()
   if (!record) throw new Error(t('Encryption is not enabled for this account.'))
   const rewrapped = await attempt(() => rewrapWithPassphrase(record, current, next, opts))
@@ -409,6 +385,7 @@ export async function changePassphrase(current: string, next: string, opts: { it
 
 /** Reset a forgotten passphrase with the recovery key; returns the new recovery key (the old one stops working). */
 export async function resetPassphrase(recoveryKey: string, next: string, opts: { iterations?: number } = {}): Promise<{ recoveryKey: string }> {
+  await forgetBiometric()
   const record = await refreshFromServer()
   if (!record) throw new Error(t('Encryption is not enabled for this account.'))
   const reset = await attempt(() => resetWithRecoveryKey(record, recoveryKey, next, opts))
@@ -508,7 +485,7 @@ export function forgetMemoryKeys(): void {
 
 /** A content value the UI should mark: plaintext on the server while the account encrypts. */
 export function notYetEncrypted(row: { _e2ee?: { wire?: Record<string, string> } } & Record<string, unknown>, entity: Entity, personal = true): boolean {
-  if (!snap.enabled || !personal) return false
+  if (!snap.get().enabled || !personal) return false
   const values = entity === 'task' ? Object.entries((row.fields ?? {}) as Record<string, unknown>).map(([id, v]) => [`fields.${id}`, v] as const) : []
   for (const [f, v] of [...(CONTENT_FIELDS[entity] ?? []).map((f) => [f, row[f]] as const), ...values]) {
     const text = contentToString(entity, f, v)
@@ -554,4 +531,61 @@ export async function decryptActivityPage<P extends { events: ActivityLike[] }>(
     ...(e.taskTitle !== undefined && e.taskId ? { taskTitle: (await displayValue('task', e.taskId, 'title', e.taskTitle)) as string } : {}),
   })))
   return { ...page, events }
+}
+
+// ---- biometric unlock in a native shell (OpenSpec change native-shells, design D7) ----
+
+/** The key record (its creation time) the key stored behind the biometrics belongs to. */
+const K_BIOMETRIC = 'e2ee:biometricFor'
+
+/** Whether this device can offer, and has, biometric unlock. */
+export async function biometricUnlockState(): Promise<{ available: boolean; enabled: boolean }> {
+  if (!shellHas('biometric')) return { available: false, enabled: false }
+  return { available: true, enabled: (await getMeta<number | null>(K_BIOMETRIC, null)) != null }
+}
+
+/**
+ * After a successful unlock with `secret`: unwrap the account key once more as
+ * extractable, hand its raw bytes to the shell to keep behind the device's
+ * biometrics, and drop the extractable copy. Returns false when the shell refused.
+ */
+export async function enableBiometricUnlock(secret: string, kind: 'passphrase' | 'recovery'): Promise<boolean> {
+  if (!shellHas('biometric')) return false
+  const record = await recordForUnlock()
+  const key = kind === 'passphrase' ? await unlockWithPassphrase(record, secret, true) : await unlockWithRecoveryKey(record, secret, true)
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))
+  try {
+    if (!(await biometricStore(b64url(raw)))) return false
+  } finally {
+    raw.fill(0)
+  }
+  await setMeta(K_BIOMETRIC, record.createdAt ?? 0)
+  return true
+}
+
+/**
+ * Unlocks with the key kept behind the device's biometrics: the shell shows its
+ * prompt and returns the raw key, imported here as non-extractable. False when the
+ * prompt was cancelled, the key was invalidated (biometrics changed) or belongs to
+ * an older account key (encryption turned off and on again); the passphrase remains.
+ */
+export async function unlockWithBiometrics(): Promise<boolean> {
+  const stored = await getMeta<number | null>(K_BIOMETRIC, null)
+  if (stored == null || !shellHas('biometric')) return false
+  const record = await recordForUnlock()
+  if (stored !== (record.createdAt ?? 0)) {
+    await forgetBiometric()
+    return false
+  }
+  const raw = await biometricRead()
+  if (!raw) return false
+  const key = await crypto.subtle.importKey('raw', fromB64url(raw), { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+  await storeKey(key, record)
+  return true
+}
+
+/** Forgets the key kept behind the biometrics (sign-out, passphrase change, encryption off). */
+export async function forgetBiometric(): Promise<void> {
+  biometricForget()
+  await db.meta.delete(K_BIOMETRIC)
 }

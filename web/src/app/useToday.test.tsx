@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
 import { setDayStart } from '../lib/dates'
 import { applyOps, mutate, mutateMany, resetDeviceId, type Change } from '../lib/ops'
-import { flush, render } from '../ui/test-utils'
+import { render, waitFor } from '../ui/test-utils'
 import { resetCollapsedGroups } from './collapsedGroups'
 import { DateTimePrefsProvider } from './DateTimePrefsProvider'
 import { TaskListView } from './TaskListView'
@@ -18,10 +18,6 @@ function Probe() {
   return <p data-testid="today">{useToday()}</p>
 }
 
-async function waitFor(ok: () => boolean, ms = 10_000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 
 async function seed() {
   const changes: Change[] = [['wed', '2026-10-14'], ['thu', '2026-10-15']].map(([id, date], i) => ({
@@ -45,10 +41,9 @@ describe('useToday with a day start', () => {
     vi.useRealTimers()
     setDayStart(0)
     resetCollapsedGroups()
-    document.body.innerHTML = ''
   })
 
-  const overdue = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('[data-group-header] h2')].some((h) => h.textContent!.startsWith('Overdue'))
+  const overdue = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('[data-group-header] h2')].some((h) => h.textContent!.startsWith('Earlier'))
   const listed = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('[data-task-id]')].map((r) => r.dataset.taskId)
 
   it('moves Today to the previous date when the day start is written, without a reload, and rolls over at the day start', async () => {

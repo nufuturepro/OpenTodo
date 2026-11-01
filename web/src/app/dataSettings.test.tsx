@@ -22,7 +22,7 @@ describe('YourDataView', () => {
     expect(html).not.toContain('backups-link')
   })
   it('summarises sync with a badge and what is waiting', () => {
-    expect(render()).toMatch(/data-hue="green"[^>]*><span[^>]*>Up to date<\/span>/)
+    expect(render()).toMatch(/data-status="ok"[^>]*><span[^>]*><\/span><span[^>]*>Up to date<\/span>/)
     const waiting = render({ sync: { ...idle, state: 'offline', pending: 3 } })
     expect(waiting).toContain('Offline')
     expect(waiting).toContain('3 changes waiting to upload.')
@@ -33,11 +33,11 @@ describe('YourDataView', () => {
   it('links the owner to Backups', () => {
     const html = render({ isOwner: true })
     expect(html).toContain('data-testid="backups-link"')
-    expect(html).toContain('href="/settings/server"')
+    expect(html).toContain('href="/settings/server/backups"')
   })
   it('disables import on a demo instance with the exact note', () => {
     const html = render({ demo: true })
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Import data…<\/button>/)
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Import data<\/button>/)
     expect(html).toContain('Import: Disabled on this demo instance.')
     expect(html).not.toContain('href="/settings/import"')
   })

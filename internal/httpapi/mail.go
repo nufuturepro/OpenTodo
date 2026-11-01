@@ -7,15 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/mail"
-	"github.com/pixari/opentodo/internal/settings"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/mail"
 )
-
-// WithMail (an Option) supplies outgoing email (OpenSpec `outgoing-email`). A
-// nil service, as on a demo instance, means "not configured" everywhere.
-func WithMail(m *mail.Service) Option { return func(s *Server) { s.mail = m } }
 
 // Test messages per account (design D7, as the push test).
 const (
@@ -35,9 +30,9 @@ type smtpLastTest struct {
 
 func (s *Server) registerMailRoutes(mux *routes) {
 	s.smtpTestLimiter = newRateLimiter(smtpTestLimit, smtpTestWindow)
-	mux.handle("GET /api/v1/settings/smtp", ownerOnly("manage outgoing email").credential().demoDenied(), s.handleGetSMTP)
-	mux.handle("PUT /api/v1/settings/smtp", ownerOnly("manage outgoing email").sensitive().demoDenied(), s.handlePutSMTP)
-	mux.handle("POST /api/v1/settings/smtp/test", ownerOnly("send a test message").demoDenied(), s.handleTestSMTP)
+	mux.handle("GET /api/v1/settings/smtp", ownerOnly("manage outgoing email").Credential().DemoDenied(), s.handleGetSMTP)
+	mux.handle("PUT /api/v1/settings/smtp", ownerOnly("manage outgoing email").Sensitive().DemoDenied(), s.handlePutSMTP)
+	mux.handle("POST /api/v1/settings/smtp/test", ownerOnly("send a test message").DemoDenied(), s.handleTestSMTP)
 }
 
 // mailEnabled reports whether outgoing email can be used right now.
@@ -70,7 +65,7 @@ func (s *Server) smtpJSON(ctx context.Context, c mail.Config) map[string]any {
 		"lastTest":    nil,
 	}
 	var lt smtpLastTest
-	if ok, err := settings.New(s.sync.DB()).Get(ctx, lastTestKey, &lt); err == nil && ok {
+	if ok, err := s.settings.Get(ctx, lastTestKey, &lt); err == nil && ok {
 		out["lastTest"] = lt
 	}
 	return out
@@ -123,7 +118,7 @@ func (s *Server) handlePutSMTP(w http.ResponseWriter, r *http.Request) {
 		s.audit.Record(r.Context(), audit.SettingsChanged(u.ID, ch.Key, ch.From, ch.To))
 	}
 	if len(changes) > 0 {
-		_ = settings.New(s.sync.DB()).Delete(r.Context(), lastTestKey)
+		_ = s.settings.Delete(r.Context(), lastTestKey)
 	}
 	c, err := s.mail.Config(r.Context())
 	if err != nil {
@@ -147,7 +142,7 @@ func (s *Server) handleTestSMTP(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.mail.SendTest(r.Context(), mail.Message{To: u.Email, Lang: mail.LangFrom(r.Header.Get("Accept-Language")),
 		Origin: s.publicOrigin(r), UserID: u.ID, ActorID: u.ID})
-	lt := smtpLastTest{At: time.Now().UnixMilli(), Outcome: "sent"}
+	lt := smtpLastTest{At: s.now().UnixMilli(), Outcome: "sent"}
 	var se *mail.SendError
 	switch {
 	case err == nil:
@@ -157,7 +152,7 @@ func (s *Server) handleTestSMTP(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
-	_ = settings.New(s.sync.DB()).Set(r.Context(), lastTestKey, lt)
+	_ = s.settings.Set(r.Context(), lastTestKey, lt)
 	out := map[string]any{"outcome": lt.Outcome, "to": u.Email}
 	if lt.Stage != "" {
 		out["stage"], out["reply"] = lt.Stage, lt.Reply

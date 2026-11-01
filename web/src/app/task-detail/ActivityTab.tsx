@@ -2,16 +2,15 @@
 // "Per-task activity", "Grouped activity runs"): derived events folded into runs
 // of one person's changes, newest first. Built from local storage (offline, with
 // unsent changes marked pending); "Load older" pages history from the server.
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { describeEvent, fetchActivity, guestActorLabel, mergeOlder, pendingOpIds, taskActivity } from '../../lib/activity'
+import { describeEvent, fetchActivity, guestActorLabel, mergeOlder, usePendingOpIds, useTaskActivity } from '../../lib/activity'
 import { type ActivityRun, groupRuns, summarizeRun } from '../../lib/activityRuns'
 import { isNetworkError } from '../../lib/api'
-import { useAllProjects, useTasksById } from '../../lib/localData'
+import { useAllProjects, useTasksById, useMembershipMap } from '../../lib/localData'
 import { useOnline } from '../../lib/online'
-import { currentUserId, membershipMap, memberName } from '../../lib/sharing'
-import type { ActivityEvent, ActivityKind, Membership, Task } from '../../lib/types'
-import { Avatar } from '../../ui'
+import { memberName, useMe } from '../../lib/sharing'
+import type { ActivityEvent, ActivityKind, Task } from '../../lib/types'
+import { PersonAvatar } from '../PersonAvatar'
 import { Tooltip } from '../../ui'
 import { Button } from '../../ui'
 import { Icon, type IconName } from '../../ui'
@@ -52,7 +51,7 @@ function RunItem({ run, name, project, task, onOpenComment, now }: { run: Activi
   if (run.type === 'comment') {
     return (
       <div className="flex items-center gap-3 text-meta text-muted" data-run="comment">
-        <Avatar id={run.actor || 'unknown'} name={actor} size="sm" />
+        <PersonAvatar id={run.actor || 'unknown'} name={actor} size="sm" />
         <Icon name="message-circle" size="sm" className="shrink-0 text-faint" />
         <button type="button" className="min-w-0 flex-1 rounded-chip text-left hover:underline focus-visible:outline-2 focus-visible:outline-focus"
           onClick={() => onOpenComment(first.entityId)}>
@@ -67,7 +66,7 @@ function RunItem({ run, name, project, task, onOpenComment, now }: { run: Activi
   return (
     <div data-run="changes">
       <div className="flex items-start gap-3 text-meta">
-        <Avatar id={run.actor || 'unknown'} name={actor} size="sm" />
+        <PersonAvatar id={run.actor || 'unknown'} name={actor} size="sm" />
         <Icon name={KIND_ICON[first.kind] ?? 'pencil'} size="sm" className="mt-0.5 shrink-0 text-faint" />
         <div className="min-w-0 flex-1 text-default">
           {many ? (
@@ -127,11 +126,11 @@ export function ActivityView({ runs, name, project, task, onOpenComment, canLoad
 export function ActivityTab({ task, userId, onOpenComment }: { task: Task; userId?: string; onOpenComment: (commentId: string) => void }) {
   const online = useOnline()
   useFieldDefs() // "changed Cost" rather than fields.<id> (custom-fields)
-  const storedMe = useLiveQuery(() => currentUserId(), [], null)
+  const storedMe = useMe()
   const me = userId ?? storedMe
-  const memberships = useLiveQuery(() => membershipMap(), [], new Map<string, Membership>())
-  const local = useLiveQuery(() => taskActivity(task.id), [task.id], [] as ActivityEvent[])
-  const pending = useLiveQuery(() => pendingOpIds(), [], new Set<string>())
+  const memberships = useMembershipMap()
+  const local = useTaskActivity(task.id)
+  const pending = usePendingOpIds()
   const projects = useAllProjects()
   const [older, setOlder] = useState<ActivityEvent[]>([])
   const [cursor, setCursor] = useState<string | undefined>()

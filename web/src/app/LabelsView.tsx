@@ -27,6 +27,7 @@ import { favouriteEdges, moveFavourite, setFavourite } from '../lib/favourites'
 import { useFavourites, useIsFavourite } from './useFavourites'
 import { NamePrompt } from './NamePrompt'
 import { pinItem } from './menus/pinItem'
+import { messageOf } from '../lib/errorText'
 
 
 /** Labels in sidebar order with per-label open counts (same project filter as the views). */
@@ -56,7 +57,7 @@ export function NewLabelForm({ onDone, className = '' }: { onDone: () => void; c
       onDone()
       navigate({ view: 'label', id })
     } catch (err) {
-      setError(err instanceof LabelExistsError ? { message: err.message, id: err.existing.id } : { message: err instanceof Error ? err.message : String(err) })
+      setError(err instanceof LabelExistsError ? { message: err.message, id: err.existing.id } : { message: messageOf(err) })
     }
   }
   return (
@@ -155,7 +156,7 @@ export function LabelEditPanel({ label, labels, anchor, onClose }: { label: Labe
     try {
       await updateLabel(label.id, { name })
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(messageOf(e))
     }
   }
   function onSwatchKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -264,7 +265,7 @@ export function useLabelDrag() {
   return { drop, start }
 }
 
-export function LabelRow({ label, labels, count, duplicate, route, drop, onDragStart, findActive = false, quiet = false }: {
+export function LabelRow({ label, labels, count, duplicate, route, drop, onDragStart, findActive = false, quiet = false, swap = false }: {
   label: Label
   labels: Label[]
   count?: number
@@ -276,6 +277,8 @@ export function LabelRow({ label, labels, count, duplicate, route, drop, onDragS
   findActive?: boolean
   /** The sidebar's row: the count is in the accessible name only (quiet-sidebar D2); the overview shows it. */
   quiet?: boolean
+  /** Every sidebar count on (sidebar-polish D2): the count at rest, the menu in its place on hover or focus. */
+  swap?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(label.name)
@@ -304,7 +307,7 @@ export function LabelRow({ label, labels, count, duplicate, route, drop, onDragS
       await updateLabel(label.id, { name: n })
     } catch (err) {
       setName(label.name)
-      setError(err instanceof Error ? err.message : String(err))
+      setError(messageOf(err))
     }
   }
   const startRename = () => { setName(label.name); setEditing(true) }
@@ -315,7 +318,7 @@ export function LabelRow({ label, labels, count, duplicate, route, drop, onDragS
 
   return (
     <div ref={row} data-label-row={label.id} data-drop-target={`label:${label.id}`} data-task-drop={taskDrop.label(label.id)} data-active={active || undefined} data-find-active={findActive || undefined}
-      className={`group relative rounded-control data-drop-active:ring-2 data-drop-active:ring-accent ${active ? 'bg-accent-soft' : 'hover:bg-sunken dark:hover:bg-raised'}${findActive ? ' ring-2 ring-focus' : ''}`}>
+      className={`group relative rounded-control ${swap ? 'ui-swap-row ' : ''}data-drop-active:ring-2 data-drop-active:ring-accent ${active ? 'bg-selected-row' : 'hover:bg-hover'}${findActive ? ' ring-2 ring-focus' : ''}`}>
       {drop?.id === label.id && <span aria-hidden="true" className={`pointer-events-none absolute inset-x-1 h-0.5 rounded-control bg-accent ${drop.zone === 'before' ? '-top-px' : '-bottom-px'}`} />}
       <div className="flex items-center gap-1 pr-1">
         {onDragStart && (
@@ -329,16 +332,17 @@ export function LabelRow({ label, labels, count, duplicate, route, drop, onDragS
             onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') { e.stopPropagation(); setName(label.name); setEditing(false) } }} />
         ) : (
           <button data-label-open onClick={() => navigate({ view: 'label', id: label.id })} onDoubleClick={startRename} onKeyDown={onKeyDown}
-            className={`flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1.5 text-left text-body ${active ? 'font-medium text-on-accent-soft' : 'text-muted'}`}>
+            className={`flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1.5 text-left text-body ${active ? 'font-medium text-strong' : 'text-muted'}`}>
             <span data-hue={hueFor(label.color)} className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-hue-solid" />
             <span className="flex-1 truncate">{label.name}</span>
             {duplicate && <Badge hue="yellow" title={t('Another label has this name. Merge them from the menu or the banner on the labels page.')}>{t('duplicate')}</Badge>}
             {count && quiet ? <span className="sr-only" data-open-count={count}>{`, ${t('{n, plural, one {# open task} other {# open tasks}}', { n: count })}`}</span> : null}
-            {count && !quiet ? <span className="text-meta text-faint" data-open-count={count}><ReadAs label={t('{n, plural, one {# open task} other {# open tasks}}', { n: count })}>{count}</ReadAs></span> : null}
+            {count && !quiet ? <span className={`text-meta text-faint${swap ? ' ui-swap-count' : ''}`} data-open-count={count}><ReadAs label={t('{n, plural, one {# open task} other {# open tasks}}', { n: count })}>{count}</ReadAs></span> : null}
+            {swap && !count ? <span className="ui-swap-count" aria-hidden="true" /> : null}
           </button>
         )}
         <ActionMenu label={t('Menu for label {name}', { name: label.name })} title={label.name} groups={groups} open={menuOpen} onOpenChange={setMenuOpen}
-          triggerClassName="hover-reveal touch-target rounded-control px-1.5 py-0.5 text-faint hover:bg-sunken dark:hover:bg-raised" />
+          triggerClassName={`${swap ? 'ui-swap-menu' : 'hover-reveal'} touch-target rounded-control px-1.5 py-0.5 text-faint hover:bg-sunken dark:hover:bg-raised`} />
       </div>
       {error && <p className="px-2 pb-1 text-meta text-danger">{error}</p>}
       <span role="status" aria-live="polite" className="sr-only">{announce}</span>
@@ -352,7 +356,7 @@ export function LabelRow({ label, labels, count, duplicate, route, drop, onDragS
  * Favourites group. Rename asks in a dialog, Edit opens the panel beside the trigger;
  * from the Favourites group (`within`) Move up and Move down reorder the favourites.
  */
-export function LabelMenu({ label, within, className = '' }: { label: Label; within?: 'favourites'; className?: string }) {
+export function LabelMenu({ label, within, className = '', extra = [] }: { label: Label; within?: 'favourites'; className?: string; extra?: ActionGroup[] }) {
   const labels = useLabels()
   const favourites = useFavourites()
   const pinned = useIsFavourite('label', label.id)
@@ -373,7 +377,7 @@ export function LabelMenu({ label, within, className = '' }: { label: Label; wit
           triggerClassName={`touch-target rounded-control px-1.5 py-0.5 text-faint hover:bg-sunken dark:hover:bg-raised ${className}`} />
       ) : (
         // The page header's menu (app-shell "Page template"), styled like the project header's.
-        <ActionMenu label={t('Label menu')} title={label.name} groups={groups} trigger={<Icon name="ellipsis" size="md" />}
+        <ActionMenu label={t('Label menu')} title={label.name} groups={[...extra, ...groups]} trigger={<Icon name="ellipsis" size="md" />}
           triggerClassName="ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1.5" />
       )}
       {renaming && (
@@ -407,7 +411,7 @@ export function LabelsView({ route }: { route: Route }) {
   const pair = useMemo(() => duplicatePair(labels), [labels])
   const [source, target] = pair ? (swapped ? [pair[1], pair[0]] : pair) : [null, null]
   return (
-    <PageBody width="form">
+    <PageBody width="list">
       <PageHeader title={t('Labels')} meta={labels.length} help="labels"
         actions={<Button variant="primary" size="sm" icon="plus" onClick={() => setAdding(true)}>{t('New label')}</Button>} />
       {adding && <NewLabelForm onDone={() => setAdding(false)} className="mb-3 max-w-xs" />}

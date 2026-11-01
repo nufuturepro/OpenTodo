@@ -22,9 +22,9 @@ The review walks you through one step at a time, starting with the first that is
 2. **Mind sweep**: a few prompts ("Calls to return", "Promises to someone") and a quick add that catches into the Inbox.
 
 **Get current**
-3. **Look back**: what you completed this week, and what is overdue. Done when nothing is overdue.
+3. **Look back**: what you completed this week, and what is still open from earlier ("2 from earlier"). Done when nothing is.
 4. **Waiting**: what you assigned to someone else or what waits for another task.
-5. **Projects**: one card per project, least recently reviewed first, with its outcome (the first lines of its [note](project-notes.md)), its next action and whether it has stalled. <kbd>r</kbd> marks it reviewed, <kbd>q</kbd> adds a next action, <kbd>Enter</kbd> opens it, <kbd>a</kbd> archives it, <kbd>j</kbd> skips and <kbd>k</kbd> goes back. Done when every project was reviewed in the last seven days and has a next action. Your mark is yours: in a shared project, the others keep their own.
+5. **Projects**: one card per project that is due for review (see [Review intervals and maintenance](review-intervals.md)), least recently reviewed first, with its outcome (the first lines of its [note](project-notes.md)), its next action, whether it has stalled, how often you review it and whether it is in maintenance. <kbd>r</kbd> marks it reviewed, <kbd>q</kbd> adds a next action, <kbd>Enter</kbd> opens it, <kbd>a</kbd> archives it, <kbd>e</kbd> chooses how often it comes up, <kbd>m</kbd> puts it in maintenance or ends it, <kbd>j</kbd> skips and <kbd>k</kbd> goes back. After the last card the walk says how many projects are not due yet and how many of them are paused; **Review them too** adds them to this walk. Done when no project is due and each has a next action. Your mark is yours: in a shared project, the others keep their own.
 6. **Look ahead**: what is due in the next seven days.
 
 **Get creative**
@@ -36,6 +36,6 @@ Lists use the usual keys, offline too.
 
 ## Finishing a review
 
-**Finish review** records the time. It syncs to all your devices, so your phone knows when you last reviewed on your laptop. In the sidebar, Review gets a small dot once the last review is more than seven days ago, or if you never finished one; point at it to read why ("Review due · last weekly review 9 days ago"). With nothing due there is no dot, and the tooltip says when you last reviewed. With [Open Loops](method/set-up.md) on, the dot also covers the Monthly look, and in Open Loops first the Daily check. The dot also shows on More, and the Review item in the More menu says the same in words.
+**Finish review** records the time. It syncs to all your devices, so your phone knows when you last reviewed on your laptop. In the sidebar, Review gets a small dot once the last review is more than seven days ago, or if you never finished one; point at it to read why ("Review due · last weekly review 9 days ago"). With nothing due there is no dot, and the tooltip says when you last reviewed. With [Open Loops](method/set-up.md) on, the dot also covers the Monthly look, and with the full method the Daily check. When Review is inside More, its dot and these words are on the Review item in the More menu; More itself carries no dot.
 
 What you completed and let slip is in [Statistics and the weekly digest](statistics.md).

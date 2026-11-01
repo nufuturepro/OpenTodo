@@ -1,13 +1,14 @@
 import { type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
-import { Skeleton, Dialog as OverlayDialog, Menu } from '../ui'
+import { Skeleton, Dialog as OverlayDialog, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Kbd } from './shortcuts/Kbd'
 import { api, ApiError, isNetworkError } from '../lib/api'
+import { useAction } from '../lib/useAction'
 import { useOnline } from '../lib/online'
 import { useOutgoingEmail } from '../lib/outgoingEmail'
 import { hasAnyAction, isAdministrator, rowActions, type RowActions } from '../lib/roles'
 import { MembersPanel } from './MembersPanel'
 import type { AdminUser, User } from '../lib/types'
-import { Avatar } from '../ui'
+import { PersonAvatar } from './PersonAvatar'
 import { Badge } from '../ui'
 import { Button } from '../ui'
 import { Field, Input } from '../ui'
@@ -23,6 +24,7 @@ import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t } from '../lib/i18n'
 import { ACCOUNT_ROLE_LABEL } from '../lib/roleNames'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { copyText } from '../lib/clipboard'
 
 /** Dispatched after the viewer's own role changed (ownership transfer): the app re-reads its profile. */
 export const ACCOUNT_CHANGED_EVENT = 'opentodo:account-changed'
@@ -67,9 +69,8 @@ export function UsersPanel({ user }: { user: User }) {
   const online = useOnline()
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [unreachable, setUnreachable] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const { busy, error, setError, run: attempt } = useAction({ describe: describeUserError, onStart: () => setNotice(null) })
   const [resetLink, setResetLink] = useState<UsersViewProps['resetLink']>(null)
   const [copied, setCopied] = useState(false)
   const [dialog, setDialog] = useState<UsersDialog>(null)
@@ -82,7 +83,7 @@ export function UsersPanel({ user }: { user: User }) {
       if (isNetworkError(err)) setUnreachable(true)
       else setError(describeUserError(err))
     }
-  }, [])
+  }, [setError])
 
   useEffect(() => {
     if (online) void load()
@@ -90,21 +91,15 @@ export function UsersPanel({ user }: { user: User }) {
     else setUsers(null)
   }, [online, load])
 
+  /** Runs an administrative action; resolves whether it worked. */
   async function run(action: () => Promise<unknown>, done: string) {
-    setBusy(true)
-    setError(null)
-    setNotice(null)
-    try {
+    const ok = await attempt(async () => {
       await action()
       setNotice(done)
       await load()
       return true
-    } catch (err) {
-      setError(describeUserError(err))
-      return false
-    } finally {
-      setBusy(false)
-    }
+    })
+    return ok ?? false
   }
 
   const name = (u: AdminUser) => u.name || u.email
@@ -154,7 +149,7 @@ export function UsersPanel({ user }: { user: User }) {
         }}
         onCopy={() => {
           if (!resetLink) return
-          navigator.clipboard.writeText(resetLink.link).then(() => setCopied(true), () => setError(t('Could not access the clipboard; select the link and copy it manually.')))
+          copyText(resetLink.link).then(() => setCopied(true), () => setError(t('Could not access the clipboard; select the link and copy it manually.')))
         }}
         onDismissLink={() => setResetLink(null)}
       />
@@ -294,14 +289,14 @@ export function UsersView(p: UsersViewProps) {
           return (
             <li key={u.id} data-user={u.email}>
               <ListRow
-                leading={<Avatar id={u.id} name={label} size="md" />}
+                leading={<PersonAvatar id={u.id} name={label} size="md" />}
                 label={<>{label}{u.id === p.viewer.id && <span className="text-faint">{' '}{t('(you)')}</span>}</>}
                 ariaLabel={`${label}, ${ACCOUNT_ROLE_LABEL[u.role]}, ${u.status === 'active' ? t('active') : t('deactivated')}`}
                 meta={[u.name ? u.email : '', t('joined {date}', { date: dt.formatInstant(u.createdAt, 'date') }), u.lastLoginAt ? t('last sign-in {instant}', { instant: dt.formatInstant(u.lastLoginAt, 'datetime') }) : t('no sign-in since the upgrade')].filter(Boolean).join(' · ')}
                 badges={(
                   <>
                     <Badge hue={ROLE_HUE[u.role]}>{ACCOUNT_ROLE_LABEL[u.role]}</Badge>
-                    <Badge hue={u.status === 'active' ? 'green' : 'red'} tone="solid">{u.status === 'active' ? t('Active') : t('Deactivated')}</Badge>
+                    <StatusIndicator tone={toneForHue(u.status === 'active' ? 'green' : 'red')}>{u.status === 'active' ? t('Active') : t('Deactivated')}</StatusIndicator>
                   </>
                 )}
                 onKeyDown={(e) => onRowKey(e, u, a)}

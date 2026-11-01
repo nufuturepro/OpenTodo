@@ -82,7 +82,7 @@ The date format SHALL apply to every user-facing date in the web app. With `day-
 - **THEN** its row shows `3 nov.` and a date heading reads `mardi 3 nov.`
 
 ### Requirement: Time format
-The time format SHALL apply to every user-facing time of day in the web app. `12h` SHALL show times like `3:00 PM`, `24h` like `15:00`, and `system` SHALL follow the interface language's locale (OpenSpec `localization`). Stored values SHALL not change: a due time stays `HH:MM` and instants stay Unix milliseconds.
+The time format SHALL apply to every user-facing time of day in the web app. `12h` SHALL show times like `3:00 PM`, `24h` like `15:00`, and `system` SHALL follow the interface language's locale (OpenSpec `localization`). This includes the due shown while scheduling (Process the Inbox, Focus) and its announcements, and a zone-fixed due time is shown in the viewer's zone there as everywhere. Stored values SHALL not change: a due time stays `HH:MM` and instants stay Unix milliseconds.
 
 #### Scenario: 12-hour clock
 - **WHEN** the time format is `12h` and a task is due at `15:00`
@@ -96,6 +96,10 @@ The time format SHALL apply to every user-facing time of day in the web app. `12
 - **WHEN** the interface language is Spanish, the time format is `12h` and a task is due at `15:00`
 - **THEN** it is shown as `3:00 p. m.`
 
+#### Scenario: Due time in Process the Inbox
+- **WHEN** the time format is `12h` and Process the Inbox shows a task due at `15:00`
+- **THEN** the card reads the due time as `3:00 PM`, as the task's row does
+
 ### Requirement: First day of the week
 The first day of the week SHALL decide where weeks start in every week-shaped display of the web app: the Week view and the calendar of a date field.
 
@@ -104,7 +108,7 @@ The first day of the week SHALL decide where weeks start in every week-shaped di
 - **THEN** each week row starts on Sunday
 
 ### Requirement: Date and time entry follows the preferences
-The due date, due time and reminder fields of task editing SHALL display their value in the user's formats, and SHALL accept typed input in the date format, ISO dates, and relative words (`today`, `tomorrow`, weekday names). Time fields SHALL accept 12-hour and 24-hour input in any time format. Unparseable input SHALL be rejected with a visible message and SHALL not change the task.
+The due date, due time and reminder fields of task editing SHALL display their value in the user's formats, and SHALL accept typed input in the date format, ISO dates, and relative words (`today`, `tomorrow`, weekday names). Time fields SHALL accept 12-hour and 24-hour input in any time format. Unparseable input SHALL be rejected with a visible message and SHALL not change the task. The example dates a date field shows (its placeholder and the examples in its error message) SHALL be written in the user's date format.
 
 #### Scenario: Typed day-month date
 - **WHEN** the date format is `day-month` and the user types `3/11` into the due date field and confirms
@@ -118,6 +122,10 @@ The due date, due time and reminder fields of task editing SHALL display their v
 - **WHEN** the user types `31/02` into a due date field and confirms
 - **THEN** the field shows that the date is not valid and the task's due is unchanged
 
+#### Scenario: Placeholder in the chosen order
+- **WHEN** the date format is `month-day` and the user opens the When editor of a task without a date
+- **THEN** the date field's placeholder and its error message for unparseable input show example dates in month-day order, never a fixed `22/10`
+
 ### Requirement: Date fields have a keyboard-operable calendar
 Every date field in task editing SHALL offer a calendar to pick a date. Its weeks SHALL start on the preferred first day, today and the selected date SHALL be marked, and it SHALL be fully operable by keyboard: arrows move by day and week, Page Up and Page Down by month, Enter picks and Escape closes.
 
@@ -126,7 +134,7 @@ Every date field in task editing SHALL offer a calendar to pick a date. Its week
 - **THEN** the task is due on 16 October and the calendar closes
 
 ### Requirement: Preferences in Settings
-Settings SHALL offer a Date and time panel with the four preferences and a live preview of a sample date, time and week. The day start SHALL be offered as the whole hours from `00:00` (named as midnight) to `06:00`, each shown in the user's time format, with one line explaining that work done before that time counts for the previous day; the preview SHALL name the day the device currently considers today. A change SHALL apply at once, without a reload.
+Settings SHALL offer a Date and time panel with the four preferences and a live preview of a sample date, time and week. The day start SHALL be offered as the whole hours from `00:00` (named as midnight) to `06:00`, each shown in the user's time format, with one line explaining that work done before that time counts for the previous day; the preview SHALL name the day the device currently considers today. A change SHALL apply at once, without a reload. The preview SHALL be one "Sample" box under the four rows, set in the body text style: a heading line naming today as the app names it, then the sample values as they appear in the app (a due date chip, a full date, a due time, a comment time) in a two-column grid of label and value aligned on one axis, then the week strip starting on the chosen first day with today marked; it SHALL fit within the card's width at 360 px without wrapping a value.
 
 #### Scenario: Live preview
 - **WHEN** the user switches the time format from `24h` to `12h` in Settings
@@ -139,6 +147,10 @@ Settings SHALL offer a Date and time panel with the four preferences and a live 
 #### Scenario: Keyboard
 - **WHEN** the user tabs to the day start control and chooses a value with the arrow keys
 - **THEN** the value is written and the preview updates, with no mouse
+
+#### Scenario: Sample box on a phone
+- **WHEN** the user opens Date and time at 360 px
+- **THEN** the Sample box shows today's heading, four label and value lines aligned on one axis, and the week strip, with no value wrapped and nothing wider than the card
 
 ### Requirement: Logical today
 The web app SHALL compute one logical today per device: the local calendar date, or the previous date while the local time is before the day start. Every screen and rule that asks which day it is SHALL use it and SHALL move to the next day within a minute of the day start while the app stays open. The preference is applied when reading: stored dates and instants never change, nothing new is written, and devices converge as before.

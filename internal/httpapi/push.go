@@ -4,26 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/push"
-	"github.com/pixari/opentodo/internal/settings"
-	opsync "github.com/pixari/opentodo/internal/sync"
-	"github.com/pixari/opentodo/internal/zoned"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/push"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Reminders and web push (OpenSpec change `reminders`): the /api/v1/push routes,
 // the client's reported zone offset and the server-side recomputation of
 // relative reminders when a REST write moves a task's due date.
-
-// WithPush enables the /api/v1/push routes. Without it, or with OPENTODO_PUSH=off,
-// the routes are not registered and answer 404 not_found like any unknown route.
-func WithPush(p *push.Service) Option { return func(s *Server) { s.push = p } }
 
 func (s *Server) pushEnabled() bool { return s.push != nil && !s.cfg.PushDisabled }
 
@@ -32,10 +25,10 @@ func (s *Server) registerPushRoutes(mux *routes) {
 		return
 	}
 	mux.handle("GET /api/v1/push/vapid-key", signedIn, s.handlePushKey)
-	mux.handle("POST /api/v1/push/subscriptions", signedIn.demoDenied(), s.handlePushSubscribe)
-	mux.handle("DELETE /api/v1/push/subscriptions/{id}", signedIn.demoDenied(), s.handlePushUnsubscribe)
+	mux.handle("POST /api/v1/push/subscriptions", signedIn.DemoDenied(), s.handlePushSubscribe)
+	mux.handle("DELETE /api/v1/push/subscriptions/{id}", signedIn.DemoDenied(), s.handlePushUnsubscribe)
 	s.pushTestLimiter = newRateLimiter(pushTestLimit, pushTestWindow)
-	mux.handle("POST /api/v1/push/test", signedIn.demoDenied(), s.handlePushTest)
+	mux.handle("POST /api/v1/push/test", signedIn.DemoDenied(), s.handlePushTest)
 }
 
 // Test pushes per account (OpenSpec `push-test-delivery` D3): enough for a
@@ -185,7 +178,7 @@ func (s *Server) recordTZOffset(ctx context.Context, uid string, offset *int) {
 	if v, ok := s.tzOffsets.Load(uid); ok && v.(int) == *offset {
 		return
 	}
-	if err := settings.New(s.sync.DB()).Set(ctx, tzKey(uid), *offset); err != nil {
+	if err := s.settings.Set(ctx, tzKey(uid), *offset); err != nil {
 		s.log.Warn("store zone offset", "err", err)
 		return
 	}
@@ -196,57 +189,13 @@ func (s *Server) tzLocation(ctx context.Context, uid string) *time.Location {
 	offset := 0
 	if v, ok := s.tzOffsets.Load(uid); ok {
 		offset = v.(int)
-	} else if found, err := settings.New(s.sync.DB()).Get(ctx, tzKey(uid), &offset); err == nil && found {
+	} else if found, err := s.settings.Get(ctx, tzKey(uid), &offset); err == nil && found {
 		s.tzOffsets.Store(uid, offset)
 	}
 	return time.FixedZone("", offset*60)
 }
 
 // ---- relative reminders follow REST due changes ----
-
-// dueInstantMs is the Unix ms a due denotes: a zoned due is its wall time in its
-// own zone (absolute-datetimes); a floating one is read in loc, 09:00 when
-// date-only.
-func dueInstantMs(d *due, loc *time.Location) (int64, bool) {
-	clock := "09:00"
-	if d.Time != nil {
-		clock = *d.Time
-	}
-	if d.TZ != nil && d.Time != nil {
-		if zl, err := zoned.Load(*d.TZ); err == nil {
-			loc = zl
-		}
-	}
-	at, err := zoned.Instant(d.Date, clock, loc)
-	if err != nil {
-		return 0, false
-	}
-	return at.UnixMilli(), true
-}
-
-func relativeFireAt(d *due, offset json.RawMessage, loc *time.Location) json.RawMessage {
-	if d == nil {
-		return json.RawMessage("null")
-	}
-	at, ok := dueInstantMs(d, loc)
-	if !ok {
-		return json.RawMessage("null")
-	}
-	var minutes int64
-	_ = json.Unmarshal(offset, &minutes)
-	return json.RawMessage(fmt.Sprint(at + minutes*60_000))
-}
-
-// deadlineFireAt is the firing instant of a deadline reminder (OpenSpec change
-// deadlines, design D5): 09:00 in loc on the deadline day plus the offset, null
-// without a deadline.
-func deadlineFireAt(deadlineRaw, offset json.RawMessage, loc *time.Location) json.RawMessage {
-	var date string
-	if json.Unmarshal(deadlineRaw, &date) != nil || date == "" {
-		return json.RawMessage("null")
-	}
-	return relativeFireAt(&due{Date: date}, offset, loc)
-}
 
 // reminderOpsForTask recomputes fire_at for the reminders that follow a task
 // field the patch sets: relative reminders follow `due`, deadline reminders

@@ -2,6 +2,9 @@ import { Button, Icon, IconPicker, PageHeader, Tooltip } from '../ui'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMembership, useProjects } from '../lib/localData'
+import { moveProjectToWorkspaceUndoable } from '../lib/undoActions'
+import { showUndoToast } from './bulk/toastStore'
+import { useOtherWorkspaces } from './workspaceNav'
 import { useDemo } from '../lib/demo'
 import { useOnline } from '../lib/online'
 import { archiveProject, deleteProject, moveProject, updateProject } from '../lib/ops'
@@ -16,7 +19,7 @@ import { DuplicateProjectDialog, SaveTemplateDialog } from './TemplateDialogs'
 import { FieldsDialog } from './FieldsDialog'
 import { HistoryPanel } from './HistoryPanel'
 import { ProjectActivity } from './ProjectActivity'
-import { ActionMenu, type ActionGroup } from './menus/ActionMenu'
+import { ActionMenu, type ActionGroup, type ActionItem } from './menus/ActionMenu'
 import { iconPickerSpec } from './menus/stylePickers'
 import { closePanel, openPanel, usePanelOccupantKey } from './panel'
 import { PanelFrame } from './PanelFrame'
@@ -31,8 +34,12 @@ import { act } from './actionError'
 import { setFavourite } from '../lib/favourites'
 import { useIsFavourite } from './useFavourites'
 import { pinItem } from './menus/pinItem'
-import { useOpenTaskCount } from '../lib/liveTasks'
-import { useProjectViewMode, useShowCompletedPref } from '../lib/liveData'
+import { projectFlowItem } from './menus/flowMenu'
+import { maintenanceItem, reviewEveryItem } from './menus/reviewMenu'
+import { inMaintenance } from '../lib/reviewCadence'
+import { useMethodMode, type MethodMode } from '../lib/method/mode'
+import { openTaskCount, useOpenTaskCount } from '../lib/liveTasks'
+import { useProjectPrefsRow, useProjectViewMode, useShowCompletedPref } from '../lib/liveData'
 import { saveShowCompleted } from '../lib/sections'
 
 /** A "Move to" target: a project, or the top level (id ''). */
@@ -85,8 +92,12 @@ function ColourSwatches({ project }: { project: Project }) {
  * "Pin to sidebar" (sidebar-favourites) is offered to every role: it changes the
  * user's own preferences, never the project.
  */
-export function projectMenuGroups(project: Project, o: { role: ProjectRole; shared: boolean; targets: MoveTarget[]; subCount: number; openTasks: number; pinned?: boolean }, a: { rename: () => unknown; duplicate?: () => unknown; saveTemplate?: () => unknown; fields?: () => unknown; pin?: () => unknown }): ActionGroup[] {
+export function projectMenuGroups(project: Project, o: { role: ProjectRole; shared: boolean; targets: MoveTarget[]; subCount: number; openTasks?: number; pinned?: boolean; workspaces?: { id: string; name: string }[]; mode?: MethodMode; reviewEvery?: string }, a: { rename: () => unknown; duplicate?: () => unknown; saveTemplate?: () => unknown; fields?: () => unknown; pin?: () => unknown }): ActionGroup[] {
   const { role, targets, subCount, openTasks } = o
+  // A consequence naming the open tasks: from the count the caller holds, or, while
+  // that has not loaded yet, read when the confirmation opens (never "0 open tasks").
+  const withCount = (text: (n: number) => string) =>
+    openTasks === undefined ? async () => text(await openTaskCount(project.id)) : text(openTasks)
   const pin: ActionGroup[] = a.pin ? [{ items: [pinItem(!!o.pinned, a.pin)] }] : []
   const subsText = subCount ? ` ${t('{n, plural, one {Its sub-project moves up one level.} other {Its # sub-projects move up one level.}}', { n: subCount })}` : ''
   // Copies only read the project, so every role may make them (project-templates D6).
@@ -98,11 +109,19 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
   const fields: ActionGroup[] = a.fields && canEditTasks(role) ? [{ items: [
     { kind: 'action', id: 'fields', label: t('Fields…'), icon: 'list', shortcut: keysOf('project.fields'), onSelect: a.fields },
   ] }] : []
-  if (!canEditProject(role)) return [...pin, ...copies, ...fields]
+  // "Review every…" (project-review-cadence D6): personal, for whoever is in the walk (editors and up).
+  const every = o.mode && canEditTasks(role) ? reviewEveryItem(project.id, o.reviewEvery, { mode: o.mode }) : null
+  const review: ActionGroup[] = every ? [{ items: [every] }] : []
+  if (!canEditProject(role)) return [...pin, ...copies, ...fields, ...review]
+  // "Flow…" (project-flow-modes D7): the menus pass the mode; the palette offers its own "Set project flow…".
+  const flow = o.mode ? projectFlowItem(project, { mode: o.mode, canEdit: true }) : null
+  // "Put in maintenance" / "End maintenance" (project-review-cadence D6): owner and admins, like the flow.
+  const maintenance = o.mode ? maintenanceItem(project, { mode: o.mode, canEdit: true }) : null
   return [
     ...pin,
     ...copies,
     ...fields,
+    ...review,
     { items: [
       { kind: 'picker', id: 'move', label: t('Move to'), icon: 'folder-input', shortcut: keysOf('project.move'), picker: {
         title: t('Move to'), placeholder: t('Find a project…'), emptyText: t('No other project can hold this one'),
@@ -110,6 +129,12 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
         selected: [project.parent_id ?? '__top__'], rankContext: 'project-move',
         onPick: (item: MoveTarget) => { act(moveProject(project.id, item.id || null)) },
       } },
+      // Only the owner moves a project to another of their workspaces (workspaces D7).
+      ...(role === 'owner' && o.workspaces?.length ? [{ kind: 'picker' as const, id: 'move-workspace', label: t('Move to workspace…'), icon: 'layers' as const, picker: {
+        title: t('Move to workspace'), placeholder: t('Find a workspace…'), emptyText: t('No other workspace'),
+        source: o.workspaces, getKey: (w: { id: string }) => w.id, getLabel: (w: { name: string }) => w.name, rankContext: 'project-move-workspace',
+        onPick: (w: { id: string; name: string }) => { void moveProjectToWorkspaceUndoable(project.id, w.id, w.name).then((r) => { if (r.entry) showUndoToast(r.label, r.entry.id) }) },
+      } }] : []),
       { kind: 'action', id: 'rename', label: t('Rename'), icon: 'pencil', onSelect: a.rename },
       // The searchable icon picker (icons-and-section-style), inside the same overlay.
       { kind: 'step', id: 'icon', label: t('Icon'), icon: 'image', step: {
@@ -121,19 +146,21 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
         ),
         palette: iconPickerSpec(project.icon, (icon) => act(updateProject(project.id, { icon }))),
       } },
+      ...(flow ? [flow] : []),
+      ...(maintenance ? [maintenance] : []),
       { kind: 'confirm', id: 'archive', label: subCount ? t('Archive with sub-projects') : t('Archive'), icon: 'archive', confirm: {
         title: t('Archive “{name}”?', { name: project.name }), tone: 'default', confirmLabel: t('Archive'),
-        body: subCount
-          ? t('{tasks, plural, one {It leaves the sidebar with # open task} other {It leaves the sidebar with # open tasks}} {subs, plural, one {and its sub-project} other {and its # sub-projects}}. You can unarchive it from Settings → Data.', { tasks: openTasks, subs: subCount })
-          : t('{tasks, plural, one {It leaves the sidebar with # open task.} other {It leaves the sidebar with # open tasks.}} You can unarchive it from Settings → Data.', { tasks: openTasks }),
+        body: withCount((tasks) => subCount
+          ? t('{tasks, plural, one {It leaves the sidebar with # open task} other {It leaves the sidebar with # open tasks}} {subs, plural, one {and its sub-project} other {and its # sub-projects}}. You can unarchive it from Settings → Data.', { tasks, subs: subCount })
+          : t('{tasks, plural, one {It leaves the sidebar with # open task.} other {It leaves the sidebar with # open tasks.}} You can unarchive it from Settings → Data.', { tasks })),
         onConfirm: () => archiveProject(project.id).then(() => navigate({ view: 'inbox' })),
       } },
     ] },
     ...(canDeleteProject(role) ? [{ items: [{ kind: 'confirm' as const, id: 'delete', label: t('Delete project'), icon: 'trash-2' as const, tone: 'danger' as const, confirm: {
       title: t('Delete “{name}”?', { name: project.name }), confirmLabel: t('Delete project'),
-      body: o.shared
-        ? t('{n, plural, one {It is deleted for every member. A copy of its # open task goes to your Inbox.} other {It is deleted for every member. Copies of its # open tasks go to your Inbox.}}', { n: openTasks }) + subsText
-        : t('{n, plural, one {It moves to the Trash with # open task. You can restore it from the Trash.} other {It moves to the Trash with # open tasks. You can restore it from the Trash.}}', { n: openTasks }) + subsText,
+      body: withCount((n) => o.shared
+        ? t('{n, plural, one {It is deleted for every member. A copy of its # open task goes to your Inbox.} other {It is deleted for every member. Copies of its # open tasks go to your Inbox.}}', { n }) + subsText
+        : t('{n, plural, one {It moves to the Trash with # open task. You can restore it from the Trash.} other {It moves to the Trash with # open tasks. You can restore it from the Trash.}}', { n }) + subsText),
       onConfirm: () => deleteProject(project.id).then(() => navigate({ view: 'inbox' })),
     } }] }] : []),
   ]
@@ -143,15 +170,23 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
 const ACTIVITY_PANEL = 'project-activity'
 const HISTORY_PANEL = 'project-history'
 
-export function ProjectHeader({ project, userId, actions, layout, subtitle }: {
+export function ProjectHeader({ project, userId, actions, layout, subtitle, phone, extraGroups, lead, secondary }: {
   project: Project
   userId?: string
+  /** Items the layout adds to the project menu (a board's Colour by, calendar-clarity D3). */
+  extraGroups?: ActionGroup[]
+  /** The layout's part of the lead line (the Calendar layout's filter chip, calendar-clarity D5). */
+  lead?: ReactNode
+  /** A second row under the title (the Calendar layout's range controls, calendar-clarity D5). */
+  secondary?: ReactNode
   /** Below 768 px, a line under the title in the shell's bar (the board's current column). */
   subtitle?: ReactNode
   /** Page actions rendered after Share (the duration filter, touch Select). */
   actions?: ReactNode
   /** The List/Board control, first among the actions (app-shell "Page template"). */
   layout?: ReactNode
+  /** Below 768 px (phone-v2 D1): the bar's visible slots, and items for the project menu (Layout, Share, the list's own). */
+  phone?: { slots: ReactNode; groups: ActionGroup[] }
 }) {
   const [editing, setEditing] = useState(false)
   const [sharing, setSharing] = useState<false | true | 'public'>(false)
@@ -211,6 +246,9 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle }: {
   }
 
   const [dialog, setDialog] = useState<'duplicate' | 'template' | 'fields' | null>(null)
+  const otherWorkspaces = useOtherWorkspaces()
+  const mode = useMethodMode()
+  const reviewEvery = useProjectPrefsRow(project.id)?.review_every
   const panels: ActionGroup = { items: [
     ...(listLayout ? [{ kind: 'check' as const, id: 'show-completed', label: t('Show completed tasks'), icon: 'circle-check-big' as const, checked: showCompleted, onSelect: () => saveShowCompleted(project.id, !showCompleted) }] : []),
     { kind: 'action', id: 'activity', label: t('Activity'), icon: 'history', shortcut: keysOf('project.activity'), onSelect: showActivity },
@@ -220,10 +258,14 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle }: {
   ] }
   // Every role gets the copies (project-templates D6); editing items follow the role inside projectMenuGroups.
   const groups: ActionGroup[] = [
-    ...projectMenuGroups(project, { role, shared: !!membership, targets, subCount, openTasks, pinned },
+    ...projectMenuGroups(project, { role, shared: !!membership, targets, subCount, openTasks, pinned, workspaces: otherWorkspaces, mode, reviewEvery },
       { rename: () => setEditing(true), duplicate: () => setDialog('duplicate'), saveTemplate: () => setDialog('template'), fields: () => setDialog('fields'), pin: () => setFavourite('project', project.id, !pinned) }),
+    ...(extraGroups ?? []),
     panels,
   ]
+
+  // On a phone Share is a menu item, since the bar keeps two slots (phone-v2 D1).
+  const shareItem: ActionItem = { kind: 'action', id: 'share', label: canManageMembers(role) ? t('Share project') : t('Members'), icon: 'users', onSelect: () => setSharing(true) }
 
   const title = editing ? (
     <input className="ui-input max-w-xs text-h1 font-semibold" autoFocus value={name} onChange={(e) => setName(e.target.value)} aria-label={t('Project name')}
@@ -232,10 +274,11 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle }: {
     <Tooltip label={t('Rename')}><button type="button" className="user-text min-w-0 truncate rounded-control text-left hover:bg-sunken dark:hover:bg-raised" onClick={() => setEditing(true)} data-project-name>{project.name}</button></Tooltip>
   ) : <span className="user-text min-w-0 truncate" data-project-name>{project.name}</span>
 
+  // The list page waits for the membership (audit M12), so this row has its final content at first paint.
   const meta = (
-    <>
+    <span className="flex flex-wrap items-center gap-x-2">
       {membership && (
-        <button type="button" className="flex items-center gap-1 text-meta text-muted hover:text-default" onClick={() => setSharing(true)}>
+        <button type="button" className="flex min-h-6 items-center gap-1 text-meta text-muted hover:text-default" onClick={() => setSharing(true)}>
           {/* Named by its content (WCAG 2.5.3 Label in Name): the member list is visually hidden, the initials and count are not read. */}
           <span className="sr-only">{t('Members: {list}', { list: membership.members.map((m) => `${m.name || m.email} (${roleName(m.role)})`).join(', ') })}</span>
           <span aria-hidden className="flex -space-x-1">
@@ -249,29 +292,48 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle }: {
         </button>
       )}
       {role === 'viewer' && <span role="note" className="rounded-chip bg-sunken px-1.5 py-0.5 text-meta text-muted">{t('Read-only')}</span>}
+      {/* project-review-cadence: the shared status, inside the existing lead line. */}
+      {inMaintenance(project) && <span role="note" data-project-maintenance className="inline-flex items-center gap-1 rounded-chip bg-sunken px-1.5 py-0.5 text-meta text-muted"><Icon name="wrench" size="xs" />{t('In maintenance')}</span>}
+      {lead}
       {online && managesLinks && publicLinks > 0 && (
         <button type="button" data-public-badge onClick={() => setSharing('public')}
           aria-label={t('{n, plural, one {Public: # active link. Open the public links} other {Public: # active links. Open the public links}}', { n: publicLinks })}
-          className="inline-flex items-center gap-1 rounded-chip bg-warning-soft px-1.5 py-0.5 text-meta font-medium text-on-warning-soft hover:underline">
+          className="inline-flex min-h-6 items-center gap-1 rounded-chip bg-warning-soft px-1.5 text-meta font-medium text-on-warning-soft hover:underline">
           <Icon name="globe" size="xs" />{t('Public')}
         </button>
       )}
-    </>
+    </span>
   )
+
+  // On a phone the bar's line under the title is plain text (ux-fixes-phone, audit M12): the
+  // members and the public links open from Share in the project menu, and 44 px controls
+  // there would make the bar grow when the membership arrives.
+  const phoneMeta = [
+    membership ? `${membership.members.length} · ${roleName(role)}` : '',
+    role === 'viewer' ? t('Read-only') : '',
+    inMaintenance(project) ? t('In maintenance') : '',
+    online && managesLinks && publicLinks > 0 ? t('Public') : '',
+  ].filter(Boolean).join(' · ')
 
   return (
     <>
-      <PageHeader title={title} subtitle={subtitle} leading={<ProjectMark project={project} size="md" />} meta={meta} help="project"
-        actions={<>
+      <PageHeader title={title} subtitle={phone ? (subtitle ?? phoneMeta) : subtitle} leading={<ProjectMark project={project} size="md" />} meta={meta} help="project"
+        barActions={!!phone}
+        actions={phone ? phone.slots : <>
           {layout}
           <Tooltip label={canManageMembers(role) ? t('Share project') : t('Members')} shortcut={keysOf('project.share')}>
-            <Button variant="ghost" size="sm" icon="users" onClick={() => setSharing(true)} aria-haspopup="dialog" data-project-share>{canManageMembers(role) ? t('Share') : t('Members')}</Button>
+            <Button variant="ghost" size="sm" icon="users" onClick={() => setSharing(true)} aria-haspopup="dialog" data-project-share>
+              {/* Beside the display options the header is full at 768 px: the word joins the tooltip below 1024 px. */}
+              <span className="max-lg:sr-only">{canManageMembers(role) ? t('Share') : t('Members')}</span>
+            </Button>
           </Tooltip>
           {actions}
         </>}
-        menu={<ActionMenu label={t('Project menu')} title={project.name} groups={groups} header={editable ? <ColourSwatches project={project} /> : undefined}
+        menu={<ActionMenu label={t('Project menu')} title={project.name} groups={phone ? [...phone.groups, { items: [shareItem] }, ...groups] : groups} header={editable ? <ColourSwatches project={project} /> : undefined}
           trigger={<Icon name="ellipsis" size="md" />} triggerClassName="ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1.5" width="sm:w-72"
-          open={menuOpen} onOpenChange={(v) => { setMenuOpen(v); if (!v) setStartPicker(null) }} startPicker={startPicker} />} />
+          open={menuOpen} onOpenChange={(v) => { setMenuOpen(v); if (!v) setStartPicker(null) }} startPicker={startPicker} />}>
+        {secondary}
+      </PageHeader>
       {sharing && <ShareDialog project={project} userId={userId ?? ''} cached={membership ?? undefined} section={sharing === 'public' ? 'public' : undefined}
         onPublicLinks={setPublicLinks} onClose={() => setSharing(false)} />}
       {dialog === 'duplicate' && <DuplicateProjectDialog project={project} shared={!!membership} onClose={() => setDialog(null)} />}

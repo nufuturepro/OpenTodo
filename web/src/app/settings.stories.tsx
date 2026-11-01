@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { User } from '../lib/types'
 import { ProfileCard, SettingsView } from './SettingsView'
+import { withClock } from './stories/fixtures'
 
 const member: User = { id: 'u-sam', email: 'sam@example.com', name: 'Sam Rivera', role: 'member', createdAt: 1 }
 const owner: User = { id: 'u-ada', email: 'ada@example.com', name: 'Ada Lovelace', role: 'owner', createdAt: 1 }
@@ -12,7 +13,7 @@ export const Profile: StoryObj = {
   render: () => <div className="max-w-md space-y-3"><ProfileCard user={owner} /><ProfileCard user={member} /><ProfileCard user={long} /></div>,
 }
 export const OverviewMember: StoryObj = { render: () => <SettingsView user={member} onLogout={() => {}} /> }
-// Preferences shows today's date in the Date and time panel; a fixed clock keeps the baseline stable.
+// Date and time shows today's date in the Date and time panel; a fixed clock keeps the baseline stable.
 function fixedClock(at: number) {
   const Real = Date
   class Fixed extends Real {
@@ -27,6 +28,14 @@ function fixedClock(at: number) {
 }
 export const SectionPage: StoryObj = {
   beforeEach: () => fixedClock(new Date(2026, 9, 14, 12).getTime()),
-  render: () => <SettingsView user={member} onLogout={() => {}} section="general" />,
+  render: () => <SettingsView user={member} onLogout={() => {}} section="language" page="date-time" />,
 }
+/** A section's overview (settings-subpages): one row per page; the states need the server, so none show here. */
 export const AppearancePage: StoryObj = { render: () => <SettingsView user={member} onLogout={() => {}} section="appearance" /> }
+/** A sub-page: the breadcrumb Settings › Appearance › Theme and density from 1024 px, Back to Appearance below. */
+export const SubPage: StoryObj = { render: () => <SettingsView user={member} onLogout={() => {}} section="appearance" page="theme" /> }
+
+/** Appearance → Task details (task-side-panel D1): Open tasks, as a page or in a side panel. */
+export const TaskDetailsPage: StoryObj = { render: () => <SettingsView user={member} onLogout={() => {}} section="appearance" page="task-details" /> }
+/** About (screen-stories-rare D1): the version, the licence and the links; the server's answers are stubbed. */
+export const AboutPage: StoryObj = { decorators: [withClock], render: () => <SettingsView user={member} onLogout={() => {}} section="about" /> }

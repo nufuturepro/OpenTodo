@@ -22,7 +22,7 @@ beforeEach(async () => {
   resetDeviceId()
   root().removeAttribute('data-density')
 })
-afterEach(() => { document.body.innerHTML = ''; root().removeAttribute('data-density') })
+afterEach(() => { root().removeAttribute('data-density') })
 
 describe('preference', () => {
   it('reads compact, treats an unknown value as comfortable and leaves the stored value alone', async () => {
@@ -45,7 +45,7 @@ describe('preference', () => {
 
   it('the stylesheet tightens rows under compact and keeps touch targets on coarse pointers', () => {
     expect(css).toMatch(/\.row-pad \{ padding-block: 0\.5rem; \}/)
-    expect(css).toMatch(/:root\[data-density="compact"\] \.row-pad \{ padding-block: 0\.25rem; \}/)
+    expect(css).toMatch(/:root\[data-density="compact"\] \.row-pad \{ padding-block: 0\.375rem; \}/) // 32 px rows (precision-tokens D5)
     expect(css).toMatch(/:root\[data-density="compact"\] \[data-sidebar-item\] \{ min-height: 2rem/)
     expect(css).toMatch(/:root\[data-density="compact"\] \[data-group-header\] \{ min-height: 2rem; \}/)
     const coarse = css.slice(css.indexOf('@media (pointer: coarse) {\n  :root[data-density="compact"]'))

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import css from '../../index.css?raw'
 import { STYLE_NOT_YET_MIGRATED, STYLE_NOT_YET_MIGRATED_MAX, TITLE_NOT_YET_MIGRATED, TITLE_NOT_YET_MIGRATED_MAX } from './notYetMigrated'
-import { format, nativeTitles, rawStyles } from './styleLint'
+import { cancelledRings, cursorDefault, format, handMadeSurfaces, momentOnHover, nativeTitles, rawStyles } from './styleLint'
 
 // OpenSpec design-system "Semantic design tokens": shared UI, screens and the
 // component style classes colour through tokens, never raw Tailwind palette
@@ -54,6 +54,86 @@ function componentLayers(source: string): { text: string; line: number }[] {
     }
     out.push({ text: source.slice(open, end), line: source.slice(0, open).split('\n').length })
     at = source.indexOf('@layer components', end)
+  }
+  return out
+}
+
+/**
+ * The tone scale (OpenSpec change tokens-v2, design D6): text and icons get quieter by
+ * stepping down a tone (strong, default, muted, faint), never with an opacity utility
+ * or an alpha suffix on a text or border token. Opacity 0 and 100 (show and hide) and
+ * disabled states are not quieting; a dragged ghost, a fading row or the scrim carry a
+ * `tone-lint-allow` marker on the line.
+ */
+const OPACITY = /(?<![\w-])((?:[\w-]+:)*)opacity-(\d+)(?![\w-])/g
+const TONE_ALPHA = /(?<![\w-])(?:[\w-]+:)*(?:text-[a-z][\w-]*|border-(?:default|soft|input))\/\d+(?![\w-])/g
+
+export function toneProblems(path: string, source: string): string[] {
+  return source.split('\n').flatMap((line, i) => {
+    if (line.includes('tone-lint-allow')) return []
+    const out: string[] = []
+    for (const m of line.matchAll(OPACITY)) {
+      const variants = m[1].split(':')
+      if (m[2] === '0' || m[2] === '100' || variants.some((v) => /(?:^|-)disabled$/.test(v))) continue
+      out.push(`${path}:${i + 1}: ${m[0]}`)
+    }
+    for (const m of line.matchAll(TONE_ALPHA)) out.push(`${path}:${i + 1}: ${m[0]}`)
+    return out
+  })
+}
+
+/**
+ * Token blocks hold OKLCH only (tokens-v2 D10): inside the mode blocks, the accent and
+ * hue blocks, the ratios, the chart ramp and the high-contrast override, a colour is an
+ * `oklch()` literal, a `color-mix(in oklch | oklab, …)` over tokens or literals, a
+ * `var()` or `transparent`; lengths, times and percentages are fine. A hex, `rgb()`,
+ * `hsl()` or named colour fails, naming the stylesheet line.
+ */
+const NAMED = /(?<![\w-])(?:white|black|red|green|blue|gray|grey|silver|yellow|orange|purple|pink|navy|teal|olive|maroon|lime|aqua|fuchsia|currentcolor)(?![\w-])/i
+const FORBIDDEN = [/#[0-9a-fA-F]{3,8}\b/, /\b(?:rgba?|hsla?|hwb|lab|lch)\(/, /color-mix\(in (?!ok(?:lch|lab)\b)/, NAMED]
+
+export function tokenBlockSelectors(source: string): string[] {
+  return [
+    ':root, [data-theme="light"] {',
+    '@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"])',
+    ':root[data-theme="dark"], [data-theme="dark"] {',
+    ':root {\n  --duration-ui',
+    ':root[data-accent], [data-accent] {',
+    ':root[data-accent]:where(:not([data-theme="light"]))',
+    ':root[data-accent][data-theme="dark"],',
+    ':root, [data-theme], [data-accent] {',
+    'html:root[data-contrast="high"], html[data-contrast="high"] [data-theme="light"] {',
+    'html:root[data-contrast="high"]:not([data-theme="light"]) {',
+    'html:root[data-contrast="high"][data-theme="dark"], html[data-contrast="high"] [data-theme="dark"] {',
+    ...[...source.matchAll(/^\[data-(?:accent|hue)="[a-z]+"\] \{/gm)].map((m) => m[0]),
+  ]
+}
+
+export function tokenBlockProblems(source: string): string[] {
+  const out: string[] = []
+  for (const sel of tokenBlockSelectors(source)) {
+    const at = source.indexOf(sel)
+    if (at < 0) {
+      out.push(`src/index.css: token block not found: ${sel.split('\n').pop()}`)
+      continue
+    }
+    const open = source.indexOf('{', at)
+    let depth = 0
+    let end = open
+    for (let i = open; i < source.length; i++) {
+      if (source[i] === '{') depth++
+      else if (source[i] === '}' && --depth === 0) {
+        end = i
+        break
+      }
+    }
+    // Comments keep their line breaks so line numbers stay true.
+    const body = source.slice(open, end).replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '))
+    const firstLine = source.slice(0, open).split('\n').length
+    for (const m of body.matchAll(/(--[\w-]+):\s*([^;]+);/g)) {
+      const value = m[2].trim().replace(/var\(--[\w-]+/g, 'var(')
+      if (FORBIDDEN.some((re) => re.test(value))) out.push(`src/index.css:${firstLine + body.slice(0, m.index).split('\n').length - 1}: ${m[1]}: ${m[2].trim()}`)
+    }
   }
   return out
 }
@@ -140,6 +220,16 @@ describe('token lint', () => {
     expect(found).toEqual([])
   })
 
+  it('settings panels take their card or flat section from SettingsSection (surfaces-v2 card tiers)', () => {
+    const found = appFiles.flatMap(([path, src]) => handMadeSurfaces(path, src)).map(format)
+    expect(found).toEqual([])
+    // The rule itself: a hand-made card in a panel fails with file and line; the allowed classes do not.
+    const panel = 'import { SettingsSection } from "../ui"\n<div className="space-y-2">\n<div className="rounded-card border border-default bg-surface p-4 shadow-1" />'
+    expect(handMadeSurfaces('Fixture.tsx', panel).map(format)).toEqual(['Fixture.tsx:3: rounded-card border border-default bg-surface p-4 shadow-1'])
+    expect(handMadeSurfaces('Fixture.tsx', 'import { SettingsSection } from "../ui"\n<div className="ui-section-flat" /><div className="ui-column" />')).toEqual([])
+    expect(handMadeSurfaces('Board.tsx', '<div className="rounded-card shadow-1" />')).toEqual([])
+  })
+
   it('screens off the not-yet list use the Tooltip primitive, not the native title', () => {
     const skip = new Set(TITLE_NOT_YET_MIGRATED)
     const found = [
@@ -147,6 +237,50 @@ describe('token lint', () => {
       ...appFiles.filter(([path]) => !skip.has(path)).flatMap(([path, src]) => nativeTitles(path, src)),
     ].map(format)
     expect(found).toEqual([])
+  })
+
+  it('the moment is never a hover, focus or menu transition (tokens-v2 "Moment used for a hover")', () => {
+    const screens = [
+      ...uiCode.filter(([path]) => !path.endsWith('.stories.tsx')).map(([path, src]) => [path.replace(/^\.\.\//, 'src/ui/'), src] as const),
+      ...appFiles,
+    ]
+    expect(screens.flatMap(([path, src]) => momentOnHover(path, src)).map(format)).toEqual([])
+    // The rule itself: names the file and line; the moment on an entrance is fine.
+    expect(momentOnHover('Row.tsx', '<a />\n<div className="transition duration-(--duration-moment) hover:bg-hover" />').map(format))
+      .toEqual(['Row.tsx:2: transition duration-(--duration-moment) hover:bg-hover'])
+    expect(momentOnHover('src/ui/overlay/Menu.tsx', '<div className="transition-opacity duration-(--duration-moment)" />')).toHaveLength(1)
+    expect(momentOnHover('Sheet.tsx', '<div className="animate-in duration-(--duration-moment)" />')).toEqual([])
+  })
+
+  it('no focus ring is cancelled by outline-none (ux-fixes-phone)', () => {
+    const screens = [
+      ...uiCode.map(([path, src]) => [path.replace(/^\.\.\//, 'src/ui/'), src] as const),
+      ...appFiles,
+    ]
+    expect(screens.flatMap(([path, src]) => cancelledRings(path, src)).map(format)).toEqual([])
+    // The rule itself: names the file and line; an explicit style keeps the ring.
+    expect(cancelledRings('Cell.tsx', '<a />\n<div className="outline-none focus-visible:outline-2 focus-visible:outline-focus" />').map(format))
+      .toEqual(['Cell.tsx:2: outline-none focus-visible:outline-2 focus-visible:outline-focus'])
+    expect(cancelledRings('Cell.tsx', '<div className="outline-none focus-visible:outline-2 focus-visible:outline-solid" />')).toEqual([])
+    expect(cancelledRings('Cell.tsx', '<div className="focus-visible:outline-2 focus-visible:outline-focus" />')).toEqual([])
+  })
+
+  it('everything clickable shows the hand: one base rule, and no arrow without a reason (row-and-cursor)', () => {
+    const base = /@layer base\s*\{\s*:where\(([^)]*(?:\([^)]*\)[^)]*)*)\)\s*\{\s*cursor:\s*pointer;/.exec(css)
+    expect(base, 'the base cursor rule in index.css').not.toBeNull()
+    for (const sel of ['button:not(:disabled)', '[role="button"]', '[role="menuitem"]', '[role="tab"]', '[role="option"]', 'summary', 'label[for]', 'a[href]', 'li[data-task-id]']) {
+      expect(base![1]).toContain(sel)
+    }
+    const screens = [
+      ...uiCode.map(([path, src]) => [path.replace(/^\.\.\//, 'src/ui/'), src] as const),
+      ...appFiles,
+    ]
+    expect(screens.flatMap(([path, src]) => cursorDefault(path, src)).map(format)).toEqual([])
+    // The rule itself: names the file and line; a reason on the line allows it.
+    expect(cursorDefault('Cell.tsx', '<a />\n<button className="cursor-default px-2" />').map(format)).toEqual(['Cell.tsx:2: cursor-default px-2'])
+    expect(cursorDefault('Cell.tsx', '<span className="md:cursor-auto" />')).toHaveLength(1)
+    expect(cursorDefault('Cell.tsx', '<button className="cursor-default" /> {/* cursor-lint-allow: a read-only badge styled as a button */}')).toEqual([])
+    expect(cursorDefault('Cell.tsx', '<div className="cursor-grab" />')).toEqual([])
   })
 
   it('the not-yet lists only shrink and name files that still need them', () => {
@@ -171,7 +305,45 @@ describe('token lint', () => {
     expect(rawStyles('x.tsx', '<Button className="ui-btn">x</Button> const input = 1; <input aria-label="Filter query input" className={`a ${b} kbd`} />').map((f) => f.text)).toEqual(['kbd'])
     expect(rawStyles('x.tsx', '<div className="text-xs" /> // style-lint-allow')).toEqual([])
     expect(nativeTitles('x.tsx', '<button type="button" onClick={() => go(1)} title="Open">x</button>').map((f) => f.text)).toEqual(['<button title='])
+    // Button and IconButton spread `title` onto their <button>: a native title the tooltip rule forbids.
+    expect(nativeTitles('x.tsx', '<Button variant="ghost" title="x">Ask</Button>').map((f) => f.text)).toEqual(['<Button title='])
+    expect(nativeTitles('x.tsx', '<IconButton icon="x" label="Close" title="x" />').map((f) => f.text)).toEqual(['<IconButton title='])
+    expect(nativeTitles('x.tsx', '<Tooltip label="x"><Button>Ask</Button></Tooltip>')).toEqual([])
     expect(nativeTitles('x.tsx', '<Dialog title="Labels" onClose={close}><p>title=</p></Dialog>')).toEqual([])
     expect(nativeTitles('x.tsx', '<span title="x" /> {/* tooltip-lint-allow */}')).toEqual([])
+  })
+
+  // tokens-v2 D6, D10
+  it('token blocks in index.css hold OKLCH only', () => {
+    expect(tokenBlockProblems(css)).toEqual([])
+  })
+
+  it('the token-block rule names a hex, an rgb() and a named colour with their line', () => {
+    const bad = css.replace('--ot-muted: oklch(0.491 0.0142 259.82);', '--ot-muted: #526075;')
+      .replace('--ot-scrim: oklch(0.1288 0.0406 264.7 / 0.35);', '--ot-scrim: rgb(2 6 23 / 0.35);')
+      .replace('--ot-a-on-accent: oklch(1 0 0); }', '--ot-a-on-accent: white; }')
+    const found = tokenBlockProblems(bad)
+    expect(found).toHaveLength(3)
+    expect(found[0]).toMatch(/^src\/index\.css:\d+: --ot-muted: #526075$/)
+    const line = Number(/:(\d+):/.exec(found[0])![1])
+    expect(bad.split('\n')[line - 1]).toContain('--ot-muted: #526075;')
+    expect(found.some((f) => f.includes('rgb(2 6 23 / 0.35)'))).toBe(true)
+    expect(found.some((f) => f.includes(': white'))).toBe(true)
+  })
+
+  it('screens and shared UI quiet text with tones, not opacity or alpha', () => {
+    const found = [
+      ...uiCode.flatMap(([path, src]) => toneProblems(path.replace(/^\.\.\//, 'src/ui/'), src)),
+      ...appFiles.flatMap(([path, src]) => toneProblems(path, src)),
+    ]
+    expect(found).toEqual([])
+  })
+
+  it('the tone rule catches opacity and alpha on text, and lets show/hide, disabled and marked ghosts pass', () => {
+    expect(toneProblems('x.tsx', '<span className="text-meta opacity-60">a</span>\n<b className="text-default/70" />\n<i className="border-soft/50" />')).toEqual([
+      'x.tsx:1: opacity-60', 'x.tsx:2: text-default/70', 'x.tsx:3: border-soft/50',
+    ])
+    expect(toneProblems('x.tsx', '<button className="disabled:opacity-50 opacity-0 group-hover:opacity-100 bg-faint/30 border-accent/40" />')).toEqual([])
+    expect(toneProblems('x.tsx', "const ghost = 'opacity-40' // tone-lint-allow: a dragged ghost")).toEqual([])
   })
 })

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/pixari/opentodo/internal/agenttools"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/agenttools"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // REST collections: every write goes through the op log (ApplyStrict), like a
@@ -92,6 +92,10 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown collection")
 		return
 	}
+	withDefault, ok := defaultReminderFlag(w, r, entity)
+	if !ok {
+		return
+	}
 	var body map[string]json.RawMessage
 	if err := readJSON(r, &body); err != nil {
 		badBody(w, err)
@@ -102,7 +106,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := userFrom(r.Context()).ID
-	now := time.Now().UnixMilli()
+	now := s.now().UnixMilli()
 	id := ids.New()
 	if keyed {
 		id = s.idemEntityID(uid, r.PathValue("collection"), key)
@@ -142,8 +146,19 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if entity == "rule" {
+		applyRuleDefaults(body)
+		if err := s.checkRule(r.Context(), uid, body, nil); err != nil {
+			s.ruleError(w, err)
+			return
+		}
+	}
 	if entity == "task" {
+		if !energyOK(w, body) {
+			return
+		}
 		canonicalizeRecurrence(body)
+		pairDayPart(body)
 		// Custom field values become fields.<id> keys before an idempotent
 		// replay compares the planned ops (custom-fields D3).
 		if msg, err := s.checkTaskFields(r.Context(), uid, body, nil); err != nil {
@@ -205,16 +220,21 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		s.parentError(w, err)
 		return
 	}
+	ts := s.opTS()
+	extra, err := s.createDefaultReminder(r.Context(), uid, id, body, ts, withDefault, keyed)
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
 	if keyed {
-		ts := s.opTS()
 		ops := make([]opsync.Op, 0, len(body))
 		for field, value := range body {
 			ops = append(ops, opsync.Op{ID: idemOpID(id, field), Entity: entity, EntityID: id, Field: field, Value: value, TS: ts, Device: serverDevice})
 		}
-		s.writeOps(w, r, entity, id, ops, http.StatusCreated, body)
+		s.writeOps(w, r, entity, id, append(ops, extra...), http.StatusCreated, body)
 		return
 	}
-	s.writeFields(w, r, entity, id, body, http.StatusCreated)
+	s.writeFieldsAt(w, r, entity, id, body, http.StatusCreated, extra, ts)
 }
 
 // labelPalette gives API-created labels a colour when the caller sets none.
@@ -376,20 +396,14 @@ func (s *Server) chainReaches(ctx context.Context, uid, entity, startID string, 
 	return false, nil
 }
 
-// idOf decodes a nullable id field; missing and null both read as "".
-func idOf(raw json.RawMessage) string {
-	var s string
-	if len(raw) == 0 || string(raw) == "null" {
-		return ""
-	}
-	_ = json.Unmarshal(raw, &s)
-	return s
-}
-
 func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	entity, ok := collection(r)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not_found", "unknown collection")
+		return
+	}
+	withDefault, ok := defaultReminderFlag(w, r, entity)
+	if !ok {
 		return
 	}
 	var body map[string]json.RawMessage
@@ -410,6 +424,9 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, http.StatusNotFound, "not_found", "not found")
+		return
+	}
+	if entity == "task" && !energyOK(w, body) {
 		return
 	}
 	if msg, err := s.checkReferences(r.Context(), userFrom(r.Context()).ID, entity, body); err != nil {
@@ -450,9 +467,26 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		s.parentError(w, err)
 		return
 	}
+	var keepErr error
+	switch entity {
+	case "task":
+		keepErr = s.keepTaskWorkspace(r.Context(), userFrom(r.Context()).ID, body, existing)
+	case "project":
+		keepErr = s.keepProjectWorkspace(r.Context(), userFrom(r.Context()).ID, body, existing)
+	}
+	if keepErr != nil {
+		s.internal(w, keepErr)
+		return
+	}
 	if entity == "view" {
 		if err := s.checkView(r.Context(), userFrom(r.Context()).ID, r.PathValue("id"), body, existing); err != nil {
 			s.viewError(w, err)
+			return
+		}
+	}
+	if entity == "rule" {
+		if err := s.checkRule(r.Context(), userFrom(r.Context()).ID, body, existing); err != nil {
+			s.ruleError(w, err)
 			return
 		}
 	}
@@ -469,8 +503,9 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	if entity == "task" {
 		canonicalizeRecurrence(body)
+		pairDayPart(body)
 		// Completing a recurring task records the occurrence and moves the series.
-		recordID, record, ok, err := s.recurringCompletion(r.Context(), userFrom(r.Context()).ID, r.PathValue("id"), body, existing, localToday(time.Now()))
+		recordID, record, ok, err := s.recurringCompletion(r.Context(), userFrom(r.Context()).ID, r.PathValue("id"), body, existing, localToday(s.now()))
 		if err != nil {
 			s.internal(w, err)
 			return
@@ -478,9 +513,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			extra = fieldOps("task", recordID, record, ts)
 		}
-		// Relative reminders follow the due date and deadline reminders the
-		// deadline, stamped like the task op (reminders D2, deadlines D5).
-		rops, err := s.reminderOpsForTask(r.Context(), userFrom(r.Context()).ID, r.PathValue("id"), body, ts)
+		rops, err := s.patchReminderOps(r.Context(), userFrom(r.Context()).ID, r.PathValue("id"), existing, body, ts, withDefault)
 		if err != nil {
 			s.internal(w, err)
 			return
@@ -505,7 +538,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "not found")
 		return
 	}
-	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(fmt.Sprint(time.Now().UnixMilli()))}
+	body := map[string]json.RawMessage{"deleted_at": json.RawMessage(fmt.Sprint(s.now().UnixMilli()))}
 	ts := s.opTS()
 	var extra []opsync.Op
 	if entity == "section" {
@@ -518,11 +551,6 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	s.writeFieldsAt(w, r, entity, r.PathValue("id"), body, http.StatusNoContent, extra, ts)
 }
 
-// writeFields turns a REST body into ops stamped with server time and applies them.
-func (s *Server) writeFields(w http.ResponseWriter, r *http.Request, entity, id string, body map[string]json.RawMessage, status int) {
-	s.writeFieldsWith(w, r, entity, id, body, status, nil)
-}
-
 // fieldOps turns the fields of one entity into server-stamped ops.
 func fieldOps(entity, id string, body map[string]json.RawMessage, ts int64) []opsync.Op {
 	ops := make([]opsync.Op, 0, len(body))
@@ -532,16 +560,39 @@ func fieldOps(entity, id string, body map[string]json.RawMessage, ts int64) []op
 	return ops
 }
 
-// writeFieldsWith is writeFields plus extra ops (other entities) applied in the
-// same batch; the response still describes entity/id.
-func (s *Server) writeFieldsWith(w http.ResponseWriter, r *http.Request, entity, id string, body map[string]json.RawMessage, status int, extra []opsync.Op) {
-	s.writeFieldsAt(w, r, entity, id, body, status, extra, s.opTS())
-}
-
-// writeFieldsAt is writeFieldsWith with the body's op timestamp chosen by the caller.
+// writeFieldsAt turns a REST body into ops stamped with ts and applies them
+// with extra ops (other entities) in the same batch; the response still
+// describes entity/id.
 func (s *Server) writeFieldsAt(w http.ResponseWriter, r *http.Request, entity, id string, body map[string]json.RawMessage, status int, extra []opsync.Op, ts int64) {
 	s.writeOps(w, r, entity, id, append(fieldOps(entity, id, body, ts), extra...), status, nil)
 }
+
+// collectionRefusals explain a refused collection write.
+var collectionRefusals = refusals{
+	opsync.ReasonScopeChange: refuse(http.StatusBadRequest, "scope_change",
+		"task.project_id: the target project is shared differently; create a copy there and delete this task instead"),
+	opsync.ReasonCycle: func(w http.ResponseWriter, rej *opsync.RejectedError) {
+		writeError(w, http.StatusBadRequest, "invalid_input",
+			fmt.Sprintf("task.blocked_by: %q already waits for this task, so this would make it wait for itself", rej.Detail))
+	},
+	opsync.ReasonNotInScope: func(w http.ResponseWriter, rej *opsync.RejectedError) {
+		writeError(w, http.StatusBadRequest, "invalid_input",
+			fmt.Sprintf("task.blocked_by: %q is not in the same project sharing as this task (blockers must be shared the same way)", rej.Detail))
+	},
+	opsync.ReasonNotAMember: refuse(http.StatusBadRequest, "not_a_member",
+		"task.assignee_id: the assignee must be a member of the task's project (or yourself for a personal task)"),
+	otherRefusal: func(w http.ResponseWriter, rej *opsync.RejectedError) {
+		writeError(w, http.StatusForbidden, "forbidden", "your role on this project does not allow changing "+rej.Op.Entity+"."+rej.Op.Field)
+	},
+}
+
+// keyedRefusals are collectionRefusals for an Idempotency-Key create: the
+// derived id is taken by an entity this user may not write.
+var keyedRefusals = func() refusals {
+	r := maps.Clone(collectionRefusals)
+	r[opsync.ReasonForbidden] = func(w http.ResponseWriter, _ *opsync.RejectedError) { writeIdempotencyConflict(w, "") }
+	return r
+}()
 
 // writeOps applies a REST write's ops and answers with entity/id. keyedBody is
 // the planned body of an Idempotency-Key create (nil otherwise): a concurrent
@@ -551,39 +602,15 @@ func (s *Server) writeOps(w http.ResponseWriter, r *http.Request, entity, id str
 	uid := userFrom(r.Context()).ID
 	keyed := keyedBody != nil
 	// REST writes are all or nothing: one refused field refuses the request.
-	res, err := s.sync.ApplyStrict(r.Context(), uid, ops)
-	if err != nil {
-		var rej *opsync.RejectedError
-		switch {
-		case keyed && errors.As(err, &rej) && rej.Reason == opsync.ReasonForbidden:
-			// The derived id is taken by an entity this user may not write.
-			writeIdempotencyConflict(w, "")
-		case writeLimited(w, err):
-		case errors.Is(err, opsync.ErrInvalidOp):
-			writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonScopeChange:
-			writeError(w, http.StatusBadRequest, "scope_change",
-				"task.project_id: the target project is shared differently; create a copy there and delete this task instead")
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonCycle:
-			writeError(w, http.StatusBadRequest, "invalid_input",
-				fmt.Sprintf("task.blocked_by: %q already waits for this task, so this would make it wait for itself", rej.Detail))
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonNotInScope:
-			writeError(w, http.StatusBadRequest, "invalid_input",
-				fmt.Sprintf("task.blocked_by: %q is not in the same project sharing as this task (blockers must be shared the same way)", rej.Detail))
-		case errors.As(err, &rej) && rej.Reason == opsync.ReasonNotAMember:
-			writeError(w, http.StatusBadRequest, "not_a_member",
-				"task.assignee_id: the assignee must be a member of the task's project (or yourself for a personal task)")
-		case errors.As(err, &rej):
-			writeError(w, http.StatusForbidden, "forbidden", "your role on this project does not allow changing "+rej.Op.Entity+"."+rej.Op.Field)
-		default:
-			s.internal(w, err)
-		}
+	reasons := collectionRefusals
+	if keyed {
+		reasons = keyedRefusals
+	}
+	res, ok := s.applyREST(w, r.Context(), uid, ops, "", reasons)
+	if !ok {
 		return
 	}
-	if res.Applied > 0 {
-		// REST writes come from no browser device, so every connected device is woken.
-		s.sync.NotifyApplied(res, serverDevice)
-	} else if keyed {
+	if res.Applied == 0 && keyed {
 		// A concurrent request with the same key applied first.
 		state, err := s.replayState(r.Context(), uid, entity, id, keyedBody, func(f string) string { return idemOpID(id, f) })
 		if err != nil {

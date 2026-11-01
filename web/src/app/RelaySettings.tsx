@@ -1,14 +1,15 @@
-// Settings → AI assistants, for an end-to-end encrypted account: let this
+// Settings → Integrations → AI assistants, for an end-to-end encrypted account: let this
 // device answer AI connectors (OpenSpec change mcp-device-relay). The trust
 // model is stated in plain words next to the switch (security review).
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { Badge, Icon, Notice, SettingRow, Switch, Tooltip } from '../ui'
+import { Badge, Icon, Notice, SettingRow, Switch, Tooltip, StatusIndicator } from '../ui'
 import { api } from '../lib/api'
 import { formatInstant } from '../lib/dates'
 import { useEncryption } from '../lib/e2ee'
 import { formatNumber, t } from '../lib/i18n'
 import { DAY_CAP, HOUR_CAP, onRelayChange, optIn, optOut, relaySnapshot, setConfirmWrites, type RecentCall, type RelayDevice } from '../lib/relay'
 import { rowCopy } from '../lib/settingsCopy'
+import { messageOf } from '../lib/errorText'
 
 export interface RelayViewProps {
   unlocked: boolean
@@ -39,7 +40,7 @@ export function RelayView(p: RelayViewProps) {
     <div className="space-y-1 border-t border-default pt-3" data-relay-settings>
       <SettingRow label={rowCopy('assistants', 'relay').label}
         description={<span id="relay-help">{rowCopy('assistants', 'relay').description}</span>}
-        status={p.optedIn ? <Badge tone={p.connected ? 'solid' : 'soft'} hue={p.connected ? 'green' : undefined}>{p.connected ? t('Ready') : t('Connecting…')}</Badge> : undefined}
+        status={p.optedIn ? <StatusIndicator tone={p.connected ? 'ok' : 'busy'}>{p.connected ? t('Ready') : t('Connecting…')}</StatusIndicator> : undefined}
         control={<Switch checked={p.optedIn} disabled={p.busy || (!p.unlocked && !p.optedIn)} onChange={p.onToggle}
           label={rowCopy('assistants', 'relay').label} hideLabel describedBy="relay-help" />} />
       <Notice>
@@ -68,7 +69,7 @@ export function RelayView(p: RelayViewProps) {
       )}
       {p.optedIn && p.recent.length > 0 && (
         <details className="py-2 text-body" data-relay-recent>
-          <summary className="cursor-pointer font-medium text-default">{rowCopy('assistants', 'relayRecent').label}</summary>
+          <summary className="font-medium text-default">{rowCopy('assistants', 'relayRecent').label}</summary>
           <p className="mt-1 text-meta text-muted">{rowCopy('assistants', 'relayRecent').description}</p>
           <ul className="mt-2 space-y-1 text-meta">
             {p.recent.map((c, i) => (
@@ -116,7 +117,7 @@ export function RelaySettings() {
   const onToggle = (on: boolean) => {
     setBusy(true)
     setError(null)
-    void (on ? optIn() : optOut()).then(refresh, (err: unknown) => setError(err instanceof Error ? err.message : String(err))).finally(() => setBusy(false))
+    void (on ? optIn() : optOut()).then(refresh, (err: unknown) => setError(messageOf(err))).finally(() => setBusy(false))
   }
   return (
     <RelayView unlocked={enc.unlocked} optedIn={relay.optedIn} connected={relay.connected} confirmWrites={relay.confirmWrites}

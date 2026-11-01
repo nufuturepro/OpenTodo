@@ -5,16 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/demo"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/demo"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
-
-// WithDemo turns on demo mode (OpenSpec `demo-mode`, `demo-sandboxes`):
-// auth/status carries a sandbox-creation token, POST /api/v1/demo/sandbox
-// creates a private sandbox, every route in demoRules answers 403
-// demo_restricted before authentication, sandbox writes are bounded by the
-// demo's write guard, and every response carries X-Robots-Tag.
-func WithDemo(d *demo.Service) Option { return func(s *Server) { s.demo = d } }
 
 // registerDemoRoutes adds the sandbox route on a demo instance only. It is
 // unauthenticated by design (the visitor has no account yet); a single-use
@@ -41,7 +34,7 @@ func (s *Server) handleDemoSandbox(w http.ResponseWriter, r *http.Request) {
 		badBody(w, err)
 		return
 	}
-	u, err := s.demo.CreateSandbox(r.Context(), in.Token, addrKey(clientIP(r)))
+	u, err := s.demo.CreateSandbox(r.Context(), in.Token, demoAddrKey(clientIP(r)))
 	switch {
 	case errors.Is(err, demo.ErrBadToken):
 		writeError(w, http.StatusForbidden, "demo_token", err.Error())
@@ -92,14 +85,16 @@ func prefix(p string) func(string) bool {
 }
 func exact(p string) func(string) bool { return func(s string) bool { return s == p } }
 
-// projectMembership matches /api/v1/projects/{id}/members[/...] and /transfer.
+// projectMembership matches /api/v1/projects/{id}/members[/...], /transfer,
+// the group grants /grants[/...] (OpenSpec change workspaces) and the
+// invitations /member-invitations/... (member-add-consent).
 func projectMembership(p string) bool {
 	rest, ok := strings.CutPrefix(p, "/api/v1/projects/")
 	if !ok {
 		return false
 	}
 	parts := strings.Split(rest, "/")
-	return len(parts) >= 2 && (parts[1] == "members" || parts[1] == "transfer")
+	return len(parts) >= 2 && (parts[1] == "members" || parts[1] == "transfer" || parts[1] == "grants" || parts[1] == "member-invitations")
 }
 
 // taskAttachments matches /api/v1/tasks/{id}/attachments (OpenSpec `attachments`).
@@ -134,6 +129,17 @@ func projectPublicLinks(p string) bool {
 	return len(parts) >= 2 && parts[1] == "public-links"
 }
 
+// projectAgentAccessPath matches /api/v1/projects/{id}/agent-access (OpenSpec
+// `agent-planning-fields`).
+func projectAgentAccessPath(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/api/v1/projects/")
+	if !ok {
+		return false
+	}
+	parts := strings.Split(rest, "/")
+	return len(parts) == 2 && parts[1] == "agent-access"
+}
+
 // taskPage matches /api/v1/tasks/{id}/page[/...] (OpenSpec `task-pages`).
 func taskPage(p string) bool {
 	rest, ok := strings.CutPrefix(p, "/api/v1/tasks/")
@@ -157,6 +163,11 @@ var demoRules = []demoRule{
 	{"Sign-up", false, prefix("/api/v1/auth/verify")},
 	{"Changing the password", true, exact("/api/v1/me/password")},
 	{"Signing out everywhere", true, exact("/api/v1/me/sign-out-everywhere")},
+	// Profile changes (settings-refresh D10): the sandbox account keeps its name,
+	// email and picture; reading the profile and pictures works.
+	{"Profile", true, exact("/api/v1/me/profile")},
+	{"Profile", true, prefix("/api/v1/me/email")},
+	{"Profile", true, exact("/api/v1/me/avatar")},
 	{"Linked accounts", true, prefix("/api/v1/me/identities")},
 	{"API tokens", true, prefix("/api/v1/tokens")},
 	{"Passkeys", true, prefix("/api/v1/passkeys")},
@@ -168,6 +179,9 @@ var demoRules = []demoRule{
 	{"Attachments", false, taskAttachments},
 	{"Attachments", false, exact("/api/v1/settings/attachments")},
 	{"Outgoing email", false, prefix("/api/v1/settings/smtp")},
+	// The speech service is the operator's outbound target (settings-refresh D7): every method.
+	{"Speech to text", false, prefix("/api/v1/settings/stt")},
+	{"Speech to text", false, prefix("/api/v1/voice")},
 	// The weekly digest sends mail (stats-and-review): changing it is refused.
 	{"Email digest", true, exact("/api/v1/me/email-digest")},
 	// Public links publish data to anyone (public-links D9): every method.
@@ -178,6 +192,8 @@ var demoRules = []demoRule{
 	{"Task pages", false, prefix("/api/v1/task-pages")},
 	{"Task pages", false, prefix("/api/v1/pages")},
 	{"Server settings", true, prefix("/api/v1/settings")},
+	// The server's file sizes are the operator's business (op-log-compaction D7).
+	{"Database storage", false, exact("/api/v1/settings/storage")},
 	{"App passwords", true, prefix("/api/v1/app-passwords")},
 	{"Calendar feeds", false, prefix("/api/v1/calendar-feeds")},
 	{"Calendar feeds", false, prefix("/feeds")},
@@ -186,10 +202,22 @@ var demoRules = []demoRule{
 	// (issue-import D10): every method.
 	{"Issue connections", false, prefix("/api/v1/issues")},
 	{"Issue connections", false, exact("/api/v1/settings/issues")},
+	// Calendar sync would send a visitor's password to a visitor's server, or
+	// sign in to Google (calendar-two-way): every method.
+	{"Calendar sync", false, prefix("/api/v1/calendar-sync")},
+	{"Calendar sync", false, prefix("/api/v1/settings/calendar-sync")},
+	// Automation rules write on the server on a visitor's behalf and can send
+	// webhooks (automation-rules D9): every method; nothing runs on a demo.
+	{"Automations", false, prefix("/api/v1/rules")},
+	{"Automations", false, prefix("/api/v1/me/rules")},
+	{"Automations", false, exact("/api/v1/settings/automations")},
 	{"CalDAV", false, prefix("/dav")},
 	{"CalDAV", false, prefix("/.well-known/caldav")},
+	{"CalDAV", false, prefix("/principals")},
 	{"AI assistants (MCP)", false, prefix("/mcp")},
 	{"AI assistants (MCP)", true, exact("/api/v1/me/agent-access")},
+	// Keeping a project away from assistants (agent-planning-fields D9).
+	{"AI assistants (MCP)", true, projectAgentAccessPath},
 	// The device relay serves encrypted accounts' MCP calls (mcp-device-relay):
 	// every method, like /mcp itself.
 	{"AI assistants (MCP)", false, prefix("/api/v1/relay")},
@@ -203,6 +231,10 @@ var demoRules = []demoRule{
 	{"Backups", false, prefix("/api/v1/backups/restore")},
 	{"Backups", true, prefix("/api/v1/backups")},
 	{"Webhooks", true, prefix("/api/v1/webhooks")},
+	// Notification channels send to addresses and services a visitor types
+	// (notification-channels D9): every method; nothing is sent on a demo.
+	{"Notification channels", false, prefix("/api/v1/notification-channels")},
+	{"Notification channels", false, exact("/api/v1/settings/notification-channels")},
 	{"Email to task", true, prefix("/api/v1/email-inbox")},
 	{"Import", true, prefix("/api/v1/import")},
 	// Only hosted tenants register it (multi-tenant-host), never a demo: listed
@@ -211,13 +243,26 @@ var demoRules = []demoRule{
 	{"End-to-end encryption", true, prefix("/api/v1/encryption")},
 	{"Web push", true, prefix("/api/v1/push")},
 	{"Sharing changes", true, projectMembership},
+	// Answering an invitation is a membership change; a sandbox never gets one
+	// (member-add-consent): every method.
+	{"Sharing changes", false, prefix("/api/v1/me/member-invitations")},
 	// Every method: links would let one sandbox join another's project.
 	{"Project invite links", false, projectInvites},
 	{"Project invite links", false, prefix("/api/v1/project-invites")},
+	// A sandbox keeps its one default workspace (OpenSpec change workspaces):
+	// creation, members, groups and invite links are writes; the anonymous
+	// preview answers the uniform 404 itself.
+	{"Workspaces", true, prefix("/api/v1/workspaces")},
+	{"Workspaces", true, prefix("/api/v1/workspace-invites")},
 }
 
 // demoRestricted returns the refused feature's name, or "" when allowed.
 func demoRestricted(method, path string) string {
+	// CalDAV discovery probes on the host root (issue #249); the web app itself
+	// (GET, and the 405 a POST gets) stays.
+	if path == "/" && (method == "PROPFIND" || method == http.MethodOptions) {
+		return "CalDAV"
+	}
 	write := method != http.MethodGet && method != http.MethodHead
 	for _, r := range demoRules {
 		if r.writes && !write {

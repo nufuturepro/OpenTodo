@@ -14,6 +14,7 @@ import (
 	"errors"
 	"math/big"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -210,7 +211,8 @@ func TestVapidKeyPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	// Windows does not enforce POSIX permission bits on files.
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("key file mode = %v, want 0600", st.Mode().Perm())
 	}
 	before, _ := os.ReadFile(KeyPath(dir))

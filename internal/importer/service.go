@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pixari/opentodo/internal/blobs"
-	"github.com/pixari/opentodo/internal/ids"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/blobs"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Job statuses.
@@ -123,7 +123,11 @@ func (s *Service) failInterrupted(ctx context.Context) error {
 		}
 		list = append(list, st)
 	}
+	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		return err
+	}
 	for _, st := range list {
 		var je jobErrors
 		_ = json.Unmarshal([]byte(st.errs), &je)
@@ -160,8 +164,12 @@ func (s *Service) release(uid string) {
 }
 
 // prepare validates options and builds the plan for a file.
-func (s *Service) prepare(ctx context.Context, uid string, data []byte, opts Options) (*Plan, error) {
+func (s *Service) prepare(ctx context.Context, uid string, data []byte, opts Options, write bool) (*Plan, error) {
 	if err := opts.Normalize(); err != nil {
+		return nil, err
+	}
+	wsName, wsDefault, err := s.checkWorkspace(ctx, uid, opts.Workspace)
+	if err != nil {
 		return nil, err
 	}
 	if opts.TargetProject != "" {
@@ -181,15 +189,24 @@ func (s *Service) prepare(ctx context.Context, uid string, data []byte, opts Opt
 		}
 	}
 	opts.maxBytes, opts.tempDir, opts.exportedAt = s.maxBytes, s.tempDir, s.now()
-	if err := s.db.QueryRowContext(ctx, "SELECT email FROM users WHERE id = ?", uid).Scan(&opts.importerEmail); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err := s.db.QueryRowContext(ctx, "SELECT email, name FROM users WHERE id = ?", uid).Scan(&opts.importerEmail, &opts.importerName); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	parsed, err := Parse(data, opts)
 	if err != nil {
 		return nil, err
 	}
+	if opts.Workspace != "" && parsed.Format == "opentodo" {
+		intoWorkspace(parsed, opts.Workspace, wsDefault, wsName)
+	} else if err := s.mapWorkspaces(ctx, uid, parsed, write); err != nil {
+		// A real import creates the workspaces it needs; a preview only names them.
+		return nil, err
+	}
 	st, err := s.loadState(ctx, uid, parsed.Format)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.targetWorkspace(ctx, uid, opts, st); err != nil {
 		return nil, err
 	}
 	return BuildPlan(parsed, opts, st, s.now(), s.newID), nil
@@ -198,7 +215,7 @@ func (s *Service) prepare(ctx context.Context, uid string, data []byte, opts Opt
 func (s *Service) loadState(ctx context.Context, uid, profile string) (*State, error) {
 	st := &State{Remembered: map[string]string{}, UserID: uid}
 	for kind, dst := range map[string]*[]opsync.Entity{KindProject: &st.Projects, KindLabel: &st.Labels, KindTask: &st.Tasks,
-		KindSection: &st.Sections, KindReminder: &st.Reminders, KindView: &st.Views, KindUserPrefs: &st.UserPrefs, KindAttachment: &st.Attachments, KindTimeEntry: &st.TimeEntries, KindPlace: &st.Places, KindField: &st.Fields, KindReview: &st.Review, KindProjectPrefs: &st.ProjectPrefs} {
+		KindSection: &st.Sections, KindReminder: &st.Reminders, KindView: &st.Views, KindRule: &st.Rules, KindUserPrefs: &st.UserPrefs, KindAttachment: &st.Attachments, KindTimeEntry: &st.TimeEntries, KindPlace: &st.Places, KindField: &st.Fields, KindReview: &st.Review, KindProjectPrefs: &st.ProjectPrefs} {
 		list, err := s.sync.List(ctx, uid, kind, true)
 		if err != nil {
 			return nil, err
@@ -223,7 +240,7 @@ func (s *Service) loadState(ctx context.Context, uid, profile string) (*State, e
 
 // Preview is the dry run: nothing is written.
 func (s *Service) Preview(ctx context.Context, uid string, data []byte, opts Options) (*Plan, error) {
-	return s.prepare(ctx, uid, data, opts)
+	return s.prepare(ctx, uid, data, opts, false)
 }
 
 // Start validates and plans the import, records the job and writes it in the
@@ -233,7 +250,7 @@ func (s *Service) Start(ctx context.Context, uid string, data []byte, opts Optio
 	if err := s.acquire(uid, jobID); err != nil {
 		return nil, err
 	}
-	plan, err := s.prepare(ctx, uid, data, opts)
+	plan, err := s.prepare(ctx, uid, data, opts, true)
 	if err != nil {
 		s.release(uid)
 		return nil, err
@@ -381,8 +398,22 @@ func (s *Service) storeFiles(ctx context.Context, uid string, job *Job, batch []
 			refuse(c, "attachment file not imported: it would go over your attachments total")
 			continue
 		}
-		err := s.blobs.Write(c.id, bytes.NewReader(c.file), blobs.Spec{Size: size, SHA256: digest})
-		if err != nil && !errors.Is(err, blobs.ErrExists) {
+		spec := blobs.Spec{Size: size, SHA256: digest}
+		err := s.blobs.Write(c.id, bytes.NewReader(c.file), spec)
+		if errors.Is(err, blobs.ErrExists) {
+			// A file is already stored under this id. Only the importing account's
+			// own uploaded attachment with these very bytes may be relinked: any
+			// other file with this id belongs to someone else (security audit M2).
+			mine, ownErr := s.ownStoredFile(ctx, uid, c.id, spec)
+			if ownErr != nil {
+				return nil, nil, ownErr
+			}
+			if !mine {
+				s.log.Warn("import: attachment id names a file the account does not own", "id", c.id)
+				refuse(c, "attachment file not imported: another file with this id is stored on this server")
+				continue
+			}
+		} else if err != nil {
 			s.log.Warn("import: attachment file", "id", c.id, "err", err)
 			refuse(c, "attachment file not imported: "+err.Error())
 			continue
@@ -394,6 +425,30 @@ func (s *Service) storeFiles(ctx context.Context, uid string, job *Job, batch []
 		out = append(out, c)
 	}
 	return out, stored, nil
+}
+
+// ownStoredFile reports whether the file already stored under id may serve an
+// imported attachment of uid: uid sees an attachment row with that id whose file
+// the server stored (uploaded_at set, by device server only), the row's size and
+// digest are want, and so are the stored bytes. A row only another account sees,
+// or one created without the server storing its file, never qualifies.
+func (s *Service) ownStoredFile(ctx context.Context, uid, id string, want blobs.Spec) (bool, error) {
+	row, err := s.sync.Get(ctx, uid, KindAttachment, id)
+	if err != nil {
+		return false, err
+	}
+	if row == nil || opsync.IsNull(row["uploaded_at"]) || str(row, "sha256") != want.SHA256 {
+		return false, nil
+	}
+	var size int64
+	if json.Unmarshal(row["size"], &size) != nil || size != want.Size {
+		return false, nil
+	}
+	ok, err := s.blobs.Matches(id, want)
+	if errors.Is(err, blobs.ErrNotFound) {
+		return false, nil
+	}
+	return ok, err
 }
 
 func (s *Service) writeBatch(ctx context.Context, uid string, job *Job, batch []change, tl *tally) error {
@@ -538,7 +593,7 @@ func (s *Service) Undo(ctx context.Context, uid, id string) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	undoKinds := []string{KindAttachment, KindTimeEntry, KindReminder, KindTask, KindField, KindSection, KindProject, KindLabel, KindView, KindPlace}
+	undoKinds := []string{KindAttachment, KindTimeEntry, KindReminder, KindTask, KindField, KindSection, KindProject, KindLabel, KindView, KindRule, KindPlace}
 	created := map[string]map[string]bool{}
 	for _, k := range undoKinds {
 		created[k] = map[string]bool{}
@@ -585,10 +640,10 @@ func (s *Service) Undo(ctx context.Context, uid, id string) (*Job, error) {
 			if kind != KindTask {
 				continue
 			}
-			if pid := str(e, "project_id"); pid != "" && created[KindProject][pid] && isNull(e["completed_at"]) {
+			if pid := str(e, "project_id"); pid != "" && created[KindProject][pid] && opsync.IsNull(e["completed_at"]) {
 				writes = append(writes, write{kind, eid, "project_id", json.RawMessage("null")})
 			}
-			if sid := str(e, "section_id"); sid != "" && created[KindSection][sid] && isNull(e["completed_at"]) {
+			if sid := str(e, "section_id"); sid != "" && created[KindSection][sid] && opsync.IsNull(e["completed_at"]) {
 				writes = append(writes, write{kind, eid, "section_id", json.RawMessage("null")})
 			}
 			var labels []string

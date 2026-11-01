@@ -10,7 +10,6 @@ package email
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
 	"encoding/json"
@@ -21,7 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
 )
 
 // Limits on per-user settings and abuse protection (design D5, D7).
@@ -68,13 +68,7 @@ func NewStore(db *sql.DB, rec *audit.Recorder) *Store {
 	return &Store{db: db, audit: rec, now: time.Now}
 }
 
-func newSecret() string {
-	b := make([]byte, SecretBytes)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("email: crypto/rand failed: %v", err))
-	}
-	return secretEncoding.EncodeToString(b)
-}
+func newSecret() string { return secretEncoding.EncodeToString(ids.Bytes(SecretBytes)) }
 
 // ValidSecret reports whether s has the shape of an inbox secret.
 func ValidSecret(s string) bool {
@@ -110,6 +104,20 @@ func scanInbox(r rowScanner) (Inbox, error) {
 		in.Allowlist = []string{}
 	}
 	return in, nil
+}
+
+// Find returns the account's inbox without creating one; ok is false when the
+// account has none yet. Reading never creates or enables an inbox: that only
+// happens on an explicit write (Update, Rotate).
+func (s *Store) Find(ctx context.Context, userID string) (in Inbox, ok bool, err error) {
+	in, err = scanInbox(s.db.QueryRowContext(ctx, `SELECT `+inboxCols+` FROM email_inboxes WHERE user_id = ?`, userID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Inbox{}, false, nil
+	}
+	if err != nil {
+		return in, false, fmt.Errorf("email: load inbox: %w", err)
+	}
+	return in, true, nil
 }
 
 // Get returns the account's inbox, creating it (enabled, with a fresh secret)

@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/webauthn"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
+	"github.com/OpenTodoApp/opentodo/internal/webauthn"
 )
 
 // User is the public view of an account.
@@ -127,6 +128,8 @@ type Service struct {
 	// setupCode is the one-time code a first registration from a public address
 	// must carry when no setup token is configured (setupcode.go).
 	setupCode setupCode
+	// setupCodeOn: OPENTODO_SETUP_CODE=required (auth-hardening D6).
+	setupCodeOn bool
 	// maxMembers caps active accounts on a hosted tenant (limits.go); 0: none.
 	maxMembers int
 }
@@ -210,7 +213,7 @@ func (s *Service) RegisterFrom(ctx context.Context, email, name, password, invit
 	// Refuse what the policy refuses before paying for a hash (SEC-5). The
 	// write transaction checks again, so a change in between is still caught.
 	if err := s.readTx(ctx, func(tx *sql.Tx) error {
-		_, _, _, err := s.admitRegistration(ctx, tx, email, invitation, setupToken, local, time.Now().UnixMilli())
+		_, _, _, err := s.admitRegistration(ctx, tx, email, invitation, setupToken, local, s.clock().UnixMilli())
 		return err
 	}); err != nil {
 		return nil, err
@@ -224,15 +227,13 @@ func (s *Service) RegisterFrom(ctx context.Context, email, name, password, invit
 		return nil, err
 	}
 	defer tx.Rollback()
-	now := time.Now().UnixMilli()
+	now := s.clock().UnixMilli()
 	n, role, invitationID, err := s.admitRegistration(ctx, tx, email, invitation, setupToken, local, now)
 	if err != nil {
 		return nil, err
 	}
 	u := &User{ID: ids.New(), Email: email, Name: strings.TrimSpace(name), Role: role, CreatedAt: now}
-	_, err = tx.ExecContext(ctx, "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-		u.ID, u.Email, u.Name, hash, u.Role, u.CreatedAt)
-	if err != nil {
+	if err := insertUser(ctx, tx, u, hash); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return nil, ErrEmailTaken
 		}
@@ -276,7 +277,7 @@ func (s *Service) admitRegistration(ctx context.Context, tx *sql.Tx, email, invi
 		}
 		// Without a setup token, a first registration from a public address must
 		// carry the setup code the server printed in its log (SEC-9).
-		if s.setupToken == "" && !local && !s.setupCode.matches(setupToken) {
+		if s.SetupCodeRequired() && !local && !s.setupCode.matches(setupToken) {
 			return 0, "", "", ErrSetupCodeInvalid
 		}
 		return 0, "owner", "", nil
@@ -378,7 +379,7 @@ func (s *Service) UserBySession(ctx context.Context, secret string) (*User, erro
 	err := s.db.QueryRowContext(ctx, `SELECT u.id,u.email,u.name,u.role,u.created_at FROM sessions s
 		JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?
 		AND u.id NOT IN (SELECT user_id FROM user_status WHERE deactivated_at IS NOT NULL)`,
-		hashToken(secret), time.Now().UnixMilli()).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt)
+		hashToken(secret), s.clock().UnixMilli()).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -436,9 +437,8 @@ func (s *Service) CreateAccount(ctx context.Context, email, name, password, role
 			return nil, errors.New("an owner can only be created on an empty server")
 		}
 	}
-	u := &User{ID: ids.New(), Email: email, Name: strings.TrimSpace(name), Role: role, CreatedAt: time.Now().UnixMilli()}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-		u.ID, u.Email, u.Name, hash, u.Role, u.CreatedAt); err != nil {
+	u := &User{ID: ids.New(), Email: email, Name: strings.TrimSpace(name), Role: role, CreatedAt: s.clock().UnixMilli()}
+	if err := insertUser(ctx, tx, u, hash); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return nil, ErrEmailTaken
 		}
@@ -458,9 +458,8 @@ func (s *Service) CreatePasswordlessAccount(ctx context.Context, email, name str
 	if _, err := mail.ParseAddress(email); err != nil || email == "" {
 		return nil, ErrInvalidEmail
 	}
-	u := &User{ID: ids.New(), Email: email, Name: strings.TrimSpace(name), Role: "member", CreatedAt: time.Now().UnixMilli()}
-	if _, err := s.db.ExecContext(ctx, "INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)",
-		u.ID, u.Email, u.Name, "", u.Role, u.CreatedAt); err != nil {
+	u := &User{ID: ids.New(), Email: email, Name: strings.TrimSpace(name), Role: "member", CreatedAt: s.clock().UnixMilli()}
+	if err := insertUser(ctx, s.db, u, ""); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return nil, ErrEmailTaken
 		}
@@ -495,7 +494,7 @@ func (s *Service) CreateTokenScoped(ctx context.Context, userID, name, scope str
 		name = "API token"
 	}
 	plain := "ot_" + ids.Secret(32)
-	t := &Token{ID: ids.New(), Name: truncate(name, 100), Scope: scope, CreatedAt: time.Now().UnixMilli()}
+	t := &Token{ID: ids.New(), Name: textutil.Truncate(name, 100), Scope: scope, CreatedAt: s.clock().UnixMilli()}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, "", err
@@ -565,7 +564,7 @@ func (s *Service) UserByTokenInfo(ctx context.Context, plain string) (*User, Tok
 	if err != nil {
 		return nil, TokenInfo{}, err
 	}
-	if now := time.Now().UnixMilli(); lastUseStale(lastUsed, now) {
+	if now := s.clock().UnixMilli(); lastUseStale(lastUsed, now) {
 		_, _ = s.db.ExecContext(ctx, "UPDATE api_tokens SET last_used_at = ? WHERE id = ?", now, info.ID)
 	}
 	return &u, info, nil
@@ -643,10 +642,3 @@ func hashToken(secret string) string {
 }
 
 func normalizeEmail(e string) string { return strings.ToLower(strings.TrimSpace(e)) }
-
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
-}

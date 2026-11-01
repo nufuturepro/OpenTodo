@@ -16,8 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/store"
 )
 
 // Web restore (OpenSpec backup-restore-web, design D1, D6, D7). A restore is
@@ -231,7 +232,7 @@ func (s *Service) newStaging() (string, string, error) {
 	if prev != "" {
 		os.RemoveAll(s.stagingDir(prev))
 	}
-	id := randomHex(16)
+	id := ids.Hex(16)
 	dir := s.stagingDir(id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", err

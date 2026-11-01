@@ -8,7 +8,7 @@ import { db, useDatabase } from '../../lib/db'
 import { setDateTime } from '../../lib/dates'
 import { createLabel } from '../../lib/labels'
 import { createProject, createTask, resetDeviceId, updateTask } from '../../lib/ops'
-import { flush, key, render } from '../../ui/test-utils'
+import { key, render, waitFor } from '../../ui/test-utils'
 import { PanelHost } from '../PanelHost'
 import { resetPanel } from '../panel'
 import { TaskListView } from '../TaskListView'
@@ -29,14 +29,13 @@ afterEach(async () => {
   vi.useRealTimers()
   hideBulkToast()
   resetPanel()
-  document.body.innerHTML = ''
+  // A case that opened a task page leaves its address; the next list starts from the Inbox's.
+  history.replaceState(null, '', '/')
 })
 
-async function waitFor(ok: () => boolean, ms = 2000) {
-  for (let t = 0; t < ms && !ok(); t += 20) await flush(20)
-  expect(ok()).toBe(true)
-}
 const tickedTitles = () => [...document.querySelectorAll('[data-ticked] [data-tick]')].map((e) => e.getAttribute('aria-label')!.replace('Select ', ''))
+const option = (name: string) => [...document.querySelectorAll('[data-picker-step] [role="option"]')].find((o) => o.textContent?.includes(name)) as HTMLElement | undefined
+const errandOption = () => option('errand')
 const bar = () => document.querySelector('[data-selection-bar] [role="status"]')?.textContent ?? null
 
 async function inbox(...titles: string[]) {
@@ -76,17 +75,16 @@ describe('ticking from the keyboard (2.1, 2.4)', () => {
     await waitFor(() => bar() === '2 selected')
   })
 
-  it('Escape closes the panel first, then clears the ticks', async () => {
-    await inbox('One', 'Two')
+  it('Escape clears the ticks; Enter opens the selected task as its page (task-full-page)', async () => {
+    const { ids } = await inbox('One', 'Two')
     await key(document.body, 'j')
     await key(document.body, 'x')
-    await key(document.body, 'Enter')
-    await waitFor(() => !!document.querySelector('aside[data-detail-for]'))
-    await key(document.body, 'Escape')
-    await waitFor(() => !document.querySelector('aside[data-detail-for]'))
     expect(bar()).toBe('1 selected')
     await key(document.body, 'Escape')
     await waitFor(() => bar() === null)
+    await key(document.body, 'Enter')
+    // On the Inbox's split the task stood beside the list until Enter opened its page (inbox-split D1).
+    await waitFor(() => ids.some((id) => location.pathname === `/task/${id}`))
   })
 })
 
@@ -133,12 +131,56 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     expect(document.body.textContent).toContain('Tasks must be in one shared project')
   })
 
+  it('More on a row opens the menu at that button, without the Priority and Date its neighbours offer; `.` keeps them', async () => {
+    await inbox('One', 'Two')
+    const items = () => [...document.querySelectorAll('[role^="menuitem"]')].map((m) => m.textContent ?? '')
+    const more = document.querySelector<HTMLButtonElement>('[data-task-id] [data-row-action="more"]')!
+    await act(async () => { more.click() })
+    await waitFor(() => items().length > 0)
+    expect(items().some((m) => m.includes('Move to project'))).toBe(true)
+    expect(items().some((m) => m.startsWith('Date') || m.startsWith('Priority'))).toBe(false)
+    // Closing returns focus to the More button the menu was placed at.
+    await key(document.activeElement as HTMLElement, 'Escape')
+    await waitFor(() => items().length === 0)
+    expect(document.activeElement).toBe(more)
+    await key(document.body, 'j')
+    await key(document.body, '.')
+    await waitFor(() => items().length > 0)
+    // The keyboard menu keeps both: the priority strip and the date group's own choices.
+    expect(items().some((m) => m.startsWith('Pick a date…'))).toBe(true)
+    expect([...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].filter((b) => /^Priority [1-4]$/.test(b.getAttribute('aria-label') ?? '')).length).toBe(4)
+  })
+
+  it('Priority and Date are one item each: their choices open in place, Escape goes back', async () => {
+    await inbox('One')
+    const items = () => [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+    const item = (label: string) => items().find((m) => m.textContent?.startsWith(label))
+    await key(document.body, 'j')
+    await key(document.body, '.')
+    await waitFor(() => items().length > 0)
+    // The choices are open in place from the start: the priority strip, the date row.
+    const digits = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].filter((b) => /^Priority [1-4]$/.test(b.getAttribute('aria-label') ?? ''))
+    expect(digits.map((d) => d.textContent)).toEqual(['1', '2', '3', '4'])
+    expect(item('Tomorrow')).toBeDefined()
+    expect(item('Move to project')).toBeDefined()
+    // The date panel extends the menu beside its items; Escape steps back to them.
+    await act(async () => { item('Pick a date…')!.click() })
+    await waitFor(() => !!document.querySelector('[data-date-panel]'))
+    expect(item('Move to project')).toBeDefined()
+    await key(document, 'Escape')
+    await waitFor(() => !document.querySelector('[data-date-panel]'))
+    expect(document.activeElement?.getAttribute('data-menu-label')).toBe('Pick a date…')
+    await key(document, 'Escape')
+    await waitFor(() => items().length === 0)
+  })
+
   it('Date → Tomorrow reschedules the ticked tasks', async () => {
     const { ids } = await inbox('One', 'Two', 'Three')
     await key(document.body, 'j'); await key(document.body, 'x')
     await key(document.body, 'ArrowDown', { shiftKey: true }); await key(document.body, 'ArrowDown', { shiftKey: true })
     await key(document.body, '.')
     await waitFor(() => document.querySelectorAll('[role="menuitem"]').length > 0)
+    await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')].some((m) => m.textContent?.startsWith('Tomorrow')))
     await act(async () => { ([...document.querySelectorAll('[role="menuitem"]')].find((m) => m.textContent?.startsWith('Tomorrow')) as HTMLElement).click() })
     await waitFor(() => !!document.querySelector('[data-bulk-toast]'))
     for (const id of ids) expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-10-15' })
@@ -175,33 +217,74 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     await waitFor(() => bar() === '3 selected')
     await key(document.body, 'L', { shiftKey: true })
     await waitFor(() => !!document.querySelector('[data-picker-step]'))
+    // Picked at once, before the menu's own read lands: the click reads the tasks itself.
     await act(async () => { ([...document.querySelectorAll('[data-picker-step] [role="option"]')].find((o) => o.textContent?.includes('errand')) as HTMLElement).click() })
-    await waitFor(() => !!document.querySelector('[data-bulk-toast]'))
-    // The toast can show before the batch's last row is read back; poll the store.
-    let labels: string[][] = []
-    for (let t = 0; t < 2000; t += 20) {
-      labels = await Promise.all(ids.map(async (id) => (await db.tasks.get(id))!.labels))
-      if (labels.every((ls) => ls.length === 1)) break
-      await flush(20)
-    }
-    expect(labels).toEqual(ids.map(() => [l]))
+    await waitFor(() => !!document.querySelector('[data-bulk-toast]'), 'the undo offer')
+    // The toast can show before the batch's last row is read back; wait for the store.
+    const labels = () => Promise.all(ids.map(async (id) => (await db.tasks.get(id))!.labels))
+    await waitFor(async () => (await labels()).every((ls) => ls.length === 1), 'the label on every task')
+    expect(await labels()).toEqual(ids.map(() => [l]))
     expect(document.querySelector('[data-picker-step]')).not.toBeNull()
+    // The open picker follows the stored tasks: the label now on every task is marked.
+    await waitFor(() => errandOption()?.getAttribute('aria-selected') === 'true')
+  })
+
+  it('a picker opened before the read marks the common label once the read lands (precision-polish-2)', async () => {
+    const l = await createLabel({ name: 'errand' })
+    await createLabel({ name: 'home' })
+    const { ids } = await inbox('One', 'Two')
+    for (const id of ids) await updateTask(id, { labels: [l] })
+    await key(document.body, 'j'); await key(document.body, 'x')
+    await key(document.body, 'ArrowDown', { shiftKey: true })
+    await waitFor(() => bar() === '2 selected')
+    await key(document.body, 'L', { shiftKey: true })
+    await waitFor(() => !!document.querySelector('[data-picker-step]'))
+    await waitFor(() => errandOption()?.getAttribute('aria-selected') === 'true')
+    expect(option('home')?.getAttribute('aria-selected')).toBe('false')
+    // Picking it removes it from both, and the mark goes away in the same open picker.
+    await act(async () => { errandOption()!.click() })
+    await waitFor(() => errandOption()?.getAttribute('aria-selected') === 'false')
+    for (const id of ids) expect((await db.tasks.get(id))!.labels).toEqual([])
+    // Let the pick's toast land here, not in the next case.
+    await waitFor(() => !!document.querySelector('[data-bulk-toast]'))
+  })
+
+  it('L then a label every ticked task has removes it, even when picked at once', async () => {
+    const l = await createLabel({ name: 'errand' })
+    const { ids } = await inbox('One', 'Two')
+    for (const id of ids) await updateTask(id, { labels: [l] })
+    await key(document.body, 'j'); await key(document.body, 'x')
+    await key(document.body, 'ArrowDown', { shiftKey: true })
+    await waitFor(() => bar() === '2 selected')
+    await key(document.body, 'L', { shiftKey: true })
+    await waitFor(() => !!document.querySelector('[data-picker-step]'))
+    await act(async () => { ([...document.querySelectorAll('[data-picker-step] [role="option"]')].find((o) => o.textContent?.includes('errand')) as HTMLElement).click() })
+    const labels = () => Promise.all(ids.map(async (id) => (await db.tasks.get(id))!.labels))
+    await waitFor(async () => (await labels()).every((ls) => ls.length === 0), 'the label off every task')
+    expect(await labels()).toEqual(ids.map(() => []))
+    // Let the pick's toast land here: shown after the write, it would otherwise
+    // appear in the next case and pass for that case's own offer.
+    await waitFor(() => !!document.querySelector('[data-bulk-toast]'), 'the undo offer')
   })
 
   it('Ctrl+Z undoes outside text fields, never inside a textarea', async () => {
     const { ids } = await inbox('One', 'Two')
+    const priority = async () => (await db.tasks.get(ids[0]))!.priority
     await key(document.body, 'j'); await key(document.body, 'x')
+    await waitFor(() => bar() === '1 selected', 'one row ticked')
     await key(document.body, '1')
-    await waitFor(() => !!document.querySelector('[data-bulk-toast]'))
+    // This case's own offer and write, not a toast an earlier case left behind.
+    await waitFor(async () => (await priority()) === 1, 'priority 1 stored')
+    await waitFor(() => !!document.querySelector('[data-bulk-toast]')?.textContent?.includes('Priority'), 'the undo offer for the priority')
     const ta = document.createElement('textarea')
     document.body.append(ta)
     const inField = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true })
     await act(async () => { ta.dispatchEvent(inField) })
     expect(inField.defaultPrevented).toBe(false)
-    expect((await db.tasks.get(ids[0]))!.priority).toBe(1)
+    expect(await priority()).toBe(1)
     await key(document.body, 'z', { ctrlKey: true })
-    await waitFor(() => document.querySelector('[data-bulk-toast]')!.textContent!.includes('Undone'))
-    expect((await db.tasks.get(ids[0]))!.priority).toBe(4)
+    await waitFor(() => document.querySelector('[data-bulk-toast]')!.textContent!.includes('Undone'), 'Undone in the toast')
+    await waitFor(async () => (await priority()) === 4, 'priority 4 back')
   })
 })
 

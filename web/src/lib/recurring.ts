@@ -76,6 +76,10 @@ function copyOf(series: Task, now: number): Record<string, unknown> {
     ...(series.deadline ? { deadline: series.deadline } : {}),
     ...(series.start ? { start: series.start } : {}),
     ...(series.evening ? { evening: true } : {}),
+    // The record keeps the part of the day (day-parts D2); only sent when set.
+    ...(series.day_part ? { day_part: series.day_part } : {}),
+    // And the energy (task-energy); only sent when set.
+    ...(series.energy ? { energy: series.energy } : {}),
     // Custom field values, null included, as the server's record (custom-fields);
     // mutateMany writes one `fields.<id>` op each.
     ...(series.fields && Object.keys(series.fields).length ? { fields: { ...series.fields } } : {}),

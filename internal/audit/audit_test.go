@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 func newRecorder(t *testing.T) (*Recorder, *sql.DB) {
@@ -26,6 +26,7 @@ func newRecorder(t *testing.T) (*Recorder, *sql.DB) {
 // the catalogue without a constructor here fails TestEveryNameHasAConstructor.
 func allConstructors() []Event {
 	return []Event{
+		NameChanged("u"), EmailChangeRequested("u"), EmailChanged("u"), AvatarChanged("u"),
 		LoginSucceeded("u", "u@example.com", "password"),
 		LoginFailed("u", "u@example.com", ReasonWrongPassword),
 		Logout("u"),
@@ -33,12 +34,21 @@ func allConstructors() []Event {
 		EmailFailed("", "", "verify_signup", "x@example.com", "rate_limited"),
 		PublicLinkCreated("o", "pl1", "p1", "tick"),
 		PublicLinkRevoked("o", "pl1", "p1"),
+		ProjectAgentAccess("o", "p1", "allowed", "kept_away"),
 		TaskPagePublished("o", "tp1", "reply"),
 		TaskPageRevoked("o", "tp1"),
 		AgentWrite("u", "complete_tasks", "t", "Desk assistant", 3),
 		AgentWrite("u", "create_tasks", "t", "Desk assistant", 0).Failed("writes_disabled_by_user"),
 		RelayEnabled("u", "device-1", "Laptop"),
 		RelayDisabled("u", "device-1", "Laptop", "locked"),
+		WorkspaceCreated("u", "w"), WorkspaceRenamed("u", "w"), WorkspaceDeleted("u", "w"), WorkspaceTransferred("u", "v", "w"),
+		WorkspaceMemberAdded("u", "v", "w", "member"), WorkspaceMemberRoleChanged("u", "v", "w", "member", "admin"), WorkspaceMemberRemoved("u", "v", "w"),
+		WorkspaceGroupCreated("u", "w", "g"), WorkspaceGroupDeleted("u", "w", "g"),
+		WorkspaceGroupMemberAdded("u", "v", "w", "g"), WorkspaceGroupMemberRemoved("u", "v", "w", "g"),
+		ProjectMemberAdded("u", "v", "p", "editor"), ProjectGrantAdded("u", "p", "g", "editor"), ProjectGrantChanged("u", "p", "g", "editor", "viewer"), ProjectGrantRemoved("u", "p", "g"),
+		WorkspaceInviteCreated("u", "i", "w", "member", "x@example.com"), WorkspaceInviteAccepted("v", "u", "i", "w", "member"), WorkspaceInviteRevoked("u", "i", "w"),
+		MemberInvitationCreated("u", "v", "i", "project", "p", "editor"), MemberInvitationAccepted("v", "u", "i", "workspace", "w", "member"),
+		MemberInvitationDeclined("v", "u", "i", "project", "p", "viewer"), MemberInvitationCancelled("u", "", "i", "project", "p", "editor"),
 		MFAEnrolled("u", "totp"),
 		MFADisabled("o", "u", "totp"),
 		MFAReset("o", "u"),
@@ -56,6 +66,12 @@ func allConstructors() []Event {
 		IssueConnectionCreated("u", "c1", "github"),
 		IssueConnectionUpdated("u", "c1", "github", "token"),
 		IssueConnectionDeleted("u", "c1", "gitlab"),
+		CalendarConnectionCreated("u", "c1", "caldav"),
+		CalendarConnectionUpdated("u", "c1", "google", "password"),
+		CalendarConnectionDeleted("u", "c1", "caldav"),
+		NotificationChannelCreated("u", "n1", "ntfy"),
+		NotificationChannelUpdated("u", "n1", "gotify", "token"),
+		NotificationChannelDeleted("u", "n1", "webhook"),
 		InvitationCreated("o", "i1", "a@example.com"),
 		InvitationAccepted("u", "u@example.com", "i1"),
 		InvitationRevoked("o", "i1"),
@@ -90,8 +106,15 @@ var secretFields = []string{"password", "password_hash", "secret", "token", "tok
 
 func TestConstructorsNeverCarryEntityFields(t *testing.T) {
 	deny := map[string]string{}
+	// Field names that also name an audit detail and are never content: a frame's
+	// planning source is a "project:<id>" key (calendar-frames D1), while a
+	// restore's source is the backup it came from.
+	shared := map[string]bool{"frame.source": true}
 	for entity, fields := range opsync.Schema {
-		for f := range fields {
+		for f, def := range fields {
+			if shared[entity+"."+f] && !def.Content {
+				continue
+			}
 			deny[f] = entity + " field"
 		}
 	}
@@ -267,23 +290,26 @@ func TestPruneByRetention(t *testing.T) {
 	}
 }
 
-func TestRunPrunerRunsAtStartup(t *testing.T) {
+// TestNextPruneIsTheRetentionDeadline: the housekeeping job (internal/jobs)
+// prunes when the oldest event passes the retention, at startup when it
+// already has.
+func TestNextPruneIsTheRetentionDeadline(t *testing.T) {
 	r, db := newRecorder(t)
-	if _, err := db.Exec("INSERT INTO audit_events(ts,name,outcome) VALUES(?, 'logout', 'success')", time.Now().Add(-200*24*time.Hour).UnixMilli()); err != nil {
+	ctx := context.Background()
+	if _, ok, err := r.NextPrune(ctx); ok || err != nil {
+		t.Fatalf("empty log has a deadline: %v %v", ok, err)
+	}
+	old := time.Now().Add(-200 * 24 * time.Hour)
+	if _, err := db.Exec("INSERT INTO audit_events(ts,name,outcome) VALUES(?, 'logout', 'success')", old.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { r.RunPruner(ctx, time.Hour); close(done) }()
-	deadline := time.Now().Add(2 * time.Second)
-	for count(t, db, "1=1") != 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("startup prune did not run")
-		}
-		time.Sleep(10 * time.Millisecond)
+	at, ok, err := r.NextPrune(ctx)
+	if err != nil || !ok || !at.Equal(time.UnixMilli(old.UnixMilli()).Add(90*24*time.Hour)) || at.After(time.Now()) {
+		t.Fatalf("next prune %v %v %v, want past: 90 days after the event", at, ok, err)
 	}
-	cancel()
-	<-done
+	if n, err := r.Prune(ctx); err != nil || n != 1 || count(t, db, "1=1") != 0 {
+		t.Fatalf("prune: %d %v", n, err)
+	}
 }
 
 func TestListFiltersAndCursor(t *testing.T) {
@@ -311,5 +337,20 @@ func TestListFiltersAndCursor(t *testing.T) {
 	other, _, _ := r.List(ctx, Filter{Actor: "u2", Outcome: Failure})
 	if len(other) != 0 {
 		t.Fatalf("actor+outcome filter leaked %d events", len(other))
+	}
+}
+
+// TestWorkspaceEventsCarryIdsOnly (OpenSpec change workspaces, task 3.4): a
+// workspace or group name never reaches the log, and the allow-list refuses a
+// detail key that would carry one.
+func TestWorkspaceEventsCarryIdsOnly(t *testing.T) {
+	e := WorkspaceGroupMemberAdded("alice", "bob", "w-1", "g-1")
+	if d := e.Details(); d["workspace"] != "w-1" || d["group"] != "g-1" || len(d) != 2 {
+		t.Fatalf("details = %v", d)
+	}
+	named := e
+	named.details = map[string]string{"workspace": "w-1", "name": "Family"}
+	if err := Validate(named); err == nil {
+		t.Fatal("a name detail passed validation")
 	}
 }

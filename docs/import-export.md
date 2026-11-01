@@ -14,9 +14,11 @@ card: import
 
 Your tasks are yours. You can download all of them at any time, and bring tasks in from other places. Nothing is locked in.
 
+The export includes your [automation rules](automations.md) (`rules`), and importing your own export restores them with their ids.
+
 ## Download everything
 
-Open **Settings → Data** and select **Download export (JSON)** in the **Export** row. You get one file with all your projects, sections, tasks and subtasks, labels, reminders, saved views, [saved locations](locations-and-places.md) and [time entries](time-tracking.md), including completed tasks and items in the Trash. Shared projects you're a member of are included too.
+Open **Settings → Data** and select **Download export (JSON)** in the **Export** row. You get one file with all your projects, sections, tasks and subtasks, labels, reminders, saved views, [saved locations](locations-and-places.md), [time entries](time-tracking.md) and which [workspace](workspaces.md) each belongs to, including completed tasks and items in the Trash. Shared projects you're a member of are included too.
 
 The file is plain JSON, so you can open it in any text editor, keep it as a backup, or load it into another OpenTodo server.
 
@@ -24,9 +26,11 @@ The JSON file lists your [attachments](attachments.md) but doesn't contain the f
 
 The person who runs your server can also set up automatic [backups](backups.md) of the whole server.
 
+A [Markdown vault](vault.md) is not an export: it keeps your projects as files in two-way sync, but leaves out comments, attachments and time entries. Use the JSON file to keep everything.
+
 ## Import from another app
 
-Open **Settings → Data**, select **Import data…** (or press <kbd>g</kbd> then <kbd>Shift</kbd>+<kbd>I</kbd>) and choose a file: an **OpenTodo export**, a **CSV file** with a `title` column, or a **JSON export from another task app**. Nothing is written straight away. You check the format OpenTodo detected, choose the options, read a preview that says what will happen to each row, and then import. The tasks reach all your devices on their next sync.
+Open **Settings → Data**, select **Import data** (or press <kbd>g</kbd> then <kbd>Shift</kbd>+<kbd>I</kbd>) and choose a file: an **OpenTodo export**, a **CSV file** with a `title` column, or a **JSON export from another task app**. Nothing is written straight away. You check the format OpenTodo detected, choose the options, read a preview that says what will happen to each row, and then import. The tasks reach all your devices on their next sync.
 
 [Import step by step](import-steps.md) walks through the preview and the options; the [import formats reference](import.md) has each format and how fields are mapped.
 
@@ -44,4 +48,4 @@ Every import appears under **Past imports**. **Undo** removes everything that im
 
 ## Good to know
 
-Import needs a connection to your server. Files can be up to 20 MB and 50,000 rows, unless your server allows more. Comments aren't imported. Time entries come back from your own export; entries another member tracked on a shared task are left out, with a note in the preview. The [full list](import-steps.md#good-to-know) covers attachments, CSV dates and JSON files that aren't recognised.
+Import needs a connection to your server. Files can be up to 20 MB and 50,000 rows, unless your server allows more. Comments aren't imported (the export lists each comment's reactions); the members a task's notes mention come back with the task. Time entries come back from your own export; entries another member tracked on a shared task are left out, with a note in the preview. Workspaces come back by name, and one you don't have is created for you; their members and groups aren't imported. The [full list](import-steps.md#good-to-know) covers attachments, CSV dates and JSON files that aren't recognised.

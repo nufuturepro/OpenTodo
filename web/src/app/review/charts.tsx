@@ -30,7 +30,7 @@ export function ChartFigure({ title, summary, table, children, note, wide, testI
   const id = useId()
   const [open, setOpen] = useState(false)
   return (
-    <figure className={`min-w-0 rounded-card border border-default bg-surface p-4 ${wide ? 'lg:col-span-2' : ''}`} data-panel={testId} aria-labelledby={`${id}-h`}>
+    <figure className={`ui-section-flat ui-panel-flat min-w-0 ${wide ? 'lg:col-span-2' : ''}`} data-panel={testId} aria-labelledby={`${id}-h`}>
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 id={`${id}-h`} className="text-body font-semibold text-default">{title}</h2>
         {note && <p className="text-meta text-muted">{note}</p>}
@@ -62,7 +62,7 @@ export function ChartFigure({ title, summary, table, children, note, wide, testI
 /** A panel with nothing to show for the period: one line saying what it needs. */
 export function EmptyPanel({ title, children, wide, testId }: { title: string; children: ReactNode; wide?: boolean; testId?: string }) {
   return (
-    <section className={`rounded-card border border-dashed border-input px-4 py-3 ${wide ? 'lg:col-span-2' : ''}`} aria-label={title} data-panel={testId} data-empty>
+    <section className={`ui-section-flat ui-panel-flat ${wide ? 'lg:col-span-2' : ''}`} aria-label={title} data-panel={testId} data-empty>
       <h2 className="inline text-body font-semibold text-default">{title}</h2>
       <span className="text-meta text-muted"> · {children}</span>
     </section>
@@ -186,9 +186,9 @@ export function StatTile({ label, value, change, note, testId }: {
   testId: string
 }) {
   return (
-    <div className="min-w-0 rounded-card border border-default bg-surface p-3" data-tile={testId}>
+    <div className="surface-card min-w-0 p-3" data-tile={testId}>
       <dt className="text-meta text-muted">{label}</dt>
-      <dd className="text-h2 font-semibold text-default" data-tile-value>{value}</dd>
+      <dd className="text-display tabular-nums text-strong" data-tile-value>{value}</dd>
       {change && (
         <dd className="flex items-center gap-1 text-meta text-muted" data-tile-change={change.direction}>
           <Icon name={ARROW[change.direction]} size="xs" />{change.text}
@@ -270,7 +270,8 @@ export function LineChart({ points, aName, bName, summary }: { points: readonly 
           <div {...grid.gridProps} role="grid" aria-label={summary} className="absolute inset-0 flex" data-chart-grid>
             <div role="row" className="flex h-full w-full">
               {points.map((_, i) => (
-                <div key={i} {...grid.cellProps(0, i)} className="h-full min-w-0 flex-1 cursor-default outline-none focus-visible:bg-sunken/60 focus-visible:outline-2 focus-visible:outline-focus" data-point={i} />
+                // cursor-lint-allow: a data cell to read, not to click; the arrow keeps the I-beam off the chart.
+                <div key={i} {...grid.cellProps(0, i)} className="h-full min-w-0 flex-1 cursor-default outline-none focus-visible:bg-sunken/60 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus" data-point={i} />
               ))}
             </div>
           </div>
@@ -312,7 +313,7 @@ export function HBars({ bars, summary }: { bars: readonly HBar[]; summary: strin
         {bars.map((b, i) => (
           <div key={i} role="row" className="grid grid-cols-[minmax(0,7rem)_1fr] items-center gap-2">
             <span className="truncate text-meta text-default" aria-hidden="true">{b.label}</span>
-            <div {...grid.cellProps(i, 0)} className="flex min-h-6 items-center gap-2 rounded-control outline-none focus-visible:outline-2 focus-visible:outline-focus" data-bar={b.label}>
+            <div {...grid.cellProps(i, 0)} className="flex min-h-6 items-center gap-2 rounded-control outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus" data-bar={b.label}>
               <span className="h-3 rounded-r-[4px] bg-chart-base" style={{ width: `${Math.max(2, (b.value / max) * 85)}%` }} aria-hidden="true" />
               <span className="text-meta tabular-nums text-muted" aria-hidden="true">{b.text}</span>
             </div>
@@ -372,7 +373,7 @@ export function Heatmap({ weeks, rowLabels, columnLabels, tip, summary }: {
               {weeks.map((col, c) => {
                 const d = col[r]
                 return d
-                  ? <div key={c} {...grid.cellProps(r, c)} style={{ gridRow: r + 1, gridColumn: c + 1 }} className={`size-(--heat) rounded-[3px] outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${LEVEL_CLASS[d.level]}`} data-day={d.date} data-level={d.level} />
+                  ? <div key={c} {...grid.cellProps(r, c)} style={{ gridRow: r + 1, gridColumn: c + 1 }} className={`size-(--heat) rounded-[3px] outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-focus ${LEVEL_CLASS[d.level]}`} data-day={d.date} data-level={d.level} />
                   : <div key={c} role="gridcell" aria-hidden="true" style={{ gridRow: r + 1, gridColumn: c + 1 }} className="size-(--heat)" />
               })}
             </div>
@@ -419,7 +420,7 @@ export function DotGrid({ counts, max, rowLabels, columnLabels, tip, summary }: 
             {row.map((n, c) => {
               const d = n === 0 ? 3 : 5 + 11 * Math.sqrt(n / Math.max(1, max))
               return (
-                <div key={c} {...grid.cellProps(r, c)} className="flex size-(--dot) items-center justify-center rounded-control outline-none focus-visible:outline-2 focus-visible:outline-focus" data-count={n}>
+                <div key={c} {...grid.cellProps(r, c)} className="flex size-(--dot) items-center justify-center rounded-control outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus" data-count={n}>
                   <span className={`rounded-full ${n === 0 ? 'bg-(--ot-border)' : 'bg-chart-base'}`} style={{ width: d, height: d }} aria-hidden="true" />
                 </div>
               )

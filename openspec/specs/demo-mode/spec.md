@@ -55,7 +55,7 @@ Every day at 03:00 UTC, and at startup when the last reset predates the most rec
 - **THEN** it deletes all sandboxes before serving requests
 
 ### Requirement: Restricted features
-With demo mode on, requests to sign-up, invitations, user administration, password change or reset including the self-service reset request and sign-up verification, signing out everywhere, API tokens, app passwords, CalDAV, passkeys, two-factor, server settings, backups, webhooks, email to task, import, end-to-end encryption, web push, sharing changes, MCP and the in-app assistant SHALL be refused with 403 `demo_restricted` before authentication. The deny list SHALL refuse exactly the routes whose declared route policy says a demo refuses them. Rate limits SHALL stay.
+With demo mode on, requests to sign-up, invitations, user administration, password change or reset including the self-service reset request and sign-up verification, signing out everywhere, API tokens, app passwords, CalDAV, passkeys, two-factor, server settings, backups, webhooks, email to task, import, end-to-end encryption, web push, sharing changes, workspace creation, membership, groups, grants and invite links, MCP and the in-app assistant SHALL be refused with 403 `demo_restricted` before authentication. The deny list SHALL refuse exactly the routes whose declared route policy says a demo refuses them. Rate limits SHALL stay. A demo account has its default workspace only, and the workspace switcher offers "New workspace" with a note that it is not available on the demo.
 
 #### Scenario: Refused while signed in
 - **WHEN** the signed-in demo account POSTs to `/api/v1/tokens`
@@ -77,6 +77,10 @@ With demo mode on, requests to sign-up, invitations, user administration, passwo
 - **WHEN** a demo account calls `POST /api/v1/assistant/turn` or `PUT /api/v1/me/assistant`
 - **THEN** the response is 403 `demo_restricted`, no provider is contacted, and the app shows that the assistant is not available on the demo
 
+#### Scenario: Workspaces refused
+- **WHEN** a demo account POSTs to `/api/v1/workspaces` or to any workspace member, group, grant or invite route, or an anonymous client previews a workspace invite link
+- **THEN** the writes answer 403 `demo_restricted`, the preview answers 404 `invitation_invalid`, and the sandbox keeps its one default workspace
+
 #### Scenario: Demo mode off
 - **WHEN** demo mode is off
 - **THEN** no request is ever answered with `demo_restricted`
@@ -89,11 +93,33 @@ The server SHALL make no outbound request and SHALL send no email even when `OPE
 - **THEN** no message is sent for any action and the authentication status reports `outgoingEmail.enabled: false`
 
 ### Requirement: Demo sign-in and banner
-With demo mode on, `GET /api/v1/auth/status` SHALL include a `demo` object with a short-lived creation token, the sandbox lifetimes and the next reset, and no credentials. "Try the demo" SHALL create a sandbox and sign the browser into it. The app SHALL show a banner that the sandbox is private and deleted after 2 hours of inactivity, and Settings SHALL hide or disable restricted controls with a short note.
+With demo mode on, `GET /api/v1/auth/status` SHALL include a `demo` object with a short-lived creation token, the sandbox lifetimes and the next reset, and no credentials. "Try the demo" SHALL create a sandbox and sign the browser into it. Settings SHALL hide or disable restricted controls with a short note.
+
+While signed into a sandbox the app SHALL show a demo banner above the shell that is **one line at every width** from 360 px up, reading "Demo: private sandbox, deleted after {idle} h of inactivity. Don't store anything personal." followed by a "Learn more" link; below 640 px the second sentence is left to the Details control and the rest is cut with an ellipsis rather than wrapped, so the banner never takes a second line. The link SHALL open the demo section of the getting-started guide in the Help panel over the current screen. `{idle}` SHALL be the idle lifetime in hours from the status's `demo.sandboxHours`, remembered on the device so the line is the same offline, never a number fixed in the app. The banner SHALL offer a Dismiss control and a Details control: Dismiss hides the banner on this device until the browser session ends (stored on the device only, never synced, never sent); Details shows the full text (private sandbox, the idle lifetime, the maximum age, the nightly reset, nothing personal) as a tooltip with a fine pointer and as a dialog on touch. While the sandbox's write budget is used up, the line SHALL show the write-limit notice in the banner's place, dismissed or not, and return to the demo line when writes are accepted again. The banner SHALL be a status region for assistive technology and SHALL not be shown in docs screenshots.
 
 #### Scenario: Try the demo
 - **WHEN** a visitor clicks "Try the demo"
 - **THEN** a new sandbox is created, they are signed into it and see the sample data and the banner
+
+#### Scenario: One line on a phone
+- **WHEN** a sandbox is open on a 360 px wide screen
+- **THEN** the banner is one line reading "Demo: private sandbox, deleted after 2 h of inactivity." (cut with an ellipsis if it still does not fit) with its Learn more link and its two controls, Details shows the full text, and the first task of the Inbox is two lines higher than before
+
+#### Scenario: Lifetime from the server
+- **WHEN** a demo server reports an idle lifetime of 3 hours
+- **THEN** the banner reads "deleted after 3 h of inactivity", also after the tab was reopened offline
+
+#### Scenario: Dismissed for the session
+- **WHEN** a visitor dismisses the banner, opens another view and reloads the tab
+- **THEN** the banner stays hidden; in a new browser session or another browser it is shown again, and nothing was written to the account
+
+#### Scenario: Learn more
+- **WHEN** a visitor activates Learn more while editing a task
+- **THEN** the demo section of the guide opens in the Help panel beside the screen and the task stays open as it was
+
+#### Scenario: Write limit
+- **WHEN** a sandbox that dismissed the banner reaches its write limit
+- **THEN** the banner's line shows the write-limit notice until writes are accepted again
 
 #### Scenario: Returning visitor
 - **WHEN** a visitor comes back within the sandbox lifetime in the same browser
@@ -105,7 +131,7 @@ With demo mode on, `GET /api/v1/auth/status` SHALL include a `demo` object with 
 
 #### Scenario: Status without demo mode
 - **WHEN** demo mode is off and the status is requested
-- **THEN** the response has no `demo` field
+- **THEN** the response has no `demo` field and no banner is shown
 
 ### Requirement: Sandbox isolation
 A sandbox SHALL only read and write its own personal data and the project shared with its own non-interactive collaborator, whose account has no password and no session. Nothing a sandbox writes SHALL be visible to another sandbox or to anonymous visitors: membership changes stay refused, and assignments, mentions, notifications and activity stay inside the sandbox.
@@ -130,7 +156,7 @@ A sandbox SHALL be deleted with its accounts, sessions and data after 2 hours wi
 - **THEN** it receives 401 `demo_expired`, clears its local data and shows "Your demo sandbox has expired" with a button to start a new one
 
 ### Requirement: Demo abuse limits
-The server SHALL bound demo use: a live-sandbox cap (evict the least recently active idle one, else 503 `demo_busy`), 5 new sandboxes per client address per hour (429), per sandbox 600 ops an hour, 5,000 ops and 2 MB of values in total (429 `demo_limit`), fields of 4 KB (notes 32 KB), and above a database size threshold no new sandboxes and no sandbox writes. The client address SHALL be the last forwarded hop not listed in `OPENTODO_TRUSTED_PROXIES`.
+The server SHALL bound demo use: a live-sandbox cap (evict the least recently active sandbox idle for 15 minutes, else the oldest sandbox created more than 15 minutes ago, else 503 `demo_busy`), 5 new sandboxes per client address per hour with IPv6 addresses grouped by `/48` (429), at most twice the live cap of new sandboxes per hour for the whole demo (503 `demo_busy`), per sandbox 600 ops an hour, 5,000 ops and 2 MB of values in total (429 `demo_limit`), fields of 4 KB (notes 32 KB), and above a database size threshold no new sandboxes and no sandbox writes. The client address SHALL be the last forwarded hop not listed in `OPENTODO_TRUSTED_PROXIES`.
 
 #### Scenario: Write budget
 - **WHEN** a sandbox sends its 601st op within an hour
@@ -139,6 +165,10 @@ The server SHALL bound demo use: a live-sandbox cap (evict the least recently ac
 #### Scenario: Creation flood
 - **WHEN** one address requests a sixth sandbox within an hour, even with a different forged leading `X-Forwarded-For` entry each time
 - **THEN** the request gets 429 and no account is created
+
+#### Scenario: Creation flood from one IPv6 site
+- **WHEN** six addresses of the same IPv6 `/48` each request a sandbox within an hour
+- **THEN** the sixth request gets 429 and an address outside that `/48` still gets a sandbox
 
 #### Scenario: Behind Cloudflare
 - **WHEN** `OPENTODO_TRUSTED_PROXIES=cloudflare` and visitors reach the demo through the same Cloudflare edge
@@ -152,8 +182,16 @@ The server SHALL bound demo use: a live-sandbox cap (evict the least recently ac
 - **WHEN** the database is above its size threshold and a live sandbox writes
 - **THEN** the write is refused with 429 `demo_limit` and nothing is applied
 
+#### Scenario: Busy sandboxes cannot hold the cap
+- **WHEN** the live-sandbox cap is reached, every sandbox is active, and one was created more than 15 minutes ago
+- **THEN** a new visitor gets a sandbox and the oldest one is deleted; its tab's next request gets 401 `demo_expired`
+
+#### Scenario: Turnover limit
+- **WHEN** the demo has created twice its live cap of sandboxes within the hour
+- **THEN** new visitors get 503 `demo_busy` until the hour has passed
+
 #### Scenario: Full demo
-- **WHEN** the live-sandbox cap is reached and no sandbox has been idle for 15 minutes
+- **WHEN** the live-sandbox cap is reached and every sandbox was created within the last 15 minutes
 - **THEN** new visitors get 503 `demo_busy` with a message to try again later
 
 ### Requirement: Sandbox creation needs the sign-in page
@@ -228,4 +266,30 @@ With demo mode on, every request to `/api/v1/projects/{id}/public-links` and `/a
 
 #### Scenario: Public read refused
 - **WHEN** an anonymous client requests `/api/v1/public/<any secret>` on a demo instance
+- **THEN** the response is 403 `demo_restricted`
+
+### Requirement: Issue connections refused on the demo
+With demo mode on, every request to `/api/v1/issues` and `/api/v1/settings/issues` SHALL be refused with 403 `demo_restricted` before authentication, so the demo server never contacts a visitor's host with a visitor's token. The Issues panel SHALL be replaced by the demo note there.
+
+#### Scenario: Connection refused
+- **WHEN** a demo sandbox posts an issue connection
+- **THEN** the response is 403 `demo_restricted`, nothing is stored and no outbound request is made
+
+#### Scenario: Owner switch refused
+- **WHEN** any client calls `PUT /api/v1/settings/issues` on a demo instance
+- **THEN** the response is 403 `demo_restricted`
+
+#### Scenario: Panel on the demo
+- **WHEN** a sandbox opens `/settings/integrations`
+- **THEN** the Issues panel is shown under the demo note with disabled controls
+
+### Requirement: Calendar sync refused on the demo
+With demo mode on, every request to `/api/v1/calendar-sync` and `/api/v1/settings/calendar-sync` SHALL be refused with 403 `demo_restricted` before authentication, so the demo server never contacts a visitor's calendar server or Google. The Calendar sync panel SHALL be shown under the demo note with its controls off.
+
+#### Scenario: Connection refused
+- **WHEN** a demo sandbox posts a calendar connection
+- **THEN** the response is 403 `demo_restricted`, nothing is stored and no outbound request is made
+
+#### Scenario: Owner switch refused
+- **WHEN** any client calls `PUT /api/v1/settings/calendar-sync` on a demo instance
 - **THEN** the response is 403 `demo_restricted`

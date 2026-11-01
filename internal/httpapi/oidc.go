@@ -7,9 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/auth"
-	"github.com/pixari/opentodo/internal/oidc"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/auth"
+	"github.com/OpenTodoApp/opentodo/internal/oidc"
+	"github.com/OpenTodoApp/opentodo/internal/textutil"
 )
 
 // ---- single sign-on (OpenSpec change `oidc-login`) ----
@@ -24,18 +25,14 @@ const oidcStateCookie = "ot_oidc"
 
 const oidcCallbackPath = "/api/v1/auth/oidc/callback"
 
-// WithOIDC (an Option) supplies the single sign-on service; New builds a
-// default one from the configuration when it is absent.
-func WithOIDC(svc *oidc.Service) Option { return func(s *Server) { s.oidc = svc } }
-
 func (s *Server) registerOIDCRoutes(mux *routes) {
-	mux.handle("GET /api/v1/auth/oidc/start", public("single sign-on starts before there is a session").demoDenied(), s.handleOIDCStart)
-	mux.handle("GET "+oidcCallbackPath, public("the provider redirects the browser back here").demoDenied(), s.handleOIDCCallback)
+	mux.handle("GET /api/v1/auth/oidc/start", public("single sign-on starts before there is a session").DemoDenied(), s.handleOIDCStart)
+	mux.handle("GET "+oidcCallbackPath, public("the provider redirects the browser back here").DemoDenied(), s.handleOIDCCallback)
 	mux.handle("GET /api/v1/settings/oidc", ownerOnly("manage single sign-on"), s.handleGetOIDCSettings)
-	mux.handle("PUT /api/v1/settings/oidc", ownerOnly("manage single sign-on").sensitive().demoDenied(), s.handlePutOIDCSettings)
-	mux.handle("POST /api/v1/settings/oidc/test", ownerOnly("manage single sign-on").demoDenied(), s.handleTestOIDC)
+	mux.handle("PUT /api/v1/settings/oidc", ownerOnly("manage single sign-on").Sensitive().DemoDenied(), s.handlePutOIDCSettings)
+	mux.handle("POST /api/v1/settings/oidc/test", ownerOnly("manage single sign-on").DemoDenied(), s.handleTestOIDC)
 	mux.handle("GET /api/v1/me/identities", signedIn, s.handleListIdentities)
-	mux.handle("DELETE /api/v1/me/identities/{id}", signedIn.credential().demoDenied(), s.handleUnlinkIdentity)
+	mux.handle("DELETE /api/v1/me/identities/{id}", signedIn.Credential().DemoDenied(), s.handleUnlinkIdentity)
 }
 
 // oidcRedirectURI is the callback URL registered at the provider (design D5):
@@ -148,7 +145,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	page := "/"
 	if f.Mode == oidc.ModeLink {
-		page = "/settings/security"
+		page = "/settings/account/security"
 	}
 	if e := q.Get("error"); e != "" || q.Get("code") == "" {
 		s.log.Info("oidc provider refused sign-in", "error", truncateLog(e))
@@ -178,7 +175,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		id.Name = claims.PreferredUsername
 	}
 	if f.Mode == oidc.ModeLink {
-		s.finishOIDCLink(w, r, c, f, id)
+		s.finishOIDCLink(w, r, c, f, id, claims.Picture)
 		return
 	}
 	u, _, linked, err := s.auth.MatchOrProvision(ctx, id, c.AllowProvision, c.Name())
@@ -234,46 +231,58 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("store identity-token hint", "err", err)
 	}
 	s.audit.Record(ctx, audit.LoginSucceeded(u.ID, u.Email, "oidc"))
+	s.syncProviderPicture(ctx, u, c, claims.Picture)
 	redirectTo(w, r, "/", nil)
 }
 
 // finishOIDCLink links the identity to the account that started the flow. The
 // same account must still be signed in on this browser.
-func (s *Server) finishOIDCLink(w http.ResponseWriter, r *http.Request, c oidc.Config, f *oidc.FlowState, id auth.ExternalIdentity) {
+func (s *Server) finishOIDCLink(w http.ResponseWriter, r *http.Request, c oidc.Config, f *oidc.FlowState, id auth.ExternalIdentity, picture string) {
 	ctx := r.Context()
 	_, sess, _, err := s.authenticateSession(r)
 	if err != nil || sess == nil || sess.User.ID != f.UserID {
-		s.oidcError(w, r, http.StatusBadRequest, "oidc_state_invalid", "sign in again before linking an account", "/settings/security")
+		s.oidcError(w, r, http.StatusBadRequest, "oidc_state_invalid", "sign in again before linking an account", "/settings/account/security")
 		return
 	}
-	already, err := s.auth.LinkIdentity(ctx, sess.User.ID, id, c.Name())
+	// Adding a new way to sign in needs a recent proof of identity, like every
+	// other credential (credential-freshness); a stale session may only confirm
+	// an identity it already has.
+	var already bool
+	if sess.FreshWithin(FreshWindow, s.auth.Now()) {
+		already, err = s.auth.LinkIdentity(ctx, sess.User.ID, id, c.Name())
+	} else {
+		already, err = s.auth.ConfirmLinkedIdentity(ctx, sess.User.ID, id)
+		if err == nil && !already {
+			s.oidcError(w, r, http.StatusForbidden, "reauth_required", "confirm your password or a code, then link the account again", "/settings/account/security")
+			return
+		}
+	}
 	switch {
 	case errors.Is(err, auth.ErrIdentityTaken):
-		s.oidcError(w, r, http.StatusConflict, "identity_taken", err.Error(), "/settings/security")
+		s.oidcError(w, r, http.StatusConflict, "identity_taken", err.Error(), "/settings/account/security")
 		return
 	case err != nil:
 		s.internal(w, err)
 		return
 	}
-	// Completing the provider flow again is a fresh proof of identity for this
-	// session, which lets provider-only accounts pass step-up checks.
-	if err := s.auth.MarkReauthenticated(ctx, sess.TokenHash, true); err != nil {
-		s.internal(w, err)
-		return
+	// Completing the provider flow again with an identity the account already
+	// has is a fresh proof of identity for this session, which lets
+	// provider-only accounts pass step-up checks. Linking a new identity is not.
+	if already {
+		if err := s.auth.MarkReauthenticated(ctx, sess.TokenHash, true); err != nil {
+			s.internal(w, err)
+			return
+		}
 	}
+	s.syncProviderPicture(ctx, sess.User, c, picture)
 	v := url.Values{"linked": {"1"}}
 	if already {
 		v = url.Values{"reauthenticated": {"1"}}
 	}
-	redirectTo(w, r, "/settings/security", v)
+	redirectTo(w, r, "/settings/account/security", v)
 }
 
-func truncateLog(s string) string {
-	if len(s) > 100 {
-		return s[:100]
-	}
-	return s
-}
+func truncateLog(s string) string { return textutil.Truncate(s, 100) }
 
 // providerLogoutURL returns where to send the browser after a local sign-out
 // of a session that started through the provider, or "" (design D7).
@@ -304,6 +313,7 @@ func (s *Server) oidcSettingsJSON(r *http.Request, c oidc.Config) map[string]any
 		"allowProvision":    c.AllowProvision,
 		"ssoOnly":           c.SSOOnly,
 		"providerLogout":    c.ProviderLogout,
+		"syncPictures":      c.SyncPictures,
 		"redirectUri":       s.oidcRedirectURI(r),
 		"baseUrlConfigured": s.cfg.BaseURL != nil,
 		"managedBy":         c.ManagedBy,
@@ -330,6 +340,7 @@ func (s *Server) handlePutOIDCSettings(w http.ResponseWriter, r *http.Request) {
 		AllowProvision *bool   `json:"allowProvision"`
 		SSOOnly        *bool   `json:"ssoOnly"`
 		ProviderLogout *bool   `json:"providerLogout"`
+		SyncPictures   *bool   `json:"syncPictures"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		badBody(w, err)
@@ -340,7 +351,8 @@ func (s *Server) handlePutOIDCSettings(w http.ResponseWriter, r *http.Request) {
 		in.ClientSecret = nil
 	}
 	changes, err := s.oidc.Save(r.Context(), oidc.Update{Issuer: in.Issuer, ClientID: in.ClientID, ClientSecret: in.ClientSecret,
-		DisplayName: in.DisplayName, Scopes: in.Scopes, AllowProvision: in.AllowProvision, SSOOnly: in.SSOOnly, ProviderLogout: in.ProviderLogout})
+		DisplayName: in.DisplayName, Scopes: in.Scopes, AllowProvision: in.AllowProvision, SSOOnly: in.SSOOnly, ProviderLogout: in.ProviderLogout,
+		SyncPictures: in.SyncPictures})
 	var cfgErr *oidc.ErrInvalidConfig
 	if errors.As(err, &cfgErr) {
 		writeError(w, http.StatusBadRequest, "invalid_input", cfgErr.Error())

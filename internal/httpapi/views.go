@@ -9,8 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pixari/opentodo/internal/filter"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/filter"
+	"github.com/OpenTodoApp/opentodo/internal/iconset"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 // Saved views (OpenSpec `custom-views`) use the generic collection handlers; this file
@@ -22,11 +23,16 @@ import (
 const maxPanels = 6
 
 var (
-	viewKinds    = []string{"list", "dashboard"}
-	viewGroupBy  = []string{"project", "due", "priority", "label", "none"}
-	viewSortBy   = []string{"due", "priority", "position", "created", "title"}
-	viewSortDir  = []string{"asc", "desc"}
-	viewEnumSets = map[string][]string{"kind": viewKinds, "group_by": viewGroupBy, "sort_by": viewSortBy, "sort_dir": viewSortDir}
+	viewKinds   = []string{"list", "dashboard"}
+	viewGroupBy = []string{"project", "due", "priority", "label", "none"}
+	viewSortBy  = []string{"due", "priority", "position", "created", "title", "deadline"}
+	viewSortDir = []string{"asc", "desc"}
+	viewLayouts = []string{"list", "board"}
+	// viewRowLayouts: one line or detailed rows; "" follows the account's choice (row-layouts D1).
+	viewRowLayouts = []string{"", "line", "detailed"}
+	viewEnumSets   = map[string][]string{"kind": viewKinds, "group_by": viewGroupBy, "sort_by": viewSortBy, "sort_dir": viewSortDir, "layout": viewLayouts, "row_layout": viewRowLayouts}
+	// viewRowProps are the row properties a view can hide (views-and-display D3).
+	viewRowProps = []string{"date", "project", "labels", "estimate", "assignee", "deadline", "start", "origin", "energy"}
 	// viewDefaults are written on create for every field the caller leaves out.
 	viewDefaults = map[string]json.RawMessage{
 		"kind":     json.RawMessage(`"list"`),
@@ -36,6 +42,8 @@ var (
 		"pinned":   json.RawMessage(`false`),
 		"color":    json.RawMessage(`"#64748b"`),
 		"panels":   json.RawMessage(`[]`),
+		// layout, show_completed and hidden_props are left out: absent reads as the list
+		// layout, completed matches hidden and every row property shown (views-and-display).
 	}
 )
 
@@ -116,9 +124,27 @@ func (s *Server) checkView(ctx context.Context, uid, id string, body map[string]
 			return invalidView("view.query: %s", err.Error())
 		}
 	}
+	// The view's icon (sidebar-polish D4): null or a name from the icon catalogue. Sync
+	// accepts any string so a newer catalogue stays additive; REST checks the name.
+	if raw, has := body["icon"]; has && string(raw) != "null" {
+		var name string
+		if json.Unmarshal(raw, &name) != nil || !iconset.Valid(name) {
+			return invalidView("view.icon must be a name from the icon catalogue or null, got %s", raw)
+		}
+	}
 	if raw, has := body["on_drop"]; has {
 		if err := s.checkOnDrop(ctx, uid, kind, raw); err != nil {
 			return err
+		}
+	}
+	if raw, has := body["hidden_props"]; has {
+		var props []string
+		if json.Unmarshal(raw, &props) == nil {
+			for _, p := range props {
+				if !slices.Contains(viewRowProps, p) {
+					return invalidView("view.hidden_props: %q is not one of %s", p, strings.Join(viewRowProps, ", "))
+				}
+			}
 		}
 	}
 	if raw, has := body["panels"]; has {

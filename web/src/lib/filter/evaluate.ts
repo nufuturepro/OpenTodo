@@ -5,10 +5,14 @@
 import { blockedMap } from '../dependencies'
 import { currentDateTime, currentDayStart, localDueOf } from '../dates'
 import { descendants } from '../tree'
-import type { FieldDef, FieldValue, Label, Project, Task } from '../types'
+import { applicableFieldsLookup } from '../fieldTree'
+import type { FieldDef, FieldValue, Label, Project, Section, Task } from '../types'
+import { availability, type FlowState } from '../flow'
 import { originMatches, originOf } from '../taskOrigin'
 import { fieldValueText, FilterSyntaxError, parse, resolveRange, shiftISO, type Cmp, type DateRange, type Node } from './parse'
 import { t } from '../i18n'
+import { dayPartOf } from '../dayParts'
+import { energyOf } from '../energy'
 
 export interface FilterContext {
   /** The viewer's local calendar date, YYYY-MM-DD. */
@@ -17,6 +21,8 @@ export interface FilterContext {
   projects: readonly Project[]
   /** Every live task, for `blocked` and `unblocked` (task-dependencies D6). */
   tasks?: readonly Task[]
+  /** Every live section, for the sequences of `available` (project-flow-modes). */
+  sections?: readonly Section[]
   /**
    * First day of the week for `this week` and friends, 0 = Sunday. Defaults to the
    * user's date-time preference snapshot (completed-date-filters D2).
@@ -32,6 +38,17 @@ export interface FilterContext {
    * (time-tracking D4), for `tracked` and `tracked cmp duration`; none tracked without it.
    */
   tracked?: ReadonlyMap<string, number>
+  /**
+   * The cached workspaces and the workspace a task belongs to (OpenSpec change
+   * group-mentions, D6), for `workspace: name`; without them the term matches nothing.
+   */
+  workspaces?: readonly { id: string; name: string }[]
+  workspaceOf?: (task: Task) => string
+  /**
+   * Every workspace's tasks, projects and labels. A query that names a workspace
+   * is evaluated over these instead of the current workspace's (filterScope).
+   */
+  everyWorkspace?: { tasks: readonly Task[]; projects: readonly Project[]; labels: readonly Label[] }
 }
 
 export interface CompiledFilter {
@@ -56,6 +73,15 @@ function nameKey(name: string): string {
  * True when the query mentions `completed` or `open`, or compares the completion
  * date (completed-date-filters D3); otherwise only open tasks match (design D5).
  */
+/**
+ * `(query) & (open | completed)`, the reading of a query with completed tasks shown
+ * (views-and-display D4), built on the parsed query rather than parsed again from
+ * text, so a query at the nesting or length limit (filter-limits) still works.
+ */
+export function withCompletedTasks(ast: Node): Node {
+  return { kind: 'and', items: [ast, parse('open | completed')!] }
+}
+
 export function mentionsState(n: Node): boolean {
   switch (n.kind) {
     case 'or':
@@ -70,6 +96,29 @@ export function mentionsState(n: Node): boolean {
     default:
       return false
   }
+}
+
+/** True when the query has a `workspace:` term anywhere (group-mentions D6). */
+export function namesWorkspace(n: Node): boolean {
+  switch (n.kind) {
+    case 'or':
+    case 'and':
+      return n.items.some(namesWorkspace)
+    case 'not':
+      return namesWorkspace(n.item)
+    default:
+      return n.kind === 'workspace'
+  }
+}
+
+/**
+ * The context a query is evaluated in: every workspace's tasks, projects and
+ * labels when it names a workspace and the caller supplied them, else `ctx`.
+ * Callers that list results iterate the returned `tasks`.
+ */
+export function filterScope<C extends FilterContext>(ast: Node, ctx: C): C {
+  if (!ctx.everyWorkspace || !namesWorkspace(ast)) return ctx
+  return { ...ctx, ...ctx.everyWorkspace }
 }
 
 /** A day against a range of days (completed-date-filters D1); a one-day range is a plain comparison. */
@@ -122,12 +171,13 @@ function isEmptyValue(v: FieldValue | undefined): boolean {
  * The predicate of one field term against one definition (custom-fields D5):
  * numbers numerically, dates with the date grammar, text, link and choice with
  * `=` only ignoring case, checkboxes with `= true` / `= false`. A term the type
- * cannot answer is a FilterSyntaxError at the operator. Only tasks of the
- * definition's project are considered, the same values the panel shows.
+ * cannot answer is a FilterSyntaxError at the operator. Only tasks of projects
+ * the definition applies to (its own and its sub-projects, inherited-custom-fields)
+ * are considered, the same values the panel shows.
  */
-function fieldPred(def: FieldDef, n: Extract<Node, { kind: 'field' }>, today: string, weekStart: number): Pred {
+function fieldPred(def: FieldDef, n: Extract<Node, { kind: 'field' }>, today: string, weekStart: number, applies: (task: Task, def: FieldDef) => boolean): Pred {
   const at = n.opPos
-  const value = (task: Task): FieldValue | undefined => (task.project_id === def.project_id ? task.fields?.[def.id] : undefined)
+  const value = (task: Task): FieldValue | undefined => (applies(task, def) ? task.fields?.[def.id] : undefined)
   const label = `"${n.name}"`
   switch (def.type) {
     case 'number': {
@@ -161,7 +211,7 @@ function fieldPred(def: FieldDef, n: Extract<Node, { kind: 'field' }>, today: st
       // An unset checkbox reads as unchecked.
       return (task) => {
         const v = value(task)
-        return task.project_id === def.project_id && (want ? v === true : v !== true)
+        return applies(task, def) && (want ? v === true : v !== true)
       }
     }
     default: {
@@ -177,7 +227,8 @@ function fieldPred(def: FieldDef, n: Extract<Node, { kind: 'field' }>, today: st
 }
 
 /** Compile an AST into a predicate. Deleted tasks never match; open-only unless the query mentions state. */
-export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
+export function compile(ast: Node, given: FilterContext): CompiledFilter {
+  const ctx = filterScope(ast, given)
   const warnings: string[] = []
   const warn = (msg: string) => {
     if (!warnings.includes(msg)) warnings.push(msg)
@@ -193,6 +244,15 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
   for (const d of ctx.fields ?? []) {
     if (!d.deleted_at) fieldsByName.set(nameKey(d.name), [...(fieldsByName.get(nameKey(d.name)) ?? []), d])
   }
+  // Which definitions apply to a task's project, inherited ones included (inherited-custom-fields D2).
+  const fieldsOf = applicableFieldsLookup(liveProjects, ctx.fields ?? [])
+  const appliesTo = new Map<string, Set<string>>()
+  const applies = (task: Task, def: FieldDef): boolean => {
+    if (!task.project_id) return false
+    let ids = appliesTo.get(task.project_id)
+    if (!ids) appliesTo.set(task.project_id, (ids = new Set(fieldsOf(task.project_id).map((d) => d.id))))
+    return ids.has(def.id)
+  }
   const today = ctx.today
   const weekStart = ctx.weekStart ?? currentDateTime().weekStart
   const tomorrow = shiftISO(today, 1)
@@ -204,6 +264,15 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
       blocked = blockedMap(ctx.tasks ?? [])
     }
     return blocked
+  }
+  // The flow state (project-flow-modes), built once when the query asks for `available`.
+  let flow: FlowState | null = null
+  const flowState = () => {
+    if (!flow) {
+      if (!ctx.tasks) warn(t('Blocked tasks cannot be told apart here'))
+      flow = availability({ tasks: ctx.tasks ?? [], projects: ctx.projects, sections: ctx.sections ?? [], today })
+    }
+    return flow
   }
 
   const build = (n: Node): Pred => {
@@ -272,7 +341,7 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
         let first: unknown = null
         for (const d of defs) {
           try {
-            ps.push(fieldPred(d, n, today, weekStart))
+            ps.push(fieldPred(d, n, today, weekStart, applies))
           } catch (e) {
             first ??= e
           }
@@ -286,7 +355,7 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
           warn(t('No field named "{name}"', { name: n.name }))
           return NEVER
         }
-        return (task) => defs.some((d) => task.project_id === d.project_id && isEmptyValue(task.fields?.[d.id]))
+        return (task) => defs.some((d) => applies(task, d) && isEmptyValue(task.fields?.[d.id]))
       }
       case 'search': {
         const needle = n.text.toLocaleLowerCase()
@@ -294,6 +363,20 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
       }
       case 'origin':
         return (task) => originMatches(originOf(task), n.value)
+      // A value this client does not know reads as none (task-energy D5).
+      case 'energy': {
+        const want = n.value
+        return (task) => energyOf(task) === want
+      }
+      case 'workspace': {
+        const ids = new Set((ctx.workspaces ?? []).filter((w) => nameKey(w.name) === nameKey(n.name)).map((w) => w.id))
+        const of = ctx.workspaceOf
+        if (ids.size === 0 || !of) {
+          warn(t('No workspace named "{name}"', { name: n.name }))
+          return NEVER
+        }
+        return (task) => ids.has(of(task))
+      }
       case 'tracked': {
         const minutes = n.minutes
         const op = n.op
@@ -316,6 +399,9 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
           case 'someday': return (task) => task.start === 'someday'
           case 'deferred': return (task) => !!task.start && task.start !== 'someday' && task.start > today
           case 'evening': return (task) => !!task.evening
+          // The stored part of the day (day-parts), never the part a due time places it in.
+          case 'morning': return (task) => dayPartOf(task) === 'morning'
+          case 'afternoon': return (task) => dayPartOf(task) === 'afternoon'
           // A habit's skipped occurrence record is not a completion (OpenSpec habits, D6).
           case 'completed': return (task) => task.completed_at !== null && !task.skipped
           case 'open': return (task) => task.completed_at === null
@@ -323,10 +409,14 @@ export function compile(ast: Node, ctx: FilterContext): CompiledFilter {
           case 'habit': return (task) => task.habit === true
           case 'origin': return (task) => originOf(task) !== null
           case 'no origin': return (task) => originOf(task) === null
+          case 'energy': return (task) => energyOf(task) !== null
+          case 'no energy': return (task) => energyOf(task) === null
           // At least one minute of live tracked time (time-tracking D9).
           case 'tracked': return (task) => (ctx.tracked?.get(task.id) ?? 0) >= 1
           case 'blocked': { const b = blockedSet(); return (task) => b.has(task.id) }
           case 'unblocked': { const b = blockedSet(); return (task) => !b.has(task.id) }
+          // Available now (project-flow-modes): not blocked, not waiting in sequence, neither Someday nor deferred.
+          case 'available': { const f = flowState(); return (task) => f.available(task.id) }
         }
     }
   }
@@ -347,7 +437,9 @@ export function runFilter(source: string, tasks: readonly Task[], ctx: FilterCon
     if (!ast) return { ok: true, empty: true, tasks: [], warnings: [] }
     // A field term its type cannot answer is reported like a syntax error (custom-fields).
     const { test, warnings } = compile(ast, ctx.tasks ? ctx : { ...ctx, tasks })
-    return { ok: true, empty: false, tasks: tasks.filter(test), warnings }
+    // A query that names a workspace looks at every workspace's tasks (group-mentions D6).
+    const scope = ctx.everyWorkspace && namesWorkspace(ast) ? ctx.everyWorkspace.tasks : tasks
+    return { ok: true, empty: false, tasks: scope.filter(test), warnings }
   } catch (e) {
     const err = e as { message: string; offset?: number }
     if (typeof err.offset !== 'number') throw e

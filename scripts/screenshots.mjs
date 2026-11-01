@@ -17,6 +17,7 @@ const { chromium } = await import('playwright').catch(async () => {
   return createRequire(execSync('npm root -g').toString().trim() + '/')('playwright')
 })
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { startFakeLLM } from './fake-llm.mjs'
 
 const base = process.env.OPENTODO_URL ?? 'http://127.0.0.1:8080'
 const pngDir = process.argv[2] ?? 'docs/screenshots'
@@ -44,7 +45,7 @@ const at = (n, hhmm) => new Date(`${iso(n)}T${hhmm}:00Z`).getTime()
 const NOW = at(0, '08:40')
 const mk = async (o = {}, time = NOW) => {
   const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1.5, colorScheme: 'light', timezoneId: 'UTC', locale: 'en-GB', ...o })
-  await c.addInitScript(() => { try { localStorage.setItem('opentodo.rowClick', 'open') } catch {} })  // click opens the panel, as these flows expect (inline-task-editing)
+  await c.addInitScript(() => { try { localStorage.setItem('opentodo.rowClick', 'open'); localStorage.setItem('opentodo.swipe-cue', '1') } catch {} })  // no first-run swipe hint on phone shots  // click opens the panel, as these flows expect (inline-task-editing)
   await c.clock.setFixedTime(time)
   // The owner's "Set up the assistant" line on Today (assistant-skills) is off-topic in product shots.
   await c.addInitScript(() => {
@@ -55,7 +56,7 @@ const mk = async (o = {}, time = NOW) => {
 }
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const row = (p, title) => p.getByRole('button', { name: new RegExp('^' + esc(title)) }).first()
-const detail = (p) => p.locator('aside[data-detail-for]')
+const detail = (p) => p.locator('[data-detail-for]')
 const settle = (p, ms = 500) => p.waitForTimeout(ms)
 
 // ------------------------------------------------------------------ encoder
@@ -130,6 +131,10 @@ const garage = await proj({ name: 'Garage sale', color: '#ef4444', position: 4 }
 await A('POST', `/api/v1/projects/${home.id}/members`, { email: 'bob@example.com', role: 'editor' })
 await A('POST', `/api/v1/projects/${home.id}/members`, { email: 'chen@example.com', role: 'viewer' })
 await A('POST', `/api/v1/projects/${launch.id}/members`, { email: 'bob@example.com', role: 'admin' })
+// Bob and Chen share nothing with Ada yet: each add is an invitation they accept (member-add-consent).
+for (const who of [bob, chen]) {
+  for (const inv of (await who.call('GET', '/api/v1/me/member-invitations')).invitations) await who.call('POST', `/api/v1/me/member-invitations/${inv.id}/accept`, {})
+}
 
 const sec = async (project, names) => { const out = {}; let i = 1; for (const n of names) out[n] = (await A('POST', '/api/v1/sections', { name: n, project_id: project, position: i++ })).id; return out }
 const hs = await sec(home.id, ['Planning', 'In progress', 'Waiting'])
@@ -245,7 +250,8 @@ await page.reload(); await row(page, 'Renew passport').waitFor({ timeout: 20000 
 await settle(page, 1500)
 
 // ------------------------------------------------------------------ helpers
-const go = async (p, path, ready) => { await p.goto(base + path); if (ready) await ready(); await settle(p, 700) }
+// The pointer rests on the content, so no tooltip (the bell's sync status) stays open from an earlier click.
+const go = async (p, path, ready) => { await p.goto(base + path); if (ready) await ready(); await p.mouse.move(900, 450).catch(() => {}); await settle(p, 700) }
 // Scroll the settings page so the section headed `name` sits at the top of the viewport.
 async function toSection(p, name) {
   const h = p.getByRole('heading', { level: 2, name, exact: true }).first()
@@ -262,7 +268,7 @@ const openTask = async (p, title) => { await row(p, title).click(); await detail
 
 // ------------------------------------------------------------------ shots
 console.log('· capturing')
-await go(page, '/today', () => page.getByRole('heading', { name: 'Overdue' }).waitFor())
+await go(page, '/today', () => page.getByRole('heading', { name: 'Earlier' }).waitFor())
 await shot(page, 'today')
 
 // Natural-language quick add: chips under the input as you type
@@ -313,7 +319,7 @@ await go(page, '/day', () => page.getByRole('button', { name: 'Day' }).first().w
 await shot(page, 'day')
 
 // Filters and saved views
-await go(page, '/filter', () => page.getByLabel('Filter query').waitFor())
+await go(page, '/views/new', () => page.getByLabel('Filter query').waitFor())
 await page.getByLabel('Filter query').fill('(@call | @errand) & due <= 7 days')
 await page.getByLabel('Filter query').press('Enter'); await settle(page, 600)
 await shot(page, 'filter')
@@ -324,16 +330,40 @@ await shot(page, 'dashboard')
 // Activity feed, notifications, trash
 await go(page, '/updates', () => page.getByRole('heading', { name: 'Updates' }).waitFor())
 await shot(page, 'feed')
-await go(page, '/today', () => page.getByRole('heading', { name: 'Overdue' }).waitFor())
+await go(page, '/today', () => page.getByRole('heading', { name: 'Earlier' }).waitFor())
 await page.getByRole('button', { name: /^Notifications/ }).click()
 await page.getByRole('dialog', { name: 'Notifications' }).waitFor(); await settle(page, 500)
 await shot(page, 'notifications')
 await page.keyboard.press('Escape')
-await go(page, '/trash', () => page.getByRole('heading', { name: 'Trash' }).waitFor())
+await go(page, '/trash', () => page.getByRole('heading', { name: 'Trash', exact: true }).waitFor())
 await shot(page, 'trash')
 
+// The assistant page (assistant-surface) with a scripted answer: the "compatible endpoint"
+// is the fake in scripts/fake-llm.mjs on this machine, so no provider is called.
+if (want('assistant')) {
+  const llm = await startFakeLLM(18099)
+  try {
+    await A('PUT', '/api/v1/settings/assistant', { enabled: true, default_provider: 'compatible', allow_private_endpoint: true,
+      providers: { compatible: { enabled: true, model: 'llama3.1', base_url: 'http://127.0.0.1:18099/v1' } } })
+    await A('PUT', '/api/v1/me/assistant', { consent: true, provider: 'compatible' })
+    // The model's tools read the server's own today, which is before the shots' fixed moment; two
+    // tasks due on the server's today give it something to answer with, and are deleted after the shot.
+    const real = new Date().toISOString().slice(0, 10)
+    const asked = [await A('POST', '/api/v1/tasks', { title: 'Renew passport', due: { date: real }, priority: 2 }),
+      await A('POST', '/api/v1/tasks', { title: 'Call the plumber about the leak', due: { date: real } })]
+    await go(page, '/ask', () => page.locator('[data-assistant-composer]').waitFor())
+    await page.locator('[data-assistant-composer]').fill('What is due today?'); await page.keyboard.press('Enter')
+    await page.getByText(/Want me to move|Nothing is due today/).first().waitFor({ timeout: 20000 })
+    await page.mouse.move(1000, 400); await settle(page, 800)
+    await shot(page, 'assistant')
+    for (const t of asked) await A('DELETE', `/api/v1/tasks/${t.id}`).catch(() => {})
+  } catch (e) {
+    console.log('  assistant:', e.message)
+  } finally { llm.close() }
+}
+
 // Keyboard help
-await go(page, '/today', () => page.getByRole('heading', { name: 'Overdue' }).waitFor())
+await go(page, '/today', () => page.getByRole('heading', { name: 'Earlier' }).waitFor())
 await page.keyboard.press('?'); await page.getByText('Keyboard shortcuts').first().waitFor(); await settle(page, 400)
 await shot(page, 'shortcuts')
 await page.keyboard.press('Escape')
@@ -347,13 +377,13 @@ await shot(page, 'help')
 await go(page, '/settings/security', () => page.getByRole('heading', { name: 'Two-factor authentication', level: 2 }).first().waitFor()).catch((e) => console.log('  2fa page:', e.message))
 await page.getByRole('button', { name: 'Set up two-factor authentication' }).click().catch((e) => console.log('  2fa:', e.message))
 await settle(page, 800)
-await go(page, '/settings/preferences', () => page.getByRole('heading', { name: 'Keyboard', level: 2 }).first().waitFor()).catch((e) => console.log('  keyboard page:', e.message))
+await go(page, '/settings/general/keyboard', () => page.getByRole('heading', { name: 'Keyboard', level: 2 }).first().waitFor()).catch((e) => console.log('  keyboard page:', e.message))
 await page.getByLabel(/Vim keybindings/).check().catch((e) => console.log('  vim:', e.message))
 for (const [section, heading, name] of [
-  ['security', 'Two-factor authentication', 'settings-security'], ['encryption', 'End-to-end encryption', 'settings-encryption'],
-  ['preferences', 'Keyboard', 'settings-keyboard'], ['admin', 'Users', 'settings-users'], ['access', 'Single sign-on', 'settings-sso'],
-  ['integrations', 'Calendar apps (CalDAV)', 'settings-caldav'], ['integrations', 'Webhooks', 'settings-webhooks'],
-  ['capture', 'Email to task', 'settings-email'], ['backups', 'Backups', 'settings-backups'], ['ai', 'AI assistants', 'settings-ai'],
+  ['account/security', 'Two-factor authentication', 'settings-security'], ['account/encryption', 'End-to-end encryption', 'settings-encryption'],
+  ['general/keyboard', 'Keyboard', 'settings-keyboard'], ['people/users', 'Users', 'settings-users'], ['people/sso', 'Single sign-on', 'settings-sso'],
+  ['integrations/caldav', 'Calendar apps (CalDAV)', 'settings-caldav'], ['integrations/webhooks', 'Webhooks', 'settings-webhooks'],
+  ['capture/email', 'Email to task', 'settings-email'], ['server/backups', 'Backups', 'settings-backups'], ['integrations/mcp', 'AI assistants', 'settings-ai'],
 ]) {
   if (!want(name)) continue
   try {
@@ -367,7 +397,7 @@ for (const [section, heading, name] of [
 
 // Voice capture asks once, with its privacy statement
 if (want('settings-voice')) {
-  await go(page, '/settings/capture', () => page.getByRole('heading', { level: 2, name: 'Voice capture', exact: true }).first().waitFor())
+  await go(page, '/settings/capture/voice', () => page.getByRole('heading', { level: 2, name: 'Voice capture', exact: true }).first().waitFor())
   await toSection(page, 'Voice capture')
   await page.getByLabel(/Dictate tasks into quick add/).click()
   await page.getByRole('dialog').filter({ hasText: 'Turn on voice capture?' }).waitFor({ timeout: 5000 }).catch((e) => console.log('  voice:', e.message))
@@ -378,11 +408,11 @@ if (want('settings-voice')) {
 // Dark mode, desktop and phone
 const dark = await mk({ colorScheme: 'dark' }); const dp = await dark.newPage()
 await signIn(dp, 'ada@example.com')
-await go(dp, '/today', () => dp.getByRole('heading', { name: 'Overdue' }).waitFor())
+await go(dp, '/today', () => dp.getByRole('heading', { name: 'Earlier' }).waitFor())
 await shot(dp, 'today-dark')
 const phone = await mk({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, colorScheme: 'dark', isMobile: true, hasTouch: true }); const mp = await phone.newPage()
 await signIn(mp, 'ada@example.com')
-await go(mp, '/today', () => mp.getByRole('heading', { name: 'Overdue' }).waitFor())
+await go(mp, '/today', () => mp.getByRole('heading', { name: 'Earlier' }).waitFor())
 await shot(mp, 'mobile-dark')
 await openTask(mp, 'Get three quotes for the kitchen')
 await shot(mp, 'mobile-detail')

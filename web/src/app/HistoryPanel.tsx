@@ -5,12 +5,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useReferenceNames } from '../lib/localData'
 import { isNetworkError } from '../lib/api'
 import { canRestoreField, deviceLabel, fetchHistory, fieldLabel, formatValue, parentRefs, restoreValue } from '../lib/history'
+import { firstDailyNoteVersion } from '../lib/historyVersions'
 import { getDeviceId } from '../lib/ops'
 import { syncNow } from '../lib/sync'
 import type { ChangeSet } from '../lib/types'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { useFieldDefs } from './useFields'
 import { t } from '../lib/i18n'
+import { messageOf } from '../lib/errorText'
 
 /**
  * Revision history of a project (OpenSpec `trash-and-history`; tasks use the task
@@ -85,10 +87,12 @@ export function HistoryPanel({ entity, id, readOnly = false, onRestored, embedde
       await syncNow()
       await load()
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err))
+      setMessage(messageOf(err))
     }
   }
 
+  // Note revisions older than 30 days are kept one per day (op-log-compaction).
+  const daily = firstDailyNoteVersion(sets, Date.now())
   return (
     <section className={embedded ? '' : 'pt-4'} aria-label={t('History')}>
       {!embedded && (
@@ -106,6 +110,7 @@ export function HistoryPanel({ entity, id, readOnly = false, onRestored, embedde
           <ol className="space-y-2" aria-label={t('Changes')}>
             {sets.map((s) => (
               <li key={`${s.ts}:${s.device}`} className="border-l-2 border-default pl-2">
+                {s === daily && <p className="mb-1 text-meta text-faint" data-testid="history-notes-daily">{t('Older note versions are kept one per day (UTC).')}</p>}
                 <div className="text-meta text-faint">{dt.formatInstant(s.ts, 'datetime')} · {deviceLabel(s, device)}</div>
                 <ul>
                   {s.changes.map((c) => (

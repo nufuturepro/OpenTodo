@@ -25,6 +25,8 @@ export interface MenuItemProps {
    * full `label`, and checked fills the button with the accent.
    */
   compact?: CompactSpec
+  /** A small visual marker after the label (a status dot, an unread count, sidebar-v2 D7); its meaning belongs in `description`. */
+  marker?: ReactNode
   /** Test and script hooks (`data-help-button`). */
   [hook: `data-${string}`]: string | boolean | undefined
 }
@@ -39,7 +41,7 @@ export interface CompactSpec {
 /** Literal class names so the utility scanner sees them. */
 const TINT: Record<NonNullable<CompactSpec['tint']>, string> = { p1: 'text-p1', p2: 'text-p2', p3: 'text-p3', p4: 'text-p4' }
 
-export function MenuItem({ label, onSelect, icon, shortcut, description, danger, disabled, checked, compact, ...hooks }: MenuItemProps) {
+export function MenuItem({ label, onSelect, icon, shortcut, description, danger, disabled, checked, compact, marker, ...hooks }: MenuItemProps) {
   const close = useContext(MenuCloseContext)
   const id = useId()
   if (compact) {
@@ -80,7 +82,7 @@ export function MenuItem({ label, onSelect, icon, shortcut, description, danger,
       data-menu-label={label}
       onClick={() => { onSelect(); close?.() }}
       className={`flex w-full items-start gap-2.5 rounded-control px-2.5 py-2 text-left text-body outline-none transition duration-(--duration-ui)
-        hover:bg-sunken focus-visible:bg-sunken dark:hover:bg-raised dark:focus-visible:bg-raised
+        hover:bg-hover focus-visible:bg-selected
         disabled:cursor-not-allowed disabled:text-faint disabled:hover:bg-transparent
         ${danger ? 'text-danger hover:bg-danger-soft focus-visible:bg-danger-soft dark:hover:bg-danger-soft dark:focus-visible:bg-danger-soft' : 'text-default'}`}
     >
@@ -91,6 +93,7 @@ export function MenuItem({ label, onSelect, icon, shortcut, description, danger,
         <span className="block">{label}</span>
         {description && <span id={`${id}-d`} aria-hidden className="block text-meta text-muted">{description}</span>}
       </span>
+      {marker && <span aria-hidden className="mt-1 flex shrink-0 items-center" data-menu-marker>{marker}</span>}
       {shortcut && <kbd id={`${id}-k`} aria-hidden className="ui-kbd mt-0.5 shrink-0">{shortcut}</kbd>}
     </button>
   )

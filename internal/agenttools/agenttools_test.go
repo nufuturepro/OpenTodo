@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixari/opentodo/internal/audit"
-	"github.com/pixari/opentodo/internal/ids"
-	"github.com/pixari/opentodo/internal/store"
-	opsync "github.com/pixari/opentodo/internal/sync"
+	"github.com/OpenTodoApp/opentodo/internal/audit"
+	"github.com/OpenTodoApp/opentodo/internal/ids"
+	"github.com/OpenTodoApp/opentodo/internal/store"
+	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -199,7 +199,7 @@ func TestToolSurfaceIsClosed(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	want := "add_comment,complete_tasks,create_label,create_project,create_sections,create_tasks,get_task,list_icons,list_projects,list_tasks,list_time_entries,move_tasks,reopen_tasks,reorder_sections,schedule_tasks,search_tasks,set_favourite,today_summary,trash_tasks,update_project,update_sections,update_tasks"
+	want := "add_comment,complete_tasks,create_label,create_project,create_sections,create_tasks,get_task,list_frames,list_icons,list_projects,list_slots,list_tasks,list_time_entries,list_workspaces,move_tasks,reopen_tasks,reorder_sections,schedule_tasks,search_tasks,set_favourite,today_summary,trash_tasks,update_project,update_sections,update_tasks"
 	if got := strings.Join(names, ","); got != want {
 		t.Fatalf("tools = %s", got)
 	}

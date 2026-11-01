@@ -51,7 +51,7 @@ In host mode, a tenant SHALL be opened on its first request, running any pending
 - **THEN** that tenant answers 503 and the failure is reported to the operator, every other tenant keeps working, and the tenant opens again once the cause is fixed
 
 ### Requirement: Background work scales with due work
-In host mode, reminders, scheduled backups, trash retention, audit and delivery-log pruning, webhook deliveries, calendar subscription fetches and weekly digest emails SHALL be run for a tenant only when that tenant has work due, recorded in a host-level index that each open tenant keeps current, without polling every tenant. Reminders SHALL be delivered no later than they would be on a self-hosted server.
+In host mode, reminders, scheduled backups, trash retention, audit and delivery-log pruning, webhook deliveries, calendar subscription fetches, calendar sync cycles, issue connection polls, automation rules and weekly digest emails SHALL be run for a tenant only when that tenant has work due, recorded in a host-level index that each open tenant keeps current, without polling every tenant. The host SHALL use the same jobs as a self-hosted server, with the same next due times and the same work per run, so each job is described once for both modes. Upkeep that has no deadline (database statistics, log size limits, orphaned secrets) SHALL be due only after the tenant changed, so an idle tenant is never opened for it. Reminders SHALL be delivered within a few seconds of their firing time, as on a self-hosted server. Issue polls SHALL be due only while the tenant's owner switch for issue connections is on and an enabled connection's next poll time has passed.
 
 #### Scenario: Reminder in a closed tenant
 - **WHEN** a reminder is due in a tenant that is currently closed
@@ -61,6 +61,14 @@ In host mode, reminders, scheduled backups, trash retention, audit and delivery-
 - **WHEN** the host has 10,000 tenants and none has work due in the next hour
 - **THEN** no tenant is opened during that hour
 
+#### Scenario: Issue poll in a closed tenant
+- **WHEN** an issue connection's poll is due in a tenant that is currently closed
+- **THEN** the host opens that tenant, runs the poll under the tenant's operation limits, and may close the tenant again; a tenant whose owner switch is off is never opened for it
+
+#### Scenario: Same job in both modes
+- **WHEN** a webhook delivery fails and is scheduled for a retry
+- **THEN** a host retries it at the same time a self-hosted server would, through the same delivery code
+
 ### Requirement: One process runs the background work
 In host mode, the shared background work SHALL run in one host process at a time, like a self-hosted server's background jobs: during a rolling update the new process serves requests beside the old one and takes the work over when the old one stops. Work that is still due after it ran (a transient failure) SHALL be retried on a later pass, never in a tight loop.
 
@@ -69,15 +77,19 @@ In host mode, the shared background work SHALL run in one host process at a time
 - **THEN** both serve requests, only the running one runs the background work, and the new one takes it over when the old one exits
 
 ### Requirement: Per-tenant limits
-In host mode, the operator SHALL be able to set limits per tenant on database size, operations per hour and in total, request rate, import size and number of members, with host-wide defaults. A write that would exceed a limit SHALL be refused with an error naming the limit, while reads and sync of existing data keep working. Moving items to the Trash SHALL stay possible at the storage limit.
+In host mode, the operator SHALL be able to set limits per tenant on database size, operations per hour and in total, request rate, import size and number of members, with host-wide defaults. A write that would exceed a limit SHALL be refused with an error naming the limit, while reads and sync of existing data keep working. Moving items to the Trash SHALL stay possible at the storage limit. The request rate SHALL be counted per client address of each tenant (the address the server's rate limits use, IPv6 grouped by `/64`), so one client, signed in or not, cannot use up the tenant's requests for its other users.
 
 #### Scenario: Database size limit
 - **WHEN** a tenant reaches its database size limit and a device syncs a new task
 - **THEN** that operation is refused with a reason naming the storage limit, the device keeps the task locally and marks it unsynced, and other devices are unaffected
 
 #### Scenario: Request rate
-- **WHEN** a tenant receives more requests in a minute than its limit
-- **THEN** the extra requests are answered 429 with a code naming the request limit, and the next minute works again
+- **WHEN** one client sends a tenant more requests in a minute than its limit
+- **THEN** that client's extra requests are answered 429 with a code naming the request limit, and the next minute works again
+
+#### Scenario: Flood from one client
+- **WHEN** a client without an account sends a tenant more requests in a minute than its limit
+- **THEN** that client gets 429 `limit_requests`, and requests from the tenant's other clients in the same minute are served
 
 #### Scenario: Member limit
 - **WHEN** a tenant has as many active accounts as its member limit and someone registers
@@ -147,3 +159,14 @@ In host mode, a tenant's owner SHALL be able to download the tenant as a backup 
 #### Scenario: Read token
 - **WHEN** the download is requested with a read API token
 - **THEN** it is answered 403 `insufficient_scope` and nothing is sent
+
+### Requirement: Calendar sync on the shared scheduler
+On a host, calendar sync cycles SHALL run on the shared scheduler with the calendar subscriptions' entry: a tenant SHALL be opened for them only while its owner switch is on and one of its connections is due, and a task change in a tenant SHALL refresh the tenant's entry so the debounced cycle runs.
+
+#### Scenario: Tenant without connections
+- **WHEN** a tenant has calendar sync on but no connection
+- **THEN** the scheduler never opens it for calendar sync
+
+#### Scenario: Debounced cycle
+- **WHEN** a user of an open tenant moves a task that has an event
+- **THEN** the tenant's calendars entry becomes due within about 20 seconds and the cycle runs

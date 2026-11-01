@@ -1,11 +1,11 @@
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
-import { Skeleton, Dialog, Menu } from '../ui'
+import { Skeleton, Dialog, Menu, StatusIndicator, toneForHue } from '../ui'
 import { Kbd } from './shortcuts/Kbd'
 import { api, ApiError, isNetworkError } from '../lib/api'
+import { errorText } from '../lib/errorText'
 import { useOnline } from '../lib/online'
 import { useOutgoingEmail } from '../lib/outgoingEmail'
 import type { Invitation, InvitationStatus } from '../lib/types'
-import { Badge } from '../ui'
 import { Button } from '../ui'
 import { Field, Input, Select } from '../ui'
 import { Icon } from '../ui'
@@ -19,6 +19,7 @@ import type { HueName } from '../ui'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { t } from '../lib/i18n'
 import { cardCopy, noticeCopy, rowCopy } from '../lib/settingsCopy'
+import { copyText } from '../lib/clipboard'
 
 const EXPIRY_OPTIONS: [number, string][] = [
   [1, '1 hour'],
@@ -92,7 +93,7 @@ export function MembersPanel() {
     const link = links[id]
     if (!link) return
     try {
-      await navigator.clipboard.writeText(link)
+      await copyText(link)
       setCopied(id)
       setTimeout(() => setCopied((c) => (c === id ? null : c)), 1500)
     } catch {
@@ -179,7 +180,7 @@ export function MembersView(p: MembersViewProps) {
                   label={<>{who}{inv.acceptedBy && <span className="text-muted">{' '}{t('· joined as {name}', { name: inv.acceptedBy.name || inv.acceptedBy.email })}</span>}</>}
                   ariaLabel={t('Invitation {who}, {status}', { who: inv.email ?? t('open'), status: STATUS[inv.status].label })}
                   meta={[inv.status === 'pending' ? t('Expires {instant}', { instant: dt.formatInstant(inv.expiresAt, 'datetime') }) : t('Created {instant}', { instant: dt.formatInstant(inv.createdAt, 'date') }), inv.createdByName ? t('by {name}', { name: inv.createdByName }) : ''].filter(Boolean).join(' · ')}
-                  badges={<Badge hue={STATUS[inv.status].hue}>{STATUS[inv.status].label}</Badge>}
+                  badges={<StatusIndicator tone={toneForHue(STATUS[inv.status].hue)}>{STATUS[inv.status].label}</StatusIndicator>}
                   onKeyDown={(e) => onRowKey(e, inv)}
                   menu={inv.status === 'pending' && (
                     <Menu label={t('Actions for the invitation {who}', { who })} trigger={<Icon name="ellipsis" />} kind="menu" triggerClassName="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon">
@@ -269,12 +270,14 @@ export function NewInvitationDialog({ busy, offline, error, mail = false, sentTo
 }
 
 function describe(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'rate_limited') return t('Too many invitations created recently. Try again later.')
-    if (err.code === 'invitation_spent') return t('This invitation was already accepted and cannot be revoked.')
-    if (err.code === 'email_failed') return t('The email could not be sent, so no invitation was created ({reason}). Turn off “Send by email” to create a link to share yourself.', { reason: err.message })
-    if (err.code === 'smtp_disabled') return t('This server no longer sends email. Turn off “Send by email” to create a link to share yourself.')
-    return err.message
-  }
-  return t('The server is unreachable. Invitations need a connection.')
+  return errorText(err, {
+    capitalise: false,
+    offline: t('The server is unreachable. Invitations need a connection.'),
+    codes: {
+      rate_limited: t('Too many invitations created recently. Try again later.'),
+      invitation_spent: t('This invitation was already accepted and cannot be revoked.'),
+      email_failed: (e) => t('The email could not be sent, so no invitation was created ({reason}). Turn off “Send by email” to create a link to share yourself.', { reason: e.message }),
+      smtp_disabled: t('This server no longer sends email. Turn off “Send by email” to create a link to share yourself.'),
+    },
+  })
 }

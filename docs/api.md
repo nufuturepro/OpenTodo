@@ -15,6 +15,8 @@ Base path: `/api/v1`. All requests and responses are JSON. Errors look like:
 { "error": { "code": "invalid_input", "message": "task.priority must be an integer from 1 (highest) to 4 (lowest)" } }
 ```
 
+A path under `/api/` that exists, asked with a method it doesn't serve, answers 405 `method_not_allowed` with an `Allow` header listing the methods it does, for example `GET is not allowed on /api/v1/settings/assistant/test; use POST`. A path no route serves answers 404 `not_found` with `unknown API route: <method> <path>`; the query string is never repeated. A switched-off feature's routes are absent, so they answer 404, not 405.
+
 ## Authentication
 
 Two options:
@@ -60,8 +62,8 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/healthz` | none | `{"status":"ok","version":"…"}` |
-| GET | `/api/v1/auth/status` | none | `{setupRequired, setupTokenRequired, setupCodeRequired, signupAllowed, authenticated, user, version, passkeysAvailable, oidc, outgoingEmail, mfa?, encryption?, minClientVersion?, demo?}`; `outgoingEmail` is `{enabled}`, true when [outgoing email](#outgoing-email) is configured (never on a demo instance); `mfa`, `encryption` and `minClientVersion` only when signed in; `setupCodeRequired` is true while no account exists, no setup token is configured and the requesting client's address is not loopback, private or link-local; `demo` (`{token, sandboxHours: {idle, max}, resetsAt}`: a fresh single-use sandbox-creation token valid for 10 minutes, the sandbox lifetimes in hours and the next nightly reset; no credentials) only on a [demo instance](self-hosting/demo.md) (see [Two-factor authentication](#two-factor-authentication), [Single sign-on](#single-sign-on), [End-to-end encryption](#end-to-end-encryption)) |
-| POST | `/api/v1/auth/register` | none | `{email, name?, password, invitation?, projectInvite?, setupToken?}` → 201 `{user}` + cookie. The first account becomes owner; when `OPENTODO_SETUP_TOKEN` is set (`setupTokenRequired` in the status), it needs `setupToken` with that value, otherwise 403 `setup_token_invalid`; without a token, a client outside the local network (`setupCodeRequired`) sends the one-time setup code from the server log as `setupToken` (case and dashes ignored), otherwise 403 `setup_code_invalid`; afterwards an `invitation` secret admits one member while sign-up is closed, and a `projectInvite` secret creates a member who joins that project (201 `{user, projectId, role}`, see [Project invite links](#project-invite-links)). With open sign-up and [outgoing email](#outgoing-email), a registration without an invitation answers 202 `{verificationRequired: true}` and mails a link instead of creating the account |
+| GET | `/api/v1/auth/status` | none | `{setupRequired, setupTokenRequired, setupCodeRequired, signupAllowed, authenticated, user, version, passkeysAvailable, oidc, outgoingEmail, mfa?, encryption?, minClientVersion?, demo?}`; `outgoingEmail` is `{enabled}`, true when [outgoing email](#outgoing-email) is configured (never on a demo instance); `mfa`, `encryption` and `minClientVersion` only when signed in; `setupCodeRequired` is true only with `OPENTODO_SETUP_CODE=required`, while no account exists, no setup token is configured and the request does not come over a direct loopback connection without forwarding headers; `demo` (`{token, sandboxHours: {idle, max}, resetsAt}`: a fresh single-use sandbox-creation token valid for 10 minutes, the sandbox lifetimes in hours and the next nightly reset; no credentials) only on a [demo instance](self-hosting/demo.md) (see [Two-factor authentication](#two-factor-authentication), [Single sign-on](#single-sign-on), [End-to-end encryption](#end-to-end-encryption)) |
+| POST | `/api/v1/auth/register` | none | `{email, name?, password, invitation?, projectInvite?, setupToken?}` → 201 `{user}` + cookie. The first account becomes owner; when `OPENTODO_SETUP_TOKEN` is set (`setupTokenRequired` in the status), it needs `setupToken` with that value, otherwise 403 `setup_token_invalid`; without a token and with `OPENTODO_SETUP_CODE=required`, a client from another machine (`setupCodeRequired`) sends the one-time setup code from the server log as `setupToken` (case and dashes ignored), otherwise 403 `setup_code_invalid`; afterwards an `invitation` secret admits one member while sign-up is closed, and a `projectInvite` secret creates a member who joins that project (201 `{user, projectId, role}`, see [Project invite links](#project-invite-links)). With open sign-up and [outgoing email](#outgoing-email), a registration without an invitation answers 202 `{verificationRequired: true}` and mails a link instead of creating the account |
 | POST | `/api/v1/auth/login` | none | `{email, password}` → `{user}` + cookie, or `{mfaRequired:true, challenge, expiresAt}` and no cookie when the account has a second factor. A password over 1,024 bytes is refused with 401 `invalid_credentials` without being checked |
 | POST | `/api/v1/auth/mfa` | none | `{challenge, code}` or `{challenge, recoveryCode}`, optional `remember` → `{user}` + cookie (+ `ot_trust` cookie when `remember`) |
 | POST | `/api/v1/auth/reauth` | cookie | `{password}` or `{code}` → `{reauthAt, validForMs}`; unlocks *fresh* routes for 10 minutes |
@@ -69,7 +71,7 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | POST | `/api/v1/auth/passkey` | none | `{credential}` → `{user}` + cookie |
 | POST | `/api/v1/auth/logout` | cookie | 204, or 200 `{redirect}` (provider sign-out, see [Single sign-on](#single-sign-on)) |
 | POST | `/api/v1/demo/sandbox` | none | [demo instance](self-hosting/demo.md) only (absent otherwise): `{token}` from `auth/status` → 201 `{user}` + cookie for a new private sandbox. Requires a same-origin `Origin` header; 403 `demo_token` (missing, forged, expired or used token), 403 `bad_origin`, 429 `rate_limited` (5 per address per hour), 503 `demo_busy` |
-| GET | `/api/v1/auth/oidc/start` | none | browser navigation: 302 to the provider (links the identity instead when signed in) |
+| GET | `/api/v1/auth/oidc/start` | none | browser navigation: 302 to the provider (links the identity instead when signed in; linking a new identity needs a fresh session) |
 | GET | `/api/v1/auth/oidc/callback` | none | provider return: 303 to `/` + cookie, or to `/?error=…` |
 | GET | `/api/v1/invitations/{token}` | none | preview `{inviterName, email, expiresAt}` or 404 `invitation_invalid`, see [Invitations](#invitations) |
 | GET | `/api/v1/project-invites/{token}` | none | preview `{inviterName, projectName, role, email, expiresAt, canCreateAccount, alreadyMember?}` or 404 `invitation_invalid`, see [Project invite links](#project-invite-links) |
@@ -83,7 +85,7 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/api/v1/me` | yes | `{user, mfa, encryption: {enabled, keyVersion}, minClientVersion, auth}`; `auth` describes the credential, see [Credential introspection](#credential-introspection). The owner's session also gets `config_warnings: [{variable, message, ignored?}]`, configuration problems the server started despite (an invalid `OPENTODO_TRUSTED_PROXIES` entry, outgoing email without `OPENTODO_BASE_URL`), empty when there are none; admins, members and tokens never get the field |
+| GET | `/api/v1/me` | yes | `{user, mfa, encryption: {enabled, keyVersion}, minClientVersion, auth, agent_excluded_projects}`; `auth` describes the credential, see [Credential introspection](#credential-introspection); `agent_excluded_projects` lists the projects [kept away from assistants](#keeping-a-project-away-from-assistants); `day_parts` is the account's [Day parts](day-parts.md) preference and `energy_levels` its Energy levels switch, so a client can read quick-add lines like the app; `closed_list` is `{limit, focus_date, focus, slots_date, slots}`, the account's [Today limit](today-limit.md) (0 = off) and the dates and task ids of today's focus and taken slots as stored, so a client can fill Today's slots like the app (ids and dates only). The owner's session also gets `config_warnings: [{variable, message, ignored?}]`, configuration problems the server started despite (an invalid `OPENTODO_TRUSTED_PROXIES` entry, outgoing email without `OPENTODO_BASE_URL`), empty when there are none; admins, members and tokens never get the field |
 | POST | `/api/v1/me/password` | credential, fresh | `{currentPassword, newPassword}` → 204; signs out your other sessions |
 | GET | `/api/v1/me/activity` | yes | `{events:[…]}`: your own access events, last 90 days, at most 100 |
 | GET | `/api/v1/me/agent-access` | session or `full` token | `{allow_writes, owner_allows_writes, mcp_enabled}`: your "Allow AI assistants to make changes" switch; `read` and `agent` tokens → 403 `insufficient_scope` |
@@ -96,14 +98,14 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | POST | `/api/v1/tokens` | credential, fresh | `{name, scope?}` (`full` default, `read`, `agent` or `admin`) → 201 `{token, secret}` (secret shown once); another scope → 400 `invalid_input`; `admin` only from a session (a token gets 403 `session_required`) |
 | DELETE | `/api/v1/tokens/{id}` | yes | 204 |
 | POST | `/api/v1/me/sign-out-everywhere` | cookie, fresh | → 204 and the session cookie cleared: ends every session of the account (this one too), forgets its remembered browsers and revokes its API tokens and app passwords; recorded as `sessions.revoked`; a token gets 403 `session_required` |
-| POST | `/api/v1/passkeys/register/options` | credential | → `{publicKey}` creation options |
-| POST | `/api/v1/passkeys/register` | credential | `{name, credential}` → 201 `{passkey}` |
+| POST | `/api/v1/passkeys/register/options` | credential, fresh | → `{publicKey}` creation options |
+| POST | `/api/v1/passkeys/register` | credential, fresh | `{name, credential}` → 201 `{passkey}` |
 | GET | `/api/v1/passkeys` | yes | `{passkeys:[{id,name,createdAt,lastUsedAt,suspiciousAt,backedUp}]}` |
 | PATCH | `/api/v1/passkeys/{id}` | credential | `{name}` → `{passkey}` |
 | DELETE | `/api/v1/passkeys/{id}` | credential | 204 |
 | GET | `/api/v1/mfa` | yes | `{mfa}`, see [Two-factor authentication](#two-factor-authentication) |
-| POST | `/api/v1/mfa/totp/enroll` | credential | → `{secret, uri, expiresAt}` (pending for 10 minutes; the only time the secret is returned) |
-| POST | `/api/v1/mfa/totp/confirm` | credential | `{code}` → `{recoveryCodes:[10], mfa}` (codes shown once) |
+| POST | `/api/v1/mfa/totp/enroll` | credential, fresh | → `{secret, uri, expiresAt}` (pending for 10 minutes; the only time the secret is returned) |
+| POST | `/api/v1/mfa/totp/confirm` | credential, fresh | `{code}` → `{recoveryCodes:[10], mfa}` (codes shown once) |
 | DELETE | `/api/v1/mfa/totp` | credential, fresh | turn the second factor off → 204 |
 | POST | `/api/v1/mfa/recovery-codes/regenerate` | credential, fresh | → `{recoveryCodes:[10]}`; every earlier code stops working |
 | GET | `/api/v1/mfa/trusted-devices` | yes | `{devices:[{id,userAgent,createdAt,expiresAt,lastUsedAt}]}` |
@@ -125,9 +127,10 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/api/v1/tasks` | yes | `{tasks:[…]}` (yours and those of projects shared with you); `?include_deleted=true` to include tombstones; `?completed_after=…&completed_before=…` for [tasks completed in a range](#tasks-completed-in-a-range) |
-| POST | `/api/v1/tasks` | yes | create → 201 task, see [Task fields](#task-fields); optional `Idempotency-Key` header, see [Idempotency keys](#idempotency-keys) (every collection below accepts it on create) |
+| POST | `/api/v1/tasks` | yes | create → 201 task, see [Task fields](#task-fields); optional `Idempotency-Key` header, see [Idempotency keys](#idempotency-keys) (every collection below accepts it on create); `?default_reminder=true` adds your [default reminder](#default-reminders) |
+| POST | `/api/v1/quick-add/parse` | yes, every scope | read a quick-add line with the account's languages, projects and labels; writes nothing, so a `read` token may call it; see [Quick-add parse](#quick-add-parse) |
 | GET | `/api/v1/tasks/{id}` | yes | task or 404 |
-| PATCH | `/api/v1/tasks/{id}` | yes | partial update → task |
+| PATCH | `/api/v1/tasks/{id}` | yes | partial update → task; `?default_reminder=true` adds your [default reminder](#default-reminders) when the task gets a due date |
 | DELETE | `/api/v1/tasks/{id}` | yes | soft delete (to the Trash) → 204 |
 | GET/POST/GET/PATCH/DELETE | `/api/v1/projects…` | yes | same shape for projects, see [Project fields](#project-fields) |
 | GET/POST/GET/PATCH/DELETE | `/api/v1/sections…` | yes | same shape for sections, see [Sections](#sections) |
@@ -135,6 +138,8 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | GET/POST/GET/PATCH/DELETE | `/api/v1/labels…` | yes | same shape for labels, see [Label fields](#label-fields) |
 | GET/POST/GET/PATCH/DELETE | `/api/v1/views…` | yes | same shape for saved views, see [View fields](#view-fields) |
 | GET/POST/GET/PATCH/DELETE | `/api/v1/reminders…` | yes | same shape for reminders, see [Reminders and push](#reminders-and-push) |
+| GET/POST | `/api/v1/{collection}` | yes | the shape the rows above share, for `tasks`, `projects`, `sections`, `fields`, `labels`, `views`, `reminders` and `rules` ([Automation rules](#automation-rules)): list, create; any other name is 404 `not_found` |
+| GET/PATCH/DELETE | `/api/v1/{collection}/{id}` | yes | read, partial update, soft delete one item of those collections |
 | GET | `/api/v1/tasks/{id}/history`, `/api/v1/projects/{id}/history` | yes | change sets from the operation log, oldest first; `?before=<ts>&limit=<1-200>` pages backwards; see [Trash and history](#trash-and-history) |
 | DELETE | `/api/v1/tasks/{id}/purge`, `/api/v1/projects/{id}/purge` | yes | permanently delete an item that is in the Trash → `{purged:{tasks,projects,reminders,sections,comments}}`; 409 `not_deleted` otherwise |
 | POST | `/api/v1/trash/purge` | yes | empty the Trash (every deleted task and project you may delete) → `{purged:{…}}` |
@@ -142,10 +147,15 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | POST | `/api/v1/tasks/{id}/comments` | yes | `{body, parent_id?, mentions?}` → 201 comment; 429 `rate_limited` past 60 new comments a minute |
 | PATCH | `/api/v1/comments/{id}` | yes | `{body?, mentions?}` → 200 comment with `edited_at` set; 403 `forbidden` unless you wrote it |
 | DELETE | `/api/v1/comments/{id}` | yes | 204; allowed for the author, project admins and the owner |
+| PUT | `/api/v1/comments/{id}/reactions` | yes | `{reactions: [names]}` replaces your own reactions → 200 comment; 400 `invalid_input` naming an unknown name or a duplicate; 404 for an unreadable or deleted comment; `read` and `agent` tokens get 403 `insufficient_scope` |
 | GET | `/api/v1/tasks/{id}/activity`, `/api/v1/projects/{id}/activity` | yes | `{events, more, cursor?}` newest first, derived from the operation log; `?before=<cursor>&limit=<1-200>` (default 50) |
 | GET | `/api/v1/activity` | yes | the activity feed across every shared project you are a member of; `?cursor=&limit=&project=&actor=&kind=`; see [Activity feed](#activity-feed) |
-| GET | `/api/v1/projects/{id}/members` | member | `{projectId, role, ownerId, members:[{userId,name,email,role}]}`, see [Sharing](#sharing) |
-| POST | `/api/v1/projects/{id}/members` | owner, admin of the project | `{email, role}` → 201 membership (shares the project on first use) |
+| GET | `/api/v1/projects/{id}/members` | member | `{projectId, role, ownerId, members:[{userId,name,email,role}], pending?}`; `pending` (owners and admins only) lists the open [invitations](#membership-invitations) `[{id,email,role,invitedBy,createdAt,expiresAt}]`, see [Sharing](#sharing) |
+| POST | `/api/v1/projects/{id}/members` | owner, admin of the project | `{email, role}` → 201 membership (shares the project on first use) when the account already shares a project or workspace with you, otherwise **202 `{pending: true}`**, also for an address without an account: the person is invited and becomes a member when they accept (see [Membership invitations](#membership-invitations)); 400 `invalid_input` for anything but one address; recorded as `project.member_added` or `member_invitation.created`; adding by email is limited to 30 attempts per account per hour, together with workspace members (429 `rate_limited`) |
+| DELETE | `/api/v1/projects/{id}/member-invitations/{invitationId}` | owner, admin of the project | cancel an open invitation → 204; 404 `not_found` |
+| GET | `/api/v1/me/member-invitations` | session, `full` or `admin` token | your open invitations `{invitations:[{id,kind,targetId,targetName,role,inviterId,inviterName,createdAt,expiresAt}]}`, see [Membership invitations](#membership-invitations) |
+| POST | `/api/v1/me/member-invitations/{id}/accept` | session, `full` or `admin` token | join → 200 `{kind, targetId, role}`; 410 `invitation_stale` when the inviter can no longer add you; 404 `not_found` |
+| POST | `/api/v1/me/member-invitations/{id}/decline` | session, `full` or `admin` token | decline → 204; you are not asked again for this project or workspace until it would have expired |
 | PATCH | `/api/v1/projects/{id}/members/{userId}` | owner, admin of the project | `{role}` → membership |
 | DELETE | `/api/v1/projects/{id}/members/{userId}` | member | remove a member, or leave with your own id or `me` → 204 |
 | POST | `/api/v1/projects/{id}/transfer` | owner of the project | `{userId}` → membership; the previous owner becomes an admin |
@@ -168,7 +178,8 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | GET | `/api/v1/pages/{secret}` | none | the page: `mode` `live` (the task's shown fields) or `encrypted` (`snapshot`) |
 | POST | `/api/v1/pages/{secret}/replies` | none (`reply` or `tick` page) | `{name, body}`, or `{ciphertext}` on an encrypted page → 201 |
 | POST | `/api/v1/pages/{secret}/tick` | none (a `tick` page) | `{taskId, completed, name}` → `{taskId, completed_at}` |
-| GET | `/api/v1/pages/{secret}/files/{fileId}`, `…/maps/…` | none | a file of the task, as a download; the page's map style, tiles, fonts and sprites |
+| GET | `/api/v1/pages/{secret}/files/{fileId}` | none | a file of the task, as a download |
+| GET | `/api/v1/pages/{secret}/maps/…` | none | the page's map style, tiles, fonts and sprites, see [Maps](#maps) |
 | GET | `/api/v1/settings/project-invites` | yes | `{membersCanInviteNewPeople}` (the owner switch) |
 | PUT | `/api/v1/settings/project-invites` | owner | `{membersCanInviteNewPeople: true\|false}` → the same shape |
 | POST | `/api/v1/sync` | yes (not `read`) | device sync, see [sync.md](sync.md#exchange); the response carries the log `generation` |
@@ -179,7 +190,7 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | POST | `/api/v1/time-entries/stop` | yes (not `read`, not `agent`) | stop your running entry → the entry; 404 when none runs |
 | PATCH | `/api/v1/time-entries/{id}` | yes (not `read`, not `agent`), author only | `{startedAt?, endedAt?, note?}` → the entry |
 | DELETE | `/api/v1/time-entries/{id}` | yes (not `read`, not `agent`) | tombstone an entry (author, project admin or owner) → 204 |
-| GET | `/api/v1/export` | yes | full JSON export (`projects`, `tasks`, `labels`, `views`, `reminders`, `sections`, `comments`, `time_entries`, `encryption`, and `userId`, the exporting account), every task with its `origin` (`null` when unset), including deleted items and the projects shared with you (with `role` and `owner_id`); never contains audit events or push subscriptions; reminders are personal, so only your own |
+| GET | `/api/v1/export` | yes | full JSON export (`projects`, `tasks`, `labels`, `views`, `reminders`, `sections`, `comments`, `time_entries`, `workspaces` (each with your role; for those you own, the members' ids and roles and the groups), `encryption`, and `userId`, the exporting account), every task with its `origin` (`null` when unset), including deleted items and the projects shared with you (with `role` and `owner_id`); never contains audit events or push subscriptions; reminders are personal, so only your own |
 | POST | `/api/v1/import/preview` | yes | multipart `file` + options → dry run `{format, totals, rows, …}`, see [Import](#import) |
 | POST | `/api/v1/import` | yes | multipart `file` + options → 202 `{job}`; the import runs in the background |
 | GET | `/api/v1/import/jobs` | yes | `{jobs:[…]}`, newest first (last 50) |
@@ -201,9 +212,9 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | GET | `/api/v1/app-passwords` | yes | `{appPasswords:[…]}`, see [CalDAV and app passwords](#caldav-and-app-passwords) |
 | POST | `/api/v1/app-passwords` | credential, fresh | `{name}` → 201 `{appPassword, secret}` (secret shown once) |
 | DELETE | `/api/v1/app-passwords/{id}` | yes | revoke → 204 |
-| GET | `/api/v1/email-inbox` | yes | your email-to-task address and settings, see [Email to task](#email-to-task) |
-| PATCH | `/api/v1/email-inbox` | yes | `{enabled?, allowlist?}` → the same shape |
-| POST | `/api/v1/email-inbox/rotate` | yes | new address; the old one stops working |
+| GET | `/api/v1/email-inbox` | session or `full` token | your email-to-task address and settings, see [Email to task](#email-to-task) |
+| PATCH | `/api/v1/email-inbox` | session or `full` token | `{enabled?, allowlist?}` → the same shape; creates the inbox when there is none |
+| POST | `/api/v1/email-inbox/rotate` | session or `full` token | new address; the old one stops working |
 | * | `/dav/`, `/.well-known/caldav` | HTTP Basic with an app password | CalDAV (WebDAV methods), 404 while disabled; see [caldav.md](caldav.md) |
 | POST | `/mcp` | bearer token only | Model Context Protocol endpoint, 404 while disabled; write tools only for `agent` tokens with both switches on; see [mcp.md](mcp.md) |
 
@@ -231,15 +242,15 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | PUT | `/api/v1/settings/oidc` | owner, credential, fresh | change the provider configuration |
 | POST | `/api/v1/settings/oidc/test` | owner | `{issuer?}` → `{ok, issuer, authorizationHost, tokenHost, endSessionSupported}` |
 | GET | `/api/v1/settings/mcp` | yes | `{enabled, writes_enabled, endpoint}`: whether the [MCP endpoint](mcp.md) is on, whether assistants may make changes, and its URL |
-| PUT | `/api/v1/settings/mcp` | owner | `{enabled?, writes_enabled?}` (at least one) → `{enabled, writes_enabled, endpoint}`; each change is recorded as `settings.changed` (`mcp.enabled`, `mcp.writes`) |
+| PUT | `/api/v1/settings/mcp` | owner, credential | `{enabled?, writes_enabled?}` (at least one) → `{enabled, writes_enabled, endpoint}`; each change is recorded as `settings.changed` (`mcp.enabled`, `mcp.writes`) |
 | GET | `/api/v1/settings/caldav` | yes | `{enabled, url, secure, encryption}` |
 | PUT | `/api/v1/settings/caldav` | owner | `{enabled}` → the same shape |
 | GET | `/api/v1/settings/webhooks` | owner | `{allowPrivate}` |
-| PUT | `/api/v1/settings/webhooks` | owner | `{allowPrivate}` → `{allowPrivate}` |
+| PUT | `/api/v1/settings/webhooks` | owner, credential | `{allowPrivate}` → `{allowPrivate}` |
 | GET | `/api/v1/audit` | owner | `{events:[…], cursor}` newest first; filters `name`, `actor`, `target`, `outcome`, `from`, `to`, `cursor`, `limit≤200`, see [Audit log](#audit-log) |
 | GET | `/api/v1/audit/export` | owner | the filtered log as `application/x-ndjson` download; records `audit.exported` |
 | GET | `/api/v1/settings/audit` | owner | `{retentionDays, logIp}` |
-| PUT | `/api/v1/settings/audit` | owner | `{retentionDays?: 7–3650, logIp?}` → settings; disabling `logIp` erases stored addresses |
+| PUT | `/api/v1/settings/audit` | owner, credential | `{retentionDays?: 7–3650, logIp?}` → settings; disabling `logIp` erases stored addresses |
 | GET | `/api/v1/backups` | owner | backup status, see [Backups](#backups) |
 | GET | `/api/v1/backups/settings` | owner | `{settings, secrets}` (secret presence flags only) |
 | PUT | `/api/v1/backups/settings` | owner, credential | `{settings, secrets?}` → `{settings, secrets}` |
@@ -252,6 +263,7 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | POST | `/api/v1/backups/restore` | owner, fresh session | `{id, confirm:"RESTORE"}` → 202, then the server restarts |
 | DELETE | `/api/v1/backups/restore/{id}` | owner | cancel a staged restore → 204 |
 | DELETE | `/api/v1/backups/restore/safety-copies/{name}` | owner, fresh session | delete a safety copy → 204 |
+| GET | `/api/v1/settings/storage` | owner | database file size, free space inside it, write-ahead log size, last notes compaction, conversion state; see [Database storage](#database-storage) |
 
 ### Passkeys
 
@@ -300,7 +312,7 @@ Accounts can add a time-based one-time password (TOTP, RFC 6238: HMAC-SHA1, 6 di
 
 `required` means the owner's policy covers this account. `restricted` means the session may only enrol, because the account is required to have a second factor and has none yet. Bearer-token requests are never restricted.
 
-**Enrolment.** `POST /mfa/totp/enroll` returns a fresh `secret` (base32) and its provisioning `uri` (`otpauth://totp/OpenTodo:<email>?secret=…&issuer=OpenTodo&algorithm=SHA1&digits=6&period=30`). The web app renders the QR code locally. Confirm within ten minutes with `POST /mfa/totp/confirm {"code":"123456"}`. The answer contains ten recovery codes such as `ABCDE-FGH23`, shown only this once and stored as SHA-256 hashes. A recovery code can stand in for an app code at sign-in (dash and case optional) and is used up by that sign-in.
+**Enrolment.** `POST /mfa/totp/enroll` returns a fresh `secret` (base32) and its provisioning `uri` (`otpauth://totp/OpenTodo:<email>?secret=…&issuer=OpenTodo&algorithm=SHA1&digits=6&period=30`). The web app renders the QR code locally. Confirm within ten minutes with `POST /mfa/totp/confirm {"code":"123456"}`. Both steps are *fresh* routes: a cookie session needs a sign-in or re-authentication within the last ten minutes. Confirming marks the session's second factor as satisfied but does not count as a re-authentication. The answer contains ten recovery codes such as `ABCDE-FGH23`, shown only this once and stored as SHA-256 hashes. A recovery code can stand in for an app code at sign-in (dash and case optional) and is used up by that sign-in.
 
 **Two-step sign-in.** For an enrolled account, a correct password answers 200 with no cookie:
 
@@ -315,7 +327,7 @@ curl -sS -c jar -X POST "$OT/api/v1/auth/mfa" -H 'Content-Type: application/json
 
 A challenge lasts five minutes and allows five wrong codes. Each wrong code gets `401 mfa_code_invalid`; after the fifth, the challenge is gone and the next attempt gets `401 mfa_challenge_invalid`, which means "enter the password again". `remember: true` sets `ot_trust`, an `HttpOnly`, `SameSite=Lax` cookie (`Secure` on https) limited to `/api/v1/auth` and valid for a fixed 30 days. While that cookie is present, the password step starts the session directly for that account on that browser. A passkey sign-in whose authenticator reports user verification (biometric or PIN) counts as two factors and is never asked for a code. A passkey without user verification answers with the same challenge as a password.
 
-**Step-up.** For cookie sessions, the routes marked *fresh* in the table require a proof of identity within the last ten minutes. A sign-in counts, and so does `POST /auth/reauth` with `{"password":"…"}` or `{"code":"123456"}`. Otherwise they answer `403 reauth_required` and change nothing. The web app then shows a re-authentication dialog and repeats the request once. Bearer-token requests are never challenged, but on *credential* routes only an `admin` token is accepted (see [token scopes](#token-scopes)).
+**Step-up.** For cookie sessions, the routes marked *fresh* in the table require a proof of identity within the last ten minutes. A sign-in counts, and so does `POST /auth/reauth` with `{"password":"…"}` or `{"code":"123456"}`, or completing the provider flow with an identity the account already has (see [Single sign-on](#single-sign-on)). Adding a passkey, an authenticator app or a new linked identity is itself a *fresh* step and never counts as one. Otherwise they answer `403 reauth_required` and change nothing. The web app then shows a re-authentication dialog and repeats the request once. Bearer-token requests are never challenged, but on *credential* routes only an `admin` token is accepted (see [token scopes](#token-scopes)).
 
 **Owner policy.** `PUT /settings/mfa {"required":"none"|"owner"|"all"}`. When the policy covers an account that has no second factor, sign-in still works. Every route except `GET /me`, `/mfa/*`, `/auth/reauth` and `/auth/logout` then answers `403 mfa_enrolment_required` until the account enrols. That includes `/sync`, so a device keeps its changes queued and uploads them after enrolment. An account the policy covers cannot turn its second factor off (`403 mfa_required_by_policy`).
 
@@ -356,9 +368,9 @@ The identity is matched by issuer and subject first; a first-time identity whose
 | `oidc_link_required` | a first-time identity whose email belongs to the owner, an admin or an account with a second factor or passkey: sign in locally and link it from Settings → Account first |
 | `signup_closed` | no matching account and provisioning is not allowed |
 
-`start` while signed in **links** the provider identity to the current account instead (Settings → Account → Linked accounts) and returns to `/settings/account?linked=1`. If that identity is already linked to the same account, the flow is a fresh proof of identity for the session (the *fresh* routes work for ten minutes) and returns to `/settings/account?reauthenticated=1`.
+`start` while signed in **links** the provider identity to the current account instead (Settings → Account → Security → Linked accounts) and returns to `/settings/account/security?linked=1`. If that identity is already linked to the same account, the flow is a fresh proof of identity for the session (the *fresh* routes work for ten minutes) and returns to `/settings/account/security?reauthenticated=1`.
 
-The callback answers `400 oidc_state_invalid` (missing, forged, expired or already used state) and `409 identity_taken` (linking an identity that belongs to another account) as JSON; a browser navigation (`Accept: text/html`) is redirected to `/?error=<code>` or `/settings/account?error=<code>` instead, so people never see raw JSON.
+The callback answers `400 oidc_state_invalid` (missing, forged, expired or already used state) and `409 identity_taken` (linking an identity that belongs to another account) as JSON; a browser navigation (`Accept: text/html`) is redirected to `/?error=<code>` or `/settings/account/security?error=<code>` instead, so people never see raw JSON.
 
 **Owner settings.** `GET /api/v1/settings/oidc`:
 
@@ -366,18 +378,18 @@ The callback answers `400 oidc_state_invalid` (missing, forged, expired or alrea
 {
   "enabled": true, "issuer": "https://sso.example.com/application/o/opentodo", "clientId": "opentodo",
   "clientSecret": "••••a1b2", "clientSecretSet": true, "displayName": "Home SSO", "scopes": "openid email profile",
-  "allowProvision": false, "ssoOnly": false, "providerLogout": false,
+  "allowProvision": false, "ssoOnly": false, "providerLogout": false, "syncPictures": false,
   "redirectUri": "https://todo.example.com/api/v1/auth/oidc/callback", "baseUrlConfigured": true,
   "managedBy": { "issuer": "settings", "clientId": "settings", "clientSecret": "env", "displayName": "settings",
                  "scopes": "settings", "allowProvision": "settings", "ssoOnly": "settings", "providerLogout": "settings" }
 }
 ```
 
-`PUT` takes any subset of `issuer`, `clientId`, `clientSecret`, `displayName`, `scopes`, `allowProvision`, `ssoOnly`, `providerLogout` and returns the same shape. A new issuer must be an https URL whose discovery document is reachable and names the same issuer, or the answer is `400 invalid_input` and the previous configuration stays. `clientSecret` is write-only: omit it (or send the masked value back) to keep it, send `""` to remove it. A field set by an `OPENTODO_OIDC_*` variable is reported as `managedBy: "env"` and cannot be changed (`400 invalid_input`). An empty `issuer` turns single sign-on off (links are kept). `PUT` needs a fresh session. `POST /api/v1/settings/oidc/test` with optional `{"issuer":"…"}` runs discovery and answers `{ok, issuer, authorizationHost, tokenHost, endSessionSupported}` or `400 invalid_input`. Changes are recorded as `settings.changed` (the secret as `(changed)`).
+`PUT` takes any subset of `issuer`, `clientId`, `clientSecret`, `displayName`, `scopes`, `allowProvision`, `ssoOnly`, `providerLogout`, `syncPictures` and returns the same shape. With `syncPictures: true` (off by default) a provider sign-in or link whose identity token carries a `picture` claim makes the server fetch that address through the outbound policy (5 seconds, 2 MB, PNG/JPEG/GIF) and store it as the account's [profile picture](#profile), 256×256 JPEG; an uploaded picture is never replaced, a synced or removed address is not fetched again, and a failed fetch changes nothing. A new issuer must be an https URL whose discovery document is reachable and names the same issuer, or the answer is `400 invalid_input` and the previous configuration stays. `clientSecret` is write-only: omit it (or send the masked value back) to keep it, send `""` to remove it. A field set by an `OPENTODO_OIDC_*` variable is reported as `managedBy: "env"` and cannot be changed (`400 invalid_input`). An empty `issuer` turns single sign-on off (links are kept). `PUT` needs a fresh session. `POST /api/v1/settings/oidc/test` with optional `{"issuer":"…"}` runs discovery and answers `{ok, issuer, authorizationHost, tokenHost, endSessionSupported}` or `400 invalid_input`. Changes are recorded as `settings.changed` (the secret as `(changed)`).
 
 **SSO-only mode** (`ssoOnly: true`, effective only while a provider is configured): password and passkey sign-in, and registration through the password form, answer `403 sso_required` for every account except the owner (recorded as `login.failed` with reason `sso_required`). The owner keeps local sign-in as break-glass (the sign-in screen shows the password form at `/?owner=1`). Bearer tokens keep working.
 
-**Linked identities.** `GET /api/v1/me/identities` → `{identities:[{id, issuer, email, createdAt, lastLoginAt}], provider:{enabled, displayName, ssoOnly}}`. `DELETE /api/v1/me/identities/{id}` → 204, or `409 last_credential` when the account would have no way left to sign in under the current mode (another identity counts while a provider is configured; a password or passkey counts unless SSO-only mode refuses it for this account). Linking and unlinking are recorded as `identity.linked` / `identity.unlinked`; a provider sign-in as `login.succeeded` with method `oidc`.
+**Linked identities.** `GET /api/v1/me/identities` → `{identities:[{id, issuer, email, createdAt, lastLoginAt}], provider:{enabled, displayName, ssoOnly}}`. `DELETE /api/v1/me/identities/{id}` → 204, or `409 last_credential` when the account would have no way left to sign in under the current mode (another identity counts while a provider is configured; a password or passkey counts unless SSO-only mode refuses it for this account). Linking a new identity (`GET /api/v1/auth/oidc/start` while signed in) needs a session that signed in or re-authenticated within the last ten minutes; from an older session the callback links nothing and answers `403 reauth_required` (a browser is sent to `/settings/account/security?error=reauth_required`). Completing the flow with an identity already linked to the account re-authenticates the session (`?reauthenticated=1`), which is how an account without a password confirms *fresh* routes. Linking and unlinking are recorded as `identity.linked` / `identity.unlinked`; a provider sign-in as `login.succeeded` with method `oidc`.
 
 **Sign-out.** `POST /auth/logout` always deletes the local session. When `providerLogout` is on and the session started through the provider, it answers `200 {"redirect":"https://sso…/end-session?client_id=…&id_token_hint=…&post_logout_redirect_uri=https://todo.example.com/"}` instead of 204, and the web app follows it after clearing local data.
 
@@ -386,6 +398,7 @@ The callback answers `400 oidc_state_invalid` (missing, forged, expired or alrea
 | `oidc_disabled` | 404 | `auth/oidc/start` or `callback` while no provider is configured |
 | `oidc_state_invalid` | 400 | callback with a missing, forged, expired or reused state |
 | `identity_taken` | 409 | linking an identity that is linked to another account |
+| `reauth_required` | 403 | linking a new identity from a session that has not signed in or re-authenticated in the last ten minutes |
 | `last_credential` | 409 | unlinking the account's last way to sign in |
 | `sso_required` | 403 | password or passkey sign-in, or password registration, by a non-owner in SSO-only mode |
 | `invalid_input` | 400 | issuer not https, discovery failed or names another issuer, client id missing, scopes without `openid`, changing an environment-managed field |
@@ -472,10 +485,10 @@ An `agent` token may write through REST on this fixed list of routes only, and o
 
 | Route | What an agent token may send |
 | --- | --- |
-| `POST /api/v1/tasks` | `title`, `description`, `project_id`, `section_id`, `parent_id`, `priority`, `due`, `labels`, `estimate_minutes`, `deadline`, `start`, `evening`, `blocked_by`, `recurrence`, `origin` |
+| `POST /api/v1/tasks` | `title`, `description`, `project_id`, `section_id`, `parent_id`, `priority`, `due`, `labels`, `estimate_minutes`, `deadline`, `start`, `evening`, `day_part`, `energy`, `blocked_by`, `location`, `recurrence`, `origin` |
 | `PATCH /api/v1/tasks/{id}` | the same edit fields (not `parent_id`), `due`, `project_id`, `section_id`, `completed_at` (complete or reopen) and `deleted_at` (to the Trash, only tasks the same token created) |
 | `DELETE /api/v1/tasks/{id}` | only tasks the same token created (to the Trash) |
-| `POST /api/v1/projects` | `name`, `color`, `parent_id`, `icon` (`archived: false` is accepted) |
+| `POST /api/v1/projects` | `name`, `color`, `parent_id`, `icon`, `flow_mode` (`archived: false` is accepted) |
 | `PATCH /api/v1/projects/{id}` | `name`, `color` |
 | `POST /api/v1/labels` | `name`, `color` (an existing label of that name is returned with 200) |
 | `POST /api/v1/tasks/{id}/comments` | `body`, `parent_id` (`mentions` is accepted and dropped: assistant comments notify nobody) |
@@ -489,11 +502,26 @@ Refusals:
 | 403 | `writes_disabled_by_owner`, `writes_disabled_by_user` | a switch is off (recorded as a failed `agent.write`) |
 | 403 | `insufficient_scope` | any other write route, or a field outside the list above (`assignee_id`, `position`, `archived`, restoring with `deleted_at: null`, …) |
 | 403 | `forbidden`, `not_permitted` | the user's role in a shared project does not allow it; trashing a task the token did not create |
-| 404 | `not_found` | unknown, deleted or invisible ids (indistinguishable) |
-| 409 | `encryption_enabled` | readable text (title, description, name, comment) for an end-to-end encrypted account |
+| 404 | `not_found` | unknown, deleted or invisible ids, and anything in a project [kept away from assistants](#keeping-a-project-away-from-assistants) (indistinguishable) |
+| 409 | `encryption_enabled` | readable text (title, description, name, comment, location) for an end-to-end encrypted account |
 | 400 | `invalid_input` | a value the tool refuses (with the tool's message) |
 
+A `location` is `{name?, address?, lat?, lon?, place_id?}` with at least one key, or `null`; `{"place_id": "<id>"}` alone copies a saved location (unknown id: 404 `not_found`). A deadline sent this way moves the task's deadline reminders, as a session's edit does.
+
 Every other write route (tokens, settings, sync, sharing and members, invitations, project invite links, encryption keys, imports, backups, webhooks, purging, archiving or deleting projects, user administration) answers 403 `insufficient_scope`, and the list is enforced by the matched route, so a route added later stays refused until it is added on purpose.
+
+`GET /api/v1/places` lists your saved locations (`{places:[{id, name, address, geo:{lat, lon}, position, created_at}]}`), any token scope, so a client can set a task's location by name; saved locations are written through sync.
+
+### Keeping a project away from assistants
+
+The owner of a project, or an admin of a shared one, can keep it and its sub-projects away from every AI assistant surface: MCP (whatever the token's scope), the agent content routes above and the in-app assistant then act as if it did not exist. Ordinary REST with a session, a `full` or an `admin` token, sync, CalDAV, feeds and the export are unaffected. It is server access state like membership: never an operation, never exported.
+
+| Method | Path | Auth | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/v1/projects/{id}/agent-access` | session or `full` token, any member | `{kept_away, inherited_from}`; `inherited_from` is the nearest ancestor that is kept away, or `null` |
+| PUT | `/api/v1/projects/{id}/agent-access` | session or `full` token, owner or admin of the project | `{kept_away: boolean}` → the same shape; recorded as `project.agent_access`; demo instances → 403 `demo_restricted` |
+
+`read` and `agent` tokens get 403 `insufficient_scope`; a non-member or unknown id 404 `not_found`; an editor or viewer 403 `forbidden` on `PUT`; any other body 400 `invalid_input` naming `kept_away`. `GET /api/v1/me` carries `agent_excluded_projects`: the ids of every project you can see that is kept away, inherited ones included. A sub-project's own switch is kept when its parent's is turned off; purging the project removes it.
 
 ### Task fields
 
@@ -507,10 +535,12 @@ Every other write route (tokens, settings, sync, sharing and members, invitation
 | `priority` | 1–4 | 1 highest, 4 default |
 | `due` | `{date:"YYYY-MM-DD", time?:"HH:MM", tz?:"Area/City"}` or null | floating date by default; with `tz` (an IANA zone, only together with `time`) a zoned time, the instant at that wall time in that zone. `400 invalid_input` for a date that does not exist (`2026-02-31`), a time outside 00:00–23:59, `tz` without `time` or an unknown zone. See [sync.md](sync.md#zoned-due-values) |
 | `labels` | string[] | ids of existing, non-deleted labels; replaced as a whole on PATCH |
-| `estimate_minutes` | integer 1–10080 or null | duration estimate in minutes; `0`, negatives, fractions and strings are rejected. The Day and Week calendar draws a task with a due time as a block of this length |
+| `estimate_minutes` | integer 1–10080 or null | duration estimate in minutes; `0`, negatives, fractions and strings are rejected. The Day and Week calendar draws a task with a due time as a block of this length. CalDAV clients read and write it as `ESTIMATED-DURATION` |
 | `deadline` | `"YYYY-MM-DD"` or null | the day the task must be finished by, separate from the planned `due` date; a bare date that exists, so `"next friday"`, `"2026-02-30"` or a time are refused with `invalid_input`. Editing `due` never changes it |
 | `start` | `"someday"`, `"YYYY-MM-DD"` or null | `someday` parks the task (out of Today, Upcoming, Anytime and the counts); a date defers it until that day. Anything else is refused with `invalid_input`. The API writes exactly what you send: unlike the app, it does not clear `due` when parking or un-park a task that gets a `due` or a `recurrence`, so a parked task with a rule stays parked (a due or deadline that has come still shows it in Today) |
 | `evening` | boolean | This Evening: the task is grouped below the day's tasks in Today; it says nothing about the time |
+| `day_part` | `"morning"`, `"afternoon"` or null | the [part of the day](day-parts.md) besides Evening, which stays `evening`. A task whose `evening` is true reads as Evening whatever this holds. Set a part with both fields (`morning` with `evening: false`, Evening with `day_part: null`); a body that sets `morning` or `afternoon` without `evening` gets `evening: false` added. Anything else, `"evening"` included, is refused with `invalid_input` |
+| `energy` | `"deep"`, `"medium"`, `"low"` or null | the energy the task asks for ([Energy levels](method/set-up.md#energy-levels)); null when none. `POST` and `PATCH` accept the three levels, or `null` or `""` to clear; anything else is refused with `400 invalid_energy` and nothing is written. Not end-to-end encrypted, like `priority`. CalDAV serves it as `X-OPENTODO-ENERGY`, the vault as `[energy:: …]` |
 | `blocked_by` | array of task ids | the tasks this one waits for (at most 50, distinct, never its own id), in the same project sharing; a list that would make the task wait for itself, or an id of a task shared differently, is refused with `400 invalid_input` naming the id. See [Dependencies](sync.md#dependencies) |
 | `recurrence` | string or null | recurrence rule, e.g. `every 3 days after completion` (see [recurrence.md](recurrence.md)); stored in canonical form, `400 invalid_input` when it does not parse or is over 200 characters |
 | `series_id` | string or null | on a completed occurrence record or a detached copy: the id of its recurring series |
@@ -519,9 +549,9 @@ Every other write route (tokens, settings, sync, sharing and members, invitation
 | `assignee_id` | string or null | account id of the assignee; see [Assignment and notifications](#assignment-and-notifications). `400 not_a_member` when it is not a member of the task's shared project (or not you, for a personal task) |
 | `section_id` | string or null | section of the task's project; see [Sections](#sections). `400 invalid_input` for an unknown or deleted section or one of another project. Changing `project_id` without naming a section clears it |
 | `origin` | object or null | where the task came from, null when unset: `{kind, provider?, id?, url?, title?}` with `kind` one of `url` (a page; needs `url`), `email` (needs `id`, the Message-ID), `issue` (needs `id`, e.g. `o/r#7` or `ENG-123`) or `import` (needs `id`, the source id). `provider` is 1–32 of `a-z`, `0-9` and `-` (`github`, `gitlab`, `jira`, `linear`, `todoist`…); `url` is `http` or `https` with a host, at most 2,048 bytes; `id` at most 512 and `title` at most 500 characters; no other member. Written as one value (last writer wins, never mixed), accepted on create and PATCH (`null` clears) for `full`, `admin` and `agent` tokens; anything else is `400 invalid_input` naming `origin`. The server writes what you send: it derives nothing from the URL and never requests it (`ot add --origin-url` and the MCP tools recognise issue links on their side). Returned by every read, the export and webhook payloads; an end-to-end encrypted account holds one ciphertext string here. See [Where a task came from](capture.md#where-a-task-came-from) |
-| `ical_extra` | string or null | opaque iCalendar lines a CalDAV client sent that the app does not model (alarms, `X-` properties…); kept so calendar apps do not lose them. See [caldav.md](caldav.md#what-maps-to-what) |
+| `ical_extra` | string or null | opaque iCalendar lines a CalDAV client sent that the app does not model (alarms the reminder model cannot express, `X-` properties…); kept so calendar apps do not lose them. Display alarms become reminders instead. See [caldav.md](caldav.md#what-maps-to-what) |
 | `fields` | object | custom field values keyed by field definition id, always present (`{}` when none), values included for definitions that were deleted or belong to another project. On create and PATCH, a partial object: each key is validated against the live definitions of the task's project after the write and merged into the existing values, one operation per key; `null` clears a value. `400 invalid_input` naming the id for an unknown or foreign id or a value of the wrong type; a raw `fields.<id>` key is refused. See [Custom fields](#custom-fields) |
-| `position` | number | sort order inside a list: ascending, ties by id; clients move a task by writing the midpoint between its new neighbours (see [docs/sync.md](sync.md#manual-order)) |
+| `position` | number | sort order inside a list: ascending, ties by id; clients move a task by writing the midpoint between its new neighbours (see [docs/sync.md](sync.md#manual-order)). On create it defaults to the creation time, so a task created without one is appended at the end of its list: the app's *Add new tasks: At the top of the list* setting applies to the app's own quick add only, never to REST, the CLI or MCP. To add a task at the top, pass a `position` smaller than that of the list's first task |
 | `completed_at`, `deleted_at` | unix ms or null | |
 | `completed_by` | string or null | account id of whoever completed the task; null when open or unknown (completions made before this field, imports, public links). A write that sets `completed_at` without it records you; one that clears `completed_at` clears it |
 | `created_at` | unix ms | set by the server on create if missing |
@@ -573,9 +603,42 @@ curl -sS -X PATCH "$OT/api/v1/tasks/<id>" -H "Authorization: Bearer $TOKEN" -H '
   -d '{"completed_at":1760264400000}'
 ```
 
+### Quick-add parse
+
+`POST /api/v1/quick-add/parse` reads one line with the grammar of the app's quick add (OpenSpec `extension-v2`), so a client without the web parser can preview and save a line the same way. Body: `{"line": "…", "url"?: "…", "today"?: "YYYY-MM-DD", "now"?: "HH:MM", "day_parts"?: true}`; `day_parts` turns the [part phrases](day-parts.md#type-it) on or off, and when it is absent the account's Day parts preference decides (`GET /api/v1/me` `day_parts`), so a client that leaves it out reads lines like the app; send `today` and `now` from the device, which wins over the server's clock (that falls back to the email digest's time zone, else UTC). The line is read in the account's interface language, then the request's `Accept-Language`, then English, with the account's date order, week start and its projects and labels (encrypted names cannot be matched).
+
+The answer is `{title, fields, chips, unmatched, origin}`:
+
+- `fields` holds only what the line sets, in the form `POST /api/v1/tasks` takes: `due` (`{date, time?}`), `deadline`, `start` (`"someday"`), `evening`, `day_part`, `energy` (only with Energy levels on), `project_id`, `priority`, `estimate_minutes`, `recurrence`; plus `labels` as `[{id?, name}]` (no `id` for a label that does not exist yet: create it with `POST /api/v1/labels` first), `spent_minutes` (post one closed time entry ending now) and `reminders`, each `{kind: "relative", offset_minutes}` or `{kind: "absolute", date, time}` (a floating moment the client turns into `fire_at` in its own zone), to post with `POST /api/v1/reminders` once the task exists.
+- `chips` are the preview chips, `{kind, text, start, end}`, in the account's language; `start` and `end` count UTF-16 code units of the line. Kinds: `due`, `deadline`, `evening`, `daypart`, `energy`, `someday`, `project`, `label`, `priority`, `estimate`, `recurrence`, `reminder`, `unmatched`.
+- `unmatched` lists the `#name` tokens that name no project; they stay in `title`.
+- `origin` is the recognised origin of `url` (an `issue` origin for a GitHub, GitLab, Jira or Linear link, else a `url` origin), or `null` without a `url`. The server makes no request to that address.
+
+Errors: `400 invalid_input` for a body that is not an object, a missing `line`, a line over 2,000 characters or a malformed `today`/`now`; `401` without credentials; `429 rate_limited` above 60 requests a minute per account. The results are pinned to the web parser by the shared vectors in `web/src/lib/nlp/quickadd.vectors.json`, like `ot add --natural`.
+
 ### Project fields
 
 `name` (string), `color` (string, CSS colour), `position` (number, sort order among siblings), `archived` (boolean), `parent_id` (string or null, see [Sub-projects](#sub-projects)), `created_at`, `deleted_at`, and the project's note: `description` (Markdown) and `notes_doc` (its mergeable document), exactly as on tasks (see [Mergeable documents](sync.md#mergeable-documents)). A `PATCH` of `description` alone is folded into the document by the next device that opens the note. Editors of a shared project may write the two note fields; every other project field needs an admin or the owner.
+
+`flow_mode` (string) is how the project's tasks flow (OpenSpec change `project-flow-modes`, guide: [Sequential projects and areas](project-flows.md)): `parallel`, `sequential` (one step at a time in list order) or `area` (an ongoing list: no progress, never without a next action). Every representation carries it, `""` when it was never set, which reads as `parallel` like any value a client does not know. REST accepts only the three values and refuses anything else with `400 invalid_input` naming `project.flow_mode`; the sync endpoint accepts any string, so a newer client's value is kept.
+
+```sh
+curl -X PATCH -H "Authorization: Bearer $T" -d '{"flow_mode":"sequential"}' $BASE/api/v1/projects/$PROJECT
+# 200 {…,"flow_mode":"sequential"}
+curl -X PATCH -H "Authorization: Bearer $T" -d '{"flow_mode":"serial"}' $BASE/api/v1/projects/$PROJECT
+# 400 {"error":{"code":"invalid_input","message":"project.flow_mode must be parallel, sequential or area, got \"serial\""}}
+```
+
+`status` (string) is `active` or `maintenance` (OpenSpec change `project-review-cadence`, guide: [Review intervals and maintenance](review-intervals.md)). A project in maintenance is never stalled or without a next action, and its health reads Maintenance unless a deadline has passed; its tasks are unchanged. It is shared with the project's members and, like the other project fields, written by the owner and admins (`403` for editors and viewers). Every representation carries it, `active` when it was never set; a value a newer client wrote is returned as stored and reads as `active`. REST accepts only the two values on create and patch and refuses anything else with `400 invalid_input` naming `project.status`; the sync endpoint accepts any string.
+
+```sh
+curl -X PATCH -H "Authorization: Bearer $T" -d '{"status":"maintenance"}' $BASE/api/v1/projects/$PROJECT
+# 200 {…,"status":"maintenance"}
+curl -X PATCH -H "Authorization: Bearer $T" -d '{"status":"paused"}' $BASE/api/v1/projects/$PROJECT
+# 400 {"error":{"code":"invalid_input","message":"project.status must be active or maintenance, got \"paused\""}}
+```
+
+How often each person reviews a project (`review_every`: `week`, `2weeks`, `month`, `quarter` or `paused`) is a personal preference next to their review stamp. It has no REST collection: it syncs as an ordinary `project_prefs` op through `POST /api/v1/sync` (see [Sync protocol](sync.md)).
 
 ### Sub-projects
 
@@ -607,6 +670,7 @@ A section is a named, ordered container inside one project (OpenSpec change `boa
 | `position` | number | ascending order within the project; defaults to now (last) |
 | `color` | string or null | a `#rrggbb` colour shown before the name, `null` for none (the default); anything else is `400 invalid_input` |
 | `icon` | string or null | a name from the icon catalogue (`web/src/ui/icons/catalogue.json`, such as `hourglass`), `null` for none (the default); an unknown name is `400 invalid_input`. Responses always carry both fields |
+| `flow_mode` | string | `""` follows the project's flow (the default), `parallel` offers the section's tasks together and `sequential` one at a time (OpenSpec change `project-flow-modes`); anything else is `400 invalid_input`. Responses always carry it |
 | `created_at` | number | set by the server when omitted |
 | `deleted_at` | number or null | set by `DELETE` |
 
@@ -615,7 +679,7 @@ A section is a named, ordered container inside one project (OpenSpec change `boa
 ```sh
 # Create a section, put a task in it, then move the task back to "No section"
 curl -X POST -H "Authorization: Bearer $T" -d '{"name":"Doing","project_id":"<project>"}' $BASE/api/v1/sections
-# 201 {"id":"…","name":"Doing","project_id":"<project>","position":1760000000000,"created_at":1760000000000,"color":null,"icon":null}
+# 201 {"id":"…","name":"Doing","project_id":"<project>","position":1760000000000,"created_at":1760000000000,"color":null,"icon":null,"flow_mode":""}
 curl -X PATCH -H "Authorization: Bearer $T" -d '{"section_id":"<section>"}' $BASE/api/v1/tasks/$TASK
 curl -X PATCH -H "Authorization: Bearer $T" -d '{"section_id":null}' $BASE/api/v1/tasks/$TASK
 curl -X POST -H "Authorization: Bearer $T" -d '{"name":"Doing","project_id":"missing"}' $BASE/api/v1/sections
@@ -656,6 +720,8 @@ curl -X PATCH -H "Authorization: Bearer $T" -d '{"fields":{"<cost>":"cheap"}}' $
 | `color` | string | CSS colour; picked from the palette when omitted on create |
 | `icon` | string or null | an icon name from the app's set, shown in the project's colour; null (the default) shows a colour dot. Clients that do not know the field ignore it |
 | `position` | number | sidebar order; defaults to the creation time |
+| `group_by`, `sort_by`, `sort_dir`, `row_layout` | string | the label page's display options as the app stores them (`""` reads as the default); not checked by the API |
+| `manual_order` | string[] | the label page's own manual order (OpenSpec change `view-manual-order`): task ids placed by hand, at most 500 distinct ids; absent or `[]` until the app places a task; replaced as a whole on PATCH; ids are not checked |
 | `created_at`, `deleted_at` | unix ms (or null) | |
 
 Tasks reference labels by id, so renaming a label is one PATCH and never rewrites tasks. Deleting a label through the API only sets its tombstone; tasks that still carry the id keep it (the app hides ids of deleted labels), and the app's own delete additionally removes the id from every carrying task.
@@ -667,19 +733,25 @@ A saved view is a named filter query with presentation options (OpenSpec `custom
 | Field | Type | Notes |
 | --- | --- | --- |
 | `name` | string | required on create, must not be blank |
-| `query` | string | required on create for list views; must parse under the grammar in [`docs/filters.md`](filters.md), otherwise 400 with the parser's message (`view.query: Unknown term "urgent" at position 6`); may be empty for dashboards |
+| `query` | string | required on create for list views; must parse under the grammar in [`docs/filters.md`](filters.md), at most 4,096 characters and 64 levels of `(` and `!`; otherwise 400 with the parser's message (`view.query: Unknown term "urgent" at position 6`); may be empty for dashboards |
 | `kind` | `"list"` or `"dashboard"` | default `list`; cannot be changed after creation |
 | `group_by` | `"project"`, `"due"`, `"priority"`, `"label"` or `"none"` | default `project` |
-| `sort_by` | `"due"`, `"priority"`, `"position"`, `"created"` or `"title"` | default `due` (undated tasks last) |
+| `sort_by` | `"due"`, `"priority"`, `"position"`, `"created"`, `"deadline"` or `"title"` | default `due` (undated tasks last; tasks without a deadline last under `deadline`) |
 | `sort_dir` | `"asc"` or `"desc"` | default `asc`; for `priority`, `desc` lists priority 1 first |
-| `pinned` | boolean | shown in the sidebar's Favourites group (every view is listed in the Filters group); default `false` |
+| `pinned` | boolean | shown in the sidebar's Favourites group (every view is listed in the Views group); default `false` |
 | `position` | number | sidebar order; defaults to the creation time |
 | `color` | string | CSS colour; default `#64748b` |
 | `panels` | string[] | dashboards only: up to 6 ids of existing, non-deleted **list** views, no duplicates, never the dashboard itself; replaced as a whole on PATCH |
 | `on_drop` | object or null | list views only: what a card dropped on a board column showing this view gets (OpenSpec `rule-boards`); `null` (the default) or an object with at most these keys: `add_labels` and `remove_labels` (up to 32 ids of existing, non-deleted labels each), `priority` (1–4), `due` (`"today"`, `"tomorrow"`, `"next-week"` or `"clear"`), `start` (`"someday"` or `"clear"`), `section` (`{"project_id":"…","section_id":"…"\|null}`, a section of that project or none) and `state` (`"complete"` or `"reopen"`). Unknown keys, values outside these sets and any rule on a dashboard are refused with 400 naming the field; replaced as a whole on PATCH; every representation and the export carry it, `null` when unset |
+| `layout` | `"list"` or `"board"` | list views: how the app shows the results (OpenSpec change `views-and-display`), a board being one column per group; absent until set, read as `list` |
+| `row_layout` | `"line"`, `"detailed"` or `""` | one-line or detailed rows (OpenSpec change `row-layouts`); absent or `""` follows the account's choice |
+| `show_completed` | boolean | list views: the app also lists completed matches, unless the query names a state itself; absent until set, read as `false` |
+| `manual_order` | string[] | list views: the view's own manual order (OpenSpec change `view-manual-order`), task ids placed by hand, at most 500 distinct ids; absent or `[]` until the app places a task; replaced as a whole on PATCH; ids are not checked |
+| `hidden_props` | string[] | list views: row properties the app leaves out, from `date`, `project`, `labels`, `estimate`, `assignee`, `deadline`, `start`, `origin` and `energy`; absent until set, read as none; replaced as a whole on PATCH |
+| `icon` | string or null | a name from the app's icon catalogue (OpenSpec change `sidebar-polish`), shown wherever the view is listed; `null` (the default) shows the default icon of its kind. Any other value, or a value that is not a string, is refused with 400 `invalid_input` naming `view.icon`; every representation and the export carry it, `null` when unset. Sync accepts any string, so a newer catalogue stays additive |
 | `created_at`, `deleted_at` | unix ms (or null) | |
 
-Values outside the listed sets are rejected with 400 `invalid_input` on `POST` and `PATCH` and nothing is written. The sync endpoint, by contrast, accepts any string for `kind`, `group_by`, `sort_by` and `sort_dir` so that a future option stays additive; clients show the default for a value they do not know (see `docs/sync.md`, "Saved views"). Deleting a view sets its tombstone only; dashboards that list it keep the id and the app shows a "View removed" placeholder in that panel. The start view each device opens on launch is a device setting and is not part of the API.
+Values outside the listed sets are rejected with 400 `invalid_input` on `POST` and `PATCH` and nothing is written. The sync endpoint, by contrast, accepts any string for `kind`, `group_by`, `sort_by`, `sort_dir` and `layout` so that a future option stays additive; clients show the default for a value they do not know (see `docs/sync.md`, "Saved views"). Deleting a view sets its tombstone only; dashboards that list it keep the id and the app shows a "View removed" placeholder in that panel. The start view each device opens on launch is a device setting and is not part of the API.
 
 ### Reminders and push
 
@@ -703,7 +775,7 @@ A reminder belongs to one task and fires at an instant (OpenSpec change `reminde
  "keys": {"p256dh": "BCVx…", "auth": "BTBZ…"}, "includeContent": false}
 ```
 
-It answers 201 `{"subscription": {"id", "deviceId", "includeContent", "createdAt", "lastOkAt", "lastError", "failures", "needsRenewal"}}`; the endpoint and keys are never returned. Posting again for the same device replaces its subscription (200). A body without an `https` endpoint URL, an uncompressed P-256 `p256dh` key or a 16-byte `auth` secret is rejected with 400 `invalid_input`. A subscription created with a browser session is deleted when that session signs out or is revoked; the push service answering 404/410 deletes it as well, and `needsRenewal` turns true after 5 consecutive failed sends. After 20 consecutive failed sends and a day without a delivery (since the last success, or since it was registered) the server stops sending to it; posting it again from the device ("Re-enable") starts it afresh. An account keeps at most 20 subscriptions: registering a new device beyond that replaces the one registered least recently. Reminders are sent for up to 8 accounts at a time, and one account's sends take at most 20 seconds per pass; what is left is sent on the next pass (every 30 seconds) while the reminder is less than an hour overdue. With `OPENTODO_PUSH=off` every `/api/v1/push/` route answers 404 `not_found`.
+It answers 201 `{"subscription": {"id", "deviceId", "includeContent", "createdAt", "lastOkAt", "lastError", "failures", "needsRenewal"}}`; the endpoint and keys are never returned. Posting again for the same device replaces its subscription (200). A body without an `https` endpoint URL, an uncompressed P-256 `p256dh` key or a 16-byte `auth` secret is rejected with 400 `invalid_input`. A subscription created with a browser session is deleted when that session signs out or is revoked; the push service answering 404/410 deletes it as well, and `needsRenewal` turns true after 5 consecutive failed sends. After 20 consecutive failed sends and a day without a delivery (since the last success, or since it was registered) the server stops sending to it; posting it again from the device ("Re-enable") starts it afresh. An account keeps at most 20 subscriptions: registering a new device beyond that replaces the one registered least recently. Reminders are sent for up to 8 accounts at a time, and one account's sends take at most 20 seconds per pass; what is left is sent on another pass 30 seconds later while the reminder is less than an hour overdue. With `OPENTODO_PUSH=off` every `/api/v1/push/` route answers 404 `not_found`.
 
 **Test push.** `POST /api/v1/push/test` with `{"deviceId": "…"}` sends one real push to the caller's subscription for that device, through the same encryption, VAPID signature and push service as a reminder, and records it in the subscription's delivery status (`lastOkAt`, `failures`, removal when gone). The payload is `{"type":"test","testId":"…","sentAt":…}` and carries no task data; the service worker always shows it as a system notification and reports receipt to the open page. A push-service outcome is a successful diagnostic, so it answers 200:
 
@@ -717,6 +789,17 @@ It answers 201 `{"subscription": {"id", "deviceId", "includeContent", "createdAt
 `gone` means the push service reported the subscription expired and the server removed it; enable notifications again on that device. `failed` without `status` means the push service could not be reached. Errors: 400 `bad_request` without `deviceId`, 401 `unauthorized`, 403 `insufficient_scope` for read and agent tokens, 429 `rate_limited` after 5 tests per account in 10 minutes (counted before anything is sent), 404 `not_found` with `OPENTODO_PUSH=off`, 403 `demo_restricted` on a demo instance.
 
 `POST /api/v1/sync` accepts an optional `tzOffset` (minutes east of UTC, −840…840): the device's zone, used for the REST recomputation above.
+
+#### Default reminders
+
+Your [default reminders](default-reminders.md) are two `user_prefs` fields, written like any preference through `POST /api/v1/sync` (entity `user_prefs`, id `"me"`): `reminder_default_timed` for tasks with a time and `reminder_default_dated` for tasks with a date only. Each is the offset in minutes from the due time as a decimal string (`"-30"`, `"0"`, `"-1440"`; a date-only due counts from 09:00), or `""` for none. An empty, malformed or out-of-range value (beyond ±525600) reads as none.
+
+`POST /api/v1/tasks` and `PATCH /api/v1/tasks/{id}` take the optional query parameter `default_reminder=true|false` (default `false`, so scripts, n8n and Home Assistant behave as before). With `true`, a write that gives a task without a due date a due date adds one relative reminder with your default for that kind of due, in the same batch and with the same timestamp as the due op; its `fire_at` uses the zone your devices last reported. Nothing is added when the task is completed, deleted or a habit, already has a live relative reminder, or already had its default reminder (live or deleted). The reminder's id is derived from your account and the task, so it is added at most once per task. When a write switches the due between a date only and a time and the default reminder still has the old default's offset, it takes the other default. Any other value of the parameter answers **400 `invalid_input`** and writes nothing; the routes keep their policies (401 without credentials, 403 `insufficient_scope` for `read` tokens). `ot add`, `ot edit` and the browser extension send the parameter. With an `agent` token the [agent write tools](#agent-tokens) always apply your defaults, whatever the parameter says. CalDAV writes, calendar sync, issue import, the importer, the Markdown vault, automation rules and email capture never add one.
+
+```sh
+curl -s -X POST "$OT/api/v1/tasks?default_reminder=true" -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"Dentist","due":{"date":"2026-11-06","time":"09:00"}}'
+```
 
 ### Invitations
 
@@ -759,6 +842,18 @@ curl -sS "$OT/api/v1/auth/register" -H 'Content-Type: application/json' \
 ```
 
 Creates a `member` account and starts a session even when `OPENTODO_ALLOW_SIGNUP` is false. The invitation is spent in the same transaction, so it can create at most one account; a second use returns 404 `invitation_invalid`. Errors: 403 `invitation_email_mismatch` when the invitation is bound to another address, 409 `email_taken`, 400 `invalid_input` for the password policy. In every error case the invitation stays pending.
+
+### Profile
+
+Every user changes their own name, email and picture. Profile data is server-side account data: never written to the op log, never synced. Members of shared projects see changes on their next sync. Changes are recorded as `account.name_changed`, `account.email_change_requested`, `account.email_changed` and `account.avatar_changed`, never with a name, an address or a picture.
+
+**Read** — `GET /api/v1/me/profile` → `{"user": {…}, "avatarVersion": 2, "pendingEmail": "new@example.com", "emailManagedBy": "https://id.example.com", "emailByLink": true}`. `avatarVersion` is 0 without a picture. `pendingEmail` is set while a change waits for its link. `emailManagedBy` names the provider of an account that signs in only through single sign-on, which can't change its email here. `emailByLink` says whether a change waits for a link. Every route below answers the same document.
+
+**Name** — `PATCH /api/v1/me/profile` with `{"name": "Raffaele"}`: 1 to 80 characters after trimming, no control characters (400 `invalid_input` otherwise). A session or a `full` token; refused on the demo.
+
+**Email** — `POST /api/v1/me/email` with `{"email": "new@example.com"}`, from a session confirmed in the last ten minutes (403 `reauth_required`). With outgoing email and `OPENTODO_BASE_URL`, the address becomes pending, a 24-hour link `/confirm-email/<token>` goes to it and a notice goes to the old address. A newer request replaces the pending one, and `DELETE /api/v1/me/email` cancels it. Without outgoing email the change applies at once. The link's page calls `POST /api/v1/me/email/confirm` with `{"token": "…"}` from the same account: another account gets 403 `forbidden`, and an unknown, used or expired token gets 400 `invalid_token`. Other errors: 409 `email_taken`, 400 `invalid_input`, 403 `forbidden` (single sign-on only), 429 `rate_limited` (5 an hour), 502 `email_failed` (nothing changed). Sessions stay signed in.
+
+**Picture** — `PUT /api/v1/me/avatar` with a 256×256 PNG or JPEG body of at most 512 KB (413 `too_large`; anything else is 400 `invalid_input`). The server re-encodes it as JPEG, so no metadata is kept, and stores it as `<data>/avatars/<user id>.jpg`. It is included in backups and in the ZIP export as `profile/picture.jpg`. `DELETE /api/v1/me/avatar` removes it. `GET /api/v1/users/{id}/avatar?v=<avatarVersion>` serves it to the account and to members of a project it shares (404 for anyone else and for no picture), cached for a year at the current version. Member lists carry each member's `avatarVersion`.
 
 ### User administration
 
@@ -930,6 +1025,22 @@ Errors: 422 `passphrase_required` / `passphrase_invalid`, 409 `newer_schema` (na
 
 **Cancel** — `DELETE /api/v1/backups/restore/{id}` → 204; the staged files are removed. **Delete a safety copy** — `DELETE /api/v1/backups/restore/safety-copies/{name}` → 204 (fresh session, no API tokens; 400 `invalid_input` for a name that is not a safety copy).
 
+### Database storage
+
+The owner's view of the database file and of the notes compaction job (see [sync.md](sync.md#compaction) and [backups.md](backups.md#database-size-and-compaction)). `GET /api/v1/settings/storage` needs the owner (401 `unauthorized` without credentials, 403 `forbidden` for members and admins, 403 `demo_restricted` on the public demo):
+
+```json
+{
+  "database_bytes": 50331648,
+  "free_bytes": 3145728,
+  "wal_bytes": 4120032,
+  "last_compaction": {"at": 1793447000000, "ops_removed": 12400, "value_bytes_removed": 219000000, "file_bytes_reclaimed": 220200960, "more": false, "converted": false},
+  "conversion": "done"
+}
+```
+
+`free_bytes` is the space of free pages inside the file (reused by new writes, or returned to the file system by the next compaction). `last_compaction` is the last complete pass (`null` before the first); a pass larger than one run continues a minute later and is reported once it ends. `conversion` is the one-time switch of a database created before 0.19 to incremental vacuum: `pending` (not tried yet, or the free disk space cannot be read on this platform), `waiting_for_quiet` (operations kept arriving; it runs after ten quiet minutes, or at the next run once seven days passed), `no_space` (with `conversion_needed_bytes`, the free disk space it needs: the database size plus 10 %) or `done`. Databases created by 0.19 or later are `done` from the start.
+
 ### Audit log
 
 The server records security-relevant events in its own database (never synced to devices, never part of `/api/v1/export`). The owner reads, filters and exports the log; every user reads their own access events. There is no route to modify or delete an event: `PATCH`/`DELETE /api/v1/audit/{id}` answer 404 `not_found`. Events are removed only by retention pruning (and addresses only by disabling address logging).
@@ -957,18 +1068,34 @@ The server records security-relevant events in its own database (never synced to
 | `agent.write` | success or failure | actor = user | `tool`, `token_id`, `token_name`, `count` (items changed; 0 on failure), `reason` on failure (`writes_disabled_by_owner`, `writes_disabled_by_user`, `rate_limited`, `encryption_enabled`, `not_found`, `forbidden`, `scope_change`, `not_permitted`, `invalid_arguments`, …). One per MCP write tool call of an `agent` token, and one per tool a REST write of an `agent` token runs (`update_project` for a project rename); never content or entity ids |
 | `relay.enabled` | success | actor = user | `relay_device_id`, `relay_device_label`. A device of an encrypted account opted in to answer AI connectors ([device relay](#device-relay)) |
 | `relay.disabled` | success | actor = user | `relay_device_id`, `relay_device_label`, `reason` (`user`, `locked`, `signed_out`, `encryption_off`). Relayed calls themselves are never relay events; relayed writes are `agent.write` |
+| `account.name_changed`, `account.email_change_requested`, `account.email_changed`, `account.avatar_changed` | success | actor = user | none: never the old or new name, email or picture ([profile](#profile)) |
 | `app_password.created`, `app_password.revoked` | success | actor = user | `app_password_id`, `app_password_name` |
 | `calendar_feed.created`, `calendar_feed.rotated`, `calendar_feed.revoked` | success | actor = user | none (the feed secret is never recorded) |
 | `email_inbox.created`, `email_inbox.rotated` | success | actor = user | (never the secret) |
 | `email_inbox.updated` | success | actor = user | `setting` (`enabled` or `allowlist`), `from`, `to` (true/false, or the number of allowlist entries; never the addresses) |
 | `issue_connection.created`, `issue_connection.deleted` | success | actor = user | `connection_id`, `provider` (`github` or `gitlab`); never the host, token, filter or issue content |
 | `issue_connection.updated` | success | actor = user | `connection_id`, `provider`, `setting`: the changed settings by name, comma-separated (`host`, `filter`, `project`, `labels`, `interval`, `name`, `enabled`, `token`), never a value. Polls and the tasks they write are not recorded |
+| `calendar_connection.created`, `calendar_connection.deleted` | success | actor = user | `connection_id`, `provider` (`caldav` or `google`); never the server address, username, password, token or a calendar's name |
+| `calendar_connection.updated` | success | actor = user | `connection_id`, `provider`, `setting`: the changed settings by name, comma-separated (`name`, `calendars`, `options`, `enabled`, `password`, `reconnected`), never a value. Sync cycles and the task changes they make are not recorded |
+| `notification_channel.created`, `notification_channel.deleted` | success | actor = user | `notification_channel_id`, `channel_kind` (`ntfy`, `pushover`, `gotify`, `webhook`); never the address, topic, token, user key or signing secret |
+| `notification_channel.updated` | success | actor = user | `notification_channel_id`, `channel_kind`, `setting`: the changed settings by name, comma-separated (`name`, `url`, `topic`, `events`, `include_titles`, `enabled`, `token`, `user_key`, `secret`), never a value. Messages sent are not recorded |
 | `invitation.created` | success | actor = owner | `invitation_id`, `invited_email` (bound email, if any) |
 | `invitation.accepted` | success | actor = new member | `invitation_id`, `email` |
 | `invitation.revoked` | success | actor = owner | `invitation_id` |
 | `project_invite.created` | success | actor = creator | `project_invite_id`, `shared_project_id`, `project_role`, `invited_email` (bound email, if any) |
 | `project_invite.revoked` | success | actor = project owner or admin | `project_invite_id`, `shared_project_id` |
 | `project_invite.accepted` | success | actor = the account that joined (new or existing), target = the link's creator | `project_invite_id`, `shared_project_id`, `project_role` |
+| `workspace.created`, `workspace.renamed`, `workspace.deleted` | success | actor = owner or admin (the server owner when an account deletion removed it) | `workspace` (id; `renamed` also covers icon and colour, never a value) |
+| `workspace.transferred` | success | actor = previous owner (the deleting owner at account deletion), target = new owner | `workspace` |
+| `workspace.member_added`, `workspace.member_role_changed`, `workspace.member_removed` | success | actor = owner or admin (the member when leaving), target = member | `workspace`, `workspace_role` or `from`, `to` |
+| `workspace.group_created`, `workspace.group_deleted` | success | actor = owner or admin | `workspace`, `group` (ids, never names) |
+| `workspace.group_member_added`, `workspace.group_member_removed` | success | actor = owner or admin, target = member | `workspace`, `group` |
+| `project.member_added` | success | actor = project owner or admin (the inviter for an accepted invitation), target = the added account | `shared_project_id`, `project_role` |
+| `member_invitation.created`, `member_invitation.cancelled` | success | actor = project or workspace owner or admin, target = the invited account (none for an address without an account) | `member_invitation_id`, `shared_project_id` and `project_role`, or `workspace` and `workspace_role` |
+| `member_invitation.accepted`, `member_invitation.declined` | success | actor = the invited account, target = the inviter | `member_invitation_id`, `shared_project_id` and `project_role`, or `workspace` and `workspace_role` |
+| `project.grant_added`, `project.grant_changed`, `project.grant_removed` | success | actor = project owner or admin | `shared_project_id`, `group`, `project_role` or `from`, `to` |
+| `workspace_invite.created`, `workspace_invite.revoked` | success | actor = workspace owner or admin | `workspace_invite_id`, `workspace`, `workspace_role`, `invited_email` (bound email, if any) |
+| `workspace_invite.accepted` | success | actor = the account that joined, target = the link's creator | `workspace_invite_id`, `workspace`, `workspace_role` |
 | `settings.changed` | success | actor = owner (the user for `encryption*`) | `setting` (`audit.retention_days`, `audit.log_ip`, `webhooks_allow_private`, `mfa.required`, `mcp.enabled`, `mcp.writes`, `agent.writes` (actor = the user), `caldav.enabled`, `integrations.issues`, `project_invites.members_create_accounts`, `oidc.*`, `smtp.*` (`smtp.password` only as `set` or empty), `encryption`, `encryption.keys`), `from`, `to` |
 | `export.requested` | success | actor = user | `format` (`json`) |
 | `audit.exported` | success | actor = owner | `format` (`ndjson`), `count` |
@@ -986,6 +1113,7 @@ The server records security-relevant events in its own database (never synced to
 | `email.failed` | failure | as `email.sent` | `email_kind`, `email`, `reason` (`connect`, `tls`, `auth`, `send`, `rate_limited`, `encrypted_account`) |
 | `public_link.created` | success | actor = creator | `public_link_id`, `shared_project_id`, `link_rights` (`view` or `tick`); never the secret or the name |
 | `public_link.revoked` | success | actor = owner or admin of the project | `public_link_id`, `shared_project_id` |
+| `project.agent_access` | success | actor = owner or admin of the project | `access_project_id`, `from`, `to` (`allowed` or `kept_away`); never the project's name |
 | `task_page.published` | success | actor = publisher | `task_page_id`, `link_rights` (`view`, `reply` or `tick`); never the secret, the label or a share key |
 | `task_page.revoked` | success | actor = publisher, or owner or admin of the project (also when a page is replaced by a new one) | `task_page_id` |
 | `password.changed` | success | actor = user | |
@@ -1020,7 +1148,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 
 **Export** — `GET /api/v1/audit/export` (owner) with the same filters except `cursor` and `limit` → every matching event as newline-delimited JSON (`application/x-ndjson`, `Content-Disposition: attachment; filename="opentodo-audit-YYYYMMDD.ndjson"`), one event object per line, newest first. The export records an `audit.exported` event.
 
-**Settings** — `GET /api/v1/settings/audit` (owner) → `{"retentionDays": 90, "logIp": false}`. `PUT` the same object, both fields optional: `retentionDays` is an integer 7–3650 (otherwise 400 `invalid_input`), `logIp` turns client address logging on or off. Turning it off erases every stored address in the same transaction. Each changed value is recorded as `settings.changed`; lowering retention prunes expired events immediately, and the server also prunes at startup and hourly.
+**Settings** — `GET /api/v1/settings/audit` (owner) → `{"retentionDays": 90, "logIp": false}`. `PUT` the same object, both fields optional: `retentionDays` is an integer 7–3650 (otherwise 400 `invalid_input`), `logIp` turns client address logging on or off. Turning it off erases every stored address in the same transaction. Each changed value is recorded as `settings.changed`; lowering retention prunes expired events immediately, and the server also prunes at startup and whenever the oldest event passes the retention.
 
 **Personal activity** — `GET /api/v1/me/activity` (any signed-in user) → `{events: [...]}`: the caller's own sign-ins, failed sign-ins against their account, sign-outs and credential and token events from the last 90 days, at most 100, newest first. Events about other accounts never appear.
 
@@ -1035,17 +1163,18 @@ A project owner shares a project with other accounts on the same server by exact
 | `admin` | also rename, recolour and archive the project; add, re-role and remove viewers and editors |
 | `owner` | everything, including deleting the project, transferring ownership and managing admins; exactly one per project |
 
-Every route requires a session or token. A caller who is not a member gets `404 not_found`, the same as for a project that does not exist; the member's email is looked up only after the caller's role was checked, so the routes cannot be used to probe for accounts. Labels and saved views stay personal.
+Every route requires a session or token. A caller who is not a member gets `404 not_found`, the same as for a project that does not exist; the member's email is looked up only after the caller's role was checked, and an address without an account gets the same answer as a stranger with one, so the routes cannot be used to probe for accounts. Labels and saved views stay personal.
 
 ```sh
-# Share with an existing account as editor
+# Share with an existing account you already share another project with: added at once
 curl -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
   -d '{"email":"bob@example.com","role":"editor"}' $BASE/api/v1/projects/$P/members
 # 201 {"projectId":"…","role":"owner","ownerId":"…","members":[{"userId":"…","name":"Alice","email":"alice@example.com","role":"owner"},
-#      {"userId":"…","name":"Bob","email":"bob@example.com","role":"editor"}]}
+#      {"userId":"…","name":"Bob","email":"bob@example.com","role":"editor"}],"pending":[]}
 
-curl -X POST … -d '{"email":"nobody@example.com","role":"editor"}' $BASE/api/v1/projects/$P/members
-# 404 {"error":{"code":"user_not_found","message":"no account with this email exists on this server"}}
+# Anyone else, with or without an account: an invitation
+curl -X POST … -d '{"email":"dan@example.com","role":"editor"}' $BASE/api/v1/projects/$P/members
+# 202 {"pending":true}
 
 curl -X DELETE -H "Authorization: Bearer $T" $BASE/api/v1/projects/$P/members/me    # as the owner
 # 409 {"error":{"code":"owner_must_transfer","message":"the owner cannot leave the project; transfer ownership to another member first"}}
@@ -1057,6 +1186,22 @@ curl -X POST … -d '{"userId":"<bob>"}' $BASE/api/v1/projects/$P/transfer
 Collections, single reads and the export include the shared projects and their tasks; a shared project carries the read-only keys `role` (yours) and `owner_id`. They are ignored when sent back in a write. REST writes are checked with the same role table as sync: a refused write answers `403 forbidden` and stores nothing. A task cannot change sharing scope: `PATCH` of `project_id` to a project shared differently (or to the Inbox from a shared project) answers `400 scope_change`; create a copy in the destination and delete the original instead, which is what the web app does.
 
 Membership changes are recorded in the audit log as `role.changed` with `from`/`to` values such as `none` → `project.editor`.
+
+#### Membership invitations
+
+Adding someone by email adds them at once only when they already share a shared project or a created workspace with you (OpenSpec `member-add-consent`). Anyone else gets an invitation and the add answers **202 `{"pending": true}`**, the same answer for an address that has no account, so nobody can find out which addresses have accounts. The invitation is listed in the member list's `pending` (owners and admins only) like any other, expires after 14 days, and at most 50 can be open per project or workspace (409 `limit_reached`). For an existing account it shows in the person's notifications (kind `member_invitation`) and, when outgoing email is on, an email names you and the role, never the project. Adding the same address again while the invitation is open updates its role; after the person declined, it answers 202 and changes nothing until the declined invitation would have expired.
+
+The invitee lists their invitations with `GET /api/v1/me/member-invitations` and answers with `POST …/{id}/accept` or `POST …/{id}/decline`. Accepting adds the membership with the inviter as the acting member, after checking that the inviter is still active and may still grant the role on the live project or workspace; otherwise it answers 410 `invitation_stale` and the invitation is gone. These three routes need a session or a `full` or `admin` token (`read` and `agent` tokens: 403 `insufficient_scope`) and answer 403 `demo_restricted` on a demo. Owners and admins cancel an invitation with `DELETE /api/v1/projects/{id}/member-invitations/{invitationId}` (or the workspace twin). Invitations are server state, never operations or synced; the project or workspace reaches the invitee's devices with the next sync after accepting.
+
+**Upgrading a script.** Up to 0.15, an add by email answered 201 for every existing account and 404 `user_not_found` for an unknown address. A client that adds people by email must now treat 202 as "invited, not yet a member", and must not rely on 404 to detect unknown addresses.
+
+```sh
+# The invitee
+curl -H "Authorization: Bearer $T" $BASE/api/v1/me/member-invitations
+# 200 {"invitations":[{"id":"…","kind":"project","targetId":"…","targetName":"Garden","role":"editor","inviterId":"…","inviterName":"Alice",…}]}
+curl -X POST -H "Authorization: Bearer $T" $BASE/api/v1/me/member-invitations/$I/accept
+# 200 {"kind":"project","targetId":"…","role":"editor"}
+```
 
 ### Project invite links
 
@@ -1108,6 +1253,40 @@ curl -sS "$OT/api/v1/auth/register" -H 'Content-Type: application/json' \
 ```
 
 The account, the membership and the spend commit in one transaction, so a link creates at most one account. A link may create an account when its creator is the server owner or an admin, when open sign-up is on, or when the owner turned on **Invite new people** (`PUT /api/v1/settings/project-invites` `{"membersCanInviteNewPeople": true}`; off by default; any signed-in account can read it with `GET`). Otherwise the answer is 403 `project_invite_not_allowed` and the person signs in with an existing account first. In SSO-only mode registration answers 403 `sso_required`; the person signs in through the provider and then joins. Other errors as for invitations (`invitation_email_mismatch`, `email_taken`, `invalid_input`); in every error case the link stays pending.
+
+### Workspaces
+
+A workspace is a separate room with its own projects, labels, views and people (OpenSpec `workspaces`, guide: [workspaces](workspaces.md)). Every account has one default workspace (`"default": true`, named "Personal" until renamed), which cannot be deleted, left, transferred or given members (409 `default_workspace`). Projects, labels, views and tasks without a project carry `workspace_id` (null or absent = the default workspace; a task with a project follows its project); on a shared project only the owner may change it. Workspaces, members and groups are server data, never ops; every sync response carries `workspaces` (below).
+
+Every route needs a session or a `full` or `admin` token (`read` and `agent` tokens: 403 `insufficient_scope`); writes answer 403 `demo_restricted` on a demo. A non-member gets 404 `not_found`. Roles: `owner` (one), `admin` (adds members, manages groups and links), `member` (reads, leaves).
+
+| Method | Path | Body → answer |
+| --- | --- | --- |
+| `GET` | `/api/v1/workspaces` | → `{workspaces: [workspace]}` |
+| `POST` | `/api/v1/workspaces` | `{name, icon?, color?}` → 201 workspace; 20 owned per account (409 `limit_reached`) |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/workspaces/{id}` | `PATCH {name?, icon?, color?}` (owner, admin); `DELETE` (owner) → 204, 409 `workspace_not_empty` while it has projects or other members |
+| `POST` | `/api/v1/workspaces/{id}/leave`, `…/transfer` | leave → 204 (the owner: 409 `owner_must_transfer`); transfer `{userId}` (owner, to a member) → 200 |
+| `GET`, `POST` | `/api/v1/workspaces/{id}/members` | `POST {email, role: member\|admin}` (admins add members) → 201 when the account already shares a project or workspace with you, otherwise 202 `{pending: true}` with or without an account ([invitations](#membership-invitations)); `GET` → 200 `{members, pending?}` (`pending` for the owner and admins) |
+| `DELETE` | `/api/v1/workspaces/{id}/member-invitations/{invitationId}` | cancel an open invitation (owner, admin) → 204 |
+| `PATCH`, `DELETE` | `/api/v1/workspaces/{id}/members/{userId}` | `{role}`; removing a member also removes every grant they hold on the workspace's projects |
+| `GET`, `POST` | `/api/v1/workspaces/{id}/groups` | `POST {name}` → 201 `{id, name, members}`; names unique ignoring case (409 `group_exists`), 50 groups |
+| `PATCH`, `DELETE` | `/api/v1/workspaces/{id}/groups/{groupId}` | rename `{name}`, delete |
+| `PUT`, `DELETE` | `/api/v1/workspaces/{id}/groups/{groupId}/members/{userId}` | 100 members per group; only workspace members (409 `not_in_workspace`) |
+
+A workspace:
+
+```json
+{"id": "…", "name": "Family", "icon": "house", "color": "#3b82f6", "default": false, "role": "owner", "ownerId": "…",
+ "members": [{"userId": "…", "name": "Alice", "role": "owner"}], "groups": [{"id": "…", "name": "Adults", "members": ["…"]}]}
+```
+
+Members carry names, never emails. Limits are 409 `limit_reached` naming the limit; a hosted server may lower them per tenant. An end-to-end encrypted account can create, rename and delete its workspaces and move things between them, but adding members, creating groups or links, and granting groups answer 409 `encryption_enabled`.
+
+**A created workspace is a closed directory**: a project in it can be shared only with its members (`POST /projects/{id}/members` with anyone else: 409 `not_in_workspace`; a project invite link accepted from outside: 404 `invitation_invalid`). In the default workspace projects share by email as before. A member of a shared project who is not in its workspace sees it in their default workspace.
+
+**Group grants** — `POST /api/v1/projects/{id}/grants` `{groupId, role}` → 201 member list; `PATCH …/grants/{groupId}` `{role}`; `DELETE …/grants/{groupId}` → 204. The project's member rules apply (an admin grants viewer and editor), and only groups of the project's workspace (404 otherwise). A member's role is the highest of their direct grant and their groups'; the member list adds `via` (the groups a role comes from, `[]` for a direct grant) and `grants`. Changing a group changes every project it is on in the same request, without writing an op.
+
+**Invite links** — `POST /api/v1/workspaces/{id}/invites` `{role: member|admin, email?, expiresInHours?, send?}` (owner or admin; `admin` links only by the owner) → 201 `{invite, link, newAccounts}` with a `/invite/w/otw_…` link, as [project invite links](#project-invite-links): 20 per hour, `GET …/invites` lists pending links, `DELETE …/invites/{inviteId}` revokes. `GET /api/v1/workspace-invites/{token}` (no authentication; 404 `invitation_invalid` on a demo) → `{inviterName, workspaceName, role, email, expiresAt, canCreateAccount, alreadyMember?}`; `POST …/accept` → `{workspaceId, role}` (409 `already_member`); `POST /api/v1/auth/register` with `workspaceInvite` creates the account under the project-link rule.
 
 ### Public links
 
@@ -1198,9 +1377,22 @@ Attachments (OpenSpec `attachments`) are files or links on a task or one of its 
 | `DELETE /api/v1/attachments/{id}` | Remove (author, project admin or owner); `204` |
 | `GET` / `PUT /api/v1/settings/attachments` | `{enabled, max_file_mb, quota_mb}`; changing them is for the owner (`max_file_mb` 1–2048, `quota_mb` 0 = unlimited). Changes are audited as `settings.changed` |
 
+### Instance branding
+
+The owner gives the server a name and a logo (**Settings → Server → Branding**). `GET /api/v1/auth/status` carries `"branding": {"name": "Acme Tasks", "logoVersion": 2}` for everyone (`name` empty and `logoVersion` 0 without branding), and the page and the web app manifest are served with the name in the title and the logo as favicon, touch icon and app icons, so an installed app shows them.
+
+| Route | Does |
+| --- | --- |
+| `GET` / `PUT /api/v1/settings/branding` | Owner. `PUT {"name": "…"}`: up to 40 characters after trimming, no control characters, empty for OpenTodo's own name (400 `invalid_input` otherwise). Answers `{name, logoVersion}`; recorded as `settings.changed` (`branding.name`) |
+| `PUT /api/v1/settings/branding/logo` | Owner. The raw bytes of a PNG or JPEG, at most 2 MB (413 `too_large`), at least 192 and at most 4096 pixels a side (400 `invalid_input`). The server crops the centre square and renders 32, 180, 192 and 512 px PNGs plus a maskable 512 px icon under `<data>/branding/`, bumps `logoVersion` and answers `{name, logoVersion}`; recorded as `settings.changed` (`branding.logo`) |
+| `DELETE /api/v1/settings/branding/logo` | Owner. Removes the rendered files; `logoVersion` becomes 0 and the app's own icons return |
+| `GET /branding/{file}`: `logo-{32,180,192,512}.png`, `logo-maskable-512.png` | Public, like the app's own icons. With `?v=<logoVersion>` cached for a year (`immutable`); without the current version `no-cache`. 404 without a logo |
+
+Branding is refused on a demo instance like every server setting.
+
 `GET /api/v1/me` includes `attachments: {enabled, max_file_bytes, quota_bytes, used_bytes}`.
 
-**Downloads** are served with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff`, `Content-Disposition` with the file name, `Cache-Control: private, max-age=31536000, immutable` and the digest as `ETag`. Only images (PNG, JPEG, GIF, WebP, AVIF), PDF, plain text, audio and video are served inline with their type; everything else (HTML and SVG included) and every encrypted file is `application/octet-stream` with `attachment`.
+**Downloads** are served with `Content-Security-Policy: default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff`, `Content-Disposition` with the file name, `Cache-Control: private, no-cache` and the digest as `ETag`, so a browser revalidates its copy (304 while signed in) and shows nothing without a session; signing out answers `Clear-Site-Data: "cache"`. Only images (PNG, JPEG, GIF, WebP, AVIF), PDF, plain text, audio and video are served inline with their type; everything else (HTML and SVG included) and every encrypted file is `application/octet-stream` with `attachment`.
 
 Errors: `400 attachment_mismatch` (bytes do not match the size or digest), `413 attachment_too_large`, `403 quota_exceeded`, `403 attachments_disabled`, `409 already_uploaded`, `507 insufficient_storage`.
 
@@ -1209,9 +1401,40 @@ curl -sS -X POST "$OT/api/v1/tasks/$TASK/attachments" -H "Authorization: Bearer 
 # 201 {"id":"…","name":"receipt.pdf","mime":"application/pdf","size":48213,"uploaded":true,…}
 ```
 
+### Maps
+
+The server proxies the map provider for the web app's maps and place search (guide: [locations and places](locations-and-places.md)), so a browser never contacts a third party. The routes need a session or a `full` or `admin` token; with maps off they answer `404 maps_disabled`, and when the provider does not answer `502 maps_unavailable`. A demo instance has maps off unless `OPENTODO_MAPS=on`.
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET | `/api/v1/maps/style` | yes | the provider's style, rewritten to point at the routes below (cached for an hour) |
+| GET | `/api/v1/maps/tiles/{z}/{x}/{y}` | yes | one vector tile (`.pbf` optional), cached on the server under `<data>/cache/maps` and in the browser for a day |
+| GET | `/api/v1/maps/fonts/{fontstack}/{range}` | yes | the glyphs of a font range (`.pbf` optional) |
+| GET | `/api/v1/maps/sprites/{file}` | yes | the style's sprite sheet (`.png`) or its index (`.json`) |
+| GET | `/api/v1/maps/search` | yes | `?q=…&lang=en&limit=5` (1–10) → `{results: [{name, address, lat, lon}]}`; 30 searches a minute per account with `/reverse` (`429 rate_limited`) |
+| GET | `/api/v1/maps/reverse` | yes | `?lat=…&lon=…&lang=en` → `{result: {name, address, lat, lon}}` |
+| GET, PUT | `/api/v1/settings/maps` | owner (`PUT`: credential) | `{enabled, tiles_url, geocoder_url, locked, defaults: {tiles_url, geocoder_url}}`; `PUT {enabled, tiles_url?, geocoder_url?}` (empty URLs use the defaults). A value set by `OPENTODO_MAPS*` is listed in `locked` and cannot be changed. Changes are audited as `settings.changed` (`maps.enabled`, `maps.tiles_url`, `maps.geocoder_url`); refused on a demo |
+
+A [task page](#task-pages) with its map shared serves the same map without a sign-in: `GET /api/v1/pages/{secret}/maps/style`, `…/maps/tiles/{z}/{x}/{y}`, `…/maps/fonts/{fontstack}/{range}` and `…/maps/sprites/{file}` (`404 page_invalid` when the page does not include its map or maps are off; rate limited per address and per page).
+
+### Speech to text
+
+Voice capture sends a recorded phrase through the server to the owner's OpenAI-compatible transcription service (guides: [speech to text](self-hosting/speech-to-text.md), [quick add](quick-add.md)). The audio and the text stay in memory for the request: never stored, logged or audited. `GET /api/v1/me` carries `speech: {connected, host?}` for every user.
+
+| Method | Path | Auth | Description |
+| --- | --- | --- | --- |
+| GET | `/api/v1/settings/stt` | owner, credential | `{url, model, keySet, locked, connected}`; the key is write-only. A value set by `OPENTODO_STT_URL`, `OPENTODO_STT_MODEL` or `OPENTODO_STT_KEY_FILE` is listed in `locked` |
+| PUT | `/api/v1/settings/stt` | owner, credential | any of `{url, model, key}` (`""` clears; a model is needed while a URL is set) → the same shape; `400 invalid_input` names a bad field; connecting or disconnecting is audited as `settings.changed` (`stt.connected`) |
+| POST | `/api/v1/settings/stt/test` | owner, credential | optional draft `{url, model, key}`: sends a built-in sample with the draft or the stored values → `{ok: true, text}` or `{ok: false, error}`; `409 stt_not_configured` without a service |
+| POST | `/api/v1/voice/transcribe` | session or `full` token | the raw audio (`Content-Type` `audio/webm`, `audio/ogg`, `audio/mp4` or `audio/wav`; at most 5 MB and 60 seconds, `?seconds=` as recorded), optional `?language=de` → `{text}`; 30 phrases a minute per account (`429 rate_limited`), `409 stt_not_configured`, `502 stt_unavailable` |
+
+The settings routes and the transcription are refused on a demo instance.
+
 ### Comments and activity
 
-Comments (OpenSpec `comments-and-activity`) are threaded markdown notes on a task. They are stored in the operation log like tasks, in the task's sharing scope, so every route answers `404 not_found` for a task or comment you cannot read, exactly as for an unknown id. Anyone who can read the task may comment, viewers included. Only the author may edit a comment; the author, project admins and the owner may delete it (`403 forbidden` otherwise). `author_id`, `task_id` and the timestamps are set by the server and cannot be sent. `mentions` lists account ids; the server keeps only current members of the task's shared project (always none on a personal task) and notifies each newly mentioned member (`kind: "mentioned"` in `GET /api/v1/notifications`, payload `{recipientId, actorId, actorName, commentId, taskId, taskTitle, projectId?, projectName?, excerpt, at}`). Each account may create 60 comments a minute (`429 rate_limited`). Bodies are markdown; clients render a safe subset and the server never renders them.
+Comments (OpenSpec `comments-and-activity`) are threaded markdown notes on a task. They are stored in the operation log like tasks, in the task's sharing scope, so every route answers `404 not_found` for a task or comment you cannot read, exactly as for an unknown id. Anyone who can read the task may comment, viewers included. Only the author may edit a comment; the author, project admins and the owner may delete it (`403 forbidden` otherwise). `author_id`, `task_id` and the timestamps are set by the server and cannot be sent. `mentions` lists account ids, and `group:<group id>` for a group of the project's workspace; the server keeps only current members of the task's shared project and groups of its workspace (always none on a personal task) and notifies each newly mentioned member, a group's members who are on the project included (`kind: "mentioned"` in `GET /api/v1/notifications`, payload `{recipientId, actorId, actorName, commentId, taskId, taskTitle, projectId?, projectName?, excerpt, at, groupId?, groupName?}`, the group present when the recipient was reached only through it). Each account may create 60 comments a minute (`429 rate_limited`). Bodies are markdown; clients render a safe subset and the server never renders them. Whatever editor wrote it, a body stays one Markdown string: the app's editor writes headings, lists, `> ` quotes, fenced code, pipe tables, `![alt](attachment:<id>)` for an image attachment of the same task and `@name` for a mention, and keeps other text verbatim.
+
+Every comment carries `reactions`, a map from each of the six names `thumbs_up`, `heart`, `check`, `eyes`, `party`, `question` to the account ids that chose it (every name present, lists sorted), and `my_reactions`, the caller's own list; the export shows the same form. `PUT /api/v1/comments/{id}/reactions` with `{"reactions":["thumbs_up"]}` replaces the caller's list through the operation log (an empty list removes them all); it counts toward the comment rate limit. A mention in a task's notes notifies with the same `kind: "mentioned"` and `source: "note"` (no `commentId`); a task's `note_mentions` lists the mentioned members, filtered to current members of its shared project like comment mentions.
 
 ```sh
 curl -sS -X POST "$OT/api/v1/tasks/$TASK/comments" -H "Authorization: Bearer $TOKEN" \
@@ -1358,13 +1581,34 @@ Other calendars shown in Day and Week, and your tasks as a calendar that calenda
 | `PATCH` | `/api/v1/calendar-feeds/subscriptions/{id}` | session or full token | `{url?, name?, color?, enabled?}`; a new URL is checked and fetched; `enabled: true` restarts a subscription stopped for a private target |
 | `DELETE` | `/api/v1/calendar-feeds/subscriptions/{id}` | session or full token | `204`, its events go with it |
 | `POST` | `/api/v1/calendar-feeds/subscriptions/{id}/refresh` | session or full token | fetch now, `200 {subscription}` |
-| `GET` | `/api/v1/calendar-feeds/events?from=YYYY-MM-DD&to=YYYY-MM-DD` | session or token | at most 92 days; `{events: [{id, subscriptionId, uid, summary, location, start, end, allDay, free}], subscriptions: [{id, name, color, enabled, lastSuccessAt}]}`; `start` and `end` are shaped like a task's `due` (`{date, time?, tz?}`; no `tz` means floating) |
+| `GET` | `/api/v1/calendar-feeds/events?from=YYYY-MM-DD&to=YYYY-MM-DD` | session or token | at most 92 days; `{events: [{id, subscriptionId, uid, summary, location, start, end, allDay, free}], subscriptions: [{id, name, color, enabled, lastSuccessAt, managed?}]}` (`managed`: a calendar of a [calendar sync](#calendar-sync) connection); answers while calendar feeds or calendar sync is on; `start` and `end` are shaped like a task's `due` (`{date, time?, tz?}`; no `tz` means floating) |
 | `GET` | `/api/v1/calendar-feeds/feed` | session or token | `{feed: {createdAt, lastUsedAt} \| null}` |
 | `POST` | `/api/v1/calendar-feeds/feed` | session or full token, fresh sign-in | create or replace the feed URL: `201 {feed, url}`, the only time the URL is shown; recorded as `calendar_feed.created` or `calendar_feed.rotated` |
 | `DELETE` | `/api/v1/calendar-feeds/feed` | session or full token | `204`, `404` when there is none; recorded as `calendar_feed.revoked` |
 | `GET` | `/feeds/{secret}/tasks.ics` | the secret in the path | `text/calendar` with one `VEVENT` per open task due from 30 days ago to a year ahead; `ETag`, `Cache-Control: private, max-age=900` |
 
 Hand-triggered fetches (create, a new URL, refresh) are limited to 12 per account per hour (`429 rate_limited`). The feed answers `404` for an unknown secret, and an address that tries 10 unknown secrets in a minute gets `429`; one feed URL may be fetched 60 times an hour (`429` with `Retry-After`). The secret is no bearer token or app password, and other routes refuse it. Background refreshes follow the calendar's own refresh hint (between 30 minutes and a day, an hour by default), back off from 30 minutes to 6 hours while a calendar fails, and stop for a private target until the subscription is enabled again. A changed calendar sends `event: calendar` on the live updates stream.
+
+### Calendar sync
+
+The account's own calendar (any CalDAV server with an app password, or Google Calendar) receives its dated tasks as events, and changes made there come back to the tasks (OpenSpec change `calendar-two-way`; guide: [calendar-sync.md](calendar-sync.md)). Every `/api/v1/calendar-sync` route answers `404 calendar_sync_disabled` while the owner's switch is off, and these routes and the settings answer `403 demo_restricted` on the public demo before authentication. Read and agent tokens may use the `GET` routes only. Connections are server data: never operations, never synced or exported; passwords, Google refresh tokens and the Google client secret live in `<data>/secrets/calendar-sync.json` only and are never returned.
+
+| Method | Route | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` / `PUT` | `/api/v1/settings/calendar-sync` | signed in / owner | `{enabled, google, max_connections}` (`google`: a Google client is set up); the setting `calendar_sync.enabled`; off by default; a change is recorded as `settings.changed` |
+| `GET` | `/api/v1/settings/calendar-sync/google` | owner | `{client_id, secret_set, from_env, redirect_uri}`; never the secret |
+| `PUT` | `/api/v1/settings/calendar-sync/google` | owner session or admin token | `{client_id, client_secret?}` (an empty secret removes it); `409 managed_by_environment` while `OPENTODO_GOOGLE_CLIENT_ID` and a secret are set; recorded as `settings.changed` for `calendar_sync.google_client` without values |
+| `GET` | `/api/v1/calendar-sync/connections` | session or token | `{connections: [...]}`: `id`, `provider` (`caldav`, `google`), `name`, `server_url`, `username`, `calendars` (`[{url, name, color, time_zone?, read_only}]`), `target`, `read`, `include_date_only`, `enabled`, `state` (`off`, `choose_calendar`, `pending`, `ok`, `failed`, `reconnect`, `stopped`), `next_sync_at`, `last_sync_at`, `last_success_at`, `last_error`, `last_error_at`, `stopped_reason`, `last_run` (`{moved, renamed, unscheduled, written, removed, conflicts, refused, partial}`), `password_set`, `event_count`. Never the password or token. |
+| `POST` | `/api/v1/calendar-sync/connections` | session or full token, fresh sign-in | `{server_url, username, password, name?}`: `server_url` is an address, a host name or an email address (then `/.well-known/caldav` of its domain); discovery runs at once; `201 {connection}` in the state `choose_calendar` |
+| `PATCH` | `/api/v1/calendar-sync/connections/{id}` | session or full token | any of `name`, `target` (a writable calendar of the connection), `read` (up to 10 of its calendars), `include_date_only`, `enabled`, `password` (CalDAV only; needs a fresh sign-in, `403 reauth_required`; checked by discovery, then clears a stop) |
+| `DELETE` | `/api/v1/calendar-sync/connections/{id}` | session or full token | `204`; the secret is removed, tasks and events already written stay |
+| `POST` | `/api/v1/calendar-sync/connections/{id}/sync` | session or full token | discovery and a cycle now: `{ok, run?, reason?, connection}` |
+| `POST` | `/api/v1/calendar-sync/google/start` | session or full token, fresh sign-in | `{connection_id?}` (to reconnect); `{url}`: Google's consent page with a single-use state (10 minutes) and a PKCE challenge; `409 google_not_configured` without a Google client |
+| `GET` | `/api/v1/calendar-sync/google/callback` | session only (the one that started) | Google's redirect: exchanges the code, stores the refresh token, discovers the calendars and redirects (`303`) to `/settings/integrations/calendar-sync?calendar-sync=connected&connection=<id>`, or `?calendar-sync=<reason>` (`denied`, `invalid_state`, `no_refresh_token`, `limit_reached`, a discovery reason) |
+
+Validation answers `400 invalid_input` with the field in `error.field` (`server_url`, `username`, `password`, `name`, `target`, `read`). A server on a private network is refused with `400 private_target` unless the owner allows private targets for webhooks; a refused password answers `400 unauthorized_remote`, an account without event calendars `400 no_calendars`, any other discovery failure `502 calendar_unreachable` with the reason as message. A fourth connection answers `409 limit_reached`. Discovery (create, a new password) and Sync now share a limit of 12 per account per hour (`429 rate_limited`).
+
+Cycles run on the jobs leader, at most two at a time, every 5 minutes and about 20 seconds after a task the account can see changes: a `PROPFIND` of the target's `getctag` and `sync-token`; when it changed, `sync-collection` (RFC 6578) or an ETag listing, and `calendar-multiget` of the changed events OpenTodo wrote; then `PUT` (`If-None-Match: *` to create, `If-Match` to replace) and `DELETE` (`If-Match`) of at most 200 events; then a `calendar-query` of each shown calendar that changed. Requests follow at most 3 redirects within the same site, time out after 20 seconds and read at most 4 MB. Task changes are ops with device `calsync:<connection-id>`. Reasons on a connection: `unauthorized`, `secret_missing`, `google_not_configured`, `private_target` and `calendar_missing` stop it; `timeout`, `connection_failed`, `redirect_refused`, `too_large`, `invalid_response`, `http_<status>` and `rate_limited` double the wait from 5 minutes up to 6 hours. The events of shown calendars are served by `GET /api/v1/calendar-feeds/events` (which answers while calendar feeds or calendar sync is on) with `managed: true` on their subscription entries.
 
 ### Issue connections
 
@@ -1383,6 +1627,48 @@ GitHub and GitLab issues assigned to the account become tasks that follow the is
 Validation answers `400 invalid_input` with the field in `error.field` (`provider`, `host`, `token`, `name`, `project_id`, `scope`, `repositories`, `labels`, `interval_minutes`): the host is an `https` URL of at most 2,048 characters (`http` only while the owner allows private network targets), the name at most 100 characters (the host by default), the project an active one you can add tasks to, at most 20 repositories and 10 labels, the interval 15 to 1,440 minutes (30 by default). A host on a private network is refused with `400 private_target` unless the owner allows private targets for webhooks. A sixth connection answers `409 limit_reached`; an encrypted account `409 encryption_enabled` on create and on `enabled: true`. Tests and syncs share a limit of 12 per account per hour (`429 rate_limited`).
 
 Polls run on the jobs leader, at most two at a time: conditional requests (`If-None-Match`) with an updated-since cursor, at most 10 pages of 100 issues per poll, a 20-second timeout and a 2 MB limit per answer, no redirects followed. Tasks and labels are written through the op log with device `issues:<connection-id>`. Reasons on a connection: `unauthorized_provider`, `token_missing`, `private_target` and `encrypted_account` stop it; `redirect_refused`, `too_large`, `timeout`, `connection_failed`, `invalid_response`, `provider_not_found` and a hosted tenant's `limit_*` double the wait up to 6 hours; `provider_rate_limited` waits for the provider's reset. Enabling end-to-end encryption stops the account's connections and `PUT /api/v1/encryption/keys` lists their names in `issueConnectionsStopped`.
+
+### Notification channels
+
+A person's delivery channels: ntfy, Pushover, Gotify, or a signed webhook (OpenSpec `notification-channels`; guide: [notification-channels.md](notification-channels.md)). Every `/api/v1/notification-channels` route answers `404 channels_disabled` while the owner's switch is off; these routes and the setting answer `403 demo_restricted` on the public demo. Channels are server data: never operations, never synced or exported, and their tokens, user keys and signing secrets live in `<data>/secrets/notification-channels.json` only.
+
+| Method | Route | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` / `PUT` | `/api/v1/settings/notification-channels` | signed in / owner | `{enabled}`, the setting `notifications.channels`; on by default; a change is recorded as `settings.changed` |
+| `GET` | `/api/v1/notification-channels` | session or token | `{channels: [...], kinds, events}`: `id`, `kind`, `name`, `url`, `topic`, `events`, `includeTitles`, `enabled`, `disabledReason` (`too_many_failures`), `lang`, `tokenSet`, `userKeySet` (Pushover), `secretSet` (webhook), `lastOkAt`, `lastError`, `failures`, `createdAt`, `updatedAt`. Never a secret |
+| `POST` | `/api/v1/notification-channels` | session or full token | `{kind, name?, url?, topic?, token?, userKey?, events?, includeTitles?, enabled?, lang?, origin?}` → `201 {channel, secret?}`; `secret` is a webhook channel's signing secret, shown only here |
+| `PATCH` | `/api/v1/notification-channels/{id}` | session or full token | any field above except `kind`; `token` and `userKey` replace the stored ones; `rotateSecret: true` gives a webhook channel a new signing secret, returned once as `secret`; `enabled: true` clears a stop and the failure count |
+| `DELETE` | `/api/v1/notification-channels/{id}` | session or full token | `204`; its secrets and queued messages are removed |
+| `POST` | `/api/v1/notification-channels/{id}/test` | session or full token | send "Test from OpenTodo" now: `{delivered, statusCode?, error?}`; at most 12 per account per hour (`429 rate_limited`) |
+| `GET` | `/api/v1/notification-channels/{id}/deliveries` | session or token | `{deliveries: [{id, event, status, attempts, nextAttemptAt, lastStatusCode, lastError, createdAt, deliveredAt}]}`, newest first, at most 50; `status` is `pending`, `retry`, `delivered`, `failed` or `skipped` (`rate_limited`) |
+
+Validation answers `400 invalid_input` with the field in `error.field`:
+
+| Field | Rule |
+|---|---|
+| `kind` | `ntfy`, `pushover`, `gotify` or `webhook`; it can't be changed later |
+| `name` | at most 60 characters; the kind's name by default |
+| `url` | an http(s) address of at most 2,048 characters; ntfy defaults to `https://ntfy.sh`, Pushover has none |
+| `topic` | ntfy only: 1 to 64 letters, digits, `-` or `_` |
+| `token` | required for Gotify and Pushover (the application token) |
+| `userKey` | Pushover only, required |
+| `events` | a non-empty subset of `reminder`, `assigned`, `mentioned`, `unblocked`, `page` |
+
+Other errors:
+- An address on a private network answers `400 private_target`, unless the owner allows private network targets for webhooks.
+- A sixth channel answers `409 limit_reached`.
+
+`lang` (`en`, `de`, `fr`, `es`, `it`, `pt`) picks the language of the messages, and `origin` the address of the links in them. `OPENTODO_BASE_URL` wins over `origin` when set.
+
+A webhook channel POSTs `{"version":1, "id", "event", "createdAt", "title", "message", "body", "url", "task":{"id","title"?}, "actor":{"name"}?, "page":{"id"}?}`:
+- `body` equals `message`, so Apprise's API server reads it as is.
+- `task.title` and `actor` appear only when the channel includes titles and the account is not encrypted.
+- The headers are `X-OpenTodo-Event: notification.<event>`, `X-OpenTodo-Delivery`, `X-OpenTodo-Timestamp` and `X-OpenTodo-Signature`, with the webhooks' `v1=` signature.
+
+Delivery and limits:
+- Messages are sent by one worker on the jobs leader, with a 10-second timeout each and no redirects followed.
+- Failures are retried on the webhooks' schedule (about 27 hours), and 20 failed messages in a row turn a channel off.
+- An account queues at most 60 messages per hour across its channels; more are logged as `skipped` and not sent.
 
 ### CalDAV and app passwords
 
@@ -1404,9 +1690,9 @@ Each account can have a secret inbox address; mail sent to it becomes an Inbox t
 
 | Method | Path | Who | Body / result |
 | --- | --- | --- | --- |
-| `GET` | `/api/v1/email-inbox` | any user | `{"enabledByOperator":true,"address":"todo+k3f9…@example.com","enabled":true,"allowlist":[],"hourlyLimit":60}`. The first call creates the address (enabled). With no operator configuration: `{"enabledByOperator":false,"address":null,"enabled":false,"allowlist":[],"hourlyLimit":60}` and nothing is created. |
-| `PATCH` | `/api/v1/email-inbox` | any user | `{"enabled":false}` and/or `{"allowlist":["me@example.org"]}` → the same shape. `allowlist` must be an array of at most 50 bare email addresses (stored lowercased, duplicates dropped; `[]` clears it), otherwise `400 invalid_input` and nothing changes. `409 email_disabled` when the operator has not configured email capture. |
-| `POST` | `/api/v1/email-inbox/rotate` | any user | → the same shape with a new address; the old one stops working at once. `409 email_disabled` as above. |
+| `GET` | `/api/v1/email-inbox` | session or `full` token | `{"enabledByOperator":true,"address":"todo+k3f9…@example.com","enabled":true,"allowlist":[],"hourlyLimit":60}`. Reading never creates an inbox: until the account turns capture on, the answer is `{"enabledByOperator":true,"address":null,"enabled":false,…}`, and the first `PATCH` (or `rotate`) creates the address. `read` and `agent` tokens get `403 insufficient_scope` on all three routes, since the address can create tasks. With no operator configuration: `{"enabledByOperator":false,"address":null,"enabled":false,"allowlist":[],"hourlyLimit":60}` and nothing is created. |
+| `PATCH` | `/api/v1/email-inbox` | session or `full` token | `{"enabled":false}` and/or `{"allowlist":["me@example.org"]}` → the same shape. `allowlist` must be an array of at most 50 bare email addresses (stored lowercased, duplicates dropped; `[]` clears it), otherwise `400 invalid_input` and nothing changes. `409 email_disabled` when the operator has not configured email capture. |
+| `POST` | `/api/v1/email-inbox/rotate` | session or `full` token | → the same shape with a new address; the old one stops working at once. `409 email_disabled` as above. |
 
 Changes and rotations are limited to 30 per account per hour (`429 rate_limited`). They are recorded as `email_inbox.created`, `email_inbox.rotated` and `email_inbox.updated` in the audit log.
 
@@ -1460,7 +1746,7 @@ Response (201):
 
 **Read and delete** — `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}`, `DELETE /api/v1/webhooks/{id}` (204, also deletes its delivery log and queue). `disabledReason` is `null`, or `too_many_failures` after 20 consecutive failed deliveries.
 
-**Test** — `POST /api/v1/webhooks/{id}/test` sends a `ping` immediately (one attempt) and answers 200 `{ok, delivery}` whether or not the receiver accepted it; `ok` is true for a `2xx` answer.
+**Test** — `POST /api/v1/webhooks/{id}/test` sends a `ping` immediately (one attempt) and answers 200 `{ok, delivery}` whether or not the receiver accepted it; `ok` is true for a `2xx` answer. Test and redeliver share a limit of 30 per account per hour (`429 rate_limited`).
 
 **Delivery log** — `GET /api/v1/webhooks/{id}/deliveries` → `{deliveries: [...]}`, newest first, at most 100, entries older than 30 days pruned:
 
@@ -1550,7 +1836,7 @@ The [in-app assistant](assistant.md) (OpenSpec `in-app-assistant`). Every route 
 
 `cap_member_keys` (default `false`): whether turns on a member's own key count toward `monthly_token_cap_per_user`; off, they are recorded but neither counted nor blocked. `member_providers` lists what members may choose for their own key (never `compatible`); `own_key_members` counts accounts whose turns use their own provider and key right now.
 
-Members get a status without keys or base URL: `{enabled, provider, provider_label, model, allow_member_keys, monthly_token_cap_per_user, cap_member_keys}`. `PUT` (owner only, 403 `forbidden` otherwise; a session or an `admin` token, since it holds provider keys) takes the same fields (a provider object replaces that provider's settings) plus `keys`: `{"anthropic": "sk-…"}` sets a key, `""` removes it, an absent provider keeps it. Unknown fields are refused. Errors: 400 `invalid_input` naming the field (an unknown provider, a provider enabled without a model, a hosted provider without a key while member keys are off, the compatible provider without a valid `http(s)` base URL or with credentials in it, a disabled default provider, a negative cap); 400 `private_target` when the base URL resolves only to private, loopback, link-local or metadata addresses and `allow_private_endpoint` is off. A refused request changes nothing. Every changed value is audited as `settings.changed` (`assistant.<field>`; keys as `assistant.<provider>.key` from `unset` to `set` or back, never the value; a base URL by scheme and host only).
+Members get a status without keys or base URL: `{enabled, provider, provider_label, model, allow_member_keys, monthly_token_cap_per_user, cap_member_keys}`. `PUT /api/v1/settings/assistant` (owner only, 403 `forbidden` otherwise; a session or an `admin` token, since it holds provider keys) takes the same fields (a provider object replaces that provider's settings) plus `keys`: `{"anthropic": "sk-…"}` sets a key, `""` removes it, an absent provider keeps it. Unknown fields are refused. Errors: 400 `invalid_input` naming the field (an unknown provider, a provider enabled without a model, a hosted provider without a key while member keys are off, the compatible provider without a valid `http(s)` base URL or with credentials in it (a base URL whose path ends in `/chat/completions`, with or without a trailing slash, is saved, tested and used without that path, and the response shows the trimmed value), a disabled default provider, a negative cap); 400 `private_target` when the base URL resolves only to private, loopback, link-local or metadata addresses and `allow_private_endpoint` is off. A refused request changes nothing. Every changed value is audited as `settings.changed` (`assistant.<field>`; keys as `assistant.<provider>.key` from `unset` to `set` or back, never the value; a base URL by scheme and host only).
 
 ```bash
 curl -sS -X PUT "$OT/api/v1/settings/assistant" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -1558,7 +1844,7 @@ curl -sS -X PUT "$OT/api/v1/settings/assistant" -H "Authorization: Bearer $TOKEN
        "providers":{"compatible":{"enabled":true,"model":"llama3.1","base_url":"http://192.168.1.20:11434/v1"}}}'
 ```
 
-**Test connection** — `POST /api/v1/settings/assistant/test` with `{"provider":"compatible"}` (owner only) sends one minimal request with one tool and answers 200 `{ok, code?, message, status?}`. It tests the values on screen: the optional `model`, `base_url`, `key` and `allow_private_endpoint` fields are used as given, and absent ones fall back to the saved settings (`key` absent uses the saved key, `""` means no key). The values pass the same checks as a save first (400 `invalid_input` naming the field, before any request); nothing is saved, audited or logged. `code` is `no_tool_support` when the endpoint refuses tool definitions but answers without them, `no_key`, `private_target`, `provider_auth`, `provider_rate_limited` or `provider_error`.
+**Test connection** — `POST /api/v1/settings/assistant/test` with `{"provider":"compatible"}` (owner only) sends one minimal request with one tool and answers 200 `{ok, code?, message, status?}`. It tests the values on screen: the optional `model`, `base_url`, `key` and `allow_private_endpoint` fields are used as given, and absent ones fall back to the saved settings (`key` absent uses the saved key, `""` means no key). The values pass the same checks as a save first (400 `invalid_input` naming the field, before any request); nothing is saved, audited or logged. `code` is `no_tool_support` when the endpoint refuses tool definitions but answers without them, `no_key`, `private_target`, `provider_auth`, `provider_not_found`, `provider_rate_limited` or `provider_error`. For OpenAI, Gemini and compatible endpoints the provider's error is read from its status and body (an object or Google's one-element array): `provider_auth` for 401, 403 or a 400 that marks an invalid key (Gemini answers a wrong key with 400 `INVALID_ARGUMENT`); `provider_not_found` for the provider's own 404, with the message "the provider has no such model or endpoint (HTTP 404): check the model id" (for `compatible` followed by "and the base URL (it usually ends in /v1)"). The provider's error type may follow the status in brackets; its message text is never returned, logged or stored. Only a plain `provider_error` 4xx other than 404 leads to the second request without tools, so a rejected key or a missing model costs one request.
 
 **Your consent, provider and key** — `GET /api/v1/me/assistant`:
 
@@ -1587,6 +1873,8 @@ curl -sS -X PUT "$OT/api/v1/settings/assistant" -H "Authorization: Bearer $TOKEN
 - `{"own_key": "…"}`: sets the key of your own provider, or of the owner's provider when you have none (as before); `""` removes it (removing your own provider's key also goes back to the server's assistant).
 
 Choosing a provider or storing a key needs the owner's "Let members bring their own key" (403 `forbidden` otherwise); removing either never does. Leaving a provider you chose deletes its key. Audited as `settings.changed`: `assistant.own_provider` (`server` or the provider name), `assistant.own_model`, `assistant.own_key.<provider>` (`unset`/`set`, never the key). Errors: 400 `invalid_input` naming `own_provider`, `own_model` or `own_key`; 409 `provider_changed` when `provider` is not the one in effect after the request, 409 `encryption_enabled`, 409 `assistant_disabled`. A refused request stores nothing. Deleting an account deletes its keys and choice.
+
+**On-device assistant for encrypted accounts** (OpenSpec `in-app-assistant`, change `assistant-on-device`). The owner's settings carry `"device": {"enabled": false, "providers": [], "origins": []}`: `providers` among `anthropic`, `openai`, `gemini`, `compatible`; `origins` at most 10 model server origins, each `https://host[:port]` or `http://` with `localhost`, `127.0.0.1` or `[::1]` (400 `invalid_input` naming `device.providers` or `device.origins` otherwise; `compatible` needs an origin). It needs `enabled` but no server provider. The owner's view also lists `device_origins`, the API origin of each built-in provider. While it is on, the page's `Content-Security-Policy` `connect-src` lists `'self'`, the allowed providers' API origins and `origins`; otherwise `'self'` only (always on a demo instance). For an encrypted account, `GET /api/v1/me/assistant` then reports `available: true`, `mode: "device"` and `"device": {"available": true, "providers": [...], "origins": [...], "consented_provider": "anthropic", "anthropic_models": [...], "default_model": "claude-opus-5-5"}` (`mode` is `server` for a turn on the server, `""` while unavailable; `device` is present for every encrypted account). Consent is `PUT /api/v1/me/assistant {"consent": true, "provider": "device:anthropic"}`: only for an encrypted account and an allowed provider (403 `forbidden` otherwise), with no other field (400). The server never runs such a turn (`POST /api/v1/assistant/turn` still answers 409 `encryption_enabled`), never sees the device's key, model or base URL, and records no usage for it.
 
 **Test your own provider** — `POST /api/v1/me/assistant/test` (optional body `{provider?, model?, key?}`; **signed-in sessions only**) sends one minimal request with one tool to the provider, model and key on screen, falling back to your saved choice for absent fields (a saved key is used only for the provider it was saved for), without saving anything and answers 200 `{ok, code?, message, status?}` like the owner's test (`provider_auth` says your key was rejected). Errors: 403 `session_required` for API tokens, 409 `assistant_disabled`, 403 `forbidden` while member keys are not allowed, 400 `invalid_input` when no provider is chosen or the provider or model is not allowed, 429 `rate_limited` with `Retry-After` after 5 tests in 10 minutes.
 
@@ -1623,7 +1911,7 @@ data: {"stop_reason":"end_turn","server_time":"2026-10-12T10:00:00Z"}
 
 In `usage`, `month_total` is what counts toward the cap and `cap` is `0` for a turn the cap does not apply to (your own key while `cap_member_keys` is off); `own_key` marks a turn on your own key.
 
-`changeset` comes at most once, only after `end_turn`, with at most 50 entities: `patch` is what to write, `base` the values it was planned on (for "changed since proposed"), `create` marks new entities, `shared` marks shared projects. The server never applies it: the app applies the confirmed part as ordinary ops with device `assistant:<device-id>`, which `/api/v1/sync` accepts and history labels "Assistant". `done.stop_reason` is `end_turn`, `max_tokens` (with a `message`; no change set), `refusal` (`message`: "The model declined this request."; no change set) or `round_limit` (more than 8 model calls). A failure ends the stream with `event: error` and `{code, message}`: `provider_auth`, `provider_rate_limited`, `provider_error` or `timeout`; never a key. Usage is recorded whatever the outcome.
+`changeset` comes at most once, only after `end_turn`, with at most 50 entities: `patch` is what to write, `base` the values it was planned on (for "changed since proposed"), `create` marks new entities, `shared` marks shared projects. The server never applies it: the app applies the confirmed part as ordinary ops with device `assistant:<device-id>`, which `/api/v1/sync` accepts and history labels "Assistant". `done.stop_reason` is `end_turn`, `max_tokens` (with a `message`; no change set), `refusal` (`message`: "The model declined this request."; no change set) or `round_limit` (more than 8 model calls). A failure ends the stream with `event: error` and `{code, message}`: `provider_auth`, `provider_not_found`, `provider_rate_limited`, `provider_error` or `timeout`; never a key or the provider's error text. Usage is recorded whatever the outcome.
 
 ### Hosted servers
 
@@ -1632,6 +1920,49 @@ A tenant of a host (see [host mode](self-hosting/host-mode.md)) answers like any
 `GET /api/v1/export/archive` (owner, a session or an `admin` token, since the archive holds every account's credentials; a stale session gets `403 reauth_required`, a `full` token `403 insufficient_scope`) streams the whole server as a backup archive (`application/gzip`, the format `opentodo restore` reads) and records `export.requested` with format `archive`. Read and agent tokens get `403 insufficient_scope`. The route does not exist on a self-hosted server.
 
 A tenant's limits refuse changes one at a time. On `/api/v1/sync` a refused op appears in `rejected` with reason `limit_storage`, `limit_ops_hour` or `limit_ops_total`; the rest of the batch is applied, and the server does not send its own value back for it, so the device keeps the change and sends it again later. A REST write answers `403` with the reason as code.
+
+## Automation rules
+
+Rules (OpenSpec `automation-rules`; guide: [automations.md](automations.md)) are the synced entity `rule`, personal like a label: `name` (content, encrypted for an encrypted account), `enabled`, `trigger`, `condition`, `actions` (each one whole value), `position`, `created_at`, `deleted_at`. Devices write them through `/api/v1/sync`; the REST routes below add id checks. The server runs them; their state (run log, watermarks, pauses) is server data, never operations. Every route answers `403 demo_restricted` on the public demo.
+
+| Method | Path | Auth | Body / answer |
+|---|---|---|---|
+| `GET` | `/api/v1/rules` | signed in | `{rules: [...]}` |
+| `POST` | `/api/v1/rules` | signed in, write | `{name, trigger, condition?, actions, enabled?}` → `201`; ids are resolved (live labels, projects, sections of that project, your webhooks), a project action into a shared project is refused (`400 invalid_input`), a `comment` action on an encrypted account answers `409 encryption_enabled`, a 51st rule `409 limit_reached` |
+| `GET` / `PATCH` / `DELETE` | `/api/v1/rules/{id}` | signed in (writes: write) | like every collection |
+| `GET` | `/api/v1/rules/{id}/runs` | signed in | `{runs: [...]}`, newest first, at most 100: `id`, `rule_id`, `occurrence` (the run key), `task_id`, `at`, `outcome` (`pending`, `applied`, `already_matched`, `skipped`, `stopped`, `failed`, `partial`), `reason`, `changes` (`[{task_id, fields}]`), `depth`; another account's rule answers `404 not_found` |
+| `POST` | `/api/v1/rules/{id}/test` | signed in, write | `{task_id}` → `{matches, changes, skipped}`: the condition and the planned changes on one task now; nothing is written |
+| `GET` | `/api/v1/me/rules` | signed in | `{enabled, paused, rules: {id: {last_run, runs_7d, paused_reason}}}` |
+| `PUT` | `/api/v1/me/rules/paused` | signed in, write | `{paused}` → `{enabled, paused}`: pause or resume all your rules |
+| `GET` / `PUT` | `/api/v1/settings/automations` | owner | `{enabled}` → `{enabled, locked, locked_by}`; `409 set_by_environment` while `OPENTODO_AUTOMATIONS` is set; a change is recorded as `settings.changed` (`automations.enabled`) |
+
+`trigger` is `{kind}` with `kind` one of `task.created`, `task.completed`, `task.reopened`, `label.added` and `label.removed` (with `label_id`), `assigned.to_me`, `task.moved` (`project_id`, optional `section_id`), `due.reached`, `overdue`, `schedule` (`at` `HH:MM`, `weekdays` 1 Monday to 7 Sunday). `condition` is `null` or an object of predicates: `project` (`{in, descendants?}` or `"none"`), `section`, `labels` (`{any?, all?, none?}`), `priority` (`{in}`), `due` and `deadline` (`"none"`, `"set"`, `"today"`, `"overdue"`, `{within_days}`), `start`, `evening`, `blocked`, `assignee` (`"me"`, `"none"`, `"anyone"`), `origin`, `habit`, `estimate`, `tracked`. `actions` holds the on-drop keys of a board column plus `due: {in_days}`, `deadline` (`{in_days}` or `"clear"`), `assignee` (`"me"`, `"clear"`), `comment: {text}`, `notify: true`, `webhook: {webhook_id}`. Lists hold at most 32 ids; days are 0 to 365.
+
+A rule's batch is written with device `rule:<rule-id>` (reserved: `/api/v1/sync` refuses it from devices) and the author as actor; the history labels it `Rule (<name>)` for its author. Limits: 60 runs a minute and 2,000 a day per account, 500 tasks per run; a rule refused three times in an hour by the per-minute limit is paused (`paused_reason: "runaway"`) until it is turned on again.
+
+## Calendar frames
+
+Frames (OpenSpec `calendar-frames`; guide: [frames.md](frames.md)) are the synced entity `frame`, personal like a rule: recurring background windows on the Day and Week grid such as "Deep work" on weekdays from 09:00 to 11:00. Fields: `title` (content, encrypted for an encrypted account), `weekdays` (ISO weekdays as a sorted comma list, `"1,2,3,4,5"`; 1 is Monday, 7 Sunday), `start` and `end` (floating wall times `HH:MM`, end after start), `color` (hex), `source` (the planning source: `""`, `project:<id>`, `label:<id>` or `view:<id>`), `from_date` and `until_date` (optional first and last day, `YYYY-MM-DD`), `position`, `created_at`, `deleted_at`. Occurrences are derived on the device and never stored. Devices write frames through `/api/v1/sync`; the REST routes below add the checks.
+
+| Method | Path | Auth | Body / answer |
+|---|---|---|---|
+| `GET` | `/api/v1/frames` | signed in, any token scope | `{frames: [{id, title, weekdays, start, end, color, source, from_date, until_date, position, created_at, encrypted}]}` in their order; `encrypted` is true when the title is ciphertext |
+| `POST` | `/api/v1/frames` | signed in, write | `{title, weekdays, start?, end?, color?, source?, from_date?, until_date?, position?}` → `201` frame (defaults 09:00 to 10:00, `#64748b`, no source); a 51st live frame answers `422 limit_reached` |
+| `GET` / `PATCH` / `DELETE` | `/api/v1/frames/{id}` | signed in (writes: write) | `PATCH` takes the same fields, checked against the merged frame → `200` frame; `DELETE` → `204` (a tombstone); an unknown or deleted id answers `404 not_found` |
+
+Writes are refused to `read` and `agent` tokens with `403 insufficient_scope`. An invalid value answers `422 invalid_input` with `field`: a title of 1 to 200 characters, a weekday list of distinct digits 1 to 7, times `HH:MM` with the end after the start, a hex colour, a source of the forms above (ids are not resolved: a source that no longer exists reads as none), dates with `until_date` not before `from_date`. On an encrypted account the title is returned as stored and a plaintext title is refused with `409 encryption_enabled`; a device encrypts it.
+
+## Calendar slots
+
+Slots (OpenSpec `calendar-slots`; guide: [slots.md](slots.md)) are the synced entity `slot`, personal like a frame: one block on the Day and Week grid that holds a checklist of small tasks, such as "Admin" on Wednesday from 16:00 for 45 minutes. Fields: `title` (content, encrypted for an encrypted account; empty reads as "Slot"), `date` (`YYYY-MM-DD`), `start` (floating wall time `HH:MM`), `minutes` (15 to 480 in steps of 15; the op log accepts 1 to 1440), `task_ids` (ordered task ids, at most 20, written as one whole list), `color` (hex), `created_at`, `deleted_at`. No field is added to tasks: a task is in a slot when the slot lists it and the task is open and due on the slot's date without a time (or has no due date). Devices write slots through `/api/v1/sync`; the REST routes below add the checks.
+
+| Method | Path | Auth | Body / answer |
+|---|---|---|---|
+| `GET` | `/api/v1/slots` | signed in, any token scope | `?from=&to=` (optional dates, inclusive) → `{slots: [{id, title, date, start, minutes, task_ids, color, created_at, encrypted}]}` by date and start |
+| `POST` | `/api/v1/slots` | signed in, write | `{date, title?, start?, minutes?, task_ids?, color?, move_tasks?}` → `201` slot (defaults 09:00, 30 minutes, `#64748b`) |
+| `GET` / `PATCH` / `DELETE` | `/api/v1/slots/{id}` | signed in (writes: write) | `PATCH` takes the same fields → `200` slot; `DELETE` → `204` (a tombstone; the tasks keep their date without a time); an unknown or deleted id answers `404 not_found` |
+
+With `"move_tasks": true` the same batch sets every listed task's `due` to `{date}` of the slot (time cleared) unless it already is, and takes the tasks out of the caller's other slots of that day, as adding a task in the app does. A listed id that is not a task the caller can see answers `422 invalid_input`; a task the caller may not edit (a viewer of its project) answers `403 forbidden` with its `task_id`; either way nothing is written. Writes are refused to `read` and `agent` tokens with `403 insufficient_scope`. An invalid value answers `422 invalid_input` with `field`: a title of at most 200 characters, a real date, a start `HH:MM`, a length of 15 to 480 minutes in steps of 15, at most 20 distinct task ids, a hex colour. On an encrypted account the title is returned as stored with `"encrypted": true` and a plaintext title is refused with `409 encryption_enabled`.
 
 ## Task pages
 
@@ -1761,7 +2092,7 @@ curl -sSN "$OT/api/v1/sync/events?device=my-script" -H "Authorization: Bearer $T
 - Request bodies are limited to 4 MB, except import uploads (`OPENTODO_IMPORT_MAX_MB`, default 20 MB); some routes set a smaller limit. A larger body is refused with 413 `too_large`.
 - A JSON body is exactly one JSON value: anything after it but white space is refused with 400 `bad_request`. A field the route does not define is refused with 400 `bad_request` naming it (`invalid JSON body: unknown field "x"`), except on `POST /api/v1/sync` (ops may carry properties a newer client knows), the push subscription (the browser's `PushSubscription.toJSON()`) and the passkey `credential` (the browser's `PublicKeyCredential.toJSON()`). The entity routes (`/tasks`, `/projects`, …) check their fields themselves and answer 400 `invalid_input` for an unknown one. Error messages describe the problem in plain words, never the server's internal types.
 - Password checks are limited to twice the server's CPU count at a time (at least 2). A sign-in, registration or password change that waits more than a second for one is answered 503 `busy` with `Retry-After`.
-- Rate limits (per IP): `auth/login`, `auth/register`, `auth/passkey`, the invitation preview, the project invite link preview and accept routes, the password-reset routes, `auth/password-reset` and `auth/verify` share one window of 10 per minute; `auth/passkey/options`, `auth/mfa` and `auth/reauth` each have their own window of 10 per minute; `auth/oidc/start` and `auth/oidc/callback` share a window of 20 per minute; failed `/mcp` authentications count toward the login window. Per account: invitation creation 20 per hour, project invite link creation 20 per hour, mutating `/users` requests 60 per hour, `/me/password` 10 per hour, new comments 60 per minute, email-inbox changes 30 per hour.
+- Rate limits (per IP): `auth/login`, `auth/register`, `auth/passkey`, the invitation preview, the project invite link preview and accept routes, the password-reset routes, `auth/password-reset` and `auth/verify` share one window of 10 per minute; `auth/passkey/options`, `auth/mfa` and `auth/reauth` each have their own window of 10 per minute; `auth/oidc/start` and `auth/oidc/callback` share a window of 20 per minute; failed `/mcp` authentications count toward the login window. Per account: invitation creation 20 per hour, project invite link creation 20 per hour, mutating `/users` requests 60 per hour, `/me/password` 10 per hour, new comments 60 per minute, email-inbox changes 30 per hour, adding people to projects and workspaces by email 30 per hour.
 
 ### Error codes
 
@@ -1772,8 +2103,8 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | Code | Status | Where |
 | --- | --- | --- |
 | `bad_request` | 400 | malformed JSON, an unknown field, data after the JSON value, or a missing required parameter (for example `device` on `/sync` or `/sync/events`); an import upload that is not multipart or has no `file` part |
-| `invalid_input` | 400 | validation failure naming the field or parameter |
-| `invalid_op` | 400 | `/api/v1/sync` batch with an op that fails schema validation (unknown entity or field, wrong type, an `entityId` outside the allowed characters), or a device id starting with the reserved `agent:`, `caldav:` or `issues:` (`assistant:` is a device prefix and is accepted); nothing in the batch is applied |
+| `invalid_input` | 400 | validation failure naming the field or parameter (422 on `/api/v1/frames` and `/api/v1/slots`) |
+| `invalid_op` | 400 | `/api/v1/sync` batch with an op that fails schema validation (unknown entity or field, wrong type, an `entityId` outside the allowed characters), or a device id starting with the reserved `agent:`, `caldav:`, `issues:` or `rule:` (`assistant:` is a device prefix and is accepted); nothing in the batch is applied |
 | `unauthorized` | 401 | any protected route without a valid session or token |
 | `demo_expired` | 401 | demo instance: a session cookie that no longer resolves, because its sandbox was deleted (inactivity, maximum age or the nightly reset). Clients drop their local data and offer a new sandbox |
 | `forbidden` | 403 | an action your account role or project role does not allow: invitation management or user administration by a member, an admin acting on an admin or the owner, a role change or transfer by a non-owner; owner settings (backups, audit, webhook policy, two-factor policy, single sign-on, MCP, CalDAV) or a member reset by a non-owner; a write, purge or membership change your project role does not allow; editing someone else's comment |
@@ -1782,7 +2113,7 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `unknown_skill` | 400 | `POST /api/v1/assistant/turn` naming a skill id the server does not have |
 | `insufficient_scope` | 403 | a write route or `/api/v1/sync` called with a `read` or `agent` API token; `/api/v1/me/agent-access` with either |
 | `demo_token` | 403 | `POST /api/v1/demo/sandbox` without a valid, unused creation token |
-| `demo_restricted` | 403 | a feature a demo instance (`OPENTODO_DEMO=true`) refuses, before authentication: sign-up, invitations, user administration, password change and resets, tokens, app passwords, CalDAV, passkeys, two-factor, settings writes, backups, webhooks, email inbox, import, encryption, push, membership changes, project invite links (every method), `/mcp`, the assistant (`/api/v1/assistant/*`, `/api/v1/me/assistant*`). See [demo instance](self-hosting/demo.md#what-is-switched-off) |
+| `demo_restricted` | 403 | a feature a demo instance (`OPENTODO_DEMO=true`) refuses, before authentication: sign-up, invitations, user administration, password change and resets, tokens, app passwords, CalDAV, passkeys, two-factor, settings writes, backups, webhooks, email inbox, import, encryption, push, membership changes, project invite links (every method), `/mcp`, the assistant (`/api/v1/assistant/*`, `/api/v1/me/assistant*`), automation rules (`/api/v1/rules*`, `/api/v1/me/rules*`, `/api/v1/settings/automations`). See [demo instance](self-hosting/demo.md#what-is-switched-off) |
 | `not_found` | 404 | unknown id, including another account's items, webhooks and deliveries, and items you cannot read; `/api/v1/push/*` with `OPENTODO_PUSH=off` |
 | `conflict` | 409 | starting or undoing an import while another import of yours runs; `POST /backups/run` while a backup is running, or after a restore was confirmed; confirming a restore while a backup runs |
 | `too_large` | 413 | a JSON request body over its limit (4 MB unless the route says otherwise); `/mcp` body over 1 MB; an assistant turn over 256 KB or 40 messages; import file over `OPENTODO_IMPORT_MAX_MB` or 50,000 rows |
@@ -1841,15 +2172,20 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `link_invalid` | 404 | an unknown, expired, revoked or no longer usable [public link](#public-links) |
 | `scope_change` | 400 | `PATCH` of a task's `project_id` into another sharing scope |
 | `not_a_member` | 400 | a task's `assignee_id` that is not a member of its project (or not you, for a personal task) |
+| `invalid_energy` | 400 | a task's `energy` that is not `deep`, `medium`, `low`, `null` or `""` |
 | `user_not_found` | 404 | adding a project member by an email that has no account |
 | `already_member` | 409 | adding an account that is already a member of the project, or accepting a project invite link as one |
-| `owner_must_transfer` | 409 | the project owner leaving the project |
+| `owner_must_transfer` | 409 | the project owner leaving the project; the workspace owner leaving the workspace |
+| `not_in_workspace` | 409 | adding someone to a project or group of a created workspace they are not a member of |
+| `default_workspace` | 409 | deleting, leaving, transferring or adding members to a default workspace |
+| `workspace_not_empty` | 409 | deleting a workspace that still has projects or other members |
+| `group_exists` | 409 | a group name already used in the workspace (ignoring case) |
 | `project_id_conflict` | 409 | sharing a project for the first time while another account has a project with the same id |
 | `not_deleted` | 409 | purging a task or project that is not in the Trash |
 | `unsupported_format` | 400 | import file in no supported format |
 | `invalid_file` | 400 | import file recognised but unreadable |
 | `private_target` | 400 | webhook URL on a private, loopback or link-local network while the owner has not allowed private targets |
-| `limit_reached` | 409 | more than 20 webhooks or 5 issue connections on one account |
+| `limit_reached` | 409 | more than 20 webhooks, 5 issue connections or 50 automation rules on one account; a workspace limit (20 owned workspaces, 200 members, 50 groups, 100 per group); 422 for a 51st calendar frame |
 | `destination_error` | 502 | `POST /backups/test`, the archive list or preparing a restore when the destination refuses or cannot be reached |
 | `passphrase_required` | 422 | preparing an encrypted archive without a passphrase when the stored one is missing |
 | `passphrase_invalid` | 422 | preparing an encrypted archive with a passphrase that does not open it |
@@ -1859,11 +2195,17 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `email_disabled` | 409 | changing or rotating the email-to-task address when the operator has not configured email capture |
 | `encryption_disabled` | 404/409 | 404 for `GET`/`DELETE /api/v1/encryption/keys` without a key record; 409 for the history purge without one |
 | `encryption_conflict` | 409 | `PUT /api/v1/encryption/keys` with a version that is not the stored version + 1 (another device created or changed the record) |
-| `encryption_enabled` | 409 | sharing a project for the first time, creating a CalDAV app password, or creating or enabling an issue connection, while the account uses end-to-end encryption |
+| `encryption_enabled` | 409 | sharing a project for the first time, creating a CalDAV app password, creating or enabling an issue connection, or writing a plaintext calendar frame title, while the account uses end-to-end encryption |
 | `method_not_allowed` | 405 | `/mcp` with a method other than `POST` |
 | `not_acceptable` | 406 | `/mcp` with an `Accept` header that admits only `text/event-stream` |
 | `unsupported_protocol_version` | 400 | `/mcp` with an `MCP-Protocol-Version` header naming an unsupported version |
 | `issues_disabled` | 404 | any `/api/v1/issues` route while the owner has not enabled [issue connections](#issue-connections) |
+| `calendar_sync_disabled` | 404 | any `/api/v1/calendar-sync` route while the owner has not enabled [calendar sync](#calendar-sync) |
+| `unauthorized_remote` | 400 | creating a calendar connection or entering a new password the calendar server refuses |
+| `no_calendars` | 400 | a calendar account without a calendar that holds events |
+| `calendar_unreachable` | 502 | discovery of a calendar account failed; the message is the reason (`timeout`, `connection_failed`, …) |
+| `google_not_configured` | 409 | connecting Google while the owner has not set up a Google client |
+| `managed_by_environment` | 409 | changing the Google client while `OPENTODO_GOOGLE_*` set it |
 | `connection_stopped` | 409 | syncing an issue connection stopped for its token, its host or encryption |
 | `connection_disabled` | 409 | syncing a disabled issue connection |
 | `provider_rate_limited` | 409 | syncing an issue connection before the provider's rate-limit reset |

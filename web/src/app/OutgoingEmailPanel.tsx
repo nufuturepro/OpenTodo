@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
-import { Badge, Button, Field, Input, Notice, Select, SettingRow, SettingsSection } from '../ui'
-import { api, ApiError, isNetworkError } from '../lib/api'
+import { Button, Field, Input, Notice, Select, SettingRow, SettingsSection, StatusIndicator, toneForHue } from '../ui'
+import { api, isNetworkError } from '../lib/api'
 import { formatInstant } from '../lib/dates'
 import { useOnline } from '../lib/online'
+import { errorText } from '../lib/errorText'
+import { useAction } from '../lib/useAction'
 import { setOutgoingEmail } from '../lib/outgoingEmail'
 import type { SmtpSecurity, SmtpSettings, SmtpSettingsInput, SmtpStage, SmtpTestResult } from '../lib/types'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
@@ -76,11 +78,11 @@ export interface OutgoingEmailViewProps {
 
 function TestLine({ outcome, stage, reply, to, at }: { outcome: 'sent' | 'failed'; stage?: SmtpStage; reply?: string; to?: string; at?: number }) {
   if (outcome === 'sent') {
-    return <span data-smtp-test="sent"><Badge hue="green">{t('Test sent')}</Badge> <span className="text-muted">{to ? t('to {to}', { to }) : ''}{at ? ` · ${formatInstant(at, 'datetime')}` : ''}</span></span>
+    return <span data-smtp-test="sent"><StatusIndicator tone="ok">{t('Test sent')}</StatusIndicator> <span className="text-muted">{to ? t('to {to}', { to }) : ''}{at ? ` · ${formatInstant(at, 'datetime')}` : ''}</span></span>
   }
   return (
     <span data-smtp-test="failed" className="block">
-      <Badge hue="red">{t('Test failed')}</Badge> <span className="text-default">{stage ? STAGE_TEXT[stage] : t('The test failed')}</span>
+      <StatusIndicator tone="danger">{t('Test failed')}</StatusIndicator> <span className="text-default">{stage ? STAGE_TEXT[stage] : t('The test failed')}</span>
       {at ? <span className="text-muted"> · {formatInstant(at, 'datetime')}</span> : null}
       {reply && <code className="mt-1 block break-all rounded-chip bg-sunken px-1.5 py-0.5 font-mono text-meta text-default">{reply}</code>}
     </span>
@@ -109,7 +111,7 @@ export function OutgoingEmailView(p: OutgoingEmailViewProps) {
             description={s.configured ? undefined : rowCopy('outgoing-email', 'server').description}
             status={(
               <span className="block space-y-1">
-                <Badge hue={s.configured ? 'green' : 'slate'}>{s.configured ? t('Configured') : t('Not configured')}</Badge>
+                <StatusIndicator tone={toneForHue(s.configured ? 'green' : 'slate')}>{s.configured ? t('Configured') : t('Not configured')}</StatusIndicator>
                 {s.configured && <span className="block text-muted" data-smtp-summary>{t('{host}:{port} · from {from}', { host: s.host, port: s.port, from: s.from })}</span>}
                 {s.configured && last && (
                   <span className="block">
@@ -178,18 +180,12 @@ export function OutgoingEmailView(p: OutgoingEmailViewProps) {
   )
 }
 
-function describe(err: unknown): string {
-  if (err instanceof ApiError) return err.message.charAt(0).toUpperCase() + err.message.slice(1)
-  return t('The server could not be reached.')
-}
-
 /** Loads and saves the owner's outgoing email settings. */
 export function OutgoingEmailPanel() {
   const online = useOnline()
   const [settings, setSettings] = useState<SmtpSettings | null>(null)
   const [unreachable, setUnreachable] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction({ onError: (err) => { if (isNetworkError(err)) setUnreachable(true) } })
   const [draft, setDraft] = useState<SmtpDraft | null>(null)
   const [test, setTest] = useState<SmtpTestResult | null>(null)
 
@@ -202,25 +198,12 @@ export function OutgoingEmailPanel() {
       setUnreachable(false)
     } catch (err) {
       if (isNetworkError(err)) setUnreachable(true)
-      else setError(describe(err))
+      else setError(errorText(err))
     }
-  }, [])
+  }, [setError])
   useEffect(() => {
     if (online) void load()
   }, [online, load])
-
-  async function run(action: () => Promise<void>) {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
-    } catch (err) {
-      if (isNetworkError(err)) setUnreachable(true)
-      setError(describe(err))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <OutgoingEmailView settings={settings} offline={!online || unreachable} busy={busy} error={error} draft={draft} test={test}

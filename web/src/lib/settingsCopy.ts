@@ -24,6 +24,8 @@ export interface RowCopyEntry {
 
 export interface CardCopyEntry {
   readonly title?: string
+  /** The card's icon, from the interface icon set, drawn before the title (settings-navigation "Card icons"). */
+  readonly icon?: string
   readonly description?: CopyText
   /** The Help screen id the card's Learn more opens. */
   readonly learnMore?: string
@@ -36,17 +38,59 @@ export interface CardCopyEntry {
 
 export const SETTINGS_COPY = {
   // Settings → Account
+  profile: {
+    title: msg('Profile'),
+    icon: 'user-round',
+    description: msg('How people who share a project with you see you.'),
+    rows: {
+      picture: { label: msg('Picture'), description: msg('Shown instead of your initials. Not end-to-end encrypted.') },
+      name: { label: msg('Name') },
+      email: {
+        label: msg('Email'),
+        description: {
+          link: msg('You sign in with it. A new address is confirmed by a link sent to it.'),
+          now: msg('You sign in with it. A new address applies at once.'),
+          managed: msg('Your sign-in provider manages it: {provider}.'),
+        },
+      },
+    },
+    notices: {
+      offline: msg('Changing your profile needs a connection.'),
+      pending: msg('Waiting for confirmation: {email}'),
+    },
+  },
   'how-you-work': {
     title: msg('How you work'),
-    description: msg('How much the app shows its method, Open Loops. Synced; never changes a task.'),
+    icon: 'compass',
+    description: msg('How much of the Open Loops method the app shows. Synced; never changes a task.'),
     options: {
-      lists: { label: msg('Lists only'), description: msg('OpenTaskKit as a plain task app, with no method words.') },
-      companion: { label: msg('Companion'), description: msg('Your sidebar as it is; screens name the move they serve.') },
-      first: { label: msg('Open Loops first'), description: msg('The Loop home first, a sidebar by the Places, a daily check.') },
+      lists: { label: msg('Simple lists'), description: msg('Just your tasks and lists, nothing else.') },
+      companion: { label: msg('Lists with method hints'), description: msg("Same sidebar, plus a hint on each screen's purpose.") },
+      first: { label: msg('Full Open Loops method'), description: msg('A home page for the method and a daily check-in.') },
+    },
+    rows: {
+      guide: { label: msg('Start guide'), description: msg('Add a first task, choose how you work, install the app.') },
+      // Today's focus style and Bento order (bento-daily-check D4): synced user_prefs, as in the Daily check's menu.
+      focus: { label: msg('Daily focus'), description: msg('Three tasks of any size, or a Bento: one Large, one Medium and one Small.') },
+      order: { label: msg('Order'), description: msg('Frog does the Large task first; Summit warms up with the Medium one.') },
+      // Energy levels (task-energy D3): synced user_prefs.energy, off by default in every mode.
+      energy: { label: msg('Energy levels'), description: msg('Mark tasks Deep, Medium or Low and filter by the energy they need.') },
+    },
+  },
+  // Settings → Account → Invitations (member-add-consent).
+  invitations: {
+    title: msg('Invitations'),
+    icon: 'mail',
+    description: msg('People who asked to add you to a project or workspace. Nothing is shared until you accept.'),
+    learnMore: 'settings/invitations',
+    notices: {
+      offline: msg('Answering an invitation needs a connection.'),
+      empty: msg('No invitations are waiting for you.'),
     },
   },
   session: {
     title: msg('Session'),
+    icon: 'monitor',
     description: msg('This device is signed in to your server.'),
     learnMore: 'settings/session',
     rows: {
@@ -56,6 +100,7 @@ export const SETTINGS_COPY = {
   },
   password: {
     title: msg('Password'),
+    icon: 'key-round',
     description: msg('Changing it signs out your other sessions; this one stays signed in.'),
     learnMore: 'settings/password',
     rows: { password: { label: msg('Password'), description: msg('Used to sign in on new devices.') } },
@@ -66,6 +111,7 @@ export const SETTINGS_COPY = {
   },
   mfa: {
     title: msg('Two-factor authentication'),
+    icon: 'shield-check',
     description: msg('A six-digit code from an authenticator app after your password.'),
     learnMore: 'settings/two-factor',
     rows: {
@@ -86,6 +132,7 @@ export const SETTINGS_COPY = {
   },
   security: {
     title: msg('Passkeys'),
+    icon: 'fingerprint',
     description: msg('Sign in with your fingerprint, face or PIN instead of your password.'),
     learnMore: 'settings/security',
     rows: { count: { label: msg('Passkeys'), description: msg('Tied to <span>{domain}</span>.') } },
@@ -97,6 +144,7 @@ export const SETTINGS_COPY = {
   },
   linked: {
     title: msg('Linked accounts'),
+    icon: 'link',
     description: {
       on: msg('Sign in with {name} instead of a password.'),
       off: msg('Single sign-on is off on this server; your links are kept.'),
@@ -106,6 +154,7 @@ export const SETTINGS_COPY = {
   },
   e2ee: {
     title: msg('End-to-end encryption'),
+    icon: 'lock',
     description: msg('Your task text is encrypted on your devices before it syncs.'),
     learnMore: 'settings/encryption',
     rows: {
@@ -120,6 +169,7 @@ export const SETTINGS_COPY = {
   },
   activity: {
     title: msg('Recent activity'),
+    icon: 'history',
     description: msg('Sign-ins and token changes from the last 90 days; revoke tokens if one is not yours.'),
     learnMore: 'settings/sessions',
   },
@@ -127,28 +177,46 @@ export const SETTINGS_COPY = {
   // Settings → Appearance
   appearance: {
     title: msg('Appearance'),
+    icon: 'palette',
     description: msg('Light or dark, colour and row density, on all your devices.'),
     learnMore: 'settings/appearance',
     rows: {
       mode: { label: msg('Mode'), description: msg("System follows your device's light or dark setting.") },
       theme: { label: msg('Theme') },
       density: { label: msg('Density'), description: msg('Compact tightens rows, headers and the sidebar; touch targets stay full size.') },
-      rows: { label: msg('Rows'), description: msg('Calm leaves out what the view says and keeps counts quiet; Detailed shows every chip.') },
+      rows: { label: msg('Task rows'), description: msg('Detailed adds the parent task and a line of dates, priority and labels.') },
       motion: { label: msg('Motion'), description: msg('Off makes menus, dialogs and changes instant.') },
+      haptics: { label: msg('Haptic feedback'), description: msg('A short vibration when you complete a task or pick one up with a long press.') },
     },
   },
   sidebar: {
     title: msg('Sidebar'),
+    icon: 'panel-left-open',
     description: {
       standard: msg('Pick which More destinations sit next to Inbox, Today, Upcoming and Calendar.'),
-      arranged: msg('Open Loops first arranges the sidebar; these choices apply in the other modes.'),
+      arranged: msg('The full Open Loops method arranges the sidebar; these choices apply in the other modes.'),
     },
     learnMore: 'settings/appearance',
+    rows: {
+      counts: { label: msg('Sidebar counts'), description: msg('Every list adds open-task numbers to each project, label and view.') },
+      destinations: { label: msg('Sidebar destinations'), description: msg("Drag or use a row's menu to reorder. Switched-on ones sit next to Inbox and Today.") },
+    },
+  },
+  // How a task opens from a list (task-side-panel D1): the synced user_prefs.task_open.
+  'task-details': {
+    title: msg('Task details'),
+    icon: 'panel-right',
+    description: msg('How a task opens from a list, on all your devices.'),
+    learnMore: 'settings/appearance',
+    rows: {
+      open: { label: msg('Open tasks'), description: msg('The side panel needs a window at least 1024 px wide; phones open the page.') },
+    },
   },
 
   // Settings → General
   language: {
     title: msg('Language'),
+    icon: 'languages',
     description: msg('The language of the app on all your devices. Tasks are not translated.'),
     learnMore: 'settings/language',
     rows: { interface: { label: msg('Interface language') } },
@@ -156,12 +224,41 @@ export const SETTINGS_COPY = {
   },
   'start-view': {
     title: msg('Start view'),
+    icon: 'house',
     description: msg('The view this device opens on. Not synced.'),
     learnMore: 'settings/start-view',
     rows: { open: { label: msg('Open on launch') } },
   },
+  // The day pages' briefing (precision-polish-2): the same synced choice as Hide briefing in their menu.
+  briefing: {
+    title: msg('Briefing'),
+    icon: 'text-quote',
+    description: msg('The sentence under the title of Today and Upcoming. On all your devices.'),
+    learnMore: 'settings/briefing',
+    rows: { show: { label: msg('Show the briefing') } },
+  },
+  // Today by part of the day (day-parts D4): the synced user_prefs.day_parts, as in Today's menu.
+  'day-parts': {
+    title: msg('Today'),
+    icon: 'sun',
+    description: msg('How Today lists the day, on all your devices.'),
+    learnMore: 'settings/day-parts',
+    rows: { group: { label: msg('Group by day part'), description: msg('Morning, Afternoon and This Evening; a task with a time goes to its part.') } },
+  },
+  // Today's closed list (today-closed-list D5): the synced user_prefs.today_limit and today_done, as in Today's menu.
+  'today-limit': {
+    title: msg('Today limit'),
+    icon: 'list-checks',
+    description: msg('How many tasks Today holds, and what you got done. On all your devices.'),
+    learnMore: 'settings/today-limit',
+    rows: {
+      limit: { label: msg('Today holds'), description: msg('The rest wait for a slot and come in, first come, first served, when you finish one.') },
+      done: { label: msg('Show done today'), description: msg('A folded list of what you completed today, at the end of Today.') },
+    },
+  },
   'date-time': {
     title: msg('Date and time'),
+    icon: 'calendar-clock',
     description: msg('How dates and times look and where weeks start, on all your devices.'),
     learnMore: 'settings/date-time',
     rows: {
@@ -169,21 +266,24 @@ export const SETTINGS_COPY = {
       timeFormat: { label: msg('Time format') },
       weekStart: { label: msg('Week starts on') },
       dayStart: { label: msg('My day starts at'), description: msg('Work done before this time counts for the previous day.') },
-      preview: { label: msg('Preview') },
+      preview: { label: msg('Sample') },
     },
   },
   calendar: {
     title: msg('Calendar'),
+    icon: 'calendar-days',
     description: msg('Working hours and day length for Day and Week, on this device.'),
     learnMore: 'settings/calendar',
     rows: {
       gridStart: { label: msg('Grid starts') },
       gridEnd: { label: msg('Grid ends') },
       dayLength: { label: msg('Day length'), description: msg('Your daily capacity; the Day view warns when planned work goes over it.') },
+      countEvents: { label: msg('Count meetings in capacity'), description: msg('Busy calendar events add to each day in Day, Week and Month.') },
     },
   },
   keyboard: {
     title: msg('Keyboard'),
+    icon: 'keyboard',
     description: msg('Every action has a shortcut; press ? to list them.'),
     learnMore: 'settings/keyboard',
     rows: {
@@ -194,6 +294,7 @@ export const SETTINGS_COPY = {
   },
   focus: {
     title: msg('Focus'),
+    icon: 'timer',
     description: msg('The Focus timer: mode, lengths, breaks and sound. Synced to your devices.'),
     learnMore: 'settings/focus',
     rows: {
@@ -207,17 +308,24 @@ export const SETTINGS_COPY = {
       reminder: { label: msg('Break reminder'), description: msg('A notice on any screen after a long stretch of work without a break.') },
       remindAfter: { label: msg('Remind me after') },
       sound: { label: msg('Sound'), description: msg('A short tone when a session or a break ends, while the app is shown.') },
+      presets: { label: msg('Countdown presets'), description: msg('Up to four lengths in minutes, offered when a countdown starts.') },
+      noise: { label: msg('Background noise'), description: msg('Generated on this device; plays only while you work.') },
+      volume: { label: msg('Noise volume'), description: msg('This device only.') },
     },
   },
 
   // Settings → Notifications
   notifications: {
     title: msg('Notifications'),
+    icon: 'bell',
     description: msg('Get reminders while the app is closed. Each device decides for itself.'),
     learnMore: 'settings/notifications',
     rows: {
       device: { label: msg('This device') },
       titles: { label: msg('Include task titles'), description: msg('Off: the push carries only encrypted ids and this device adds the title.') },
+      // A native shell's rows (native-shells): no push service, the app schedules reminders.
+      shell: { label: msg('Notifications through the app'), description: msg('Reminders are scheduled on this phone and shown without a push service.') },
+      shellTitles: { label: msg('Include task titles'), description: msg('Off: reminders read "Reminder" until you open the app. Never with encryption.') },
     },
     notices: {
       serverOff: msg('Push notifications are turned off on this server. Reminders are shown in the app.'),
@@ -226,8 +334,30 @@ export const SETTINGS_COPY = {
       renew: msg('The push service stopped accepting notifications for this device.'),
     },
   },
+  // Settings → Notifications → Delivery channels (notification-channels).
+  'notification-channels': {
+    title: msg('Delivery channels'),
+    icon: 'send',
+    description: msg('Send notifications to ntfy, Pushover, Gotify or any address you choose.'),
+    learnMore: 'settings/notification-channels',
+    rows: {
+      server: {
+        label: msg('On this server'),
+        description: {
+          owner: msg('People can send their notifications to ntfy, Pushover, Gotify or a webhook.'),
+          member: msg('The server owner has turned delivery channels off.'),
+        },
+      },
+      channels: { label: msg('Channels'), description: msg('Up to 5. Each one chooses the events it receives.') },
+    },
+    notices: {
+      offline: msg('Changing delivery channels needs a connection. You are seeing the last loaded list.'),
+      encrypted: msg('With end-to-end encryption, messages never name a task or a person.'),
+    },
+  },
   'email-digest': {
     title: msg('Weekly digest'),
+    icon: 'mail',
     description: msg("An email on your review day with last week's numbers and what is due."),
     learnMore: 'settings/digest',
     rows: { email: { label: msg('Email me the digest'), description: msg('It names your tasks and projects and goes to your account’s email address.') } },
@@ -242,15 +372,37 @@ export const SETTINGS_COPY = {
   // Settings → Capture
   'quick-add': {
     title: msg('Quick add'),
+    icon: 'zap',
     description: msg('How quick add reads what you type, on this device.'),
     learnMore: 'settings/quick-add',
     rows: {
       parse: { label: msg('Parse natural language'), description: msg('Dates and times, {project}, {label}, {p1}–{p4} and {estimate}; "quotes" keep text as is.') },
-      order: { label: msg('Numeric dates like 12/11'), description: msg('Set on this device; it wins over your date format.') },
+    },
+  },
+  // Default reminders (default-reminders D8): the synced user_prefs.reminder_default_*.
+  'default-reminders': {
+    title: msg('Default reminders'),
+    icon: 'bell',
+    description: msg('Added when a task gets a date. You can remove it from any task.'),
+    learnMore: 'settings/default-reminders',
+    rows: {
+      timed: { label: msg('Tasks with a time'), description: msg('Counted from the due time.') },
+      dated: { label: msg('Tasks with no time'), description: msg('Counted from 09:00 on the due date.') },
+    },
+  },
+  // Where new tasks are added (add-position D1): the synced user_prefs.add_position.
+  'add-position': {
+    title: msg('New tasks'),
+    icon: 'list-ordered',
+    description: msg('Where a task added from a list goes, on all your devices.'),
+    learnMore: 'settings/quick-add',
+    rows: {
+      place: { label: msg('Add new tasks'), description: msg('Lists sorted by date or priority keep their order.') },
     },
   },
   'voice-settings': {
     title: msg('Voice capture'),
+    icon: 'mic',
     description: msg('Speak a task instead of typing it, on this device.'),
     learnMore: 'settings/voice',
     rows: {
@@ -261,11 +413,13 @@ export const SETTINGS_COPY = {
           unsupported: msg('This browser has no speech recognition, so voice capture is not available here.'),
         },
       },
+      recognizer: { label: msg('Recognition'), description: msg('Who turns your speech into text; each choice shows what it means first.') },
       lang: { label: msg('Recognition language') },
     },
   },
   capture: {
     title: msg('Capture'),
+    icon: 'send',
     description: msg('Save pages and selected text from your browser as tasks.'),
     learnMore: 'settings/capture',
     rows: {
@@ -279,12 +433,14 @@ export const SETTINGS_COPY = {
   plugins: {
     title: msg('Plugins'),
     description: msg('Built-in plugins, each adding commands you can turn off here.'),
+    icon: 'wrench',
     notices: {
       builtIn: msg('Plugins are part of the app itself; nothing is downloaded.'),
     },
   },
   'email-inbox': {
     title: msg('Email to task'),
+    icon: 'mail',
     description: msg('Send any email to your personal address and it becomes an Inbox task.'),
     learnMore: 'settings/email',
     rows: {
@@ -301,6 +457,7 @@ export const SETTINGS_COPY = {
   // Settings → About
   about: {
     title: msg('About OpenTaskKit'),
+    icon: 'heart',
     description: {
       version: msg('OpenTaskKit {version} · free and open source · no tracking, no telemetry.'),
       plain: msg('Free and open source · no tracking, no telemetry.'),
@@ -317,12 +474,14 @@ export const SETTINGS_COPY = {
   },
   'about-support': {
     title: msg('Support OpenTaskKit'),
+    icon: 'messages-square',
     description: msg('No paid plan: if it saves you a subscription, a coffee helps.'),
   },
 
   // Settings → Integrations
   caldav: {
     title: msg('Calendar apps (CalDAV)'),
+    icon: 'calendar-sync',
     description: msg('Sync your tasks with calendar and reminder apps; each project is a list.'),
     learnMore: 'settings/caldav',
     rows: {
@@ -341,6 +500,7 @@ export const SETTINGS_COPY = {
   },
   'calendar-feeds': {
     title: msg('Calendar feeds'),
+    icon: 'rss',
     description: msg('Other calendars in Day and Week, and your tasks in a calendar app.'),
     learnMore: 'settings/calendar-feeds',
     rows: {
@@ -362,16 +522,35 @@ export const SETTINGS_COPY = {
   // Task locations (task-locations D6): the owner's switch and providers, and each user's own switch.
   'maps-server': {
     title: msg('Maps'),
+    icon: 'map',
     description: msg('Maps and address search from the provider below, always through this server.'),
     learnMore: 'locations',
   },
+  // Automation rules (automation-rules D9): the owner's switch for every account.
+  'speech-server': {
+    title: msg('Speech to text'),
+    icon: 'audio-lines',
+    description: msg('Dictation through a speech service you run; members choose it in Capture.'),
+    learnMore: 'settings/server',
+    notices: {
+      private: msg('A service on your own network needs “Allow private network targets” in Webhooks.'),
+    },
+  },
+  'automations-server': {
+    title: msg('Automations'),
+    icon: 'repeat',
+    description: msg('Off: no account’s rules run on this server. Rules stay and run again when turned back on.'),
+    learnMore: 'rules',
+  },
   'maps-user': {
     title: msg('Maps'),
+    icon: 'map',
     description: msg('Off: no maps or address search on your devices; locations still work.'),
     learnMore: 'locations',
   },
   issues: {
     title: msg('Issues'),
+    icon: 'git-pull-request',
     description: msg('Open GitHub and GitLab issues assigned to you become tasks that follow them.'),
     learnMore: 'settings/issues',
     rows: {
@@ -389,8 +568,30 @@ export const SETTINGS_COPY = {
       encrypted: msg('Not available with end-to-end encryption: polls would store issue text unencrypted.'),
     },
   },
+  'calendar-sync': {
+    title: msg('Calendar sync'),
+    icon: 'calendar-sync',
+    description: msg('Your dated tasks become events in your own calendar; moving an event moves the task.'),
+    learnMore: 'settings/calendar-sync',
+    rows: {
+      server: {
+        label: msg('On this server'),
+        description: {
+          owner: msg('People can connect a CalDAV or Google calendar; tasks and events stay in step.'),
+          member: msg('The owner has not enabled calendar sync on this server.'),
+        },
+      },
+      google: { label: msg('Google client'), description: msg('Lets people connect Google Calendar. Register the redirect address in your OAuth client.') },
+      connections: { label: msg('Calendar accounts'), description: msg('Up to {max}. Outlook and Microsoft 365 are not supported yet.') },
+    },
+    notices: {
+      offline: msg('Changing calendar sync needs a connection. You are seeing the last loaded state.'),
+      encrypted: msg('With encryption, events are titled “Encrypted item”; calendar renames are not applied.'),
+    },
+  },
   webhooks: {
     title: msg('Webhooks'),
+    icon: 'webhook',
     description: msg('Notify any HTTP endpoint when tasks and projects change. Requests are signed.'),
     learnMore: 'settings/webhooks',
     rows: {
@@ -404,12 +605,14 @@ export const SETTINGS_COPY = {
   },
   tokens: {
     title: msg('API tokens'),
+    icon: 'key',
     description: msg('For scripts, the ot command and AI assistants. Sent as {header}.'),
     learnMore: 'settings/tokens',
     rows: { new: { label: msg('New token'), description: msg('A token is shown once, when you create it.') } },
   },
   'assistant-settings': {
     title: msg('Assistant'),
+    icon: 'sparkles',
     description: msg('Plan and change your tasks by talking. Every change is proposed for review.'),
     learnMore: 'settings/assistant',
     rows: {
@@ -417,6 +620,8 @@ export const SETTINGS_COPY = {
       providers: { label: msg('Providers allowed') },
       cap: { label: msg('Monthly tokens per person') },
       memberKeys: { label: msg('Members’ own keys') },
+      device: { label: msg('Encrypted accounts'), description: msg('The assistant on the person’s own device, with their own key.') },
+      thisDevice: { label: msg('On this device'), description: msg('Provider and key kept in this browser only.') },
       yours: { label: msg('Your assistant') },
       usage: { label: msg('Usage') },
       auto: { label: msg('Small changes without review'), description: msg('This device: up to 3 existing tasks, done, dates, priority or labels. Undo appears.') },
@@ -431,6 +636,7 @@ export const SETTINGS_COPY = {
   },
   assistants: {
     title: msg('AI assistants'),
+    icon: 'bot',
     description: msg('Let an MCP assistant read your tasks with a token; read-only by default.'),
     learnMore: 'settings/assistants',
     rows: {
@@ -473,6 +679,7 @@ export const SETTINGS_COPY = {
   // Settings → Data
   data: {
     title: msg('Your data'),
+    icon: 'download',
     description: msg('Everything you see is stored on this device and on your server.'),
     learnMore: 'settings/data',
     rows: {
@@ -488,6 +695,7 @@ export const SETTINGS_COPY = {
   },
   projects: {
     title: msg('Projects'),
+    icon: 'folder',
     description: msg('Deleted items stay in the <a>Trash</a> until restored or purged.'),
     learnMore: 'settings/projects',
     rows: {
@@ -499,6 +707,7 @@ export const SETTINGS_COPY = {
   // Settings → People
   users: {
     title: msg('Users'),
+    icon: 'users',
     description: {
       owner: msg('Everyone with an account; you manage every account and choose admins.'),
       admin: msg('Everyone with an account; admins can deactivate, reset and delete members.'),
@@ -509,6 +718,7 @@ export const SETTINGS_COPY = {
   },
   members: {
     title: msg('Members'),
+    icon: 'users',
     description: msg('Invite someone with a single-use link; sign-up stays closed.'),
     learnMore: 'settings/members',
     rows: { invitations: { label: msg('Invitations'), description: msg("Optionally bind a link to someone's email so only they can use it.") } },
@@ -516,12 +726,14 @@ export const SETTINGS_COPY = {
   },
   'mfa-policy': {
     title: msg('Two-factor policy'),
+    icon: 'shield-check',
     description: msg('Who must use two-factor authentication. API tokens are never affected.'),
     learnMore: 'settings/access',
     rows: { policy: { label: msg('Policy for this server') } },
   },
   sso: {
     title: msg('Single sign-on'),
+    icon: 'globe',
     description: msg('Sign in with an OpenID Connect provider you run; only that issuer is contacted.'),
     learnMore: 'settings/sso',
     rows: { status: { label: msg('Status') } },
@@ -529,6 +741,7 @@ export const SETTINGS_COPY = {
   },
   'project-invite-policy': {
     title: msg('Project invite links'),
+    icon: 'user-check',
     description: msg('Whether project links can also create accounts for new people.'),
     learnMore: 'settings/project-invites',
     rows: { members: { label: msg('Invite new people'), description: msg("Off: members' links only work for people who already have an account.") } },
@@ -536,8 +749,21 @@ export const SETTINGS_COPY = {
   },
 
   // Settings → Server
+  // Instance branding (instance-branding): the owner's name and logo.
+  branding: {
+    title: msg('Branding'),
+    icon: 'palette',
+    description: msg('Your own name and logo in the tab, the app icon, the sign-in screen and the sidebar.'),
+    learnMore: 'settings/branding',
+    rows: {
+      name: { label: msg('Name'), description: msg('Shown in place of OpenTaskKit. Up to 40 characters; empty keeps OpenTaskKit.') },
+      logo: { label: msg('Logo'), description: msg('A square PNG or JPEG of at least 192 pixels; the server renders every size.') },
+    },
+    notices: { offline: msg('You are offline. These settings need a connection to the server.') },
+  },
   backups: {
     title: msg('Backups'),
+    icon: 'archive',
     description: msg('Scheduled copies of the whole server to a folder, S3 or WebDAV, restored here.'),
     learnMore: 'settings/backups',
     rows: {
@@ -548,8 +774,25 @@ export const SETTINGS_COPY = {
     },
     notices: { offline: msg('Offline: backups run on the server; the status below is the last one fetched.') },
   },
+  // Database storage (op-log-compaction D7): the database file and the notes compaction job.
+  'database-storage': {
+    title: msg('Database storage'),
+    icon: 'layers',
+    description: msg('Old note versions go after 30 days, and the space they took returns to the disk.'),
+    learnMore: 'settings/backups',
+    rows: {
+      size: { label: msg('Database') },
+      compaction: { label: msg('Last compacted') },
+    },
+    notices: {
+      offline: msg('Database storage needs a connection to the server.'),
+      noSpace: msg('Shrinking the file once needs {bytes} of free disk space; old versions still go.'),
+      waiting: msg('The file is shrunk once, at a quiet moment; old versions already go.'),
+    },
+  },
   'attachments-settings': {
     title: msg('Attachments'),
+    icon: 'paperclip',
     description: msg('Files on tasks and comments, stored under the data directory and backed up.'),
     learnMore: 'settings/attachments',
     rows: {
@@ -561,6 +804,7 @@ export const SETTINGS_COPY = {
   },
   'outgoing-email': {
     title: msg('Outgoing email'),
+    icon: 'send',
     description: msg('Lets this server mail password resets, confirmations and invitations.'),
     learnMore: 'settings/outgoing-email',
     rows: { server: { label: msg('Mail server'), description: msg('Not configured: nobody can reset a password or get an invitation by email.') } },
@@ -572,6 +816,7 @@ export const SETTINGS_COPY = {
   },
   'server-archive': {
     title: msg('Download your data'),
+    icon: 'upload',
     description: msg('The whole server as one archive, to restore into your own OpenTaskKit server.'),
     learnMore: 'settings/server',
     rows: { archive: { label: msg('Server archive'), description: msg('Keep it private: it holds every account’s sign-in data.') } },
@@ -579,6 +824,7 @@ export const SETTINGS_COPY = {
   },
   audit: {
     title: msg('Audit log'),
+    icon: 'scroll-text',
     description: msg('Sign-ins, tokens, invitations, exports and setting changes. Never task content.'),
     learnMore: 'settings/server',
     rows: {
@@ -586,6 +832,12 @@ export const SETTINGS_COPY = {
       addresses: { label: msg('Record client addresses (IP)'), description: msg('Off by default; turning it off erases every stored address.') },
     },
     notices: { offline: msg('You are offline. The {what} needs a connection and is not shown until you are back.') },
+  },
+  'audit-settings': {
+    title: msg('Audit settings'),
+    icon: 'settings',
+    description: msg('How long the audit log keeps events, and whether it records addresses.'),
+    learnMore: 'settings/server',
   },
 
   // The demo note at the top of a settings page (settings-navigation "Demo instance sections").
@@ -596,6 +848,40 @@ export const SETTINGS_COPY = {
         one: msg('Demo instance: {features} is disabled here.'),
         other: msg('Demo instance: {features} are disabled here.'),
       },
+    },
+  },
+  // Settings → Workspaces (OpenSpec change workspaces).
+  'workspaces-list': {
+    title: msg('Your workspaces'),
+    icon: 'layers',
+    description: msg('Each workspace has its own projects, labels and views, and its own people.'),
+  },
+  'workspace-identity': { title: msg('Name and colour'), icon: 'palette' },
+  'workspace-members': {
+    title: msg('Members'),
+    icon: 'users',
+    description: {
+      created: msg('Projects in this workspace can be shared with these people and their groups only.'),
+      default: msg('Yours alone. Share its projects by email, or create a workspace for a team.'),
+    },
+  },
+  'workspace-groups': {
+    title: msg('Groups'),
+    icon: 'users',
+    description: msg('Share a project with a group in one step: everyone in it gets the group’s role.'),
+  },
+  'workspace-invites': {
+    title: msg('Invite links'),
+    icon: 'link',
+    description: msg('A link adds whoever opens it. It works once and expires after the time you choose.'),
+  },
+  'workspace-danger': {
+    title: msg('Danger zone'),
+    icon: 'trash-2',
+    rows: {
+      transfer: { label: msg('Transfer'), description: msg('Make another member the owner; you become an admin.') },
+      delete: { label: msg('Delete workspace'), description: msg('Possible once its projects are moved or deleted and its other members removed.') },
+      leave: { label: msg('Leave workspace'), description: msg('You lose access to the projects shared with you here.') },
     },
   },
 } as const satisfies Readonly<Record<string, CardCopyEntry>>
@@ -622,15 +908,23 @@ export function pickText(text: CopyText | undefined, variant: string | undefined
 const entry = (id: SettingsCopyId): CardCopyEntry => SETTINGS_COPY[id]
 
 /** A card's heading, line, Learn more and heading id, translated, to spread into SettingsSection. */
-export function cardCopy(id: SettingsCopyId, opts: CopyOptions = {}): { title: string; description?: string; learnMore?: string; headingId: string } {
-  const e = entry(id)
+export function cardCopy(id: SettingsCopyId, opts: CopyOptions = {}): { title: string; icon?: string; description?: string; learnMore?: string; headingId: string } {
+  const e: CardCopyEntry = entry(id)
   const description = pickText(e.description, opts.variant, id)
   return {
     title: t(e.title ?? id),
+    ...(e.icon ? { icon: e.icon } : {}),
     ...(description !== undefined ? { description: t(description, opts.values) } : {}),
     ...(e.learnMore ? { learnMore: e.learnMore } : {}),
     headingId: `${id}-heading`,
   }
+}
+
+/** The icon of the card whose heading id is `anchor` ("mfa-heading"), for settings search results; undefined for a row anchor. */
+export function cardIcon(anchor: string): string | undefined {
+  if (!anchor.endsWith('-heading')) return undefined
+  const e = (SETTINGS_COPY as Readonly<Record<string, CardCopyEntry>>)[anchor.slice(0, -'-heading'.length)]
+  return e?.icon
 }
 
 /** A row's label and line, translated, to spread into SettingRow. */

@@ -81,3 +81,29 @@ The bundle SHALL include `method.json`, which holds the Open Loops vocabulary of
 #### Scenario: A renamed term
 - **WHEN** a release changes the English description of the move `place`
 - **THEN** the next bundle's `method.json` carries the new description under the same id
+
+### Requirement: Template library in the bundle
+The bundle SHALL include the release's template library under `templates/`: an `index.json` listing every template's slug, category, icon and title and summary in every language it is translated into, and one `<slug>.json` per template with its full metadata, its text in English and in each translation, and its structure (labels, projects, sections, tasks and subtasks) with due dates as relative offsets. Both SHALL be generated from the repository's `templates/` folder when the bundle is built, so they never differ from the library the app of that version ships, SHALL carry a schema version and SHALL only gain fields. The manifest's facts SHALL include `templates`, the list of slugs in the library.
+
+#### Scenario: Website builds a template page
+- **WHEN** the website builds against a bundle whose `templates/index.json` lists `trip-planning`
+- **THEN** it can render the "Trip planning" page and produce its downloadable template file from `templates/trip-planning.json` alone
+
+#### Scenario: Template removed from the library
+- **WHEN** a release removes a template from `templates/`
+- **THEN** that release's bundle no longer lists it in `index.json` or in the `templates` fact, and its changelog names the removal
+
+#### Scenario: Invalid library
+- **WHEN** a template in `templates/` fails validation while the bundle is built
+- **THEN** the bundle build fails and names the template
+
+### Requirement: Brand assets in the bundle
+The bundle SHALL include a `brand/` folder with the mark's source SVG, the mono and colour variants, the wordmark as SVG and the 512 px raster icon of that version, copied from the app's one brand source at build time, so the website and the documentation draw the same mark as the app. The folder is an addition to the bundle layout and SHALL be listed in the bundle's documented paths; its files SHALL carry the project's licence note.
+
+#### Scenario: Website draws the mark
+- **WHEN** the website builds against the pinned bundle
+- **THEN** it reads `brand/mark-mono.svg` for its header and `brand/icon-512.png` for its social cards, and the files are byte-identical to the app's generated assets of that version
+
+#### Scenario: Stale copy fails the build
+- **WHEN** the brand source changes and the bundle script is run
+- **THEN** the bundle test compares `brand/` against the app's generated files and fails naming the file when one differs

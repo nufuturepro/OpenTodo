@@ -6,21 +6,19 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/pixari/opentodo/internal/email"
+	"github.com/OpenTodoApp/opentodo/internal/email"
 )
 
 // Email to task (OpenSpec change `email-to-task`): each account's secret inbox
 // address. The routes require a session or API token and act on the caller's
 // account only; they never return the operator's mailbox host or credentials.
 
-// WithEmail (an Option) wires email capture; without it the routes report the
-// feature as not enabled by the operator.
-func WithEmail(svc *email.Service) Option { return func(s *Server) { s.email = svc } }
-
 func (s *Server) registerEmailRoutes(mux *routes) {
-	mux.handle("GET /api/v1/email-inbox", signedIn, s.handleGetEmailInbox)
-	mux.handle("PATCH /api/v1/email-inbox", signedIn.demoDenied(), s.handlePatchEmailInbox)
-	mux.handle("POST /api/v1/email-inbox/rotate", signedIn.demoDenied(), s.handleRotateEmailInbox)
+	// The address is a capability to create tasks, so read and agent tokens get
+	// none of these routes (email-inbox-explicit).
+	mux.handle("GET /api/v1/email-inbox", signedIn.FullTokens(), s.handleGetEmailInbox)
+	mux.handle("PATCH /api/v1/email-inbox", signedIn.FullTokens().DemoDenied(), s.handlePatchEmailInbox)
+	mux.handle("POST /api/v1/email-inbox/rotate", signedIn.FullTokens().DemoDenied(), s.handleRotateEmailInbox)
 }
 
 type emailInboxDTO struct {
@@ -51,9 +49,15 @@ func (s *Server) handleGetEmailInbox(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, emailInboxDTO{Allowlist: []string{}, HourlyLimit: email.HourlyCap})
 		return
 	}
-	in, err := s.email.Store().Get(r.Context(), userFrom(r.Context()).ID)
+	// Reading never creates the inbox: an account has none until it turns
+	// capture on (PATCH) or asks for an address (rotate).
+	in, ok, err := s.email.Store().Find(r.Context(), userFrom(r.Context()).ID)
 	if err != nil {
 		s.internal(w, err)
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusOK, emailInboxDTO{EnabledByOperator: true, Allowlist: []string{}, HourlyLimit: email.HourlyCap})
 		return
 	}
 	writeJSON(w, http.StatusOK, s.emailInboxDTO(in))
