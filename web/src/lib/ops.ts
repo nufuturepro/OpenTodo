@@ -8,11 +8,11 @@ import { CLOCK_OFFSET_META, HLC_META, hlcLast, hlcNow, hlcReceive, hlcSeed, hlcS
 import { firstOccurrence, parseRule } from './recurrence'
 import { deadlineFireAt, relativeFireAt } from './reminderTime'
 import { defaultReminderChanges } from './defaultReminder'
-import { planCompletion, planDetach, planSkip, seriesRule } from './recurring'
+import { planCompletion, planSkip, seriesRule, skipsInstead } from './recurring'
 import { assignableIn, currentUserId, membershipMap, roleOf, scopeOf } from './sharing'
 import { descendants, isDescendant } from './tree'
 import { GAP } from './ordering'
-import { ENTITIES, type Clock, type Attachment, type Comment, type Entity, type FieldDef, type Label, type Op, type Origin, type Place, type Project, type Rule, type Frame, type Slot, type TaskLocation, type ProjectPrefs, type Reminder, type Review, type Section, type Task, type TimeEntry, type UserPrefs, type View } from './types'
+import { ENTITIES, type Clock, type Attachment, type Comment, type Entity, type FieldDef, type Label, type Op, type Origin, type Place, type Project, type Rule, type Frame, type CustomTheme, type Note, type Slot, type TaskLocation, type ProjectPrefs, type Reminder, type Review, type Section, type Task, type TimeEntry, type UserPrefs, type View } from './types'
 import { recordActivity, type RecordInput } from './activity'
 import { DOC_FIELDS, DocTooLargeError, isDocField, loadRichText, MAX_DOC_CHARS, MAX_DOC_CHARS_ENCRYPTED, MAX_TEXT_VALUE, NOTE_ENTITIES, type RichText } from './docfields'
 import { byteLength, MAX_PLAINTEXT_BYTES } from './crypto'
@@ -20,8 +20,10 @@ import { encryptionSnapshot, isContentField } from './e2ee'
 import type { RowEncryption } from './types'
 import { t } from './i18n'
 import { uuid } from './ids'
+import { lineageRows } from './lineageRows'
 import { keepProjectWorkspace, keepWorkspaceFor, workspaceFields, type KeepWorkspace } from './workspaces'
 import { resettable } from './moduleState'
+import type { AppendRow } from './noteAppends'
 
 let devicePromise: Promise<string> | null = null
 /** The local data epoch the memoised id was read in; a sign-out starts a new one. */
@@ -84,11 +86,15 @@ export const RULE_DEFAULTS: Omit<Rule, 'id' | '_clock'> = OP_DEFAULTS.rule
 export const FRAME_DEFAULTS: Omit<Frame, 'id' | '_clock'> = OP_DEFAULTS.frame
 /** A slot (calendar-slots D1): no date, so never drawn, until its ops arrive. */
 export const SLOT_DEFAULTS: Omit<Slot, 'id' | '_clock'> = OP_DEFAULTS.slot
+/** A standalone note (notes-overview D1): untitled and empty until its ops arrive. */
+export const NOTE_DEFAULTS: Omit<Note, 'id' | '_clock'> = OP_DEFAULTS.note
+/** A custom theme (theme-editor D1): no document, so never applied or listed, until its ops arrive. */
+export const THEME_DEFAULTS: Omit<CustomTheme, 'id' | '_clock'> = OP_DEFAULTS.theme
 /** The row a field op creates when its entity is new; one key per op field (the schema contract in internal/sync/testdata/schema_fixture.json), `fields` holding the `fields.<id>` values. */
 export const DEFAULTS: Record<Entity, Record<string, unknown>> = {
   project: PROJECT_DEFAULTS, task: TASK_DEFAULTS, label: LABEL_DEFAULTS, view: VIEW_DEFAULTS, reminder: REMINDER_DEFAULTS, section: SECTION_DEFAULTS,
   comment: COMMENT_DEFAULTS, project_prefs: PROJECT_PREFS_DEFAULTS, user_prefs: USER_PREFS_DEFAULTS, attachment: ATTACHMENT_DEFAULTS, field: FIELD_DEFAULTS,
-  review: REVIEW_DEFAULTS, time_entry: TIME_ENTRY_DEFAULTS, place: PLACE_DEFAULTS, rule: RULE_DEFAULTS, frame: FRAME_DEFAULTS, slot: SLOT_DEFAULTS,
+  review: REVIEW_DEFAULTS, time_entry: TIME_ENTRY_DEFAULTS, place: PLACE_DEFAULTS, rule: RULE_DEFAULTS, frame: FRAME_DEFAULTS, slot: SLOT_DEFAULTS, note: NOTE_DEFAULTS, theme: THEME_DEFAULTS,
 }
 
 /**
@@ -115,7 +121,7 @@ export async function applyOps(
   if (!opts.local) hlcReceive(ops.reduce((m, o) => Math.max(m, o.ts), 0))
   // Remote document ops are merged, not just replaced (collaborative-rich-text):
   // load the document code before the transaction, which must not await imports.
-  const rt = !opts.local && ops.some((o) => isDocField(o.entity, o.field)) ? await loadRichText() : null
+  const rt = !opts.local && ops.some((o) => isDocField(o.entity, o.field) || (NOTE_ENTITIES.has(o.entity) && appendId(o.field))) ? await loadRichText() : null
   const republish: Change[] = []
   const grouped = new Map<string, Op[]>()
   for (const op of ops) {
@@ -180,8 +186,12 @@ export async function applyOps(
         row._clock = clock
         await table.put(row as EntityRow)
       }
-      if (rt && merged !== undefined && NOTE_ENTITIES.has(entity)) {
-        const patch = reconcileNote(rt, row as unknown as Task, merged)
+      if (rt && NOTE_ENTITIES.has(entity) && (merged !== undefined || list.some((o) => appendId(o.field)))) {
+        let patch: Record<string, unknown> | null = merged !== undefined ? reconcileNote(rt, row as unknown as Task, merged) : null
+        // Rule 5 (notes-overview D13): fold pending appends at the end of the
+        // document and keep one copy of each, in the same republished pair.
+        const folded = rt.foldAppends(rt, row as AppendRow, (patch?.notes_doc as string | undefined) ?? merged)
+        if (folded) patch = { ...patch, ...folded }
         if (patch) {
           // The republished pair must beat the values it extends or folds in.
           hlcSeed(Math.max(docTs, clock.description?.ts ?? 0))
@@ -318,18 +328,37 @@ export function reactionAccount(field: string): string | null {
   return FIELD_ID.test(id) ? id : null
 }
 
+/** The op field prefix of a pending append on a task's or note's note (notes-overview D13). */
+export const APPEND_PREFIX = 'appends.'
+
+/** The append id of an `appends.<id>` op field, or null for any other field. */
+export function appendId(field: string): string | null {
+  if (!field.startsWith(APPEND_PREFIX)) return null
+  const id = field.slice(APPEND_PREFIX.length)
+  return FIELD_ID.test(id) ? id : null
+}
+
+/** Whether a change writes a non-empty pending append (`appends.<id>`) of a task or note. */
+function hasAppendPatch(c: Change): boolean {
+  return (c.entity === 'task' || c.entity === 'note') && Object.entries(c.patch).some(([f, v]) => appendId(f) !== null && typeof v === 'string' && v !== '')
+}
+
 /** The row map and key a field family op lives under, or null for a plain field. */
-function familyOf(entity: string, field: string): { key: 'fields' | 'reactions'; id: string } | null {
+function familyOf(entity: string, field: string): { key: 'fields' | 'reactions' | 'appends'; id: string } | null {
   const fid = entity === 'task' ? fieldValueId(field) : null
   if (fid) return { key: 'fields', id: fid }
+  const aid = entity === 'task' || entity === 'note' ? appendId(field) : null
+  if (aid) return { key: 'appends', id: aid }
   const account = entity === 'comment' ? reactionAccount(field) : null
   return account ? { key: 'reactions', id: account } : null
 }
 
-/** A row's value of an op field: `fields.<id>` reads row.fields[id], `reactions.<account>` row.reactions[account]. */
+/** A row's value of an op field: `fields.<id>` reads row.fields[id], `reactions.<account>` row.reactions[account], `appends.<id>` row.appends[id]. */
 export function readField(row: Record<string, unknown>, field: string): unknown {
   const id = fieldValueId(field)
   if (id) return (row.fields as Record<string, unknown> | undefined)?.[id]
+  const aid = appendId(field)
+  if (aid) return (row.appends as Record<string, unknown> | undefined)?.[aid]
   const account = reactionAccount(field)
   return account ? (row.reactions as Record<string, unknown> | undefined)?.[account] : row[field]
 }
@@ -414,9 +443,9 @@ export async function mutateMany(changes: Change[], opts: MutateOptions = {}): P
  * notes of plain tasks never load it.
  */
 async function richTextFor(changes: Change[]): Promise<RichText | null> {
-  const notes = changes.filter((c) => NOTE_ENTITIES.has(c.entity) && ('notes_doc' in c.patch || 'description' in c.patch))
+  const notes = changes.filter((c) => NOTE_ENTITIES.has(c.entity) && ('notes_doc' in c.patch || 'description' in c.patch || hasAppendPatch(c)))
   if (notes.length === 0) return null
-  if (notes.some((c) => 'notes_doc' in c.patch)) return loadRichText()
+  if (notes.some((c) => 'notes_doc' in c.patch || hasAppendPatch(c))) return loadRichText()
   for (const c of notes) {
     const row = (await tableOf(c.entity).get(c.entityId)) as { notes_doc?: string } | undefined
     if (row?.notes_doc) return loadRichText()
@@ -434,13 +463,43 @@ async function richTextFor(changes: Change[]): Promise<RichText | null> {
 async function withNotePairs(rt: RichText, changes: Change[], ts: number, device: string): Promise<Change[]> {
   const out: Change[] = []
   for (const c of changes) {
-    if (!NOTE_ENTITIES.has(c.entity) || !('notes_doc' in c.patch || 'description' in c.patch)) {
+    if (!NOTE_ENTITIES.has(c.entity) || !('notes_doc' in c.patch || 'description' in c.patch || hasAppendPatch(c))) {
       out.push(c)
       continue
     }
     const row = (await tableOf(c.entity).get(c.entityId)) as { notes_doc?: string } | undefined
     const stored = row?.notes_doc ?? ''
     const patch = { ...c.patch }
+    if (hasAppendPatch(c)) {
+      // An append made on this device (an assistant proposal it confirmed) is a
+      // direct insertion into the document, never a pending `appends.<id>` op
+      // (rule 5): fold it into the stored document now.
+      const appends: Record<string, string> = { ...((row as AppendRow | undefined)?.appends ?? {}) }
+      const added: string[] = []
+      for (const [f, v] of Object.entries(c.patch)) {
+        const aid = appendId(f)
+        if (aid && typeof v === 'string' && v) {
+          appends[aid] = v
+          added.push(f)
+        }
+      }
+      const clock = { ...((row as AppendRow | undefined)?._clock ?? {}) }
+      for (const f of added) clock[f] = { ts, device }
+      const folded = rt.foldAppends(rt, { ...(row as AppendRow | undefined), appends, _clock: clock, notes_doc: (patch.notes_doc as string | undefined) ?? stored })
+      if (folded) {
+        // Folded: no op for the new keys. Not folded (the note is full): the
+        // append goes as a pending op, so the text is never lost.
+        for (const f of added) {
+          if (f in folded) delete patch[f]
+          delete folded[f]
+        }
+        Object.assign(patch, folded)
+      }
+      if (!('notes_doc' in patch)) {
+        out.push({ ...c, patch })
+        continue
+      }
+    }
     if ('notes_doc' in patch) {
       const doc = rt.mergeDocs(stored, String(patch.notes_doc ?? ''))
       patch.notes_doc = doc
@@ -448,6 +507,11 @@ async function withNotePairs(rt: RichText, changes: Change[], ts: number, device
     } else if (stored && rt.isReadable(stored)) {
       patch.notes_doc = rt.foldText(stored, String(patch.description ?? ''), ts, device)
       patch.description = rt.projectDoc(patch.notes_doc as string)
+    }
+    // Pending appends are folded before any local write of the pair (rule 5).
+    if (typeof patch.notes_doc === 'string' && row) {
+      const folded = rt.foldAppends(rt, { ...(row as AppendRow), notes_doc: patch.notes_doc }, patch.notes_doc)
+      if (folded) Object.assign(patch, folded)
     }
     if (typeof patch.notes_doc === 'string' && patch.notes_doc.length > MAX_DOC_CHARS) throw new DocTooLargeError(patch.notes_doc.length)
     // The projection is an ordinary string field: it must fit the 64 KB value cap.
@@ -629,6 +693,8 @@ export type NewTaskInput = {
   /** "someday" or a date (someday-and-evening); only sent when set. */
   start?: string | null
   evening?: boolean
+  /** Draw from `start` to `due` (multi-day-tasks); only sent when set. */
+  span?: boolean
   /** Morning or Afternoon (day-parts); only sent when set. Evening is `evening`. */
   day_part?: 'morning' | 'afternoon' | null
   /** Deep, Medium or Low (task-energy); only sent when set. */
@@ -684,6 +750,8 @@ export async function planTask(input: NewTaskInput, position?: number): Promise<
   if (input.deadline) extra.deadline = input.deadline
   // Only parked, deferred or evening tasks carry these (someday-and-evening).
   if (input.start) extra.start = input.start
+  // Only spans carry the flag (multi-day-tasks).
+  if (input.span) extra.span = true
   if (input.evening) extra.evening = true
   else if (input.day_part) extra.day_part = input.day_part
   // Only tasks created with an energy carry the field (task-energy).
@@ -856,7 +924,7 @@ export async function setTaskParent(id: string, parentId: string | null): Promis
  * different project, and changing a task's project clears its section (board-view).
  */
 // blocked_by stays behind: blockers live in one sharing scope (task-dependencies D5).
-const COPY_FIELDS = ['title', 'description', 'notes_doc', 'priority', 'due', 'labels', 'estimate_minutes', 'deadline', 'start', 'evening', 'day_part', 'energy', 'recurrence', 'series_id', 'assignee_id', 'completed_at', 'completed_by', 'position', 'created_at', 'origin'] as const
+const COPY_FIELDS = ['title', 'description', 'notes_doc', 'priority', 'due', 'labels', 'estimate_minutes', 'deadline', 'start', 'evening', 'span', 'day_part', 'energy', 'recurrence', 'series_id', 'assignee_id', 'completed_at', 'completed_by', 'position', 'created_at', 'origin'] as const
 
 /**
  * Copy tasks into `projectId` under new ids, keeping parent links between copied
@@ -961,6 +1029,8 @@ export function planProjectChange(task: Task, all: Task[], patch: Partial<Omit<T
  * sharing scope becomes copy + tombstone and returns the copy's id.
  */
 export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | '_clock'>>, opts?: MutateOptions): Promise<string> {
+  const redirect = takeRedirect(id)
+  if (redirect) return (await redirect(patch)) ?? id
   // Scheduling a parked task un-parks it in the same batch (someday-and-evening D3).
   if (!('start' in patch) && patch.due) {
     const task = await db.tasks.get(id)
@@ -978,12 +1048,72 @@ export async function updateTask(id: string, patch: Partial<Omit<Task, 'id' | '_
       if (scopeOf(task.project_id, memberships) !== scopeOf(patch.project_id, memberships)) {
         return moveTaskAcrossScopes(id, patch, opts)
       }
-      await mutateMany(planProjectChange(task, await liveTasks(), patch, undefined, Date.now(), await keepWorkspaceFor()).changes, opts)
+      await commitEdit(task, patch, [...planProjectChange(task, await liveTasks(), patch, undefined, Date.now(), await keepWorkspaceFor()).changes, ...(await carried(task, patch))], opts)
       return id
     }
   }
-  await mutate('task', id, patch, opts)
+  const task = await db.tasks.get(id)
+  await commitEdit(task, patch, [{ entity: 'task', entityId: id, patch }, ...(task ? await carried(task, patch) : [])], opts)
   return id
+}
+
+/** The panel's "Also past ones" for one series (series-all-scope D4): its edits also reach the past, with an Undo reported to `committed`. */
+export interface PastScope { id: string; committed: (label: string, entryId: string) => void }
+let pastScope: PastScope | null = null
+resettable('pastScope', () => { pastScope = null })
+
+/** Choose Also past ones for the series `next.id` (null: Only future ones). */
+export function setPastScope(next: PastScope | null): void {
+  pastScope = next
+}
+
+/** Write an edit of `task`; under Also past ones with its past writes, as one undoable batch. */
+async function commitEdit(task: Task | undefined, patch: Record<string, unknown>, changes: Change[], opts?: MutateOptions): Promise<void> {
+  const past = task && pastScope?.id === task.id ? pastScope : null
+  if (past && task) {
+    const { commitWithPast } = await import('./seriesPastActions')
+    if (await commitWithPast(task, patch, changes, past.committed)) return
+  }
+  await mutateMany(changes, opts)
+}
+
+/** Save a note (the note editor); a series' note under Also past ones also reaches the past records that held its previous text (D3). */
+export async function saveNote(entity: Entity, id: string, patch: Record<string, unknown>, opts: MutateOptions = {}): Promise<void> {
+  const before = entity === 'task' && pastScope?.id === id ? await db.tasks.get(id) : undefined
+  await mutate(entity, id, patch, opts)
+  if (before) await (await import('./seriesPastActions')).carryNotePast(before)
+}
+
+type EditRedirect = (patch: Record<string, unknown>) => Promise<string | null>
+let redirect: { id: string; run: EditRedirect } | null = null
+resettable('editRedirect', () => { redirect = null })
+
+/**
+ * Send the next edit of task `id` (updateTask, setRecurrence) to `run` instead,
+ * once: the first edit under the panel's This and following splits the series
+ * (series-split D6). Returns the clean-up that drops it unused.
+ */
+export function redirectNextEdit(id: string, run: EditRedirect): () => void {
+  const mine = { id, run }
+  redirect = mine
+  return () => { if (redirect === mine) redirect = null }
+}
+
+function takeRedirect(id: string): EditRedirect | null {
+  if (redirect?.id !== id) return null
+  const { run } = redirect
+  redirect = null
+  return run
+}
+
+/**
+ * An All-occurrences edit of a series carries to its open records that still hold
+ * the series' previous value (series-exceptions D6), in the same batch.
+ */
+async function carried(task: Task, patch: Record<string, unknown>): Promise<Change[]> {
+  if (!task.recurrence) return []
+  const { planCarry } = await import('./seriesPlan')
+  return planCarry(task, patch, await db.tasks.filter((tk) => tk.series_id === task.id).toArray())
 }
 
 /**
@@ -1091,7 +1221,7 @@ export async function skipOccurrence(id: string, opts: { now?: number; today?: s
   await db.transaction('rw', mutationTables(), async () => {
     const series = await db.tasks.get(id)
     const rule = seriesRule(series)
-    const changes = series && rule ? planSkip(series, rule, now, today) : null
+    const changes = series && rule ? planSkip(series, rule, now, today, await lineageRows(id)) : null
     if (!changes) return
     await mutateMany(changes)
     ok = true
@@ -1100,19 +1230,23 @@ export async function skipOccurrence(id: string, opts: { now?: number; today?: s
 }
 
 /**
- * "This occurrence only": create a standalone copy of the current occurrence (no
- * rule, series_id set, id derived from series and date) and move the series on.
- * Returns the copy's id, or null when there is no next occurrence.
+ * "This occurrence only": write the current occurrence's open record (no rule,
+ * series_id and occurrence_date set, id derived from series and date, the series'
+ * relative reminders copied) and move the series on (series-exceptions D5).
+ * Returns the record's id, or null when there is no next occurrence.
  */
 export async function detachOccurrence(id: string, opts: { now?: number; today?: string } = {}): Promise<string | null> {
   const now = opts.now ?? Date.now()
   const today = opts.today ?? logicalToday()
   await getDeviceId()
   let copyId: string | null = null
+  // Loaded before the transaction, which must not wait on anything but the database.
+  const { planDetach } = await import('./seriesPlan')
   await db.transaction('rw', mutationTables(), async () => {
     const series = await db.tasks.get(id)
     const rule = seriesRule(series)
-    const plan = series && rule ? planDetach(series, rule, now, today) : null
+    const records = await lineageRows(id)
+    const plan = series && rule ? planDetach(series, now, today, records, await db.reminders.where('task_id').equals(id).toArray()) : null
     if (!plan) return
     await mutateMany(plan.changes)
     copyId = plan.copyId
@@ -1129,6 +1263,13 @@ export async function setRecurrence(
 ): Promise<{ ok: true; rule: string | null } | { ok: false; error: string }> {
   const task = await db.tasks.get(id)
   if (!task) return { ok: false, error: 'task not found' }
+  const parsedInput = input?.trim() ? parseRule(input) : null
+  if (parsedInput?.ok === false) return { ok: false, error: parsedInput.error }
+  const redirect = takeRedirect(id)
+  if (redirect) {
+    await redirect({ recurrence: parsedInput?.canonical ?? null })
+    return { ok: true, rule: parsedInput?.canonical ?? null }
+  }
   if (input === null || input.trim() === '') {
     if (task.recurrence !== null) await mutate('task', id, { recurrence: null })
     return { ok: true, rule: null }
@@ -1138,7 +1279,7 @@ export async function setRecurrence(
   const patch: Record<string, unknown> = {}
   if (parsed.canonical !== task.recurrence) patch.recurrence = parsed.canonical
   if (!task.due) patch.due = { date: firstOccurrence(parsed.rule, opts.today ?? logicalToday()) }
-  if (Object.keys(patch).length) await mutate('task', id, patch)
+  if (Object.keys(patch).length) await commitEdit(task, patch, [{ entity: 'task', entityId: id, patch }])
   return { ok: true, rule: parsed.canonical }
 }
 
@@ -1146,6 +1287,12 @@ export async function setRecurrence(
 export async function deleteTask(id: string): Promise<void> {
   const now = Date.now()
   const all = await liveTasks()
+  const task = all.find((tk) => tk.id === id)
+  // An open occurrence of a live series is skipped instead (series-exceptions D3).
+  if (task && skipsInstead(task, new Map(all.map((tk) => [tk.id, tk])))) {
+    await mutate('task', id, { completed_at: now, skipped: true })
+    return
+  }
   const changes: Change[] = [{ entity: 'task', entityId: id, patch: { deleted_at: now } }]
   for (const d of descendants(id, all)) changes.push({ entity: 'task', entityId: d, patch: { deleted_at: now } })
   await mutateMany(changes)
@@ -1177,6 +1324,13 @@ export async function deleteProject(id: string): Promise<void> {
     const live = tasks.filter((task) => !task.deleted_at)
     changes.push(...copyTasks(live.filter((tk) => !tk.completed_at), null, assignableIn(null, memberships, await currentUserId())).changes)
     for (const item of live) changes.push({ entity: 'task', entityId: item.id, patch: { deleted_at: now } })
+    // Its standalone notes go to the Trash for everyone, and the owner keeps a
+    // personal copy of each, in the project's workspace (notes-overview D2).
+    for (const note of await db.notes.where('project_id').equals(id).toArray()) {
+      if (note.deleted_at) continue
+      changes.push(copyNoteChange(note, null, project?.workspace_id ?? null))
+      changes.push({ entity: 'note', entityId: note.id, patch: { deleted_at: now } })
+    }
   }
   const parentId = project?.parent_id ?? null
   for (const p of await liveProjects()) {
@@ -1185,6 +1339,22 @@ export async function deleteProject(id: string): Promise<void> {
   }
   changes.push({ entity: 'project', entityId: id, patch: { deleted_at: now } })
   await mutateMany(changes)
+}
+
+/**
+ * A copy of a standalone note in another place (notes-overview D2): a new id
+ * with the same title, document, text, labels and position, in `projectId`
+ * (null: the author's personal notes, in `workspaceId`). A note never changes
+ * sharing scope, so moving it across scopes is this copy and a tombstone of
+ * the original. Merges of the copy are independent of the original's.
+ */
+export function copyNoteChange(note: Note, projectId: string | null, workspaceId: string | null = null): Change {
+  return {
+    entity: 'note', entityId: uuid(), patch: {
+      title: note.title, notes_doc: note.notes_doc ?? '', description: note.description ?? '', labels: note.labels ?? [],
+      project_id: projectId, workspace_id: projectId ? null : workspaceId, position: note.position, created_at: note.created_at || Date.now(), deleted_at: null,
+    },
+  }
 }
 
 /**

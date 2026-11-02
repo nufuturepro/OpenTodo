@@ -491,6 +491,83 @@ func TestRecurringCompletionFromTheFile(t *testing.T) {
 	}
 }
 
+// OpenSpec change series-exceptions, "Single occurrences in files". Dated in
+// 2030 so the day the test runs does not matter.
+func TestSingleOccurrencesInFiles(t *testing.T) {
+	s := newServer(t)
+	id := s.create("tasks", map[string]any{"title": "Study", "due": map[string]any{"date": "2030-01-07", "time": "18:00"}, "recurrence": "every weekday"})
+	// Wednesday's occurrence moved to Thursday in the app; Tuesday's skipped.
+	moved := s.do("PATCH", "/api/v1/tasks/"+id+"/occurrences/2030-01-09", map[string]any{"due": map[string]any{"date": "2030-01-10", "time": "18:00"}})["id"].(string)
+	s.do("POST", "/api/v1/tasks/"+id+"/occurrences/2030-01-08/skip", nil)
+	v := s.vault(t)
+	text := v.read(t, "Inbox.md")
+	if strings.Count(text, "Study") != 2 {
+		t.Fatalf("lines:\n%s", text)
+	}
+	var series, record string
+	for _, l := range strings.Split(text, "\n") {
+		switch {
+		case strings.Contains(l, "Study") && strings.Contains(l, "🔁"):
+			series = l
+		case strings.Contains(l, "Study"):
+			record = l
+		}
+	}
+	if !strings.HasPrefix(series, "- [ ] Study 📅 2030-01-07") || !strings.HasPrefix(record, "- [ ] Study 📅 2030-01-10") || !strings.Contains(record, "18:00") {
+		t.Fatalf("series %q, record %q", series, record)
+	}
+	// Tick the moved occurrence: done alone, the series line unchanged.
+	v.edit(t, "Inbox.md", record, strings.Replace(record, "- [ ]", "- [x]", 1))
+	v.sync(t)
+	if rec := s.get("tasks", moved); rec["completed_at"] == nil || rec["occurrence_date"] != "2030-01-09" {
+		t.Fatalf("record = %v", rec)
+	}
+	if l := lineOf(t, v.read(t, "Inbox.md"), "🔁"); l != series {
+		t.Fatalf("series line = %q, want %q", l, series)
+	}
+	// Tick the series: it jumps over the skipped Tuesday and the moved Wednesday.
+	v.edit(t, "Inbox.md", series, strings.Replace(series, "- [ ]", "- [x]", 1))
+	v.sync(t)
+	if l := lineOf(t, v.read(t, "Inbox.md"), "🔁"); !strings.HasPrefix(l, "- [ ] Study 📅 2030-01-10") {
+		t.Fatalf("series line after the tick = %q", l)
+	}
+	if rec := s.get("tasks", occurrenceID(id, "2030-01-07")); rec["occurrence_date"] != "2030-01-07" || rec["completed_at"] == nil {
+		t.Fatalf("Monday's record = %v", rec)
+	}
+}
+
+// OpenSpec change series-split: a piece is its own line with its rule, the
+// ended series' line carries its until, and both read back as they are.
+func TestSplitSeriesInFiles(t *testing.T) {
+	s := newServer(t)
+	id := s.create("tasks", map[string]any{"title": "Study", "due": map[string]any{"date": "2030-01-07", "time": "18:00"}, "recurrence": "every weekday"})
+	piece := s.do("POST", "/api/v1/tasks/"+id+"/split", map[string]any{"from": "2030-01-09", "changes": map[string]any{"due": map[string]any{"date": "2030-01-09", "time": "19:00"}}})["id"].(string)
+	v := s.vault(t)
+	text := v.read(t, "Inbox.md")
+	var old, next string
+	for _, l := range strings.Split(text, "\n") {
+		switch {
+		case strings.Contains(l, "🔁 every weekday until 2030-01-08"):
+			old = l
+		case strings.Contains(l, "🔁 every weekday"):
+			next = l
+		}
+	}
+	if !strings.HasPrefix(old, "- [ ] Study 📅 2030-01-07") || !strings.HasPrefix(next, "- [ ] Study 📅 2030-01-09") || !strings.Contains(next, "19:00") {
+		t.Fatalf("lines:\n%s", text)
+	}
+	// Renaming the piece in the file keeps it a piece of the lineage.
+	v.edit(t, "Inbox.md", next, strings.Replace(next, "Study", "Study hall", 1))
+	v.sync(t)
+	got := s.get("tasks", piece)
+	if sf, _ := got["split_from"].(map[string]any); got["title"] != "Study hall" || sf["series"] != id || sf["date"] != "2030-01-09" {
+		t.Fatalf("piece = %v", got)
+	}
+	if r := s.get("tasks", id)["recurrence"]; r != "every weekday until 2030-01-08" {
+		t.Fatalf("series rule = %v", r)
+	}
+}
+
 func TestReorderIsOneOp(t *testing.T) {
 	s := newServer(t)
 	home := s.create("projects", map[string]any{"name": "Home"})

@@ -15,7 +15,7 @@ type opentodoProfile struct{}
 
 func (opentodoProfile) Name() string { return "opentodo" }
 func (opentodoProfile) Description() string {
-	return "OpenTaskKit JSON export (exact round trip: ids, labels, sub-projects, sections, subtasks, recurrence, reminders, views, tombstones)"
+	return "OpenTaskKit JSON export (exact round trip: ids, labels, sub-projects, sections, subtasks, notes, recurrence, reminders, views, tombstones)"
 }
 
 func (opentodoProfile) Detect(data []byte) bool {
@@ -35,6 +35,9 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 		Projects []map[string]json.RawMessage `json:"projects"`
 		Tasks    []map[string]json.RawMessage `json:"tasks"`
 		Sections []map[string]json.RawMessage `json:"sections"`
+		// Notes are standalone notes (notes-overview D9); like a task's, a
+		// note's pending appends are its `appends` list, unfolded below.
+		Notes []map[string]json.RawMessage `json:"notes"`
 		// Fields are custom field definitions (custom-fields); a task's values
 		// are its `fields` object, unfolded into `fields.<id>` keys below.
 		Fields    []map[string]json.RawMessage `json:"fields"`
@@ -52,6 +55,9 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 		// Places are the exporting account's saved places (task-locations D1);
 		// tasks link to them by id in location.place_id.
 		Places []map[string]json.RawMessage `json:"places"`
+		// Themes are the exporting account's custom themes (theme-editor D1),
+		// chosen in user_prefs as "user:<id>"; ids are kept, so the choices hold.
+		Themes []map[string]json.RawMessage `json:"themes"`
 		// UserID is the exporting account.
 		UserID string `json:"userId"`
 		// UserPrefs is the exporting account's date and time preferences row
@@ -90,6 +96,11 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 		_ = json.Unmarshal(e["title"], &title)
 		taskTitles[id] = title
 	}
+	for _, list := range [][]map[string]json.RawMessage{doc.Tasks, doc.Notes} {
+		for _, e := range list {
+			unfoldAppends(e)
+		}
+	}
 	add := func(kind, titleField string, list []map[string]json.RawMessage) {
 		for i, e := range list {
 			row := Row{Line: i + 1, Kind: kind, Entity: e}
@@ -115,6 +126,13 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 				_ = json.Unmarshal(e["task_id"], &task)
 				row.Title = "Time entry: " + taskTitles[task]
 			}
+			if kind == KindTheme {
+				var d struct {
+					Name string `json:"name"`
+				}
+				_ = json.Unmarshal(e["doc"], &d)
+				row.Title = "Theme: " + d.Name
+			}
 			if kind == KindProjectPrefs {
 				row.Title = "Project preferences"
 			}
@@ -128,9 +146,11 @@ func (opentodoProfile) Read(r io.Reader, opts Options) (*Parsed, error) {
 	add(KindSection, "name", doc.Sections)
 	add(KindField, "name", doc.Fields)
 	add(KindTask, "title", doc.Tasks)
+	add(KindNote, "title", doc.Notes)
 	add(KindReminder, "", doc.Reminders)
 	add(KindView, "name", doc.Views)
 	add(KindRule, "name", doc.Rules)
+	add(KindTheme, "", doc.Themes)
 	add(KindUserPrefs, "", doc.UserPrefs)
 	add(KindReview, "", doc.Review)
 	add(KindProjectPrefs, "", doc.ProjectPrefs)
@@ -172,6 +192,27 @@ func unfoldFieldValues(task map[string]json.RawMessage) {
 	delete(task, "fields")
 	if len(left) > 0 {
 		task["fields"], _ = json.Marshal(left)
+	}
+}
+
+// unfoldAppends turns an exported task's or note's `appends` list (pending
+// appends oldest first, notes-overview D13) back into one `appends.<id>` key
+// per pending text, the op field names, so devices fold them after the
+// import. Empty texts and ids that are not valid op field names are dropped.
+func unfoldAppends(e map[string]json.RawMessage) {
+	raw, ok := e["appends"]
+	if !ok {
+		return
+	}
+	delete(e, "appends")
+	var list []opsync.PendingAppend
+	if json.Unmarshal(raw, &list) != nil {
+		return
+	}
+	for _, a := range list {
+		if _, valid := opsync.AppendID(opsync.AppendPrefix + a.ID); valid && a.Text != "" {
+			e[opsync.AppendPrefix+a.ID], _ = json.Marshal(a.Text)
+		}
 	}
 }
 

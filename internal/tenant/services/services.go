@@ -164,6 +164,7 @@ func Build(ctx context.Context, cfg config.Config, db, reader *sql.DB, o Options
 	// Calendar sync (calendar-two-way): the user's own calendar accounts, under
 	// the webhooks' policy; task changes make it due soon (D9).
 	s.CalSync = calsync.NewWorker(db, cfg.DataDir, s.Sync, s.Hooks.AllowPrivate, cfg.Google, o.Version, log)
+	s.CalSync.Microsoft.Env = cfg.Microsoft
 	if o.Now != nil {
 		s.CalSync.SetClock(o.Now)
 	}
@@ -178,6 +179,10 @@ func Build(ctx context.Context, cfg config.Config, db, reader *sql.DB, o Options
 	s.Channels = openChannels(ctx, cfg, o, db, s.Sync, s.Push, s.Hooks, log)
 	if s.Channels != nil {
 		s.ChannelsOn = s.Channels.Switch()
+		if s.Rules != nil {
+			// A routine's Notify me reaches the inbox and the delivery channels.
+			s.Rules.Routine = notify.Multi{s.Inbox, s.Channels}
+		}
 	} else {
 		s.ChannelsOn = channels.NewSwitch(db, log)
 	}

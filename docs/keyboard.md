@@ -83,6 +83,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>g</kbd> then <kbd>w</kbd> | Go to the Calendar as Week |
 | <kbd>g</kbd> then <kbd>m</kbd> | Go to the Calendar as Month |
 | <kbd>g</kbd> then <kbd>Shift+C</kbd> | Go to the Calendar as Plan: the next days as columns with their capacity |
+| <kbd>g</kbd> then <kbd>y</kbd> | Go to the Calendar as Year: twelve months with how busy each day is |
 | <kbd>g</kbd> then <kbd>x</kbd> | Go to the Trash |
 | <kbd>g</kbd> then <kbd>p</kbd> | Process the Inbox one task at a time |
 | <kbd>g</kbd> then <kbd>h</kbd> | Go to Updates: what changed in your shared projects |
@@ -98,6 +99,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>g</kbd> then <kbd>Shift+R</kbd> | Go to the Daily check: the Inbox, what is open from earlier, today's focus |
 | <kbd>g</kbd> then <kbd>Shift+D</kbd> | Close the day: how it went, carry over what is left, a line for tomorrow |
 | <kbd>g</kbd> then <kbd>Shift+F</kbd> | Go to Focus: one task, a timer, a break when you need one |
+| <kbd>g</kbd> then <kbd>e</kbd> | Go to Notes: every note, standalone and on tasks and projects, with search |
 | <kbd>g</kbd> then <kbd>/</kbd> | Find a project, label or filter in the sidebar (opens the sidebar when it is collapsed or a drawer) |
 
 ### Tasks in a list
@@ -161,6 +163,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>l</kbd> / <kbd>→</kbd> | Select the first task of the next column |
 | <kbd>Shift+←</kbd> | Move the selected task to the previous column (it stays selected) |
 | <kbd>Shift+→</kbd> | Move the selected task to the next column |
+| <kbd>z</kbd> | Fold or unfold the selected card’s column; on a folded column, unfold it |
 | <kbd>a</kbd> | Add a task to the selected task’s column |
 | <kbd>←</kbd> / <kbd>→</kbd> | Timeline: move the selected task’s dates one day earlier / later |
 | <kbd>Shift+←</kbd> / <kbd>Shift+→</kbd> | Timeline: move the selected task’s deadline one day (from the due date when it has none) |
@@ -168,7 +171,7 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>]</kbd> | Timeline: show the next week (or four) |
 | <kbd>t</kbd> | Timeline: back to today |
 
-### Day, Week, Month and Plan calendar
+### Day, Week, Month, Plan and Year calendar
 
 | Keys | What it does |
 | --- | --- |
@@ -176,6 +179,8 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>k</kbd> | Select the previous task |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Move the selected task 15 minutes earlier / later (a lane task gets a time); with nothing selected, select the first task |
 | <kbd>←</kbd> / <kbd>→</kbd> | Move the selected task one day earlier / later |
+| <kbd>Shift+←</kbd> / <kbd>Shift+→</kbd> | Move the last day of the selected span; on a task without a time, Shift+→ makes it a two-day span |
+| <kbd>Alt+Shift+←</kbd> / <kbd>Alt+Shift+→</kbd> | Move the first day of the selected span |
 | <kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd> | Shorten / lengthen the estimate by 15 minutes |
 | <kbd>Alt+Shift+↑</kbd> / <kbd>Alt+Shift+↓</kbd> | Start 15 minutes earlier / later, keeping the end |
 | <kbd>u</kbd> | Unschedule the selected task (keep the date) |
@@ -189,6 +194,8 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>]</kbd> | Next day or week |
 | <kbd>t</kbd> | Back to today |
 | <kbd>←</kbd> / <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd> | In Month: move the focused day; with a task selected, move it a day or a week (keeps its time) |
+| <kbd>Shift+←</kbd> / <kbd>Shift+→</kbd> | In Month: move the last day of the selected span; on a task without a time, Shift+→ makes it a two-day span |
+| <kbd>Alt+Shift+←</kbd> / <kbd>Alt+Shift+→</kbd> | In Month: move the first day of the selected span |
 | <kbd>j</kbd> | In Month: select the next task of the month |
 | <kbd>k</kbd> | In Month: select the previous task |
 | <kbd>Enter</kbd> | In Month: open the selected task |
@@ -196,6 +203,13 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>[</kbd> | In Month: previous month |
 | <kbd>]</kbd> | In Month: next month |
 | <kbd>t</kbd> | In Month: back to today |
+| <kbd>←</kbd> / <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd> | In Year: move the focused day a day or a week, across month edges |
+| <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | In Year: the same day of the previous or next month |
+| <kbd>Home</kbd> / <kbd>End</kbd> | In Year: the first or last day of the focused month |
+| <kbd>Enter</kbd> | In Year: open the focused day in Day view |
+| <kbd>[</kbd> | In Year: previous year, keeping the day |
+| <kbd>]</kbd> | In Year: next year, keeping the day |
+| <kbd>t</kbd> | In Year: back to today |
 | <kbd>←</kbd> / <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd> | In Plan: move the focused day; with a task selected, move it a day or a week (keeps its time) |
 | <kbd>j</kbd> | In Plan: select the next task, column by column (projected and event rows are skipped) |
 | <kbd>k</kbd> | In Plan: select the previous task |
@@ -259,6 +273,24 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>b</kbd> | Take a break now, or end the break |
 | <kbd>n</kbd> | Next task of today's focus |
 
+### Notes
+
+| Keys | What it does |
+| --- | --- |
+| <kbd>q</kbd> | On the Notes page: start a new note |
+| <kbd>/</kbd> | On the Notes page: focus the search field, which finds notes by every word |
+
+### Routine editor
+
+| Keys | What it does |
+| --- | --- |
+| <kbd>Alt+↑</kbd> | Focused step: in the routine editor: move the focused step up (Alt+↓ moves it down) |
+| <kbd>a</kbd> | Focused step: in the routine editor: add a step below the focused step; Delete asks to delete it |
+| <kbd>Ctrl+S</kbd> / <kbd>⌘+S</kbd> / <kbd>Ctrl+Enter</kbd> / <kbd>⌘+Enter</kbd> | In the routine editor: save the routine |
+| <kbd>Ctrl+Shift+Enter</kbd> / <kbd>⌘+Shift+Enter</kbd> | In the routine editor: test the routine (writes nothing) |
+| <kbd>Enter</kbd> / <kbd>Esc</kbd> | Routine proposal: in a routine’s proposal: apply the ticked changes / close the review; Space toggles an item |
+| <kbd>←</kbd> / <kbd>→</kbd> | In the routine editor: move between the words of a step; Esc closes a picker, then goes back to Routines |
+
 ### Reviews
 
 | Keys | What it does |
@@ -320,6 +352,9 @@ On a Mac, use <kbd>⌘</kbd> where this page says <kbd>Ctrl</kbd>, and <kbd>Opti
 | <kbd>d</kbd> / <kbd>r</kbd> / <kbd>Delete</kbd> | Focused user: Settings → People → Users: deactivate or reactivate, create a reset link, delete the focused user (each confirms) |
 | <kbd>e</kbd> | Focused table: Settings → Server → Audit log: export with the current filters while the table has focus |
 | <kbd>Tab</kbd> | Settings → Account → Security → Passkeys: add, rename (Enter saves, Esc cancels) or remove passkeys |
+| <kbd>Ctrl+Z</kbd> / <kbd>⌘+Z</kbd> | Theme editor: undo the last change |
+| <kbd>Ctrl+Shift+Z</kbd> / <kbd>⌘+Shift+Z</kbd> | Theme editor: redo the change undone last |
+| <kbd>Ctrl+S</kbd> / <kbd>⌘+S</kbd> | Theme editor: save the theme |
 
 ### Vim keybindings
 

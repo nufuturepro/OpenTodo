@@ -15,7 +15,7 @@ Ask the user for an **agent** token rather than a full-access one. They create i
 ot token create "my assistant" --scope agent
 ```
 
-An agent token can read everything the user can, and can create and edit tasks, projects, labels and comments, complete and reopen tasks, and move to the Trash only tasks it created itself. It cannot touch tokens, settings, sharing, members, encryption, imports or backups. Writes also need two switches the user controls (the owner's "AI assistants may make changes" and the user's "Allow AI assistants to make changes"). Then the user stores it:
+An agent token can read everything the user can, and can create and edit tasks, projects, sections, labels, comments, reminders and time entries, archive projects, complete and reopen tasks, and move to the Trash only tasks it created itself. It cannot touch tokens, settings, sharing, members, encryption, imports or backups. Writes also need two switches the user controls (the owner's "AI assistants may make changes" and the user's "Allow AI assistants to make changes"). Then the user stores it:
 
 ```bash
 ot auth set-token <token> --server https://todo.example.com
@@ -71,12 +71,26 @@ ot project add Garden --json --idempotency-key garden-1
 ot project rename Garden "Garden 2026" --json
 ot time start 8c2a41f0 --json
 ot time stop --json
+ot time status --json
 ot time log 8c2a41f0 1h30 --on yesterday --note "review" --json
 ot time list --from 2026-10-12 --to 2026-10-18 --json
 ot time export --from 2026-10-12 --to 2026-10-18 -o week.csv --json
 ```
 
-`ot time start` stops the running entry first (one runs at a time); `ot time stop` exits 1 when nothing runs. A duration logged on another day than today ends at 17:00 local time.
+Notes (standalone notes, and the notes of tasks and projects) are Markdown:
+
+```bash
+ot notes list --json
+ot notes search "plumber" --json
+ot notes show 3fa1c2d0 --json
+ot task note 8c2a41f0 --json
+ot notes append 3fa1c2d0 "- decided: ship Friday" --json
+ot task note 8c2a41f0 --append "- called, no answer" --json
+```
+
+Prefer appending to replacing: an append adds text at the end and never overwrites what the user typed on another device. A replacement (`ot notes edit --body`, `ot task note --set`) fails with `body_changed` (exit 1) when the note changed since you read it; read it again before retrying, never retry blindly. Writing notes through `ot` needs a full token; with an agent token use the MCP note tools instead.
+
+`ot time start` stops the running entry first (one runs at a time), except with an agent token: then it fails with `timer_running` (exit 1) while another timer of the user runs, often a Focus session on their phone. **Never take over a running timer without asking**: tell the user which task it is on and let them stop it (`ot time stop` once they agree). `ot time log` is the safe way to record work you did beside them. `ot time stop` exits 1 when nothing runs. A duration logged on another day than today ends at 17:00 local time.
 
 `ot done` and `ot reopen` report each task with `status`; a task already in that state is `unchanged` and nothing is sent. `ot edit` with values equal to the current ones sends nothing.
 

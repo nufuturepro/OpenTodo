@@ -15,7 +15,6 @@ import { preferredPlacement } from '../lib/userPrefs'
 import { selectTask } from './signals'
 import { addTasksUndoable } from '../lib/pasteTasks'
 import { showBulkToast } from './bulk/toastStore'
-import { announceIfOutOfSight } from './task-list/announceAdded'
 import { createSection, deleteSection, renameSection, reorderSection, setSectionStyle } from '../lib/sections'
 import type { Label, Project, Section } from '../lib/types'
 import { QuickAdd, type QuickAddInput } from './QuickAdd'
@@ -98,7 +97,7 @@ export function SectionMark({ section }: { section: Pick<Section, 'color' | 'ico
   return dot
 }
 
-export function SectionHeader({ section, count, layout, editable, first, last, collapsed, onToggleCollapse, onAdd, completed = 0, revealed = false, onReveal }: {
+export function SectionHeader({ section, count, layout, editable, first, last, collapsed, onToggleCollapse, onAdd, completed = 0, revealed = false, onReveal, onFold }: {
   /** null: the "No section" heading. */
   section: Section | null
   count: number
@@ -114,6 +113,8 @@ export function SectionHeader({ section, count, layout, editable, first, last, c
   completed?: number
   revealed?: boolean
   onReveal?: () => void
+  /** On a board: "Fold column" in the column menu, for every role and "No section" too (board-polish D2). */
+  onFold?: () => void
 }) {
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(section?.name ?? '')
@@ -129,13 +130,14 @@ export function SectionHeader({ section, count, layout, editable, first, last, c
   // "Flow…" (project-flow-modes D7): for whoever may rename the section.
   const mode = useMethodMode()
   const project = useProjects().find((p) => p.id === section?.project_id)
-  const groups = section ? sectionMenuGroups(title, { first, last, layout, count }, {
+  const fold: ActionGroup[] = onFold ? [{ items: [{ kind: 'action', id: 'fold', label: t('Fold column'), icon: 'panel-left-close', shortcut: 'z', onSelect: onFold }] }] : []
+  const groups = [...fold, ...(section && editable ? sectionMenuGroups(title, { first, last, layout, count }, {
     section,
     flow: sectionFlowItem(section, project, { mode, canEdit: editable }),
     rename: startRename,
     move: (d) => reorderSection(section.id, d),
     remove: () => deleteSection(section.id),
-  }) : []
+  }) : [])]
   const onRowKey = useRowMenuShortcut({
     openMenu: () => setMenuOpen(true),
     rename: startRename,
@@ -167,12 +169,12 @@ export function SectionHeader({ section, count, layout, editable, first, last, c
             </button>
           </span>
         ) : undefined}
-        actions={(editable && (onAdd || section)) ? (
+        actions={((editable && (onAdd || section)) || groups.length > 0) ? (
           <>
             {editable && onAdd && (
               <IconButton icon="plus" size="sm" label={t('Add a task to {title}', { title })} onClick={onAdd} />
             )}
-            {editable && section && (
+            {groups.length > 0 && (
               <ActionMenu label={t('Section menu for {title}', { title })} title={title} groups={groups} width="sm:w-60" open={menuOpen} onOpenChange={setMenuOpen}
                 triggerClassName="ui-btn ui-btn--ghost ui-btn--sm touch-target px-1.5 py-0.5 text-meta" />
             )}
@@ -199,7 +201,8 @@ export function SectionQuickAdd({ project, sectionId, sectionName, projects, lab
     const id = await createTask({ ...rest, placement, project_id: target, section_id: target === project.id ? sectionId : null })
     // Out of sight in a long section or column: say where it went (add-position D5).
     const list = root.current?.closest<HTMLElement>('[data-list-page]')
-    if (target === project.id && list) void announceIfOutOfSight(id, { list: sectionName, placement, root: list, select: (x) => selectTask.request(x) })
+    // Loaded with the first add: not needed on first load (web/bundle-budget.json).
+    if (target === project.id && list) void import('./task-list/announceAdded').then((m) => m.announceIfOutOfSight(id, { list: sectionName, placement, root: list, select: (x) => selectTask.request(x) })).catch(() => {}) // offline before it was cached: no announcement
   }
   // A pasted list (paste-to-tasks D3): every line in this section unless it names a #project; one batch, one Undo.
   const onAddMany = async (inputs: QuickAddInput[]) => {

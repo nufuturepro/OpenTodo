@@ -238,11 +238,34 @@ func (w *propWorld) step(i int) {
 			id = entity[:1] + "1"
 		}
 		d.edit(w.now, entity, id, map[string]string{"workspace_id": w.workspace()})
+	case r == 6 && slices.Contains(d.knows("note"), "n0") && (d.user == "alice" || w.shared):
+		// The project's standalone note (notes-overview), once the device holds
+		// it (an edit before that would create it elsewhere): its title, text
+		// and labels converge like a task's.
+		fields := map[string]string{"title": strconv.Quote(fmt.Sprintf("%s note %d", d.id, i))}
+		if w.rng.IntN(2) == 0 {
+			fields["labels"] = []string{`[]`, `["l1"]`}[w.rng.IntN(2)]
+			fields["description"] = strconv.Quote(fmt.Sprintf("- %s", d.id))
+		}
+		d.edit(w.now, "note", "n0", fields)
 	case r < 9:
 		w.exchange(d)
 	default:
 		w.now += w.rng.Int64N(180_000)
 	}
+}
+
+// syncProject exchanges d until the server holds project id for d's user.
+func (w *propWorld) syncProject(d *propDevice, id string) {
+	w.t.Helper()
+	for range 10 {
+		if e, err := w.s.Get(w.ctx, d.user, "project", id); err == nil && e != nil {
+			return
+		}
+		w.now += 1000
+		w.exchange(d)
+	}
+	w.t.Fatalf("%s never uploaded project %s", d.id, id)
 }
 
 // workspace picks a workspace_id value: the default (null) or one of two ids.
@@ -275,6 +298,7 @@ func runConvergence(t *testing.T, seed uint64) {
 	a1.edit(w.now, "project", "p", map[string]string{"name": `"Home"`})
 	a1.edit(w.now, "label", "l1", map[string]string{"name": `"errand"`})
 	a1.edit(w.now, "view", "v1", map[string]string{"name": `"Soon"`})
+	a1.edit(w.now, "note", "n0", map[string]string{"title": `"Plan"`, "project_id": `"p"`})
 	for i := range 3 {
 		a1.edit(w.now, "task", fmt.Sprintf("t%d", i), map[string]string{"title": `"shared"`, "project_id": `"p"`})
 		b1.edit(w.now, "task", fmt.Sprintf("b%d", i), map[string]string{"title": `"bob's"`})
@@ -282,6 +306,13 @@ func runConvergence(t *testing.T, seed uint64) {
 	const steps = 240
 	for i := range steps {
 		if i == steps/2 {
+			// Sharing happens from a device that holds the project on the
+			// server: in the app the owner shares a project the server knows.
+			// A random run can reach this step before A1 has uploaded it (no
+			// exchange of A1 yet, or its upload refused for the clock and still
+			// queued), and AddMember then rightly answers not found. A1 syncs
+			// first in that case only, so the other seeds replay unchanged.
+			w.syncProject(a1, "p")
 			if _, err := s.AddMember(w.ctx, "alice", "p", "bob", RoleEditor); err != nil {
 				t.Fatal(err)
 			}
@@ -397,6 +428,13 @@ func TestConvergenceProperty(t *testing.T) {
 		t.Logf("seed %d (replay with OPENTODO_PROPERTY_SEED=%d)", seed, seed)
 		runConvergence(t, seed)
 	}
+}
+
+// Seed 1793554386122448369 (CI of PR #742) reaches the sharing step before
+// A1 has exchanged once, so the server has no project to share yet.
+func TestConvergenceSharesAfterUpload(t *testing.T) {
+	t.Parallel()
+	runConvergence(t, 1793554386122448369)
 }
 
 // Issue #651 (seed 1793402778061697617), reduced: a device two hours fast

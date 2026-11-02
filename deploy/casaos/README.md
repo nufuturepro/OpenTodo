@@ -1,6 +1,6 @@
 # CasaOS / ZimaOS app store template
 
-[`docker-compose.yml`](docker-compose.yml) is an app for the CasaOS / ZimaOS app store ([IceWhaleTech/CasaOS-AppStore](https://github.com/IceWhaleTech/CasaOS-AppStore)): a Docker Compose file with the store's `x-casaos` metadata. It runs the latest release by version (`ghcr.io/opentodoapp/opentodo:0.18.1`, the store refuses moving tags), publishes the web port 8080 as 8418 on the server, keeps the data in `/DATA/AppData/$AppID/data` on `/data`, and offers the base URL, setup token, sign-up and trusted proxies settings with the catalogue's descriptions. No setting is required. A pinned `busybox` one-shot service (`opentodo-init`) runs `chown -R 65532:65532 /data` before OpenTodo starts, because Docker creates the bind folder owned by root and the image has no shell (the store's OpenClaw app does the same). The facts it shares with the other templates are in [`../deploy.json`](../deploy.json); `make check` keeps them in line ([`../README.md`](../README.md)).
+[`docker-compose.yml`](docker-compose.yml) is an app for the CasaOS / ZimaOS app store ([IceWhaleTech/CasaOS-AppStore](https://github.com/IceWhaleTech/CasaOS-AppStore)): a Docker Compose file with the store's `x-casaos` metadata. It runs the latest release by version (`ghcr.io/opentodoapp/opentodo:0.19.0`, the store refuses moving tags), publishes the web port 8080 as 8418 on the server, keeps the data in `/DATA/AppData/$AppID/data` on `/data`, and offers the base URL, setup token, sign-up and trusted proxies settings with the catalogue's descriptions. No setting is required. A pinned `busybox` one-shot service (`opentodo-init`) runs `chown -R 65532:65532 /data` before OpenTodo starts, because Docker creates the bind folder owned by root and the image has no shell (the store's OpenClaw app does the same). The facts it shares with the other templates are in [`../deploy.json`](../deploy.json); `make check` keeps them in line ([`../README.md`](../README.md)).
 
 **Status: Submitted: [IceWhaleTech/CasaOS-AppStore#1104](https://github.com/IceWhaleTech/CasaOS-AppStore/pull/1104).** The steps for users, including installing it now as a custom app, are in [docs/self-hosting/casaos.md](../../docs/self-hosting/casaos.md).
 
@@ -57,8 +57,8 @@ EOF
 
 The store only offers an update when `x-casaos.version` changes (it pins image digests itself at build time), so every release needs a small pull request to the store. `make check` fails after a release until this file is bumped, since the image must name the latest release in `CHANGELOG.md`:
 
-1. In [`docker-compose.yml`](docker-compose.yml) change the image tag and `x-casaos.version` to the new version, set `update_at` to the release date and rewrite `release_notes` (one line and the changelog link).
-2. Copy it to `upstream/Apps/OpenTodo/docker-compose.yml` and run `node scripts/deploy-check.mjs`.
+1. `make release-prepare` changes the image tag and `x-casaos.version` in [`docker-compose.yml`](docker-compose.yml) to the new version, sets `update_at` to the release date and updates the copy in `upstream/`. Check `release_notes` still reads right (one line and the changelog link).
+2. Run `node scripts/deploy-check.mjs`.
 3. Copy `upstream/Apps/OpenTodo/docker-compose.yml` into your fork of the store, commit (`Update OpenTodo to <version>`) and open a pull request.
 
 Release candidates are never put in the store.

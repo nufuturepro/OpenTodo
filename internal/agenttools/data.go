@@ -54,6 +54,11 @@ type snapshot struct {
 	keptAway map[string]bool
 	// idx indexes tasks by id (built on first lookup, reset by apply).
 	idx map[string]opsync.Entity
+	// bySeries groups the tasks pointing at each series (built on first use,
+	// reset by apply; series-exceptions).
+	bySeries map[string][]opsync.Entity
+	// hasSplit is set with bySeries when a task continues a split series.
+	hasSplit bool
 	// workspaces are the user's workspaces (OpenSpec change workspaces);
 	// part places projects and tasks in them (built on first use, reset by apply).
 	workspaces []opsync.Workspace
@@ -391,8 +396,8 @@ type taskText struct {
 	// keyed by definition id: people wrote them (custom-fields).
 	Fields map[string]string `json:"fields,omitempty"`
 	// Origin holds the free text of the task's origin, its page title and URL
-	// (OpenSpec change task-origin, design D11); kind, provider and id are in
-	// taskOut.Origin.
+	// (OpenSpec change task-origin, design D11) and an Obsidian note's path;
+	// kind, provider and an external id are in taskOut.Origin.
 	Origin *originText `json:"origin,omitempty"`
 	// Location holds the name and address of the task's location
 	// (agent-planning-fields D4); its coordinates and place_id are in taskOut.Location.
@@ -416,6 +421,8 @@ type locationOut struct {
 type originText struct {
 	Title string `json:"title,omitempty"`
 	URL   string `json:"url,omitempty"`
+	// Note is an Obsidian origin's vault-relative note path (obsidian-origin).
+	Note string `json:"note,omitempty"`
 }
 
 // originOut is the structural part of a task's origin.
@@ -426,20 +433,29 @@ type originOut struct {
 }
 
 type taskOut struct {
-	ID              string   `json:"id"`
-	Untrusted       taskText `json:"untrusted_text"`
-	ProjectID       *string  `json:"project_id"`
-	SectionID       *string  `json:"section_id,omitempty"`
-	ParentID        *string  `json:"parent_id,omitempty"`
-	Priority        int      `json:"priority"`
-	Due             *dueOut  `json:"due"`
-	Overdue         bool     `json:"overdue,omitempty"`
-	LabelIDs        []string `json:"label_ids"`
-	AssigneeID      *string  `json:"assignee_id,omitempty"`
-	Recurrence      *string  `json:"recurrence,omitempty"`
-	EstimateMinutes *int     `json:"estimate_minutes,omitempty"`
-	Completed       bool     `json:"completed"`
-	CompletedAt     *string  `json:"completed_at,omitempty"`
+	ID         string   `json:"id"`
+	Untrusted  taskText `json:"untrusted_text"`
+	ProjectID  *string  `json:"project_id"`
+	SectionID  *string  `json:"section_id,omitempty"`
+	ParentID   *string  `json:"parent_id,omitempty"`
+	Priority   int      `json:"priority"`
+	Due        *dueOut  `json:"due"`
+	Overdue    bool     `json:"overdue,omitempty"`
+	LabelIDs   []string `json:"label_ids"`
+	AssigneeID *string  `json:"assignee_id,omitempty"`
+	Recurrence *string  `json:"recurrence,omitempty"`
+	// NextOccurrences are the next three projected dates of an open recurring
+	// task (floating YYYY-MM-DD), from the calculator every device draws
+	// with (OpenSpec change series-occurrences, design D7).
+	NextOccurrences []string `json:"next_occurrences,omitempty"`
+	// SeriesID and OccurrenceDate are set on an occurrence record: the series
+	// and the occurrence date it stands for, even when it was moved to
+	// another day (OpenSpec change series-exceptions).
+	SeriesID        *string `json:"series_id,omitempty"`
+	OccurrenceDate  *string `json:"occurrence_date,omitempty"`
+	EstimateMinutes *int    `json:"estimate_minutes,omitempty"`
+	Completed       bool    `json:"completed"`
+	CompletedAt     *string `json:"completed_at,omitempty"`
 	// CompletedBy is the account id of whoever completed the task, when known
 	// (OpenSpec change completed-date-filters).
 	CompletedBy *string `json:"completed_by,omitempty"`
@@ -470,6 +486,9 @@ type taskOut struct {
 	Deadline *string `json:"deadline"`
 	Start    *string `json:"start"`
 	Evening  bool    `json:"evening"`
+	// Span is true when the task is drawn across the days from start to its
+	// due date (OpenSpec change multi-day-tasks); left out otherwise.
+	Span bool `json:"span,omitempty"`
 	// DayPart is "morning", "afternoon" or null (OpenSpec change day-parts);
 	// Evening stays the evening flag.
 	DayPart *string `json:"day_part"`
@@ -482,6 +501,10 @@ type taskOut struct {
 	// today-closed-list): true when the user's Today limit keeps the task
 	// waiting for a slot.
 	WaitingForSlot *bool `json:"waiting_for_slot,omitempty"`
+	// TimeSensitive is set by today_summary on a waiting task only (OpenSpec
+	// change today-waiting-time-sensitive): true when it is due today with a
+	// time or its deadline is today.
+	TimeSensitive *bool `json:"time_sensitive,omitempty"`
 }
 
 // render builds the assistant-facing view of a task, evaluating dates in loc
@@ -496,6 +519,13 @@ func (snap *snapshot) render(t opsync.Entity, loc *time.Location, today string, 
 	}
 	if out.Completed {
 		out.CompletedBy = strPtr(t, "completed_by")
+	}
+	// An occurrence record names its series and the date it stands for
+	// (OpenSpec change series-exceptions, design D11).
+	if sid := str(t, "series_id"); sid != "" && opsync.IsRecordOf(sid, t) {
+		out.SeriesID = &sid
+		date := opsync.RecordDate(t)
+		out.OccurrenceDate = &date
 	}
 	out.Encrypted = e2ee.IsCiphertext(rawStr(t, "title")) || e2ee.IsCiphertext(rawStr(t, "description"))
 	pid := str(t, "project_id")
@@ -528,12 +558,17 @@ func (snap *snapshot) render(t opsync.Entity, loc *time.Location, today string, 
 		out.Encrypted = true
 	} else if o, err := origin.Decode(t["origin"]); err == nil {
 		out.Origin = &originOut{Kind: o.Kind, Provider: o.Provider, ID: o.ID}
-		if o.Title != "" || o.URL != "" {
-			out.Untrusted.Origin = &originText{Title: o.Title, URL: o.URL}
+		text := originText{Title: o.Title, URL: o.URL}
+		if o.Kind == origin.KindObsidian {
+			// A note's path is the user's own text (obsidian-origin), not an external id.
+			out.Origin.ID, text.Note = "", o.ID
+		}
+		if text != (originText{}) {
+			out.Untrusted.Origin = &text
 		}
 	}
 	out.Deadline, out.Start = strPtr(t, "deadline"), strPtr(t, "start")
-	out.Evening = boolean(t, "evening")
+	out.Evening, out.Span = boolean(t, "evening"), boolean(t, "span")
 	if part := daypart.OfRow(t); daypart.Stored(part) {
 		out.DayPart = &part
 	}
@@ -554,6 +589,7 @@ func (snap *snapshot) render(t opsync.Entity, loc *time.Location, today string, 
 		}
 		out.Due = o
 		out.Overdue = isOpen(t) && date < today
+		out.NextOccurrences = snap.nextOccurrences(t, d.Date, today)
 	}
 	return out
 }

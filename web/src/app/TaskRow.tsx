@@ -27,7 +27,7 @@ import { hueFor, Icon, LabelChips, ReadAs, ToneText, Tooltip, TruncatedText, typ
 import { slotName, useSlotOf } from '../lib/slots'
 import { lazy, memo, type ReactNode, Suspense, useLayoutEffect, useRef } from 'react'
 import type { RowImplied } from '../lib/listGroups'
-import { describeDeadline, describeDue, formatDate, formatTime, localDueOf, logicalToday, zoneHint } from '../lib/dates'
+import { describeDeadline, describeDue, formatDate, formatTime, localDueOf, logicalToday, zoneHint, type ResolvedDateTime } from '../lib/dates'
 import { formatMinutes } from '../lib/duration'
 import type { Progress } from '../lib/subtasks'
 import { streakLabel, type HabitStats } from '../lib/habits'
@@ -54,9 +54,12 @@ import { useAccountRowLayout, type RowLayout } from '../lib/rowLayout'
 import { DRAG_THRESHOLD, finePointer, swallowNextClick, trackHold } from '../lib/dnd'
 import { dayPartName, dayPartOf, dayPartWord, type DayPart } from '../lib/dayParts'
 import { energyChipLabel, energyName, energyOf, type Energy } from '../lib/energy'
+import { formatSpan, spanOf, type Span } from '../lib/span'
 
 /** The details of an expanded row (row-expand D3), loaded on the first expand. */
 const RowDetails = lazy(() => import('./task-list/RowDetails'))
+// A board card's notes preview (board-polish D6): loaded with the first board that shows it.
+const CardNotes = lazy(() => import('./CardNotes'))
 
 /** Field values shown on a row before the rest collapse into "+n" (custom-fields). */
 export const MAX_FIELD_BADGES = 3
@@ -149,6 +152,8 @@ interface MetaValues {
   hint: string | null
   zone: string
   repeat: string | null
+  /** The repeat mark's accessible name and tooltip: an occurrence says what it is one of (series-exceptions D5). */
+  repeatLabel: string | null
   /** The task repeats (not an occurrence of a series). */
   recurring: boolean
   deadline: { label: string; tone: 'overdue' | 'soon' | 'later' } | null
@@ -203,6 +208,12 @@ function EnergyWord({ energy, rowItem = false }: { energy: Energy; rowItem?: boo
  * subtask progress lead with their icons, the other facts and the label chips follow,
  * and the assignee ends the row.
  */
+/** The repeat mark's name: an occurrence says what it is one of (series-exceptions D5). */
+function repeatLabelOf(task: Task): string | null {
+  if (task.recurrence) return t('repeats')
+  return task.series_id ? t('One occurrence of {title}', { title: task.title || t('a repeating task') }) : null
+}
+
 function CardMeta({ m }: { m: MetaValues }) {
   const more = m.badges.slice(MAX_FIELD_BADGES)
   return (
@@ -214,7 +225,7 @@ function CardMeta({ m }: { m: MetaValues }) {
       {m.sample && <ToneText data-sample="">{t('Sample')}</ToneText>}
       {m.breadcrumb && <ToneText icon="corner-down-right" label={t('In {breadcrumb}', { breadcrumb: m.breadcrumb })} data-breadcrumb="">{m.breadcrumb}</ToneText>}
       {m.hint && <ToneText tone="faint" data-zone-hint="" label={t('fixed to {zone}', { zone: m.zone })}>{m.hint}</ToneText>}
-      {m.repeat && <ToneText icon="repeat" data-repeat="" data-recurring={m.recurring ? '' : undefined}>{m.repeat}</ToneText>}
+      {m.repeat && <ToneText icon="repeat" data-repeat="" data-recurring={m.recurring ? '' : undefined} label={m.repeatLabel ?? undefined}>{m.repeat}</ToneText>}
       {m.deadline && <ToneText tone={DEADLINE_TONE[m.deadline.tone]} icon="hourglass" data-deadline="" label={m.deadlineLabel}>{m.deadline.label}</ToneText>}
       {m.startText && <ToneText icon={m.someday ? 'archive' : 'calendar-days'} data-start="">{m.startText}</ToneText>}
       <BlockMark m={m} />
@@ -457,6 +468,8 @@ export interface TaskRowProps {
   layout?: RowLayout
   /** A board card's 3 px leading edge in this hue (calendar-clarity "Colour by on boards"); none when absent. */
   edge?: HueName
+  /** A board card shows two lines of its notes as plain text (board-polish "Notes preview on cards"). */
+  notes?: boolean
 }
 
 const NO_HIDDEN: readonly RowProperty[] = []
@@ -513,6 +526,8 @@ export interface CompactRowProps {
   attrs?: Record<`data-${string}`, string>
   /** The row's hue under the calendar's Colour by (calendar-clarity D3); the project's when absent. */
   hue?: HueName
+  /** The day's place in the task's span, "Day 2 of 3" (multi-day-tasks D3). */
+  position?: { n: number; of: number }
 }
 
 /** The row's own controls: a click on one of them is theirs, not the row's (row-and-cursor D1). */
@@ -520,7 +535,7 @@ const ROW_CONTROL = 'button, a, input, label, select, textarea, [role="button"],
 
 const TONE_TEXT: Partial<Record<Tone, string>> ={ danger: 'text-danger', accent: 'text-accent', default: 'text-default' }
 
-function CompactRow({ task, date, time, today, selected, readOnly = false, project, large = false, onPointerDown, onSelect, onOpen, attrs, hue }: CompactRowProps) {
+function CompactRow({ task, date, time, today, selected, readOnly = false, project, large = false, onPointerDown, onSelect, onOpen, attrs, hue, position }: CompactRowProps) {
   const priority = task.priority < 4 ? PRIORITY_RING[task.priority] : null
   const canDrag = !readOnly && onPointerDown !== undefined
   return (
@@ -534,6 +549,8 @@ function CompactRow({ task, date, time, today, selected, readOnly = false, proje
       {time && <span data-plan-time className={`shrink-0 tabular-nums ${TONE_TEXT[ladderTone(date, today)] ?? 'text-muted'}`}>{formatTime(time)}</span>}
       {/* In a narrow column the title takes the first line and the time, estimate and priority the second. */}
       <span className={`min-w-0 flex-1 truncate ${large ? '' : 'order-first basis-full'} ${task.completed_at ? 'line-through' : ''}`}>{task.title || t('Untitled')}</span>
+      {/* A span's place on this day (multi-day-tasks D3): "Day 2 of 3". */}
+      {position && <span data-span-position className="shrink-0 text-hint tabular-nums text-muted">{t('Day {n} of {m}', { n: position.n, m: position.of })}</span>}
       {task.estimate_minutes ? <span data-estimate className="shrink-0 text-hint tabular-nums text-muted">{formatMinutes(task.estimate_minutes)}</span> : null}
       {/* The row's priority ring: coloured for P1 and P2, neutral for P3; read as "P1". */}
       {priority && (
@@ -600,6 +617,17 @@ function holdForRow(e: React.PointerEvent<HTMLLIElement>, drag: TaskRowProps['on
 }
 
 /**
+ * The start chip's words: Someday, "Starts 3 Nov" or "Started 3 Nov"; a span
+ * (multi-day-tasks D5) shows its range in the date's place, so the chip reads
+ * "until 5 Nov" once it has begun and nothing before.
+ */
+function startWords(start: string, span: Span | null, p: ResolvedDateTime): string | null {
+  if (span) return start > logicalToday() ? null : t('until {date}', { date: formatDate(span.last, 'compact', p) })
+  if (start === 'someday') return t('Someday')
+  return start > logicalToday() ? t('Starts {date}', { date: formatDate(start, 'compact', p) }) : t('Started {date}', { date: formatDate(start, 'compact', p) })
+}
+
+/**
  * Memoized (large-list-performance D1): a list re-renders a row only when one of its
  * props changes, so callers pass stable handlers and per-row values (`selected` is a
  * boolean, not the list's selected id).
@@ -608,7 +636,7 @@ export const TaskRow = memo(function TaskRow(props: TaskRowProps | CompactRowPro
   return props.shape === 'compact' ? <CompactRow {...props} /> : <FullRow {...props} />
 })
 
-function FullRow({ task, project, labels = [], assignee, assignedToMe = false, selected, showProject, depth = 0, progress, blockedBy = 0, waitsFor = null, habit = null, breadcrumb, hasChildren = false, collapsed = false, readOnly = false, onToggle, onOpen, onToggleCollapse, shape = 'row', timeColumn = false, actions = true, onMore, forceActions = false, onPointerDown, onContextMenu, onRowMenu, onGripDown, onGripClick, dropKey, dropIndicator = null, dragging = false, ticked = false, showCheckbox = false, onTick, hideFieldBadges = false, posInSet, setSize, implied, omitLabel, tracked: trackedProp, inline, motion, swipe = false, forceSwipe, hidden = NO_HIDDEN, source = false, expanded = false, onExpand, layout, edge }: TaskRowProps) {
+function FullRow({ task, project, labels = [], assignee, assignedToMe = false, selected, showProject, depth = 0, progress, blockedBy = 0, waitsFor = null, habit = null, breadcrumb, hasChildren = false, collapsed = false, readOnly = false, onToggle, onOpen, onToggleCollapse, shape = 'row', timeColumn = false, actions = true, onMore, forceActions = false, onPointerDown, onContextMenu, onRowMenu, onGripDown, onGripClick, dropKey, dropIndicator = null, dragging = false, ticked = false, showCheckbox = false, onTick, hideFieldBadges = false, posInSet, setSize, implied, omitLabel, tracked: trackedProp, inline, motion, swipe = false, forceSwipe, hidden = NO_HIDDEN, source = false, expanded = false, onExpand, layout, edge , notes = false }: TaskRowProps) {
   const card = shape === 'card'
   // The row's layout (row-layouts D1): the list's own choice, else the account's; a card keeps its shape.
   const accountLayout = useAccountRowLayout()
@@ -625,9 +653,8 @@ function FullRow({ task, project, labels = [], assignee, assignedToMe = false, s
   // Start dates, Someday and This Evening (someday-and-evening D2): they say why a
   // task is in Later, or in Today without a date.
   const start = task.start ?? null
-  const startText = done || !start || hides('start') || (start === 'someday' && implied?.someday) ? null
-    : start === 'someday' ? t('Someday')
-    : start > logicalToday() ? t('Starts {date}', { date: formatDate(start, 'compact', dt.resolved) }) : t('Started {date}', { date: formatDate(start, 'compact', dt.resolved) })
+  const span = spanOf(task)
+  const startText = done || !start || hides('start') || (start === 'someday' && implied?.someday) ? null : startWords(start, span, dt.resolved)
   const deadline = done || hides('deadline') ? null : describeDeadline(task.deadline, undefined, task.due ? localDueOf(task.due).date : null)
   const deadlineLabel = deadline ? t('Deadline {date}, {label}', { date: formatDate(task.deadline!, 'long', dt.resolved), label: deadline.label }) : ''
   // The column (rows-v2 D2, D3): the due time, else the deadline countdown; the line never repeats it.
@@ -665,9 +692,9 @@ function FullRow({ task, project, labels = [], assignee, assignedToMe = false, s
   const m: MetaValues = {
     sample: isSample(task),
     breadcrumb,
-    date: hides('date') ? null : rowDateText(due, dueDay, done ? null : dayPartOf(task), implied, timeInColumn),
+    date: hides('date') ? null : span ? formatSpan(span) : rowDateText(due, dueDay, done ? null : dayPartOf(task), implied, timeInColumn),
     dateTone: dueDay ? ladderTone(dueDay, logicalToday()) : 'muted',
-    hint, zone: task.due?.tz ?? '',
+    hint, zone: task.due?.tz ?? '', repeatLabel: repeatLabelOf(task),
     repeat: task.recurrence ? t('repeats') : task.series_id ? t('occurrence') : null, recurring: !!task.recurrence,
     deadline: deadlineInColumn ? null : deadline, deadlineLabel,
     startText, someday: start === 'someday',
@@ -824,9 +851,10 @@ function FullRow({ task, project, labels = [], assignee, assignedToMe = false, s
           )}
         </div>
         {!card && !detailed && priority && <PriorityMark priority={priority} />}
-        {!card && m.repeat && <ToneText tone="faint" icon="repeat" data-repeat="" data-recurring={m.recurring ? '' : undefined} label={m.repeat} className="shrink-0">{null}</ToneText>}
+        {!card && m.repeat && <ToneText tone="faint" icon="repeat" data-repeat="" data-recurring={m.recurring ? '' : undefined} label={m.repeatLabel ?? m.repeat} className="shrink-0">{null}</ToneText>}
         {!card && headCounts.length > 0 && <RowCounts counts={headCounts} />}
         </div>
+        {card && notes && task.description && <Suspense fallback={null}><CardNotes task={task} /></Suspense>}
         {meta}
         {source && !card && <SourceLine task={task} />}
       </button>}

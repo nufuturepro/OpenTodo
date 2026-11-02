@@ -73,6 +73,11 @@ func (s *Server) respondMembers(w http.ResponseWriter, r *http.Request, status i
 	ctx := r.Context()
 	actor := userFrom(ctx).ID
 	s.sync.NotifyMembership(ch.Audience)
+	if s.rules != nil && ch.From != ch.To {
+		// A routine running as someone who no longer edits the project
+		// pauses now (routines-shared D9).
+		s.rules.CheckProject(ctx, r.PathValue("id"))
+	}
 	if ch.From != ch.To {
 		s.audit.Record(ctx, audit.RoleChanged(actor, targetID, projectRoleLabel(ch.From), projectRoleLabel(ch.To)))
 	}
@@ -281,6 +286,16 @@ func (s *Server) handleTransferProject(w http.ResponseWriter, r *http.Request) {
 // is also where a task's custom field values are folded into its `fields`
 // object (custom-fields D3).
 func (s *Server) annotateProjects(ctx context.Context, entity string, list ...opsync.Entity) error {
+	// Body version and pending appends (notes-overview D13), in every representation.
+	if err := s.annotateBody(ctx, entity, list...); err != nil {
+		return err
+	}
+	if entity == "rule" {
+		if u := userFrom(ctx); u != nil {
+			s.annotateRules(ctx, u.ID, list...)
+		}
+		return nil
+	}
 	if entity == "task" {
 		for _, e := range list {
 			foldFieldsInPlace(e)
@@ -348,9 +363,18 @@ func (s *Server) annotateProjects(ctx context.Context, entity string, list ...op
 // stripAnnotations removes the read-only sharing annotations from a project
 // write body, so a client can PATCH back what it read.
 func stripAnnotations(entity string, body map[string]json.RawMessage) {
+	delete(body, "body_version")
+	if entity == "task" || entity == "note" {
+		delete(body, "appends")
+	}
 	if entity == "project" {
 		delete(body, "role")
 		delete(body, "owner_id")
+	}
+	if entity == "rule" {
+		delete(body, "paused_reason")
+		delete(body, "warnings")
+		delete(body, "ai_mode")
 	}
 }
 

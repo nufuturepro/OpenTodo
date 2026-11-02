@@ -2,6 +2,7 @@
 // screens since `ux-overhaul`, design-system "Page template primitives"). Screens
 // import from here, never from the files below: `src/ui/barrel.test.ts` checks it.
 // See docs/design-system.md and the Storybook workbench.
+export * from './accentPickerLazy'
 export * from './Avatar'
 export * from './Button'
 export * from './Card'
@@ -20,8 +21,12 @@ export * from './Menu'
 export * from './ProgressRing'
 export * from './Skeleton'
 export * from './StatusIndicator'
+export * from './SegmentedControl'
 export * from './Switch'
 export * from './Tabs'
+export * from './RoutineWords'
+export * from './ThemeList'
+export * from './themeKitLazy'
 export * from './Tooltip'
 export * from './TruncatedText'
 export * from './patterns/AskComposer'

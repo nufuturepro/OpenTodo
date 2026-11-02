@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
 import { createTask } from '../lib/ops'
+import { setTodayLimit } from '../lib/closedListPrefs'
 import { seedBase, seeded, seedProjectWithSections, seedToday, storyUser, TODAY, withSeed } from './stories/fixtures'
 import { db } from '../lib/db'
 import { setTaskOpen } from '../lib/userPrefs'
@@ -50,6 +51,22 @@ export const TodayEarlierCollapsed: StoryObj = {
   render: () => <Column><TaskListView route={{ view: 'today' }} userId={storyUser.id} userRole={storyUser.role} /></Column>,
 }
 
+/**
+ * Today with a limit of three and a full day (today-waiting-time-sensitive): the folded
+ * Waiting for a slot heading names the next task with a time today, and the waiting
+ * tasks due today with a time or a deadline today are listed under it, soonest first,
+ * each with Take a slot.
+ */
+export const TodayWaitingWithTimes: StoryObj = {
+  ...withSeed(async () => {
+    await seedToday()
+    await createTask({ title: 'Send the form to the school', due: { date: TODAY, time: '16:00' } })
+    await createTask({ title: 'File the expense report', deadline: TODAY })
+    await setTodayLimit(3)
+  }),
+  render: () => <Column><TaskListView route={{ view: 'today' }} userId={storyUser.id} userRole={storyUser.role} /></Column>,
+}
+
 /** Upcoming: the coming days as groups, each with its date heading. */
 export const UpcomingByDay: StoryObj = {
   ...withSeed(seedToday),
@@ -60,29 +77,6 @@ export const UpcomingByDay: StoryObj = {
 export const ProjectBySection: StoryObj = {
   ...withSeed(() => seedProjectWithSections(false)),
   render: () => <Column><TaskListView route={{ view: 'project', id: seeded.website }} userId={storyUser.id} userRole={storyUser.role} /></Column>,
-}
-
-/** An Inbox with two undecided tasks and three planned ones without a project (inbox-planned-group). */
-async function seedInboxPlanned(open: boolean): Promise<void> {
-  await seedBase()
-  try { localStorage.setItem('opentodo.collapsed', JSON.stringify(open ? ['inbox:planned:open'] : [])) } catch { /* stories only */ }
-  await createTask({ title: 'Look into a new phone plan' })
-  await createTask({ title: 'Idea: a shared shopping list' })
-  await createTask({ title: 'Renew the passport', due: { date: '2026-10-16' } })
-  await createTask({ title: 'Pick up the parcel', due: { date: '2026-10-15' } })
-  await createTask({ title: 'Learn to make bread', start: 'someday' })
-}
-
-/** The Inbox's planned tasks folded at the end: the group's label and "3", no rows (inbox-planned-group D1). */
-export const InboxPlannedFolded: StoryObj = {
-  ...withSeed(() => seedInboxPlanned(false)),
-  render: () => <Column><TaskListView route={{ view: 'inbox' }} userId={storyUser.id} userRole={storyUser.role} /></Column>,
-}
-
-/** Opened: the three planned tasks in place, by date, Someday last, with Open as filter in the header. */
-export const InboxPlannedOpen: StoryObj = {
-  ...withSeed(() => seedInboxPlanned(true)),
-  render: () => <Column><TaskListView route={{ view: 'inbox' }} userId={storyUser.id} userRole={storyUser.role} /></Column>,
 }
 
 /** Nothing due today: one sentence, Add a task and the Open Upcoming link. */

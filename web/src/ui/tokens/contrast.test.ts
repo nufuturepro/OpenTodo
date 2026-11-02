@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import css from '../../index.css?raw'
-import { resolveToken, toHex, tokenContrast } from './resolve'
+import { parseRgba, resolveToken, toHex, tokenContrast } from './resolve'
 import { ACCENT_TOKENS } from './accents'
 import { parseAccents, parseContrastOverride, parseThemes } from './css'
 import { DERIVED_TOKENS, GLYPH_PAIRS, OVERRIDE_PAIRS, PAIRS, type Pair } from './pairs'
+import { deriveAccent, RED_GUARD, redDistance, type DerivedAccent } from '../../lib/accentDerive'
+import { deriveTheme, type ResolvedTheme } from '../../lib/theme/derive'
+import { checkTheme, describeFailure } from '../../lib/theme/check'
+import { SWEEP, sweepDocument } from '../../lib/theme/sweep'
+import type { ThemeDocument } from '../../lib/theme/format'
 
 // OpenSpec design-system "Accessible contrast in both themes".
 const themes = parseThemes(css)
@@ -37,6 +42,65 @@ describe('token contrast', () => {
       })
     }
   }
+
+  // accent-colour D8, design-system "Custom accent meets every accent contrast pair": a
+  // fixed sweep of picked colours, each derived and measured through the real resolver
+  // on the stylesheet's own tokens, exactly as a built-in accent above.
+  const SWEEP: string[] = [
+    ...Array.from({ length: 36 }, (_, i) => i * 10).flatMap((h) =>
+      [0.3, 0.5, 0.7, 0.9].flatMap((l) => [0.05, 0.12, 0.25].map((c) => toHex(parseRgba(`oklch(${l} ${c} ${h})`))))),
+    '#000000', '#ffffff', '#111111', '#333333', '#555555', '#777777', '#808080', '#999999', '#bbbbbb', '#dddddd',
+  ]
+
+  /** The token maps of a derived custom accent in each mode, as [data-accent="custom"] with the inline values would resolve. */
+  function customTokens(d: DerivedAccent) {
+    const declared: Record<string, string> = { 'al-accent': d.light, 'ad-accent-text': d.dark, 'a-on-accent': d.on, ...(d.button ? { 'ad-accent': d.button } : {}) }
+    return { light: { ...light, ...declared }, dark: { ...darkAttr, ...declared } }
+  }
+
+  /** Every failing accent pair of a custom accent in a mode, naming the input, the mode, the pair and the ratio. */
+  function customFailures(input: string, mode: string, tokens: Record<string, string>): string[] {
+    return accentPairs.flatMap(({ fg, bg, min, kind }) => {
+      const ratio = tokenContrast(tokens, fg, bg)
+      return ratio + 1e-9 >= min ? [] : [`custom ${input} ${mode}: ${fg} on ${bg} (${kind}) ${ratio.toFixed(2)}:1, needs ${min}:1`]
+    })
+  }
+
+  it(`a custom accent meets every accent pair in both modes, over ${SWEEP.length} picked colours`, () => {
+    const failures = SWEEP.flatMap((input) => {
+      const d = deriveAccent(input)
+      const t = customTokens(d)
+      return [...customFailures(input, 'light', t.light), ...customFailures(input, 'dark', t.dark)]
+    })
+    expect(failures).toEqual([])
+  })
+
+  it('a custom accent keeps at least the distance of Rose from the danger and priority-1 colours', () => {
+    const near = SWEEP.flatMap((input) => {
+      const d = deriveAccent(input)
+      return [
+        ...(redDistance('light', d.light) >= RED_GUARD.light ? [] : [`custom ${input} light: ${d.light} ΔE ${redDistance('light', d.light).toFixed(2)}`]),
+        ...(redDistance('dark', d.dark) >= RED_GUARD.dark ? [] : [`custom ${input} dark: ${d.dark} ΔE ${redDistance('dark', d.dark).toFixed(2)}`]),
+      ]
+    })
+    expect(near).toEqual([])
+  })
+
+  it('the eight built-in accents pass the red guard unchanged', () => {
+    for (const [name, a] of Object.entries(parseAccents(css))) {
+      expect(redDistance('light', toHex(resolveToken(a.light, 'accent'))), `${name} light`).toBeGreaterThanOrEqual(RED_GUARD.light)
+      expect(redDistance('dark', toHex(resolveToken(a.dark, 'accent-text'))), `${name} dark`).toBeGreaterThanOrEqual(RED_GUARD.dark)
+    }
+  })
+
+  it('names the input, the mode, the pair and the ratio when a mix ratio is lowered', () => {
+    // A contributor strengthens the dark soft step: text on a custom accent's soft surface falls below 4.5:1.
+    const d = deriveAccent('#1f6feb')
+    const broken = { ...customTokens(d).dark, 'mix-accent-soft-dark': '40%' }
+    const found = customFailures('#1f6feb', 'dark', broken)
+    expect(found.length).toBeGreaterThan(0)
+    expect(found[0]).toMatch(/^custom #1f6feb dark: [a-z-]+ on accent-soft \(text\) \d\.\d\d:1, needs 4\.5:1$/)
+  })
 
   it('checks all 12 chip pairs', () => {
     expect(PAIRS.filter((p) => p.kind === 'chip')).toHaveLength(12)
@@ -80,6 +144,15 @@ describe('high-contrast override', () => {
     }
   })
 
+  it('a custom accent is black or white there, as every theme (accent-colour D3: only its inputs are set)', () => {
+    const d = deriveAccent('#ffe066')
+    const declared: Record<string, string> = { 'al-accent': d.light, 'ad-accent-text': d.dark, 'a-on-accent': d.on, 'ad-accent': d.button ?? d.light }
+    for (const t of ['accent', 'accent-text', 'focus']) {
+      expect(toHex(resolveToken({ ...hc.light, ...declared }, t)), `light ${t}`).toBe('#000000')
+      expect(toHex(resolveToken({ ...hc.dark, ...declared }, t)), `dark ${t}`).toBe('#ffffff')
+    }
+  })
+
   it('keeps the two dark blocks identical', () => {
     expect(hc.raw.darkMedia).toEqual(hc.raw.darkAttr)
   })
@@ -93,5 +166,65 @@ describe('high-contrast override', () => {
     const found = failures('contrast-high', 'light', broken, pairs.filter((p) => p.fg === 'muted' && p.bg === 'surface'))
     expect(found).toHaveLength(1)
     expect(found[0]).toMatch(/^contrast-high light: muted on surface \(text\) 5\.\d\d:1, needs 7:1$/)
+  })
+})
+
+// OpenSpec theme-engine D10, themes "Every theme in the repository passes the contrast
+// gate": every theme document shipped in the repository, derived as the device
+// derives it, and a fixed sweep of seed-only themes, measured with the same resolver
+// and pairs as the stylesheet. checkTheme (the app's runtime measurement) must agree.
+describe('theme documents', () => {
+  const docs = Object.entries(import.meta.glob<ThemeDocument>('../../lib/theme/builtin/*.json', { eager: true, import: 'default' }))
+
+  /** Every failing pair of a resolved theme, naming the theme, the pair and both ratios. */
+  function themeFailures(name: string, t: ResolvedTheme): string[] {
+    const tokens = { ...t.tokens, ...DERIVED_TOKENS }
+    return [...PAIRS, ...GLYPH_PAIRS].flatMap(({ fg, bg, min, kind }) => {
+      const ratio = tokenContrast(tokens, fg, bg)
+      return ratio + 1e-9 >= min ? [] : [`${name}: ${fg} on ${bg} (${kind}) ${ratio.toFixed(2)}:1, needs ${min}:1`]
+    })
+  }
+
+  it('ships the OpenTodo themes and the built-in catalogue (theme-catalogue)', () => {
+    expect(docs.map(([, d]) => d.id).sort()).toEqual([
+      'catppuccin-latte', 'catppuccin-mocha', 'dracula', 'gruvbox-dark', 'gruvbox-light', 'nord', 'one-dark', 'one-light',
+      'opentodo-dark', 'opentodo-light', 'rose-pine', 'rose-pine-dawn', 'solarized-dark', 'solarized-light', 'tokyo-night', 'tokyo-night-light',
+    ])
+  })
+
+  for (const [path, doc] of docs) {
+    it(`${doc.id} (${path.split('/').pop()}) passes every pair for its kind, and checkTheme agrees`, () => {
+      const t = deriveTheme(doc)
+      const gate = themeFailures(doc.id, t)
+      expect(gate).toEqual([])
+      expect(checkTheme(t).map(describeFailure)).toEqual(gate)
+    })
+  }
+
+  it('names the theme, the pair and both ratios when a shipped value is lowered on purpose', () => {
+    const [, dark] = docs.find(([, d]) => d.id === 'opentodo-dark')!
+    const broken = deriveTheme({ ...dark, tokens: { ...dark.tokens, faint: '#5f636b' } })
+    const gate = themeFailures('opentodo-dark', broken).filter((f) => f.includes('faint on canvas'))
+    expect(gate).toHaveLength(1)
+    expect(gate[0]).toMatch(/^opentodo-dark: faint on canvas \(text\) [34]\.\d\d:1, needs 4\.5:1$/)
+    expect(checkTheme(broken).map(describeFailure)).toContain(gate[0])
+  })
+
+  it(`every one of the ${SWEEP.length} swept seed sets derives a theme that passes every pair, and checkTheme agrees`, () => {
+    const failures = SWEEP.flatMap((s) => {
+      const t = deriveTheme(sweepDocument(s))
+      const gate = themeFailures(s.name, t)
+      const runtime = checkTheme({ ...t, id: s.name }).map(describeFailure)
+      return runtime.join() === gate.join() ? gate : [...gate, `${s.name}: checkTheme disagrees: ${runtime.join('; ')}`]
+    })
+    expect(failures).toEqual([])
+  })
+
+  it('names the seed set, the pair and the ratio when a derivation step breaks', () => {
+    // A contributor makes the dark accent soft step as strong as the accent text: its text falls below 4.5:1.
+    const s = SWEEP.find((x) => x.kind === 'dark')!
+    const t = deriveTheme(sweepDocument(s))
+    const broken = { ...t, tokens: { ...t.tokens, 'accent-soft': t.tokens['accent-text'] } }
+    expect(themeFailures(s.name, broken).some((f) => f.startsWith(`${s.name}: accent-soft-text on accent-soft (text)`))).toBe(true)
   })
 })

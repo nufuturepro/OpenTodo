@@ -212,6 +212,11 @@ func TestSecurityRoutePolicies(t *testing.T) {
 		"GET /api/v1/calendar-sync/connections":            "auth demo",
 		"POST /api/v1/calendar-sync/connections/{id}/sync": "auth demo",
 		"DELETE /api/v1/calendar-sync/connections/{id}":    "auth demo",
+		// Microsoft (outlook-calendar-sync D11): the same as Google.
+		"GET /api/v1/settings/calendar-sync/microsoft": "auth owner demo",
+		"PUT /api/v1/settings/calendar-sync/microsoft": "auth owner admin-token demo",
+		"POST /api/v1/calendar-sync/microsoft/start":   "auth fresh demo",
+		"GET /api/v1/calendar-sync/microsoft/callback": "auth session-only demo",
 		// Owner data and restore.
 		"GET /api/v1/backups":                                 "auth owner",
 		"POST /api/v1/backups/restore":                        "auth owner session-only fresh demo",
@@ -232,6 +237,7 @@ func TestSecurityRoutePolicies(t *testing.T) {
 		"DELETE /api/v1/projects/{id}/member-invitations/{invitationId}":   "auth demo",
 		"DELETE /api/v1/workspaces/{id}/member-invitations/{invitationId}": "auth full-tokens demo",
 		"POST /api/v1/assistant/turn":                                      "auth session-only demo",
+		"POST /api/v1/assistant/routine-draft":                             "auth session-only demo",
 		"POST /api/v1/me/assistant/test":                                   "auth session-only demo",
 		// Regular content routes.
 		"POST /api/v1/sync":                       "auth",

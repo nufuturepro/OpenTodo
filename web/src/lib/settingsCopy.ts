@@ -75,6 +75,8 @@ export const SETTINGS_COPY = {
       order: { label: msg('Order'), description: msg('Frog does the Large task first; Summit warms up with the Medium one.') },
       // Energy levels (task-energy D3): synced user_prefs.energy, off by default in every mode.
       energy: { label: msg('Energy levels'), description: msg('Mark tasks Deep, Medium or Low and filter by the energy they need.') },
+      // Formatting button (notes-toolbar-desktop D4): synced user_prefs.formatting_toggle, on by default.
+      formatting: { label: msg('Formatting button'), description: msg('A button beside notes and comments on a computer that shows bold, lists and links.') },
     },
   },
   // Settings → Account → Invitations (member-add-consent).
@@ -165,6 +167,10 @@ export const SETTINGS_COPY = {
       device: { label: msg('This device'), description: msg('Asks for your passphrase again before showing your tasks.') },
       off: { label: msg('Turn off encryption'), description: msg('Your content is synced in plaintext again.') },
       lost: { label: msg('Lost both keys?'), description: msg('Without your passphrase or recovery key, encrypted content cannot be recovered.') },
+      // routines-ai-step D7: routines that read text or ask AI run on a device.
+      routines: { label: msg('Run my routines'), description: msg('Routines that read text or ask AI run here, while this device is online and unlocked.') },
+      routinesDevices: { label: msg('Devices running routines') },
+      routinesRecent: { label: msg('Recent routine runs'), description: msg('What this device ran, without the text.') },
     },
   },
   activity: {
@@ -182,7 +188,8 @@ export const SETTINGS_COPY = {
     learnMore: 'settings/appearance',
     rows: {
       mode: { label: msg('Mode'), description: msg("System follows your device's light or dark setting.") },
-      theme: { label: msg('Theme') },
+      themes: { label: msg('Theme') },
+      theme: { label: msg('Accent') },
       density: { label: msg('Density'), description: msg('Compact tightens rows, headers and the sidebar; touch targets stay full size.') },
       rows: { label: msg('Task rows'), description: msg('Detailed adds the parent task and a line of dates, priority and labels.') },
       motion: { label: msg('Motion'), description: msg('Off makes menus, dialogs and changes instant.') },
@@ -238,6 +245,14 @@ export const SETTINGS_COPY = {
     rows: { show: { label: msg('Show the briefing') } },
   },
   // Today by part of the day (day-parts D4): the synced user_prefs.day_parts, as in Today's menu.
+  // The Inbox card of routines (routines-editor D10): the synced user_prefs.routines_hide_successes.
+  'routine-runs': {
+    title: msg('Routines'),
+    icon: 'zap',
+    description: msg('Runs you did not start show in the Inbox card "Routines since your last visit".'),
+    learnMore: 'routines',
+    rows: { hide: { label: msg('Hide successful runs'), description: msg('The card shows only runs that failed or wait for you.') } },
+  },
   'day-parts': {
     title: msg('Today'),
     icon: 'sun',
@@ -333,6 +348,15 @@ export const SETTINGS_COPY = {
       blocked: msg('Notifications are blocked in your browser settings; reminders still appear in the app.'),
       renew: msg('The push service stopped accepting notifications for this device.'),
     },
+  },
+  // Settings → Notifications → App icon badge (app-icon-badge): a device-local flag.
+  'app-badge': {
+    title: msg('App icon badge'),
+    icon: 'bell',
+    description: msg('The installed app\'s icon shows how many of today\'s tasks are open.'),
+    learnMore: 'app-icon-badge',
+    rows: { show: { label: msg('Show today\'s count'), description: msg('This device only. The count matches Today in the sidebar.') } },
+    notices: { permission: msg('On iPhone and iPad the badge appears only once notifications are allowed.') },
   },
   // Settings → Notifications → Delivery channels (notification-channels).
   'notification-channels': {
@@ -468,6 +492,7 @@ export const SETTINGS_COPY = {
       website: { label: msg('Website'), description: msg('News, guides, comparisons and what is new in each release.') },
       feedback: { label: msg('Feedback and problems'), description: msg('Open an issue on GitHub. Every report is read.') },
       community: { label: msg('Community'), description: msg('Questions, ideas and other people who use OpenTaskKit, on Discord.') },
+      news: { label: msg('News and updates'), description: msg('Releases and what is being built, on X.') },
       source: { label: msg('Source code'), description: msg('A star on GitHub helps other people find it.') },
       welcome: { label: msg('Welcome note'), description: msg('The thank-you shown the first time you opened this server.') },
     },
@@ -577,12 +602,13 @@ export const SETTINGS_COPY = {
       server: {
         label: msg('On this server'),
         description: {
-          owner: msg('People can connect a CalDAV or Google calendar; tasks and events stay in step.'),
+          owner: msg('People can connect a CalDAV, Google or Microsoft calendar; tasks and events stay in step.'),
           member: msg('The owner has not enabled calendar sync on this server.'),
         },
       },
       google: { label: msg('Google client'), description: msg('Lets people connect Google Calendar. Register the redirect address in your OAuth client.') },
-      connections: { label: msg('Calendar accounts'), description: msg('Up to {max}. Outlook and Microsoft 365 are not supported yet.') },
+      microsoft: { label: msg('Microsoft client'), description: msg('Lets people connect Outlook and Microsoft 365. Register the redirect address in Entra ID.') },
+      connections: { label: msg('Calendar accounts'), description: msg('Up to {max}.') },
     },
     notices: {
       offline: msg('Changing calendar sync needs a connection. You are seeing the last loaded state.'),
@@ -758,6 +784,9 @@ export const SETTINGS_COPY = {
     rows: {
       name: { label: msg('Name'), description: msg('Shown in place of OpenTaskKit. Up to 40 characters; empty keeps OpenTaskKit.') },
       logo: { label: msg('Logo'), description: msg('A square PNG or JPEG of at least 192 pixels; the server renders every size.') },
+      // The server's default theme and themes (theme-instance-default D4).
+      defaultTheme: { label: msg('Default theme'), description: msg('People who never chose a theme see this one; their own choice always wins.') },
+      serverThemes: { label: msg('Server themes'), description: msg('Everyone on this server can choose these, or customise a copy. Up to 20.') },
     },
     notices: { offline: msg('You are offline. These settings need a connection to the server.') },
   },

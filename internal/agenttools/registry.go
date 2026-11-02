@@ -81,6 +81,12 @@ type Caller struct {
 // ScopeAgent is the token scope that may call write tools (auth.ScopeAgent).
 const ScopeAgent = "agent"
 
+// ScopeRoutine is the routine caller (routines-engine D11): a routine's steps
+// are planned through the registry as the user's own automation. The engine
+// plans with it and writes itself with device rule:<rule-id>: no token gate,
+// no per-token limits and no agent.write audit apply, the routine limits do.
+const ScopeRoutine = "routine"
+
 // Write permission gate codes (design D3).
 const (
 	DeniedByOwner = "writes_disabled_by_owner"
@@ -153,6 +159,10 @@ type Change struct {
 	// opSeed, when set, derives the op ids deterministically so a retried
 	// create (same client_request_id) de-duplicates in the op log (D4).
 	opSeed string
+	// bodyVersion, when set, is the body version a replacement of the text was
+	// planned against (update_note, notes-overview D13): Apply has ApplyStrict
+	// check it inside the transaction (sync.WithBodyVersion).
+	bodyVersion string
 }
 
 // ChangeSet is everything one write tool call changes; it applies as one batch.
@@ -164,6 +174,9 @@ type Plan struct {
 	Result  map[string]any
 	Changes ChangeSet
 	Count   int
+	// exec carries out a call that is no ChangeSet (run_routine): Call runs it
+	// after the gate in place of Apply and counts the writes it reports.
+	exec func(ctx context.Context) (map[string]any, int, error)
 }
 
 // ExtraOps lets the transport add the ops a REST write of the same change
@@ -186,6 +199,10 @@ type Registry struct {
 	// exclusions hides projects kept away from AI assistants from every tool
 	// (agent-planning-fields D9); nil hides nothing.
 	exclusions *Exclusions
+	// userZone is the user's time zone for reminders (nil: UTC).
+	userZone func(ctx context.Context, uid string) *time.Location
+	// routines serves the routine tools (routines-engine); nil: unavailable.
+	routines Routines
 }
 
 // Options configure a Registry.
@@ -200,11 +217,14 @@ type Options struct {
 	LocalToday func() string
 	// Exclusions are the projects kept away from AI assistants (nil: none).
 	Exclusions *Exclusions
+	// UserZone is the user's time zone, in which relative, deadline and
+	// absolute reminders are read as for a REST write (nil: UTC).
+	UserZone func(ctx context.Context, uid string) *time.Location
 }
 
 // New wires a Registry.
 func New(syncSvc *opsync.Service, opts Options) *Registry {
-	r := &Registry{sync: syncSvc, now: opts.Now, audit: opts.Audit, limits: opts.Limits, extraOps: opts.ExtraOps, log: opts.Log, today0: opts.LocalToday, exclusions: opts.Exclusions}
+	r := &Registry{sync: syncSvc, now: opts.Now, audit: opts.Audit, limits: opts.Limits, extraOps: opts.ExtraOps, log: opts.Log, today0: opts.LocalToday, exclusions: opts.Exclusions, userZone: opts.UserZone}
 	if r.now == nil {
 		r.now = time.Now
 	}
@@ -229,7 +249,10 @@ type tool struct {
 	rest bool
 	def  func(c Caller) Definition
 	read func(r *Registry, ctx context.Context, userID string, a args) (map[string]any, error)
-	plan func(r *Registry, ctx context.Context, c Caller, a args, overlay ChangeSet) (Plan, error)
+	// readC is a read that depends on the caller (search_notes refuses an
+	// encrypted account); a tool sets read or readC.
+	readC func(r *Registry, ctx context.Context, c Caller, a args) (map[string]any, error)
+	plan  func(r *Registry, ctx context.Context, c Caller, a args, overlay ChangeSet) (Plan, error)
 }
 
 var registry []tool
@@ -302,6 +325,10 @@ func (r *Registry) Plan(ctx context.Context, c Caller, name string, rawArgs json
 		return Plan{}, err
 	}
 	if d.Kind == KindRead {
+		if t.readC != nil {
+			res, err := t.readC(r, ctx, c, a)
+			return Plan{Result: res}, err
+		}
 		res, err := t.read(r, ctx, c.UserID, a)
 		return Plan{Result: res}, err
 	}
@@ -370,6 +397,19 @@ func (r *Registry) write(ctx context.Context, c Caller, name string, rawArgs jso
 	p, err := r.Plan(ctx, c, name, rawArgs, nil)
 	if err != nil {
 		return nil, err
+	}
+	if p.exec != nil {
+		// A routine run (run_routine) writes as the routine; its writes count
+		// against this token's daily items once it ran.
+		out, n, err := p.exec(ctx)
+		if err != nil {
+			return nil, err
+		}
+		r.limits.Reserve(c.TokenID, n)
+		*count = n
+		out["server_time"] = r.serverTime()
+		out["_notice"] = Notice
+		return out, nil
 	}
 	if c.relayed() {
 		if err := relayEncrypt(ctx, c, name, p.Changes); err != nil {

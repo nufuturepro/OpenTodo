@@ -13,7 +13,7 @@ order: 20
 
 It is an **online** client: it keeps no local copy of your tasks and makes no change when the server cannot be reached. The one exception is [`ot vault`](vault.md), which keeps a folder of Markdown files and its own sync state. Every write goes through the REST API, which records it in the operation log, so changes made with `ot` reach your phone and browser on their next sync and converge under the same per-field last-writer-wins rule as any other edit.
 
-`ot rules list` lists your [automation rules](automations.md); `ot rules enable <id>` and `ot rules disable <id>` turn one on or off (an id prefix or the exact name works; `--dry-run` prints the request); `ot rules runs <id>` prints its run log. Rules are built in the app. A read token lists but cannot switch (exit 5).
+`ot rules list` lists your [automation rules](automations.md); `ot rules enable <id>` and `ot rules disable <id>` turn one on or off (an id prefix or the exact name works; `--dry-run` prints the request); `ot rules runs <id>` prints its run log. A read token lists but cannot switch (exit 5). [Routines](routines.md) have their own command, `ot routine` (below).
 
 ## Install
 
@@ -117,7 +117,7 @@ ot list --blocked --project Home   # waiting for an open task
 ot list --available                # what can be done now: not blocked, not waiting for an earlier step
 ```
 
-Human output is a compact table: an id prefix, priority, due date and time (overdue dates are marked and shown in red on a terminal), project and title, plus an `ORIGIN` column (the issue id or the page's host) when a listed task has an [origin](capture.md#where-a-task-came-from) and a `BY` column with the deadline when one has a deadline (a passed deadline is marked overdue), and an `ENERGY` column when a listed task has an energy; `--json` always carries `energy` (null for none). The due cell adds `(someday)`, `starts <date>`, `evening` (or `morning`, `afternoon`) and `waiting` when they apply. Dates are evaluated in your local time zone. A task fixed to a time zone (see [sync.md](sync.md#zoned-due-values)) is shown converted to your zone with the original as a hint, e.g. `2026-10-11 00:00 (09:00 Berlin)`; `ot edit --due/--time` on it takes the date and time as shown and keeps the zone, and `--time ""` releases it to a floating date. Tasks of archived projects stay out of the cross-project views, as in the web app.
+Human output is a compact table: an id prefix, priority, due date and time (overdue dates are marked and shown in red on a terminal), project and title, plus an `ORIGIN` column (the issue id or the page's host) when a listed task has an [origin](capture.md#where-a-task-came-from) and a `BY` column with the deadline when one has a deadline (a passed deadline is marked overdue), and an `ENERGY` column when a listed task has an energy; `--json` always carries `energy` (null for none). The due cell adds `(someday)`, `starts <date>` (for a multi-day task its days instead: `3–5 Nov`, `30 Oct – 2 Nov`, or with the years when they differ), `evening` (or `morning`, `afternoon`) and `waiting` when they apply. Dates are evaluated in your local time zone. A task fixed to a time zone (see [sync.md](sync.md#zoned-due-values)) is shown converted to your zone with the original as a hint, e.g. `2026-10-11 00:00 (09:00 Berlin)`; `ot edit --due/--time` on it takes the date and time as shown and keeps the zone, and `--time ""` releases it to a floating date. Tasks of archived projects stay out of the cross-project views, as in the web app.
 
 ```
 ID        P   DUE                 PROJECT  TITLE
@@ -125,7 +125,7 @@ ID        P   DUE                 PROJECT  TITLE
 3f1d7a22  P1  2026-10-10 09:00             Call the plumber
 ```
 
-With a [Today limit](today-limit.md) on, `ot today` prints the tasks in the slots, then a **Waiting for a slot** heading and the waiting tasks in fill order (the first comes in next), with the app's rule: today's focus, the tasks you let in, Earlier oldest first, then the rest by when they were created. `--all` prints every task in one table, and `--json` adds `waiting_for_slot` to each task while the limit is on.
+With a [Today limit](today-limit.md) on, `ot today` prints the tasks in the slots, then a **Waiting for a slot** heading and the waiting tasks in fill order (the first comes in next), with the app's rule: today's focus, the tasks you let in, Earlier oldest first, then the rest by when they were created. `--all` prints every task in one table, and `--json` adds `waiting_for_slot` to each task while the limit is on. When waiting tasks are due today with a time or have a deadline today, the heading names the next one (`Waiting for a slot · 4 — next: Send the form, 16:00`) and lists them first, soonest first, with their time (`deadline` for a deadline without one), before the waiting tasks in fill order; `--json` marks them with `time_sensitive: true` (`false` on the other waiting tasks).
 
 ### Add and edit
 
@@ -143,6 +143,7 @@ ot add "Quarterly report" --start monday --deadline 2026-11-06
 ot edit 8c2a --start someday                         # park it, keep the due date
 ot add "Install shelves" --blocked-by 91f0 --location Home
 ot edit 8c2a --evening=false --blocked-by none --location none
+ot edit 8c2a --start 2026-11-03 --due 2026-11-05 --span   # a trip from 3 to 5 November
 ot add --done "Fixed the printer"                    # log a win: created already completed
 ```
 
@@ -160,6 +161,7 @@ ot add --done "Fixed the printer"                    # log a win: created alread
 | `--deadline <when>` | The day the task must be finished by, separate from the due date; same words as `--due`; `none` (edit) clears it |
 | `--start <when>` | `someday` parks the task; a date (same words as `--due`) defers it until that day; `none` (edit) clears it. The due date is kept |
 | `--evening` | Put the task in This Evening; `--evening=false` takes it out |
+| `--span`, `--no-span` | Draw the task across the days from its start date to its due date, both included (a trip, a conference); a span needs `--start` and `--due` with the start before the due date, otherwise it shows on its due date as before. `--no-span` takes it back to one day and keeps the start date. Both together exit 2 before any request |
 | `--part <part>` | The [part of the day](day-parts.md): `morning`, `afternoon`, `evening` (This Evening) or `none`; written with the evening flag, so `--part afternoon` takes an evening task out of This Evening. Another word exits 2 before any request. It wins over `--evening` |
 | `--energy <level>` | The task's energy: `deep`, `medium` or `low` (any case); `none` clears it. Another word exits 2 before any request |
 | `--blocked-by <ref>` | Repeatable: a task this one waits for, by id or unique id prefix (an ambiguous prefix exits 1 listing the candidates, before any write). With `ot edit` the list is replaced; `none` clears it |
@@ -188,6 +190,23 @@ A `<ref>` is a full task id or an id prefix that matches exactly one non-deleted
 
 A task that is already in the requested state (`ot done` on a completed task, `ot reopen` on an open one) is reported as `unchanged`, keeps its completion time and nothing is sent; the command still exits 0. `ot edit` with values equal to the current ones sends nothing either.
 
+### Repeating tasks ahead
+
+```bash
+ot task occurrences 8c2a                                # today and the 30 days after
+ot task occurrences 8c2a --from 2026-10-12 --to 2026-10-18 --json
+ot task occurrence 8c2a 2026-10-19 skip                 # skip one occurrence
+ot task occurrence 8c2a 2026-10-14 edit --time 19:00   # move one occurrence alone
+ot task occurrence 8c2a 2026-10-15 complete            # complete one early
+ot task split 8c2a --from 2026-10-14 --time 19:00       # 19:00 from Wednesday on
+```
+
+`ot task occurrences <ref>` lists a repeating task's current occurrence and the [projected](recurrence.md#projected-occurrences) ones after it in a range, as a table of DATE, TIME and STATE (`current`, `projected`, or `open`, `done` and `skipped` for an occurrence that has a record). `--from` and `--to` take `YYYY-MM-DD`, `today`, `yesterday` or a weekday; the range is at most 366 days and lists at most 31 projected dates. The dates are the ones the app draws on the calendar ([`GET /api/v1/tasks/{id}/occurrences`](api.md#a-series-dates-ahead)); it only reads, so a `read` token will do. A task without a rule exits 1 with `not_recurring`.
+
+`ot task occurrence <ref> <date> complete|skip|edit` acts on one occurrence alone ([one occurrence alone](recurrence.md#one-occurrence-alone)): `complete` and `skip` that date, `edit` moves it (`--due <day>`, `--time HH:MM` or `none`) or renames it (`--title`); a new day without `--time` keeps the series' time. `<date>` takes `YYYY-MM-DD`, `today`, `tomorrow` or a weekday. It prints the occurrence's record (`--json`: the task). A date that is not an occurrence exits 1 with `not_an_occurrence`. It writes through [`POST /api/v1/tasks/{id}/occurrences/{date}/complete`](api.md#one-occurrence-alone) and its siblings, so it needs a `full` token.
+
+`ot task split <ref> --from <date>` changes a repeating task from one of its later occurrences on ([This and following](recurrence.md#this-and-following)): `--time HH:MM` (or `none`), `--rule <rule>` and `--title <text>` give the change, at least one of them. The task ends the day before `--from`, and the new task that continues it is printed (`--json`: the task). The current occurrence, or a date that is not an occurrence, exits 1 with `not_an_occurrence`. It writes through [`POST /api/v1/tasks/{id}/split`](api.md#this-and-following), so it needs a `full` token.
+
 ## Projects
 
 ```bash
@@ -201,6 +220,35 @@ ot project rm Garden [--yes]
 
 Projects are referenced by name (case-insensitive), full id or unique id prefix. `ot project list` shows every workspace's projects with a WORKSPACE column and each project's FLOW (`parallel`, `sequential` or `area`, see [Sequential projects and areas](project-flows.md)), and STATUS `archived` or `maintenance` ([Review intervals and maintenance](review-intervals.md)); `--workspace` narrows it to one.
 
+## Notes
+
+[Notes](notes.md) from the shell: standalone notes, the notes of tasks and the notes of projects, read and written as Markdown.
+
+```bash
+ot notes                                   # every note, newest change first (same as ot notes list)
+ot notes list --source task --project Home # note, task, project or all; --standalone is --source note
+ot notes list --label work --limit 20
+ot notes search plumber                    # every word in the title or text, title matches first
+ot notes show 3fa1                         # the text, then text appended that no device merged yet
+ot notes add "Wi-Fi" --project Home --label home --body "- network: home" [--idempotency-key wifi-1]
+ot notes add "Meeting" --body-file agenda.md       # or --body-file - for standard input
+ot notes edit 3fa1 --title "Wi-Fi at home" --project none --label none
+ot notes edit 3fa1 --body-file notes.md            # replaces the text, see below
+ot notes append Meeting "- decided: ship Friday"   # adds at the end, replaces nothing
+ot notes rm 3fa1 [--yes]                   # to the Trash
+ot notes to-task "Call the plumber"        # a task with the note's title, text, project and labels; prints its id
+ot task note 8c2a                          # a task's note as Markdown
+ot task note 8c2a --set "New plan" | --file plan.md | --file - | --append "- called, no answer" | --clear
+```
+
+A note `<ref>` is a full id, a unique id prefix, a title (ignoring case) or a unique title prefix; an ambiguous one changes nothing and exits 2 with the candidates. `ot notes show` accepts the id of a task or project note from the list too; `edit`, `append`, `rm` and `to-task` act on standalone notes, and `ot task note` on a task's note (a task id, unique id prefix or title). The list prints KIND (`note`, `task`, `project`; `task (done)` and `project (archived)` are marked), id prefix, title (`Untitled note` when a note has none), project and when its text last changed; `ot notes search` adds a MATCH column with the text around the first match. Search runs on your machine over the notes the server returned, with the matching of the app: every word must occur in the title or the text, case and accents ignored, a quoted phrase as one; title matches first.
+
+Text is Markdown. What a note shows is its text followed by anything appended that no device has merged into it yet; the next device that opens the note turns the Markdown into formatted content. **A replacement** (`edit --body`, `edit --body-file`, `task note --set`, `--file` and `--clear`) carries the version `ot` read: when someone changed the note in the app after that (or another write came first), the server refuses it with `body_changed`, exit 1, and nothing changes. Read it again and retry. **An append** (`ot notes append`, `ot task note --append`) never replaces anything, so it is safe while someone edits the same note on a phone: every device adds the text at the end once. A note holds at most 100 appends no device has merged yet (`too_many_appends`). `ot task note` takes one of `--set`, `--file`, `--append` and `--clear` per call; two exit 2 before anything is sent.
+
+Every write supports `--dry-run` and is refused by `--read-only`; `rm` needs `--yes` off a terminal and with `--json`, like `ot rm`. Note writes go through the REST routes and need a `full` token: a `read` token reads only, and an `agent` token writes notes through [MCP](mcp.md) instead (`ot task note --set` on a task it may edit is allowed). The CLI is online: a write reaches the server, then every device on its next sync.
+
+On an [end-to-end encrypted](e2ee.md) account `ot notes` and `ot task note` decrypt on your machine after `ot encryption unlock`, and seal every title, text and append for its note or task before sending, as `ot vault` does (a new note is created first and its sealed title and text written right after, since a sealed value names its note's id; `to-task` seals the title, text and document for the task id it chose). Without the key the list shows `(encrypted)`, `show` says the note is encrypted, and text writes stop with `encryption_enabled`, exit 5, before anything is sent; `rm` and project or label changes still work. Labels named with `--label` must exist on an encrypted account (`ot` would otherwise send the new name readable). `to-task` refuses a note with appends no device has merged yet: open it in the app once, then run it again.
+
 ## Time
 
 [Time tracking](time-tracking.md) from the shell: start and stop a running entry, log past work, list and export entries.
@@ -208,17 +256,49 @@ Projects are referenced by name (case-insensitive), full id or unique id prefix.
 ```bash
 ot time start 8c2a [--note "review"]     # stops the running entry first
 ot time stop                             # exit 1 when nothing runs
+ot time status                           # your running entry; a Focus session adds its timer, session and planned end
 ot time log 8c2a 1h30 --on yesterday --note "review"
 ot time log 8c2a --from 09:00 --to 09:25 [--on 2026-10-12]
 ot time list --from 2026-10-12 --to 2026-10-18 [--task 8c2a] [--running] [--limit 50]
 ot time export --from 2026-10-12 --to 2026-10-18 -o week.csv
 ```
 
-A duration is `45m`, `1h30`, `1.5h` or `90` (minutes); anything else exits 2 before a request. Without `--on` a duration ends now; on another day (`--on yesterday`, a weekday meaning the last one, or `YYYY-MM-DD`) it ends at 17:00 local time. `--from` and `--to` are times on that day. `start`, `stop` and `log` write, so `--dry-run`, `--read-only` and token scope apply: a `read` token exits 5 (`insufficient_scope`) before anything is sent, while `list` and `export` work with it. `ot time list` prints the id prefix, day, `09:00–09:25`, duration, task and project, newest first; `--json` prints the [`time_entry`](#machine-readable-help-ot-schema) objects (`endedAt: null` while running). `ot time export` downloads the server's CSV for those local days in your time zone; with `-o` and `--json` it reports the file and the row count. A weekly export for cron:
+A duration is `45m`, `1h30`, `1.5h` or `90` (minutes); anything else exits 2 before a request. Without `--on` a duration ends now; on another day (`--on yesterday`, a weekday meaning the last one, or `YYYY-MM-DD`) it ends at 17:00 local time. `--from` and `--to` are times on that day. `start`, `stop` and `log` write, so `--dry-run`, `--read-only` and token scope apply: a `read` token exits 5 (`insufficient_scope`) before anything is sent, while `list` and `export` work with it. `ot time list` prints the id prefix, day, `09:00–09:25`, duration, task and project, newest first; `--json` prints the [`time_entry`](#machine-readable-help-ot-schema) objects (`endedAt: null` while running). `ot time status` prints your own running entry, or "Nothing running." (on a [Focus](focus.md) break or pause too), and for a Focus work session a line such as `Pomodoro, session 3, ends 10:25`; it reads, so a `read` token works, and `--json` prints [`time_running`](#machine-readable-help-ot-schema), the answer of [`GET /api/v1/time-entries/running`](api.md#the-running-entry). `ot time export` downloads the server's CSV for those local days in your time zone; with `-o` and `--json` it reports the file and the row count. A weekly export for cron:
 
 ```bash
 0 18 * * 5  ot time export --from monday --to today -o "$HOME/time/week-$(date +\%F).csv"
 ```
+
+## Routines
+
+`ot routine` (or `ot routines`) works with [routines](routines.md); a routine is named by its id, an id prefix or its exact name.
+
+```sh
+ot routine list
+ot routine show Groceries                 # trigger, condition and steps as numbered sentences
+ot routine run Groceries --test           # plan every step, write nothing
+ot routine run "Waiting follow-up" --task 3f2a…
+ot routine runs Groceries --failed --limit 10
+ot routine create --file groceries.yaml
+ot routine create --project Household --file chores.yaml   # a routine of a (shared) project
+ot routine edit Groceries --file changes.json   # replaces the parts the file gives
+ot routine enable Groceries               # or disable
+ot routine undo Groceries <run-id>
+ot routine rm Groceries --yes
+```
+
+A routine file is JSON or YAML with `name`, `trigger`, an optional `condition`, `steps` (or `actions`), `enabled` and an optional `project` (the project it belongs to, by name or id; `--project` does the same), in the shapes of the [API](api.md#routines). Projects, sections, labels, saved views and webhooks may be written by name (`project: Errands`); the CLI resolves them before sending and fails naming one that matches nothing (`project Erands not found`), sending nothing.
+
+```yaml
+name: Groceries
+trigger: {kind: schedule, at: "17:00", weekdays: [5]}
+steps:
+  - {id: a, kind: note_text, in: {of: {literal: {project: Groceries}}}}
+  - {id: b, kind: split_lines, in: {text: {ref: a}}}
+  - {id: c, kind: create_tasks, in: {text: {ref: b}, project: {literal: {project: Errands}}}}
+```
+
+`ot routine list` shows each routine's PROJECT and, for a routine of a [shared project](routines.md#routines-of-a-shared-project), RUNS AS (the person who last turned it on, `-` before anyone did); `ot routine show` prints both. `ot routine run` prints each step's status, items and time, and exits 6 when the run failed (with `--json`, the run record is printed and says at which step). A read token can list, show and read runs but is refused on every other subcommand (exit 5). Saving a routine with a step that is not available prints a warning naming the step and the reason.
 
 ## Calendar frames
 
@@ -261,7 +341,7 @@ ot issues sync 7f3a --dry-run   # print the request, run nothing
 
 ## Tokens and export
 
-`--scope` is `full` (the default), `read` or `agent`; anything else exits with code 2 before a request is sent. Creating a token is a [credential route](api.md#token-scopes): `ot token create` needs an `admin` token in the profile (the token `ot login` stores is `full`, so run `ot login` again to mint a new one, or create it in Settings → Integrations → API tokens). An `admin` token can only be created in the web app, from a recently confirmed session; with it, scripts can also manage second factors, other tokens, app passwords, accounts and server secrets. A `full` token gets exit 5 (`insufficient_scope`) on those routes. An `agent` token is for an [AI assistant](mcp.md#letting-an-assistant-make-changes): it reads everything and can create and edit tasks, projects, labels and comments (through the MCP write tools or `ot`, see [Using ot from an agent](#using-ot-from-an-agent)), and only while both assistant switches are on (the owner's and yours, in Settings → Integrations → AI assistants).
+`--scope` is `full` (the default), `read` or `agent`; anything else exits with code 2 before a request is sent. Creating a token is a [credential route](api.md#token-scopes): `ot token create` needs an `admin` token in the profile (the token `ot login` stores is `full`, so run `ot login` again to mint a new one, or create it in Settings → Integrations → API tokens). An `admin` token can only be created in the web app, from a recently confirmed session; with it, scripts can also manage second factors, other tokens, app passwords, accounts and server secrets. A `full` token gets exit 5 (`insufficient_scope`) on those routes. An `agent` token is for an [AI assistant](mcp.md#letting-an-assistant-make-changes): it reads everything and can create and edit tasks, projects, sections, labels, comments, reminders and time entries (through the MCP write tools or `ot`, see [Using ot from an agent](#using-ot-from-an-agent)), and only while both assistant switches are on (the owner's and yours, in Settings → Integrations → AI assistants).
 
 ```bash
 ot token list                           # with each token's scope
@@ -305,17 +385,19 @@ ot mcp --decrypt                           # the bridge, decrypting on this mach
 
 `ot encryption unlock` fetches the wrapped key record with the profile's token, checks its key-derivation settings as devices do, unwraps the key locally and stores it with its key version in an owner-only file (`keys/<profile>.json` next to the configuration file, the same protection as the token). The passphrase, the recovery key and the key itself are never sent or printed. After 5 failed attempts within a minute it waits before trying again. A passphrase with accented or other non-ASCII characters may need `--recovery`, since `ot` does not normalise Unicode the way the browser does. Lock the key on a shared machine.
 
+The note tools work through the bridge too: `create_note`, `update_note` and `append_to_note` have their text sealed here (an append for the field of the append id the bridge chooses), `list_notes`, `get_note` and the `opentodo://notes` resources come back decrypted, and the bridge answers `search_notes` itself: it reads the notes with `list_notes`, decrypts them and matches the query on your machine, so the server never receives it. `note_to_task` is refused with a pointer to `ot notes to-task`, which seals the note again for the new task.
+
 `ot mcp --decrypt` refuses to start, without prompting, when no key is stored or the stored one is out of date (`stale`: the passphrase or key changed on another device); run `ot encryption unlock` again. Custom field text and task origins are not encrypted by the bridge: the server refuses them for an encrypted account.
 
 ## Markdown vault
 
-`ot vault` keeps a folder of Markdown files, one per project, in two-way sync with the account; it is the one command group that keeps local state (the files and `<dir>/.opentodo/`). It is a sync device of its own and needs a `full` token; with `--read-only` it pulls and writes the files but sends nothing. See [Markdown vault](vault.md).
+`ot vault` keeps a folder of Markdown files, one per project, in two-way sync with the account; it is the one command group that keeps local state (the files and `<dir>/.opentodo/`). It is a sync device of its own and needs a `full` token; with `--read-only` it pulls and writes the files but sends nothing. A folder another device syncs (another machine, or the Obsidian plugin on a phone) is refused before any request with `vault_owned`, exit 2; `--take-over` makes this machine its syncing device. See [Markdown vault](vault.md#one-syncing-device).
 
 ```bash
 ot vault init ~/Notes/Tasks [--adopt]
-ot vault sync [<dir>] [--dry-run] [--read-only] [--json]
+ot vault sync [<dir>] [--dry-run] [--read-only] [--take-over] [--json]
 ot vault status [<dir>] [--json]
-ot vault watch [<dir>]
+ot vault watch [<dir>] [--take-over]
 ```
 
 ## Scripting: JSON output and exit codes
@@ -329,6 +411,12 @@ Every command accepts `--json`. Stdout then holds only JSON, with the same field
 | `done`, `reopen`, `rm` | `task_result` (one reference) or an array of them: the task plus `ref` (what you typed) and `status` (`completed`, `reopened`, `deleted` or `unchanged`) |
 | `project list` / `add`, `rename`, `archive`, `rm` | array of `project` / `project` |
 | `token list` / `create` / `revoke` | array of `token` / `token_created` (`{token, secret}`) / `token` |
+| `notes list`, `notes search` | array of `note`: `{kind, id, title, project_id, project, label_ids, updated_at, body_version, encrypted}`, `search` adds `snippet` (`[{text, mark}]`) |
+| `notes show`, `add`, `edit`, `task note` | `note_text`: `{kind, id, title, text, appends, body_version, project_id, label_ids, encrypted}` |
+| `notes append`, `task note --append` | `note_append`: `{entity, entity_id, append_id, body_version}` |
+| `task occurrences` | `occurrences`: `{series_id, rule, capped, occurrences: [{date, time?, tz?, state, record_id?, due?}]}` |
+| `task occurrence` | `task`: the occurrence's record |
+| `notes rm` / `notes to-task` | `note_result` (the `note` plus `ref` and `status`) or an array of them / `task` |
 | any write command with `--dry-run` | `dry_run` |
 | any failure | `error`: `{"error":{"code":"…","message":"…","exit":N}}` |
 
@@ -349,6 +437,7 @@ Exit codes:
 | 3 | Authentication or configuration error (wrong password, revoked token, unreadable config file) | sign in again |
 | 4 | The server could not be reached within the timeout (15 s) | retry later |
 | 5 | Not permitted: `insufficient_scope`, `forbidden`, `not_permitted`, `writes_disabled_by_owner`, `writes_disabled_by_user`, `encryption_enabled` or `read_only` | do not retry; change the token, the switch or the role |
+| 6 | `ot routine run` ran the routine and the run failed | read the failed step's error in the run record; fix the routine or what it needs |
 
 ### Machine-readable help: `ot schema`
 
@@ -414,7 +503,7 @@ Or add a reminder task every Monday morning:
 
 `ot` is a dependable tool for coding agents and automation harnesses. The short version, which the skill file below spells out for the agent itself:
 
-1. **Give the agent an `agent` token**, not a full one: create it in Settings → Integrations → API tokens (or `ot token create "my assistant" --scope agent` with an admin token in your profile), then on the agent's machine `ot auth set-token <token> --server <url>`. Turn on **Assistants may make changes** (owner) and **Changes to my tasks** (you) in Settings → Integrations → AI assistants. With that token `ot` can list everything and create and edit tasks, projects, labels and comments, complete and reopen tasks, and move to the Trash only tasks the same token created. Writes carry the device `agent:<token-id>`, show in history as "AI assistant (*token name*)", are audited as `agent.write` and share the token's [limits](mcp.md#limits) with MCP. Tokens, settings, sharing, members, encryption, imports and backups stay out of reach (exit 5). `ot auth status` shows the scope and whether writes are allowed right now. A `full` token works too, with everything that implies; a `read` token for an agent that only looks.
+1. **Give the agent an `agent` token**, not a full one: create it in Settings → Integrations → API tokens (or `ot token create "my assistant" --scope agent` with an admin token in your profile), then on the agent's machine `ot auth set-token <token> --server <url>`. Turn on **Assistants may make changes** (owner) and **Changes to my tasks** (you) in Settings → Integrations → AI assistants. With that token `ot` can list everything and create and edit tasks, projects, labels and comments, archive projects (`ot project archive`), track time (`ot time start`, `stop`, `log`; `ot time start` exits 1 with `timer_running` while another of your timers runs, so it never takes over a Focus session), complete and reopen tasks, and move to the Trash only tasks the same token created. Writes carry the device `agent:<token-id>`, show in history as "AI assistant (*token name*)", are audited as `agent.write` and share the token's [limits](mcp.md#limits) with MCP. Tokens, settings, sharing, members, encryption, imports and backups stay out of reach (exit 5). `ot auth status` shows the scope and whether writes are allowed right now. A `full` token works too, with everything that implies; a `read` token for an agent that only looks.
 2. **Use `--json`** everywhere, and `ot schema` to discover commands and output shapes.
 3. **Use `--dry-run`** before a write that touches more than one task, and **`--idempotency-key`** on creates.
 4. **Handle exit codes:** stop and ask on 3, do not retry 5, retry 4 later.

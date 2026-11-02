@@ -4,7 +4,7 @@ An [Easypanel](https://easypanel.io) template in the format of [`easypanel-io/te
 
 | File | What it is |
 | --- | --- |
-| [`meta.yaml`](meta.yaml) | The listing (description, instructions, links, benefits, features, tags) and the form: service name (`opentodo`) and image (`ghcr.io/opentodoapp/opentodo:0.18.1`) |
+| [`meta.yaml`](meta.yaml) | The listing (description, instructions, links, benefits, features, tags) and the form: service name (`opentodo`) and image (`ghcr.io/opentodoapp/opentodo:0.19.0`) |
 | [`index.ts`](index.ts) | `generate()`: one app service from that image, the domain `$(EASYPANEL_DOMAIN)` on port 8080, the volume `data` on `/data`, and `OPENTODO_BASE_URL=https://$(PRIMARY_DOMAIN)`, a generated 32-character `OPENTODO_SETUP_TOKEN`, `OPENTODO_ALLOW_SIGNUP=false` and an empty `OPENTODO_TRUSTED_PROXIES` |
 | `assets/logo.svg` | The logo mark, identical to [`../coolify/opentodo.svg`](../coolify/opentodo.svg) |
 | `assets/screenshot.png` | [`docs/images/board-light.webp`](../../docs/images/board-light.webp) as PNG |
@@ -49,4 +49,4 @@ Needs a GitHub account and Node.js.
 
 ## After a release
 
-The template names one version, so it needs a change after each release: set `appServiceImage`'s default in `meta.yaml` to the new version, add a `changeLog` entry, copy both to `upstream/` (`make check` fails until the image follows `CHANGELOG.md`), and open a pull request to `easypanel-io/templates` with that change. Existing Easypanel services keep their image until the user changes the image in the service's source settings and redeploys.
+The template names one version, so it needs a change after each release: `make release-prepare` sets `appServiceImage`'s default in `meta.yaml` to the new version, adds a `changeLog` entry (`Update to <version>`, the release date) and updates `upstream/` (`make check` fails until the image follows `CHANGELOG.md`); then open a pull request to `easypanel-io/templates` with that change. Existing Easypanel services keep their image until the user changes the image in the service's source settings and redeploys.

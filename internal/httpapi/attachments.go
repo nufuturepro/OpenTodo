@@ -202,40 +202,46 @@ func (s *Server) attachmentGate(w http.ResponseWriter, r *http.Request) (setting
 }
 
 // checkRoom refuses a file over the per-file limit or the account's quota.
-func (s *Server) checkRoom(w http.ResponseWriter, r *http.Request, a settings.Attachments, size int64) bool {
+// With a quota, the file's size is held in the sync service's ledger
+// (opsync.QuotaHolds) until the returned release runs (attachment-client-hardening
+// D1). The handler defers release, so the room is free again before the client
+// reads the answer: a release tied to the request's context would run only
+// after the response was sent, and the next upload, sent the moment the
+// previous one succeeded, would find the stored file counted twice.
+//
+// The size is held before the stored rows are read, and a restore through sync
+// holds its size until its batch committed, so an upload and a restore that
+// overlap cannot each fit into the same free space (issue #676). Lock order:
+// uploadsMu, then the ledger's own leaf lock; the sync transaction takes only
+// the leaf lock, never uploadsMu, so reading the rows under uploadsMu (which
+// may wait for the writer) cannot deadlock.
+func (s *Server) checkRoom(w http.ResponseWriter, r *http.Request, a settings.Attachments, size int64) (release func(), ok bool) {
+	release = func() {}
 	if size > a.MaxFileBytes() {
 		writeError(w, http.StatusRequestEntityTooLarge, "attachment_too_large", fmt.Sprintf("files may be at most %d MB on this server", a.MaxFileMB))
-		return false
+		return release, false
 	}
-	if q := a.QuotaBytes(); q > 0 {
-		uid := userFrom(r.Context()).ID
-		// Uploads in progress hold their size until the request ends, so
-		// parallel uploads cannot each fit into the same free space
-		// (attachment-client-hardening D1).
-		s.uploadsMu.Lock()
-		defer s.uploadsMu.Unlock()
-		used, err := s.attachmentUsage(r.Context(), uid)
-		if err != nil {
-			s.internal(w, err)
-			return false
-		}
-		if used+s.uploading[uid]+size > q {
-			writeError(w, http.StatusForbidden, "quota_exceeded", fmt.Sprintf("this upload would go over your %d MB of attachments", a.QuotaMB))
-			return false
-		}
-		if s.uploading == nil {
-			s.uploading = map[string]int64{}
-		}
-		s.uploading[uid] += size
-		context.AfterFunc(r.Context(), func() {
-			s.uploadsMu.Lock()
-			defer s.uploadsMu.Unlock()
-			if s.uploading[uid] -= size; s.uploading[uid] <= 0 {
-				delete(s.uploading, uid)
-			}
-		})
+	q := a.QuotaBytes()
+	if q <= 0 {
+		return release, true
 	}
-	return true
+	uid := userFrom(r.Context()).ID
+	s.uploadsMu.Lock()
+	defer s.uploadsMu.Unlock()
+	held, release := s.sync.QuotaHolds().Hold(uid, size)
+	used, err := s.attachmentUsage(r.Context(), uid)
+	if err != nil {
+		release()
+		s.internal(w, err)
+		return func() {}, false
+	}
+	// held counts this upload's own size.
+	if used+held > q {
+		release()
+		writeError(w, http.StatusForbidden, "quota_exceeded", fmt.Sprintf("this upload would go over your %d MB of attachments", a.QuotaMB))
+		return func() {}, false
+	}
+	return release, true
 }
 
 // writeBlobError answers a failed file write.
@@ -310,7 +316,9 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "attachment_mismatch", "the upload is larger than the attachment's size")
 		return
 	}
-	if !s.checkRoom(w, r, cfg, size) {
+	release, ok := s.checkRoom(w, r, cfg, size)
+	defer release()
+	if !ok {
 		return
 	}
 	body := http.MaxBytesReader(w, r.Body, size+1)
@@ -454,8 +462,11 @@ func (s *Server) handleCreateAttachment(w http.ResponseWriter, r *http.Request) 
 	}
 	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	stored := false
+	// The file's room stays held until its row is committed below.
+	release := func() {}
+	defer func() { release() }()
 	if mt == "multipart/form-data" {
-		name, ctype, comment, size, digest, err := s.receiveMultipart(w, r, id, cfg)
+		name, ctype, comment, size, digest, err := s.receiveMultipart(w, r, id, cfg, &release)
 		if err != nil {
 			s.writeBlobError(w, err)
 			return
@@ -516,7 +527,7 @@ func (s *Server) handleCreateAttachment(w http.ResponseWriter, r *http.Request) 
 // counting, bounded by the per-file limit and the quota), then stores it under
 // id. It returns the file's name, type, optional comment id, size and digest; an
 // empty name with a nil error means it has answered the request itself.
-func (s *Server) receiveMultipart(w http.ResponseWriter, r *http.Request, id string, cfg settings.Attachments) (name, ctype, comment string, size int64, digest string, err error) {
+func (s *Server) receiveMultipart(w http.ResponseWriter, r *http.Request, id string, cfg settings.Attachments, release *func()) (name, ctype, comment string, size int64, digest string, err error) {
 	limit := cfg.MaxFileBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, limit+1<<20)
 	mr, err := r.MultipartReader()
@@ -579,7 +590,9 @@ func (s *Server) receiveMultipart(w http.ResponseWriter, r *http.Request, id str
 		writeError(w, http.StatusBadRequest, "invalid_input", "a file part with a file name is required")
 		return "", "", "", 0, "", nil
 	}
-	if !s.checkRoom(w, r, cfg, size) {
+	held, ok := s.checkRoom(w, r, cfg, size)
+	*release = held
+	if !ok {
 		return "", "", "", 0, "", nil
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {

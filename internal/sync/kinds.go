@@ -13,6 +13,7 @@ import (
 	"github.com/OpenTodoApp/opentodo/internal/origin"
 	"github.com/OpenTodoApp/opentodo/internal/recurrence"
 	"github.com/OpenTodoApp/opentodo/internal/ruleval"
+	"github.com/OpenTodoApp/opentodo/internal/themes"
 	"github.com/OpenTodoApp/opentodo/internal/zoned"
 )
 
@@ -45,13 +46,30 @@ var kindChecks = map[kind]func(raw json.RawMessage) error{
 	kGeo:            location.CheckGeo,
 	kRuleTrigger:    ruleval.CheckTrigger,
 	kRuleCondition:  orNull(ruleval.CheckCondition),
-	kRuleActions:    ruleval.CheckActions,
+	kRuleActions:    orNull(ruleval.CheckActions),
+	kRoutineSteps:   orNull(ruleval.CheckSteps),
 	kReactions:      checkReactions,
 	kDayPart:        orNull(checkDayPart),
 	kClock:          checkClock,
 	kWeekdays:       checkWeekdays,
 	kEnergy:         checkEnergy,
 	kOrderList:      checkOrderList,
+	kSplit:          orNull(checkSplit),
+	kFocusSession:   checkFocusSession,
+	kThemeDoc:       orNull(checkThemeDoc),
+}
+
+// checkThemeDoc accepts a JSON object that is a valid theme document of at most
+// themes.MaxBytes bytes (theme-editor D1). A document of a newer format is
+// refused like any other invalid one: the server and its web app ship together.
+func checkThemeDoc(raw json.RawMessage) error {
+	if len(raw) == 0 || raw[0] != '{' {
+		return errors.New("must be a theme document object")
+	}
+	if err := themes.Validate(raw); err != nil {
+		return fmt.Errorf("is not a valid theme document (%s)", themes.Code(err))
+	}
+	return nil
 }
 
 func isNullValue(raw json.RawMessage) bool { return string(raw) == "null" }
@@ -157,6 +175,16 @@ func checkClock(raw json.RawMessage) error {
 	var c string
 	if err := json.Unmarshal(raw, &c); err != nil || !isClock(c) || c[:2] > "23" || c[3:] > "59" {
 		return errors.New(`must be a time "HH:MM" between 00:00 and 23:59`)
+	}
+	return nil
+}
+
+// checkFocusSession accepts an integer from 0 to MaxFocusSession
+// (focus-session-readable D2).
+func checkFocusSession(raw json.RawMessage) error {
+	var n int64
+	if err := json.Unmarshal(raw, &n); err != nil || isNullValue(raw) || n < 0 || n > MaxFocusSession {
+		return fmt.Errorf("must be an integer from 0 to %d", MaxFocusSession)
 	}
 	return nil
 }

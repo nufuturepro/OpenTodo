@@ -55,6 +55,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Default reminders](default-reminders.md) | A reminder added to every task that gets a date or a time, set once for all your devices, and when it is or isn't added. |
 | [Time blocking](time-blocking.md) | Estimate how long tasks take, then place them on the Day or Week calendar to see whether your plan fits the day. |
 | &nbsp;&nbsp;↳ [Day, Week and Month](calendar-views.md) | Open the calendar, read the Day and Week grids, and use the Month overview to see six weeks at once and move tasks between days. |
+| &nbsp;&nbsp;↳ [Several months and the year](months-and-year.md) | Stack two, three or six months in the Month, and see the twelve months of a year with a mark for how busy each day is. |
 | &nbsp;&nbsp;↳ [Completed tasks on the calendar](completed-on-the-calendar.md) | Show finished tasks with struck-through titles in Day, Week, Month and Plan, with a choice remembered on each device. |
 | &nbsp;&nbsp;↳ [Frames](frames.md) | Shade the hours you keep for one kind of work, such as deep work every weekday morning, behind Day and Week, and plan tasks into them. |
 | &nbsp;&nbsp;↳ [Slots](slots.md) | Put several small tasks into one block of Day and Week, such as Admin from 16:00 to 16:45, and tick them off from a checklist inside it. |
@@ -81,6 +82,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Delivery channels](notification-channels.md) | Send reminders and notifications to ntfy, Pushover, Gotify, or any address through a signed webhook, including Apprise and Home Assistant. |
 | &nbsp;&nbsp;↳ [Push notifications](push-notifications.md) | Turn on reminders for when the app is closed, device by device, what iPhone and iPad need, what a push message contains, and what to do when nothing arrives. |
 | &nbsp;&nbsp;↳ [Check that push works](push-delivery-check.md) | The Delivery check under Settings → Notifications, each step it lists, and what every result of a test notification means. |
+| &nbsp;&nbsp;↳ [App icon badge](app-icon-badge.md) | The number of today's open tasks on the installed app's icon, where it works, why iPhone and iPad need notifications, and how it updates while the app is closed. |
 | [Offline and sync](offline-and-sync.md) | How OpenTodo keeps working without a connection, what the sync status means, and what happens when two devices change the same task. |
 | [Keyboard shortcuts](keyboard.md) | Every shortcut in OpenTodo, from quick add to the calendar, plus the optional Vim keybindings. |
 | [Account security](account-security.md) | Sign in with a passkey, add two-factor authentication, change your password and check where your account is signed in. |
@@ -93,6 +95,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | &nbsp;&nbsp;↳ [Archived projects](archived-projects.md) | Archiving hides a finished project without deleting it. When OpenTodo offers to archive, automatic archiving after 30 days, and how to bring a project back. |
 | [Settings](settings.md) | A tour of Settings, what each section does, which choices belong to one device and which follow your account. |
 | &nbsp;&nbsp;↳ [Settings: You](settings-you.md) | The Account and Appearance sections of Settings, your profile, session, password, two-factor authentication, passkeys, encryption, and the mode, theme, density and sidebar. |
+| &nbsp;&nbsp;↳ [Your own accent colour](custom-accent.md) | A custom accent from a swatch or a hex code, kept readable in light and dark and away from the red of errors. |
 | &nbsp;&nbsp;↳ [Settings: App](settings-app.md) | The General, Notifications and Capture sections of Settings, the start view, date and time formats, the calendar grid, keyboard options, quick add, voice and email to task. |
 | &nbsp;&nbsp;↳ [Settings: Data](settings-data.md) | The Integrations and Data sections of Settings, CalDAV, calendar feeds, webhooks, API tokens, the assistant and MCP, export, import, attachments and archived projects. |
 | &nbsp;&nbsp;↳ [Settings: Server](settings-server.md) | The People and Server sections of Settings, for the owner and admins. Users, invitations, the two-factor policy, single sign-on, backups, attachment limits and the audit log. |
@@ -109,6 +112,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 | [Recurring task rules](recurrence.md) | Rule grammar, how next dates are computed, completing, skipping and detaching |
 | [Reminders reference](reminders.md) | Relative and absolute reminders, snooze, web push and its privacy |
 | [Capturing pages](capture.md) | Share sheet, bookmarklet and browser extension |
+| [Obsidian plugin](obsidian.md) | Send lines from any note to OpenTodo with a link back to the note, and sync a folder of task files: connect, send, offline, encrypted accounts |
 | [Import formats](import.md) | Own export, CSV and other apps' JSON exports; duplicates and undo |
 | [End-to-end encryption](e2ee.md) | What is encrypted, the threat model, devices, recovery and limits |
 | [Feedback and support](feedback-and-support.md) | Where to report a problem or suggest an idea, where to talk to other people who use OpenTodo, how to star it on GitHub, and how to buy the maintainer a coffee. |
@@ -156,8 +160,9 @@ The full list of environment variables is in the [README](../README.md#configura
 | [Markdown vault](vault.md) | `ot vault`: a folder of Markdown files in two-way sync, for Obsidian Tasks and plain text |
 | [Webhooks](webhooks.md) | Events, payload, signature verification, retries, receiver recipes |
 | [Home Assistant](home-assistant.md) | The integration from HACS: the token, to-do lists, counts, calendar, events, Assist, automations and limits |
+| [Show Focus elsewhere](focus-elsewhere.md) | The running Focus session for a panel, a Home Assistant card, `ot time status` or an AI assistant: the route, what it shows, and why breaks and pauses read as nothing running |
 | [n8n](n8n.md) | The community nodes: install, the token, task, project, label and comment operations, the signed trigger, example workflows, AI agents and limits |
-| [Calendar sync](calendar-sync.md) | Two-way sync with your own calendar: tasks as events in iCloud, Fastmail, Nextcloud, Google Calendar or any CalDAV calendar, and changes back; the Google client setup, conflicts, limits |
+| [Calendar sync](calendar-sync.md) | Two-way sync with your own calendar: tasks as events in iCloud, Fastmail, Nextcloud, Google Calendar, Outlook and Microsoft 365 or any CalDAV calendar, and changes back; the Google and Microsoft client setup, conflicts, limits |
 | [Issue import](issue-import.md) | GitHub and GitLab issues assigned to you as tasks that follow the issue: tokens, filters, what follows, limits |
 | [AI assistants (MCP)](mcp.md) | Enabling the MCP endpoint, read-only and assistant tokens, read and write tools, limits, prompt-injection safety |
 

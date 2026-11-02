@@ -11,6 +11,10 @@ import { settled } from './measure.mjs'
 export const closes = (overlay) => overlay.waitFor({ state: 'hidden', timeout: 2000 }).then(() => true, () => false)
 
 // `overlays` names openers from OVERLAYS below; each runs on the screen it is listed for.
+// Settings pages checked for crowded controls (themes-layout-template): no two controls
+// overlap and none touches a row divider. The theme rows and Branding's server themes.
+const CROWDED = new Set(['appearance/theme', 'server/branding'])
+
 export function screens(ids, base) {
   const row = (title) => (p) => p.locator('[data-task-id]').filter({ hasText: title }).first().waitFor()
   const heading = (name) => (p) => p.getByRole('heading', { name, level: 1 }).first().waitFor()
@@ -36,14 +40,20 @@ export function screens(ids, base) {
     { name: 'day', path: '/day', ready: (p) => p.locator('[data-now-line], main').first().waitFor() },
     { name: 'week', path: '/week', ready: (p) => p.locator('main').first().waitFor() },
     { name: 'month', path: '/month', ready: (p) => p.locator('[data-month-grid]').waitFor() },
+    // September, a long month name in several languages, at the tablet width (the check's own date is in November).
+    ...(ids.date ? [{ name: 'month-september', path: `/month/${ids.date.slice(0, 4)}-09-30`, widths: [768], ready: (p) => p.locator('[data-month-grid]').waitFor() }] : []),
     // The Plan (planner-view 4.2): seven columns per row from 640 px, the agenda below it.
     { name: 'plan', path: '/plan', ready: (p) => p.locator('[data-plan-grid], [data-plan-agenda]').first().waitFor() },
+    // The Year (year-view 2.5): four, three or two columns of months; below 640 px a month is the touch target.
+    { name: 'year', path: '/year', ready: (p) => p.locator('[data-year-grid]').waitFor() },
     // The Statistics dashboard (stats-dashboard 5.1): tiles and panels; the heatmap and
     // the dot grid scroll sideways inside their figures, never the page.
     { name: 'stats', path: '/stats', ready: (p) => p.locator('[data-testid="stats-panels"]').waitFor() },
     { name: 'completed', path: '/completed', ready: row('Submit expense report') },
     { name: 'filter', path: '/views/new', ready: (p) => p.getByLabel('Filter query').waitFor() },
     { name: 'ask', path: '/ask', ready: heading('Assistant') },
+    // Notes (notes-overview 4.8): the search field and the filters row, behind one Filters button on a phone.
+    { name: 'notes', path: '/notes', ready: heading('Notes') },
     { name: 'trash', path: '/trash', ready: (p) => p.getByText('Old shopping list').first().waitFor() },
     { name: 'updates', path: '/updates', ready: heading('Updates') },
     // The old address still opens Updates (ux-overhaul vocabulary).
@@ -68,6 +78,11 @@ export function screens(ids, base) {
     { name: 'views', path: '/views', ready: heading('Views'), overlays: ['view-menu', 'rename-view', 'new-dashboard'] },
     // All projects (sidebar-favourites D6): the tree, the find field, and the archived projects opened from Settings → Data.
     { name: 'projects', path: '/projects', ready: heading('Projects') },
+    // Routines (routines-editor) and the editor page (routines-editor-page): one column on a phone with the actions in a bar at the bottom.
+    { name: 'routines', path: '/routines', ready: heading('Routines') },
+    // A word's list opens next to it, never a centred modal (routines-dynamic-data D13).
+    { name: 'routine-page', path: `/routines/${ids.routine}`, ready: (p) => p.locator('[data-step-card]').first().waitFor(), overlays: ['routine-word-list'] },
+    { name: 'routine-new', path: '/routines/new', ready: (p) => p.locator('[data-routine-editor] [data-when-card]').waitFor() },
     { name: 'locations', path: '/locations', ready: heading('Locations'), overlays: ['new-location'] },
     { name: 'projects-archived', path: '/projects#archived', ready: (p) => p.getByText('No archived projects').first().waitFor() },
     // Settings (settings-navigation): the overview and every section, each overlay on
@@ -80,11 +95,11 @@ export function screens(ids, base) {
       ['general', 'General'], ['language', 'Language and region'], ['notifications', 'Notifications'], ['capture', 'Capture'],
       ['integrations', 'Integrations'], ['data', 'Data'],
       ['people', 'People'], ['server', 'Server'],
-      ['account/security', 'Security'], ['appearance/theme', 'Theme and density'], ['general/focus', 'Focus timer'],
+      ['account/profile', 'Profile', START_GUIDE_OVERLAYS], ['account/security', 'Security'], ['appearance/theme', 'Theme and density'], ['general/focus', 'Focus timer'],
       ['language/date-time', 'Date and time'], ['capture/voice', 'Voice capture', ['voice-consent']],
       ['integrations/webhooks', 'Webhooks'], ['integrations/mcp', 'AI assistants (MCP)'],
-      ['people/users', 'Users and invitations', ['delete-user']], ['server/backups', 'Backups'], ['server/audit', 'Audit log'],
-    ].map(([id, title, overlays]) => ({ name: `settings-${id.replace('/', '-')}`, path: `/settings/${id}`, ready: heading(title), ...(overlays ? { overlays } : {}) })),
+      ['people/users', 'Users and invitations', ['delete-user']], ['server/backups', 'Backups'], ['server/audit', 'Audit log'], ['server/branding', 'Branding'],
+    ].map(([id, title, overlays]) => ({ name: `settings-${id.replace('/', '-')}`, path: `/settings/${id}`, ready: heading(title), ...(overlays ? { overlays } : {}), ...(CROWDED.has(id) ? { crowded: true } : {}) })),
     // A legacy address opens the page that holds its content (settings-navigation "Legacy settings addresses").
     { name: 'settings-legacy', path: '/settings/security', ready: heading('Security') },
     { name: 'import', path: '/settings/import', ready: heading(/Import/) },
@@ -189,7 +204,42 @@ async function openProperty(p, field, label) {
   return { editor, trigger: shown ? part : undefined, reopen: shown ? () => press(part) : undefined }
 }
 
+// The start guide (first-run, issue #731), reopened from Settings → Account → Profile →
+// How you work: its first step, its second with each way of working chosen (the cards
+// and the offers that follow a choice) and its third. Its cards and offers must fit the
+// centred 28rem card and the phone sheet (`fit`), in every language: the openers use
+// data attributes only, so the German and French legs check them too (ANY_LANG_OVERLAYS).
+export const START_GUIDE_OVERLAYS = ['start-guide', 'start-guide-lists', 'start-guide-companion', 'start-guide-first', 'start-guide-install']
+export const ANY_LANG_OVERLAYS = new Set(START_GUIDE_OVERLAYS)
+async function openStartGuide(p, { mode, step = mode ? 1 : 0 } = {}) {
+  // From the keyboard: on a phone the seeded reminder toast can cover the button.
+  const trigger = p.locator('[data-start-guide-again]')
+  await trigger.focus()
+  await p.keyboard.press('Enter')
+  const overlay = p.locator('[data-testid="start-guide"]')
+  await overlay.waitFor({ state: 'visible', timeout: 5000 })
+  await settled(overlay)
+  // Nothing is written: Skip this step moves on, and a choice is only written by Continue.
+  if (step >= 1) await overlay.locator('[data-first-run-next]').click()
+  if (mode) {
+    await overlay.locator(`[data-method-mode="${mode}"]`).click()
+    if (mode !== 'lists') await overlay.locator('[data-offer]').first().waitFor({ timeout: 5000 })
+  }
+  if (step >= 2) await overlay.locator('[data-first-run-next]').click()
+  await overlay.locator(`[data-first-run-step="${['task', 'work', 'install'][step]}"]`).waitFor({ timeout: 5000 })
+  // The check closes the guide with Escape: focus stays in its panel, never on the seeded
+  // reminder toast, whose Escape would dismiss the reminder for every other combination.
+  await overlay.focus()
+  // Reopened from Settings, the guide shows over the Inbox: no trigger to return focus to.
+  return { overlay, kind: 'dialog', fit: true }
+}
+
 export const OVERLAYS = {
+  async 'start-guide'(p) { return openStartGuide(p) },
+  async 'start-guide-lists'(p) { return openStartGuide(p, { mode: 'lists' }) },
+  async 'start-guide-companion'(p) { return openStartGuide(p, { mode: 'companion' }) },
+  async 'start-guide-first'(p) { return openStartGuide(p, { mode: 'first' }) },
+  async 'start-guide-install'(p) { return openStartGuide(p, { step: 2 }) },
   async notifications(p, ctx) {
     // The bell lives in the sidebar footer (app-shell "No desktop top bar"): the drawer below 768 px.
     if (ctx.width < 768) await openSidebar(p)
@@ -231,6 +281,18 @@ export const OVERLAYS = {
     await p.getByRole('menuitem', { name: 'Expand all' }).click()
     await aside.locator('[data-guide-line]').first().waitFor()
     return { overlay: aside, kind: 'drawer' }
+  },
+  // The first card's "Of" word on the routine page (the project whose note it reads): a compact list
+  // anchored to the word (a sheet on phones). Opened from the keyboard: the seeded reminder toast can
+  // cover a word lower on the page, and pressing Escape with focus on the toast would dismiss it for
+  // every other combination.
+  async 'routine-word-list'(p) {
+    const trigger = p.locator('[data-step-card]').first().locator('[data-word="Of"]')
+    const reopen = async () => { await trigger.focus(); await p.keyboard.press('Enter') }
+    await reopen()
+    await p.locator('[data-word-choices] [role="option"]').first().waitFor()
+    // The panel holding the list (not the reminder toast, which shows on every screen).
+    return { overlay: p.locator('[data-overlay]').filter({ has: p.locator('[data-word-choices]') }).last(), trigger, reopen, kind: 'popover' }
   },
   async 'sidebar-view-menu'(p) {
     await openSidebar(p)

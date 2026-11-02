@@ -105,6 +105,17 @@ export const Deadlines: StoryObj = {
   ),
 }
 
+/** Spans (multi-day-tasks D5): the range in the date's place; once begun, "until" in the Started chip's place. A deferred task that is not a span keeps both chips. */
+export const Spans: StoryObj = {
+  render: () => (
+    <List>
+      <TaskRow {...base} task={task({ id: 't1', title: 'Lisbon trip', start: '2026-10-21', due: { date: '2026-10-23' }, span: true })} />
+      <TaskRow {...base} task={task({ id: 't2', title: 'Design conference', start: '2026-10-12', due: { date: '2026-10-16' }, span: true })} />
+      <TaskRow {...base} task={task({ id: 't3', title: 'Quarterly report', start: '2026-10-12', due: { date: '2026-10-16' } })} />
+    </List>
+  ),
+}
+
 /** Label chips and the project as muted text at the row's end (outside the project; the end of the line below 640 px). */
 export const LabelsAndProject: StoryObj = {
   render: () => (
@@ -318,6 +329,20 @@ export const WithOrigins: StoryObj = {
           <TaskCard {...base} task={task({ id: 'c-page', title: 'Summarise the offline sync article', origin: page })} labels={[deepWork]} />
         </ul>
       </div>
+    )
+  },
+}
+
+/** A task from an Obsidian note (obsidian-origin): the note's name with a note icon; one titled, one read from its path. */
+export const WithObsidianOrigin: StoryObj = {
+  render: () => {
+    const daily = { kind: 'obsidian' as const, id: 'Daily/2026-10-29.md', url: 'obsidian://open?vault=Notes&file=Daily%2F2026-10-29', title: 'Thursday standup' }
+    const meeting = { kind: 'obsidian' as const, id: 'Meetings/Kick-off.md', url: 'obsidian://open?vault=Work%20notes&file=Meetings%2FKick-off' }
+    return (
+      <List>
+        <TaskRow {...base} task={task({ id: 'ob-d', title: 'Send the standup notes to Jo', due: { date: TODAY }, origin: daily })} />
+        <TaskRow {...base} task={task({ id: 'ob-m', title: 'Book the kick-off room', priority: 2, origin: meeting })} />
+      </List>
     )
   },
 }

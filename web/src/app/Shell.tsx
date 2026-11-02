@@ -9,8 +9,6 @@ import { dismissRejected, useSyncStatus } from '../lib/sync'
 import { canonicalPath, navigate, parseRoute, useRoute } from './router'
 import { SIDEBAR_COLLAPSED_REM, SIDEBAR_MAX_REM, SIDEBAR_MIN_REM, setSidebarCollapsed, setSidebarWidth, toggleSidebarCollapsed, useSidebarLayout } from './sidebarLayout'
 import { CalendarView } from './CalendarView'
-import { MonthView } from './MonthView'
-import { PlanView } from './PlanView'
 import { FilterView } from './FilterView'
 import { LabelsView } from './LabelsView'
 import { PlacesView } from './locations/PlacesView'
@@ -60,10 +58,19 @@ import { SkipLink, usePageFocus } from './pageFocus'
 // Optional Vim layer (vim-keybindings): its own chunk, fetched only while the
 // per-device switch is on, so the default bundle carries just this boundary.
 const VimLayer = lazy(() => import('./vim/VimLayer'))
+// Plan, the calendar's least used mode, loads on first use (multi-day-tasks kept the first load in its budget).
+const PlanView = lazy(() => import('./PlanView').then((m) => ({ default: m.PlanView })))
+// Month and Year load on first use too (year-view): several months and the year's grids stay off the first load.
+const MonthView = lazy(() => import('./MonthView').then((m) => ({ default: m.MonthView })))
+const YearView = lazy(() => import('./YearView'))
 const TriageView = lazy(() => import('./TriageView').then((m) => ({ default: m.TriageView })))
 // In-app Help (user-documentation): the view, the panel and the guide text are
 // chunks of their own, fetched when Help first opens (and precached for offline).
-const RulesView = lazy(() => import('./rules/RulesView').then((m) => ({ default: m.RulesView })))
+// Routines (routines-editor): the page, the editor and the runs are one chunk.
+const ThemeEditorPage = lazy(() => import('./themes/ThemeEditor').then((m) => ({ default: m.ThemeEditorPage })))
+const RoutinesView = lazy(() => import('./routines/RoutinesView').then((m) => ({ default: m.RoutinesView })))
+// The routine editor page (routines-editor-page D1): /routines/new and /routines/<id>.
+const RoutinePage = lazy(() => import('./routines/RoutinePage').then((m) => ({ default: m.RoutinePage })))
 const HelpView = lazy(() => import('./help/HelpBundle').then((m) => ({ default: m.HelpView })))
 const HelpPanel = lazy(() => import('./help/HelpBundle').then((m) => ({ default: m.HelpPanel })))
 // In-app assistant (in-app-assistant D9): its own chunk, fetched on first open;
@@ -81,6 +88,8 @@ const NextView = lazy(() => import('./method/MethodListView').then((m) => ({ def
 const WaitingView = lazy(() => import('./method/MethodListView').then((m) => ({ default: m.WaitingView })))
 // Focus (focus-mode D6): its own chunk; the engine that ends a session on time is the break reminder, always mounted.
 const FocusView = lazy(() => import('./focus/FocusView').then((m) => ({ default: m.FocusView })))
+// Notes (notes-overview D7): the page, its search and the note panel are one chunk, fetched on first visit.
+const NotesPage = lazy(() => import('./notes/NotesPage'))
 const LoopHome = lazy(() => import('./method/LoopHome').then((m) => ({ default: m.LoopHome })))
 // The start guide (lean-chrome D5): its own chunk; it opens over the Inbox once per account, or from Settings.
 const FirstRunGuide = lazy(() => import('./FirstRun').then((m) => ({ default: m.FirstRunGuide })))
@@ -172,7 +181,9 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
   const addButton = useRef<HTMLButtonElement>(null)
   const sheetOpen = useOverlayDepth() > 0
   const panelOpen = !!usePanel()
-  const phoneChrome = !sheetOpen && !panelOpen && !['share', 'invite', 'project-invite', 'workspace-invite', 'reset', 'task'].includes(route.view)
+  // The routine editor page keeps its own action bar at the bottom (routines-editor-page D2).
+  const routinePage = route.view === 'rules' && !!(route.id || route.create)
+  const phoneChrome = !sheetOpen && !panelOpen && !routinePage && !['share', 'invite', 'project-invite', 'workspace-invite', 'reset', 'task'].includes(route.view)
   // The one keydown listener (keyboard-shortcuts "One shortcut registry with
   // scopes"); the shell owns the `global` scope: the palette, `g` navigation, the
   // cheat sheet, the sidebar toggle and the assistant.
@@ -181,11 +192,11 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
   useShortcutScope('global', {
     'go.inbox': go({ view: 'inbox' }), 'go.today': go({ view: 'today' }), 'go.upcoming': go({ view: 'upcoming' }), 'go.someday': go({ view: 'someday' }),
     'go.anytime': go({ view: 'anytime' }), 'go.completed': go({ view: 'completed' }), 'go.assigned': go({ view: 'assigned' }), 'go.labels': go({ view: 'labels' }), 'go.projects': go({ view: 'projects' }),
-    'go.views': go({ view: 'views' }), 'go.day': go({ view: 'day' }), 'go.week': go({ view: 'week' }), 'go.month': go({ view: 'month' }), 'go.plan': go({ view: 'plan' }), 'go.filter': go({ view: 'filter' }), 'go.settings': go({ view: 'settings' }),
+    'go.views': go({ view: 'views' }), 'go.day': go({ view: 'day' }), 'go.week': go({ view: 'week' }), 'go.month': go({ view: 'month' }), 'go.plan': go({ view: 'plan' }), 'go.year': go({ view: 'year' }), 'go.filter': go({ view: 'filter' }), 'go.settings': go({ view: 'settings' }),
     'go.trash': go({ view: 'trash' }), 'go.triage': go({ view: 'triage' }), 'go.feed': go({ view: 'feed' }), 'go.ask': go({ view: 'ask' }), 'go.import': go({ view: 'import' }), 'go.help': go({ view: 'help' }),
     // Weekly review and Statistics (stats-and-review).
     'go.review': go({ view: 'review' }), 'go.stats': go({ view: 'stats' }), 'go.next': go({ view: 'next' }), 'go.waiting': go({ view: 'waiting' }), 'go.daily': go({ view: 'review', step: 'daily' }), 'go.loop': go({ view: 'loop' }),
-    'go.focus': go({ view: 'focus' }), 'go.close': go({ view: 'review', step: 'close' }),
+    'go.focus': go({ view: 'focus' }), 'go.notes': go({ view: 'notes' }), 'go.close': go({ view: 'review', step: 'close' }),
     // `g /` (sidebar-groups): the sidebar's find field; the rail expands and the drawer opens first.
     'go.find': () => sidebarFind.request('open'),
     'global.help': () => setShowHelp((v) => !v),
@@ -258,14 +269,14 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
             <Suspense fallback={<p className="px-4 py-6 text-body text-muted" role="status">{t('Loading help…')}</p>}><HelpView page={route.page} q={route.q} /></Suspense>
           ) : route.view === 'settings' ? (
             <SettingsView user={user} onLogout={onLogout} section={route.section} page={route.page} anchor={route.anchor} />
-          ) : route.view === 'import' ? (
+          ) : route.view === 'theme-editor' ? <Suspense fallback={null}><ThemeEditorPage id={route.id} /></Suspense> : route.view === 'import' ? (
             <ImportScreen />
           ) : route.view === 'labels' ? (
             <LabelsView route={route} />
           ) : route.view === 'places' ? (
             <PlacesView />
           ) : route.view === 'rules' ? (
-            <Suspense fallback={null}><RulesView create={route.create} /></Suspense>
+            <Suspense fallback={null}>{route.id || route.create ? <RoutinePage route={route} /> : <RoutinesView route={route} />}</Suspense>
           ) : route.view === 'projects' ? (
             <ProjectsView archived={route.archived} />
           ) : route.view === 'filter' ? (
@@ -292,7 +303,7 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
             <Suspense fallback={<p className="px-4 py-6 text-body text-muted" role="status">{t('Loading statistics…')}</p>}><StatsView /></Suspense>
           ) : route.view === 'focus' ? (
             <Suspense fallback={null}><FocusView id={route.id} /></Suspense>
-          ) : route.view === 'triage' ? (
+          ) : route.view === 'notes' ? <Suspense fallback={null}><NotesPage id={route.id} /></Suspense> : route.view === 'triage' ? (
             <Suspense fallback={null}><TriageView /></Suspense>
           ) : route.view === 'feed' ? (
             <FeedView />
@@ -300,10 +311,8 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
             <AskScreen role={user.role} name={user.name} />
           ) : route.view === 'day' || route.view === 'week' ? (
             <CalendarView mode={route.view} date={route.date} />
-          ) : route.view === 'month' ? (
-            <MonthView date={route.date} />
-          ) : route.view === 'plan' ? (
-            <PlanView date={route.date} />
+          ) : route.view === 'month' || route.view === 'plan' || route.view === 'year' ? (
+            <Suspense fallback={null}>{route.view === 'month' ? <MonthView date={route.date} /> : route.view === 'plan' ? <PlanView date={route.date} /> : <YearView date={route.date} />}</Suspense>
           ) : (
             // App renders the invite, reset, capture and display screens itself; a stray /invite, /reset, /share or /display route inside the shell falls back to the Inbox.
             <TaskListView userId={user.id} userRole={user.role} route={route.view === 'invite' || route.view === 'project-invite' || route.view === 'workspace-invite' || route.view === 'reset' || route.view === 'confirm-email' || route.view === 'forgot' || route.view === 'verify' || route.view === 'public' || route.view === 'share' || route.view === 'display' ? { view: 'inbox' } : route} />
@@ -387,7 +396,7 @@ function PhoneBar({ onMenu }: { onMenu: () => void }) {
         : <IconButton icon="menu" label={t('Open menu')} onClick={onMenu} className="touch-target" />}
       <div className="min-w-0 flex-1">
         {!day && <PageBarTitle>{bar?.title}</PageBarTitle>}
-        {/* One line, so the bar keeps its height (audit M12): a plain subtitle keeps its full text reachable when cut; controls (the Inbox's planned line, a project's members) cut themselves and are named by their content (ux-fixes-phone D2). */}
+        {/* One line, so the bar keeps its height (audit M12): a plain subtitle keeps its full text reachable when cut; controls (a project's members) cut themselves and are named by their content (ux-fixes-phone D2). */}
         {!day && bar?.subtitle && (typeof bar.subtitle === 'string'
           ? <TruncatedText as="p" text={bar.subtitle} className="block text-meta text-muted" data-phone-subtitle="" />
           : <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-meta text-muted" data-phone-subtitle>{bar.subtitle}</div>)}

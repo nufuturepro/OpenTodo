@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
 import { CalendarView } from './CalendarView'
 import { PlanView } from './PlanView'
-import { seedCalendarClarity, seedCalendarPlan, seedCalendarWeek, withSeed } from './stories/fixtures'
+import { seedCalendarClarity, seedCalendarEvents, seedCalendarPlan, seedCalendarSpans, seedCalendarWeek, withSeed } from './stories/fixtures'
 import { completeTask, createTask } from '../lib/ops'
 import { setCalendarShowCompleted } from '../lib/localData'
 
@@ -65,5 +65,26 @@ export const WeekByLabel: StoryObj = {
 /** Colour by Priority (calendar-clarity D3): P1 red, P2 orange, P3 blue, P4 grey. */
 export const WeekByPriority: StoryObj = {
   ...withSeed(seedCalendarClarity('priority')),
+  render: () => <Column><CalendarView mode="week" /></Column>,
+}
+
+/**
+ * Tasks that span days (multi-day-tasks D3): one bar per span in the all-day strip, the
+ * trip's past days dimmed, the conference squared off where it runs into next week, the
+ * weekly shift's next occurrence projected; the deferred report stays on its due day.
+ * Below 640 px the agenda lists a span under each day it covers with "Day n of m".
+ */
+export const WeekWithSpans: StoryObj = {
+  ...withSeed(seedCalendarSpans),
+  render: () => <Column><CalendarView mode="week" /></Column>,
+}
+
+/**
+ * A subscribed calendar's events (calendar-events-all-views, GitHub issue #733): blocks and
+ * all-day chips in the grid; below 640 px the agenda lists the all-day offsite and the
+ * meetings among the day's timed tasks.
+ */
+export const WeekWithEvents: StoryObj = {
+  ...withSeed(seedCalendarEvents()),
   render: () => <Column><CalendarView mode="week" /></Column>,
 }

@@ -201,7 +201,7 @@
     {
       "name": "today_summary",
       "title": "Today summary",
-      "description": "One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting.",
+      "description": "One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting; a waiting task also has time_sensitive, true when it is due today with a time or its deadline is today, and waiting_time_sensitive lists those ids soonest first (the slots stay first come, first served).",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -279,6 +279,260 @@
         "openWorldHint": false,
         "readOnlyHint": true,
         "title": "List icons"
+      }
+    },
+    {
+      "name": "list_notes",
+      "title": "List notes",
+      "description": "List notes, newest change first: standalone notes, task notes (a task with a description; completed tasks are marked) and project notes (archived projects are marked). Each has a short preview; get_note returns the whole text. Deleted notes are left out. Paged: pass next_cursor back as cursor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "next_cursor from a previous result, to get the following page.",
+            "type": "string"
+          },
+          "label_id": {
+            "description": "Only notes carrying this label (id, or name case-insensitive); project notes carry none.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of notes to return (default 50, maximum 200).",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "Only notes of this project (see list_projects): its standalone notes, its tasks' notes and its own note.",
+            "type": "string"
+          },
+          "source": {
+            "default": "all",
+            "description": "Which notes: note (standalone notes), task (task notes), project (project notes) or all (default).",
+            "enum": [
+              "all",
+              "note",
+              "task",
+              "project"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List notes"
+      }
+    },
+    {
+      "name": "search_notes",
+      "title": "Search notes",
+      "description": "Find notes whose title and text contain every word of the query (case and accents ignored; quote a phrase to match it as one), title matches first, then the most matched words, then the newest. Each result has a snippet around the first match, with the matched words marked. Not available on an end-to-end encrypted account.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "next_cursor from a previous result, to get the following page.",
+            "type": "string"
+          },
+          "label_id": {
+            "description": "Only notes carrying this label (id, or name case-insensitive); project notes carry none.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of notes to return (default 50, maximum 200).",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "Only notes of this project (see list_projects): its standalone notes, its tasks' notes and its own note.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Words to look for.",
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "default": "all",
+            "description": "Which notes: note (standalone notes), task (task notes), project (project notes) or all (default).",
+            "enum": [
+              "all",
+              "note",
+              "task",
+              "project"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Search notes"
+      }
+    },
+    {
+      "name": "get_note",
+      "title": "Get a note",
+      "description": "Get one note: its title, its Markdown text, the text appended to it that no device has merged yet (oldest first), project, labels, body_version (pass it to update_note as base_version) and when it last changed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Note id (or the task or project id with kind).",
+            "type": "string"
+          },
+          "kind": {
+            "default": "note",
+            "description": "What id names: a standalone note (default), a task (its note) or a project (its note).",
+            "enum": [
+              "note",
+              "task",
+              "project"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get a note"
+      }
+    },
+    {
+      "name": "list_routines",
+      "title": "List routines",
+      "description": "List the user's routines (automations of one or more steps) and their shared projects' routines: id, name as untrusted text, trigger kind, on or off, the server's pause, number of steps, last run, the project (project_id, null for a personal routine) and for a shared routine the person it runs as.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List routines"
+      }
+    },
+    {
+      "name": "get_routine",
+      "title": "Get a routine",
+      "description": "One routine's whole definition: trigger, condition, steps with their kinds and inputs (name and steps as untrusted text), and the steps that are not available now with the reason.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "routine": {
+            "description": "The routine's id (see list_routines) or its exact name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get a routine"
+      }
+    },
+    {
+      "name": "list_routine_runs",
+      "title": "List a routine's runs",
+      "description": "A routine's runs, newest first, at most 50: source, outcome, writes, the failed step. Ids and counts only, never titles or text.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "At most this many runs (default 50).",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "outcome": {
+            "description": "Only runs with this outcome.",
+            "enum": [
+              "applied",
+              "ended",
+              "already_matched",
+              "skipped",
+              "stopped",
+              "failed",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "routine": {
+            "description": "The routine's id (see list_routines) or its exact name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "List a routine's runs"
+      }
+    },
+    {
+      "name": "get_routine_run",
+      "title": "Get a routine run",
+      "description": "One run of a routine with its step records: each step's kind, status, duration, item count, the ids it touched (at most 50) and an error code.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "routine": {
+            "description": "The routine's id (see list_routines) or its exact name.",
+            "type": "string"
+          },
+          "run_id": {
+            "description": "The run's run_id (see list_routine_runs).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine",
+          "run_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get a routine run"
       }
     },
     {

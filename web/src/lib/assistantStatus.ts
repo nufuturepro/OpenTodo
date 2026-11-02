@@ -18,7 +18,9 @@ export interface AssistantStatus {
   provider_label: string
   model: string
   consented: boolean
-  consent?: { accepted_at: number; disclosure_version: number; provider: string }
+  consent?: { accepted_at: number; disclosure_version: number; provider: string; routines_version?: number }
+  /** routines-ai-step D10: the consent covers routines' AI steps (absent on older servers). */
+  routines_consented?: boolean
   disclosure_version: number
   /** What the disclosure says may be sent. */
   fields: string[]
@@ -49,6 +51,8 @@ export interface AssistantStatus {
   mode?: 'server' | 'device' | ''
   /** For an encrypted account: what the owner allows devices to call, and the device consent. */
   device?: DeviceAllowance | null
+  /** voice-ramble D5: the provider of the next turn reads photos (absent on older servers: no photos). */
+  images?: boolean
 }
 
 /** What the owner allows an encrypted account's devices (assistant-on-device D2, D6). */
@@ -146,6 +150,8 @@ export interface AssistantPrefill {
   send?: boolean
   /** Task ids the turn is about (Break this down from a task's menu). */
   selected?: string[]
+  /** Start the microphone when voice capture is on (the palette's "Ramble into tasks", voice-ramble D1). */
+  listen?: boolean
 }
 
 let prefill: AssistantPrefill | null = null

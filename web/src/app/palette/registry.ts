@@ -44,6 +44,7 @@ import { runGiveBackSlot, runTakeSlot, type SlotState } from '../task-list/slotA
 import { requestFrames } from '../calendar/framesRequest'
 import { newSlotNow } from '../calendar/slotActions'
 import { act } from '../actionError'
+import { assistantStatus, openAssistantWith } from '../../lib/assistantStatus'
 
 /** What the registry needs to know about the screen the palette was opened on. */
 export interface PaletteContext {
@@ -105,6 +106,7 @@ const ROUTES: RouteCommand[] = translatedList<RouteCommand, 'label'>([
   { label: msg('Go to Calendar (Day)'), route: { view: 'day' }, icon: 'clock', shortcut: keysOf('go.day'), keywords: 'day calendar' },
   { label: msg('Go to Calendar (Week)'), route: { view: 'week' }, icon: 'calendar-range', shortcut: keysOf('go.week'), keywords: 'week calendar' },
   { label: msg('Go to Calendar (Plan)'), route: { view: 'plan' }, icon: 'calendar-range', shortcut: keysOf('go.plan'), keywords: 'plan next two weeks capacity calendar' },
+  { label: msg('Go to Calendar (Year)'), route: { view: 'year' }, icon: 'calendar-days', shortcut: keysOf('go.year'), keywords: 'year twelve months overview calendar' },
   { label: msg('Go to Completed'), route: { view: 'completed' }, icon: 'circle-check-big', shortcut: keysOf('go.completed') },
   { label: msg('Go to Projects'), route: { view: 'projects' }, icon: 'folder', shortcut: keysOf('go.projects'), keywords: 'all projects archived tree' },
   { label: msg('Go to Labels'), route: { view: 'labels' }, icon: 'tag', shortcut: keysOf('go.labels') },
@@ -113,8 +115,8 @@ const ROUTES: RouteCommand[] = translatedList<RouteCommand, 'label'>([
   { label: msg('Go to Trash'), route: { view: 'trash' }, icon: 'trash-2', shortcut: keysOf('go.trash') },
   // Saved locations (task-locations D7): a command without a default key.
   { label: msg('Go to Locations'), route: { view: 'places' }, icon: 'map-pin', keywords: 'places map addresses' },
-  { label: msg('Go to Rules'), route: { view: 'rules' }, icon: 'zap', keywords: 'automations automation triggers' },
-  { label: msg('New rule'), route: { view: 'rules', create: true }, icon: 'zap', keywords: 'automation create' },
+  { label: msg('Go to Routines'), route: { view: 'rules' }, icon: 'zap', keywords: 'rules automations automation triggers' },
+  { label: msg('New routine'), route: { view: 'rules', create: true }, icon: 'zap', keywords: 'rule automation create' },
   { label: msg('Go to Updates'), route: { view: 'feed' }, icon: 'newspaper', shortcut: keysOf('go.feed'), keywords: 'activity feed changes' },
   { label: msg('Go to Assistant'), route: { view: 'ask' }, icon: 'message-circle', shortcut: keysOf('go.ask') },
   { label: msg('Open Help'), route: { view: 'help' }, icon: 'list', shortcut: keysOf('go.help') },
@@ -124,6 +126,9 @@ const ROUTES: RouteCommand[] = translatedList<RouteCommand, 'label'>([
   { label: msg('Go to Next'), route: { view: 'next' }, icon: 'arrow-right', shortcut: keysOf('go.next'), keywords: 'next actions contexts open loops' },
   { label: msg('Go to Waiting'), route: { view: 'waiting' }, icon: 'hourglass', shortcut: keysOf('go.waiting'), keywords: 'waiting for delegated blocked open loops' },
   { label: msg('Go to Focus'), route: { view: 'focus' }, icon: 'clock', shortcut: keysOf('go.focus'), keywords: 'focus timer pomodoro flowtime countdown session' },
+  // Notes (notes-overview D5): the page, and a new note started there (/notes?new=1).
+  { label: msg('Go to Notes'), route: { view: 'notes' }, icon: 'notebook-pen', shortcut: keysOf('go.notes'), keywords: 'notes notebook memo standalone' },
+  { label: msg('New note'), route: { view: 'notes', create: true }, icon: 'notebook-pen', keywords: 'note create add write memo' },
   { label: msg('Go to Statistics'), route: { view: 'stats' }, icon: 'chart-column', shortcut: keysOf('go.stats'), keywords: 'stats productivity completed' },
   { label: msg('Import data'), route: { view: 'import' }, icon: 'upload', shortcut: keysOf('go.import') },
   { label: msg('Go to Settings'), route: { view: 'settings' }, icon: 'settings', shortcut: keysOf('go.settings') },
@@ -333,6 +338,8 @@ export function commands(ctx: PaletteContext): Command[] {
     // Frames (calendar-frames D5): the form of the Frames dialog; no default key.
     { id: 'new:frame', label: t('New frame'), icon: 'rows-2', keywords: 'frame calendar time block window deep work focus add create', run: () => requestFrames({ mode: 'new' }) },
     // Slots (calendar-slots "Create slots"): today at the next free quarter hour; no default key.
+    // Routines (routines-engine "Run a routine from the palette"): the open task goes along.
+    { id: 'routine:run', label: t('Run routine…'), icon: 'zap', keywords: 'routine rule automation run now', run: async () => (await import('./routineCommand')).runRoutineStep(ctx.task) },
     { id: 'new:slot', label: t('New slot'), icon: 'layers', keywords: 'slot calendar batch small tasks admin errands checklist add create', run: () => act(newSlotNow()) },
     ...ROUTES.map((r): Command => ({ id: `go:${r.route.view}${'step' in r.route && r.route.step ? `:${r.route.step}` : ''}`, label: r.label, icon: r.icon, shortcut: r.shortcut, keywords: r.keywords, run: () => navigate(r.route) })),
     ...(ctx.user ? visibleSections(ctx.user) : []).map((s): Command => ({ id: `go:settings:${s.id}`, label: t('Open Settings: {section}', { section: s.label }), icon: s.icon, run: () => navigate({ view: 'settings', section: s.id }) })),
@@ -353,6 +360,22 @@ export function commands(ctx: PaletteContext): Command[] {
     { id: 'today:limit', label: t('Limit Today…'), icon: 'list-checks', keywords: 'today limit slots closed list wip cap',
       run: () => navigate({ view: 'settings', section: 'general', page: 'start', anchor: 'today-limit' }) },
   )
+  // Ramble into tasks (voice-ramble D1): the assistant with the capture skill and the microphone; no default key.
+  if (assistantStatus()?.available) {
+    out.push({ id: 'assistant:ramble', label: t('Ramble into tasks'), icon: 'mic', keywords: 'voice speak dictate brain dump photo whiteboard notes capture assistant',
+      run: () => openAssistantWith({ skill: 'capture', listen: true }) })
+  }
+  // Describe it (routines-describe-it D1): offered when the person can make an assistant turn; otherwise a
+  // search for "describe" says how to set the assistant up.
+  const st = assistantStatus()
+  const canDescribe = !!st && st.reason !== 'demo' && (st.mode === 'device' ? !!st.device?.consented_provider : st.available && st.consented)
+  if (canDescribe) {
+    out.push({ id: 'routine:describe', label: t('Describe a routine'), icon: 'message-circle', keywords: 'routine automation describe draft ai assistant sentence',
+      run: () => navigate({ view: 'rules', describe: true }) })
+  } else if (st && st.reason !== 'demo' && /describ/i.test(ctx.query)) {
+    out.push({ id: 'routine:describe-setup', label: t('Set up the assistant to describe a routine'), icon: 'settings', keywords: 'routine describe draft ai assistant',
+      run: () => navigate({ view: 'settings', section: 'integrations', page: 'assistant' }) })
+  }
   // Commands of the enabled plugins (plugin-section "Commands from enabled plugins").
   out.push(...pluginCommands(ctx.disabledPlugins).map((c): Command => ({ id: `plugin:${c.id}`, label: c.label, icon: c.icon, keywords: c.keywords, run: c.run })))
   if (ctx.query.trim()) {

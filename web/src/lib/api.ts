@@ -7,7 +7,9 @@ import type { AgentAccess, ApiToken, McpStatus, TokenScope } from './assistants'
 import type { AssistantStatus } from './assistantStatus'
 import type { AssistantOwnerSettings, AssistantMemberSettings, AssistantSettingsInput, AssistantTestDraft, AssistantTestResult, MyAssistantTestDraft, AssistantUsage, MyAssistantInput } from './assistantTypes'
 import type { KeyRecord } from './crypto'
-import type { RelayDevice } from './relay'
+import type { RelayDevice, RoutineRunRequest } from './relay'
+import type { DraftAnswer } from './rules/describe'
+import type { DeviceCommit, DeviceStepRecord } from './rules/deviceTypes'
 import type { AssertionJSON, CreationOptionsJSON, RegistrationJSON, RequestOptionsJSON } from './passkeys'
 import type {
   Profile,
@@ -19,9 +21,10 @@ import type {
   AccountRole, ActivityPage, AttachmentLimits, AttachmentSettings, StorageStatus, CalendarEvent, CalendarFeed, CalendarSubscription, AdminUser, AppNotification, AuditEvent, AuditFilters, AuditSettings, AuthStatus, LinkedIdentity, OidcSettings, OidcSettingsInput, OidcStatus, OidcTestResult, BackupSecretFlags, BackupSecretUpdate, BackupSettings, BackupStatus, RestoreArchive, RestoreSource, RestoreState, StagedRestore, ImportJob, ImportOptions, ImportPreview, Invitation, InvitationPreview, LoginResult, HistoryPage, PendingSignup, SmtpSettings, SmtpSettingsInput, SmtpTestResult, Membership, MfaPolicy, ProjectInvite, ProjectInvitePreview, MfaStatus, Op, Passkey, ProjectRole, PurgeCounts, PushSubscriptionStatus, PushTestResponse, ResetPreview, SyncResponse, TrustedDevice, User, PublicLink, PublicList,
   MemberInvitation, PendingAnswer,
   Webhook, WebhookDelivery, WebhookEvent, WebhookInput, IssueActionResult, IssueConnection, IssueConnectionInput,
-  CalendarConnection, CalendarConnectionPatch, CalendarSyncRun, GoogleClientSetting,
+  CalendarConnection, CalendarConnectionPatch, CalendarSyncRun, GoogleClientSetting, MicrosoftClientSetting,
   OwnTaskPage, PublishTaskPageInput, TaskPageCreated, TaskPageStatus,
-  AutomationsSetting, RuleRun, RulesStatus,
+  AutomationsSetting, RuleRun, RulesStatus, RoutineCatalogueEntry, RoutineInboxRun, RoutineRun, RoutineTestResult, RoutineStep, RuleCondition, RuleTrigger,
+  RoutineAIUsage, RoutineProposal, RoutineProposalApplied,
 } from './types'
 import { createSignal } from './store'
 
@@ -327,7 +330,7 @@ export const api = {
   // Trash and history (OpenSpec change `trash-and-history`): history is read live, never cached.
   history: (entity: 'task' | 'project', id: string, before?: number) =>
     request<HistoryPage>('GET', `/api/v1/${entity}s/${encodeURIComponent(id)}/history${before ? `?before=${before}` : ''}`),
-  purge: (entity: 'task' | 'project', id: string) =>
+  purge: (entity: 'task' | 'project' | 'note', id: string) =>
     request<{ purged: PurgeCounts }>('DELETE', `/api/v1/${entity}s/${encodeURIComponent(id)}/purge`),
   emptyTrash: () => request<{ purged: PurgeCounts }>('POST', '/api/v1/trash/purge'),
   // Activity (comments-and-activity): older events than the device keeps, newest first.
@@ -505,6 +508,11 @@ export const api = {
   putBrandingName: (name: string) => request<Branding>('PUT', '/api/v1/settings/branding', { name }),
   putBrandingLogo: (logo: Blob) => sendRaw<Branding>('PUT', '/api/v1/settings/branding/logo', logo),
   deleteBrandingLogo: () => request<Branding>('DELETE', '/api/v1/settings/branding/logo'),
+  // The instance's default theme and themes (theme-instance-default D2); members read them in lib/theme/instance.ts.
+  instanceThemes: () => request<unknown>('GET', '/api/v1/themes/instance'),
+  putThemeDefault: (d: { light: string; dark: string }) => request<unknown>('PUT', '/api/v1/settings/themes/default', d),
+  putInstanceTheme: (id: string, doc: unknown) => request<unknown>('PUT', `/api/v1/settings/themes/instance/${encodeURIComponent(id)}`, doc),
+  deleteInstanceTheme: (id: string) => request<unknown>('DELETE', `/api/v1/settings/themes/instance/${encodeURIComponent(id)}`),
   // Calendar feeds (OpenSpec calendar-feeds).
   calendarFeedsSwitch: ownerSwitch('calendar-feeds'),
   calendarSubscriptions: () => request<{ subscriptions: CalendarSubscription[] }>('GET', '/api/v1/calendar-feeds/subscriptions'),
@@ -521,7 +529,7 @@ export const api = {
   rotateCalendarFeed: () => request<{ feed: CalendarFeed; url: string }>('POST', '/api/v1/calendar-feeds/feed'),
   revokeCalendarFeed: () => request<void>('DELETE', '/api/v1/calendar-feeds/feed'),
   // Calendar sync (OpenSpec change calendar-two-way): connections are server data, never ops.
-  calendarSyncSwitch: ownerSwitch<{ enabled: boolean; google: boolean; max_connections: number }, { enabled: boolean }>('calendar-sync'),
+  calendarSyncSwitch: ownerSwitch<{ enabled: boolean; google: boolean; microsoft?: boolean; max_connections: number }, { enabled: boolean }>('calendar-sync'),
   getGoogleClient: () => request<GoogleClientSetting>('GET', '/api/v1/settings/calendar-sync/google'),
   putGoogleClient: (body: { client_id: string; client_secret?: string }) => request<GoogleClientSetting>('PUT', '/api/v1/settings/calendar-sync/google', body),
   listCalendarConnections: () => request<{ connections: CalendarConnection[] }>('GET', '/api/v1/calendar-sync/connections'),
@@ -534,6 +542,11 @@ export const api = {
     request<{ ok: boolean; reason?: string; run?: CalendarSyncRun; connection: CalendarConnection }>('POST', `/api/v1/calendar-sync/connections/${encodeURIComponent(id)}/sync`),
   startGoogleCalendar: (connectionId?: string) =>
     request<{ url: string }>('POST', '/api/v1/calendar-sync/google/start', connectionId ? { connection_id: connectionId } : {}),
+  getMicrosoftClient: () => request<MicrosoftClientSetting>('GET', '/api/v1/settings/calendar-sync/microsoft'),
+  putMicrosoftClient: (body: { client_id: string; tenant: string; client_secret?: string }) =>
+    request<MicrosoftClientSetting>('PUT', '/api/v1/settings/calendar-sync/microsoft', body),
+  startMicrosoftCalendar: (connectionId?: string) =>
+    request<{ url: string }>('POST', '/api/v1/calendar-sync/microsoft/start', connectionId ? { connection_id: connectionId } : {}),
   // Issue import (OpenSpec issue-connections): connections are server data, never ops.
   /** Maps (task-locations): address search and reverse search through the server's map proxy. */
   mapSearch: (q: string, lang: string) =>
@@ -545,6 +558,42 @@ export const api = {
   /** Automation rules (automation-rules): the server's state, run log and switches; the rules themselves sync. */
   myRules: () => request<RulesStatus>('GET', '/api/v1/me/rules'),
   ruleRuns: (id: string) => request<{ runs: RuleRun[] }>('GET', `/api/v1/rules/${encodeURIComponent(id)}/runs`),
+  /** Routines (routines-engine): run one now, undo one of its runs. */
+  runRoutine: (id: string, body: { run_id: string; task_id?: string; test?: boolean; call_ai?: boolean; device?: string }) =>
+    request<{ run: { run_id: string; outcome: string; writes: number; reason?: string }; writes: number; test: boolean; device_run?: RoutineRunRequest }>('POST', `/api/v1/rules/${encodeURIComponent(id)}/run`, body),
+  /** Device runs of an encrypted account (routines-ai-step D8): the result as ciphertext, or the failure. */
+  commitDeviceRun: (runId: string, body: DeviceCommit) =>
+    request<{ run: { run_id: string; outcome: string; writes: number; reason?: string } }>('POST', `/api/v1/me/rules/runs/${encodeURIComponent(runId)}/commit`, body),
+  failDeviceRun: (runId: string, body: { step: number; code: string; steps?: DeviceStepRecord[]; duration_ms?: number; tokens?: number }) =>
+    request<{ run: { run_id: string; outcome: string } }>('POST', `/api/v1/me/rules/runs/${encodeURIComponent(runId)}/fail`, body),
+  routinesDeviceOptIn: (device: string, label: string) => request<void>('PUT', `/api/v1/relay/devices/${encodeURIComponent(device)}/routines`, { label }),
+  routinesDeviceOptOut: (device: string) => request<void>('DELETE', `/api/v1/relay/devices/${encodeURIComponent(device)}/routines`),
+  undoRoutineRun: (id: string, runId: string) =>
+    request<{ restored: number; kept: number; not_undoable: string[] }>('POST', `/api/v1/rules/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/undo`, {}),
+  /** Routines (routines-editor): the catalogue, tests of drafts, one run, all runs, the Inbox card. */
+  routineCatalogue: () => request<{ steps: RoutineCatalogueEntry[] }>('GET', '/api/v1/me/rules/catalogue'),
+  /** Describe it (routines-describe-it): the assistant drafts a routine from one sentence; nothing is saved. */
+  draftRoutine: (text: string) => request<DraftAnswer>('POST', '/api/v1/assistant/routine-draft', { text }),
+  testRoutineDraft: (body: { trigger: RuleTrigger; condition?: RuleCondition | null; steps: RoutineStep[]; task_id?: string; call_ai?: boolean; project_id?: string }) =>
+    request<RoutineTestResult>('POST', '/api/v1/rules/test', body),
+  testRoutine: (id: string, body: { run_id: string; task_id?: string; call_ai?: boolean }) =>
+    request<RoutineTestResult>('POST', `/api/v1/rules/${encodeURIComponent(id)}/run`, { ...body, test: true }),
+  routineRun: (id: string, runId: string) => request<RoutineRun>('GET', `/api/v1/rules/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`),
+  routineRuns: (q: { rule?: string; outcome?: string; source?: string; before?: number; limit?: number } = {}) => {
+    const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+    return request<{ runs: RoutineRun[]; before?: number }>('GET', `/api/v1/me/rules/runs${p.size ? `?${p}` : ''}`)
+  },
+  routineInbox: (since: number) => request<{ runs: RoutineInboxRun[]; seen_at: number; hide_successes: boolean }>('GET', `/api/v1/me/rules/runs?for=inbox&since=${Math.max(0, Math.floor(since))}`),
+  /** Routines' AI steps (routines-ai-step): proposals, and a routine's AI usage and mode. */
+  routineProposals: () => request<{ proposals: RoutineProposal[] }>('GET', '/api/v1/me/rules/proposals'),
+  routineProposal: (id: string) => request<RoutineProposal>('GET', `/api/v1/me/rules/proposals/${encodeURIComponent(id)}`),
+  applyRoutineProposal: (id: string, items: string[]) => request<RoutineProposalApplied>('POST', `/api/v1/me/rules/proposals/${encodeURIComponent(id)}/apply`, { items }),
+  /** An encrypted proposal: the ticked items as ciphertext changes (routines-ai-step D3). */
+  applyEncryptedProposal: (id: string, body: Omit<DeviceCommit, 'steps' | 'proposal' | 'outcome'> & { skipped: number; changed: number }) =>
+    request<RoutineProposalApplied>('POST', `/api/v1/me/rules/proposals/${encodeURIComponent(id)}/apply`, body),
+  dismissRoutineProposal: (id: string) => request<void>('DELETE', `/api/v1/me/rules/proposals/${encodeURIComponent(id)}`),
+  routineAIUsage: (id: string) => request<RoutineAIUsage>('GET', `/api/v1/rules/${encodeURIComponent(id)}/ai-usage`),
+  dismissRoutineRun: (id: string, runId: string) => request<void>('POST', `/api/v1/rules/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/dismiss`, {}),
   pauseRules: (paused: boolean) => request<{ enabled: boolean; paused: boolean }>('PUT', '/api/v1/me/rules/paused', { paused }),
   automationsSwitch: ownerSwitch<AutomationsSetting>('automations'),
   issuesSwitch: ownerSwitch('issues'),

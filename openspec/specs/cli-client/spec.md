@@ -474,11 +474,15 @@ Each release SHALL ship `opentodo-agent-skill.zip` containing `SKILL.md`, and `o
 - **THEN** the command exits with a usage error and creates nothing
 
 ### Requirement: Today limit and logged wins in the CLI
-While the user's Today limit is on, `ot today` SHALL print the tasks in the slots, then a "Waiting for a slot" heading with the waiting tasks in fill order (OpenSpec `today-closed-list`); `--all` SHALL print every task without the heading, and `--json` SHALL carry `waiting_for_slot` on each task. `ot add --done <title>` SHALL create the task already completed now by the user, in one request, refusing `--repeat` and `--remind` with a usage error.
+While the user's Today limit is on, `ot today` SHALL print the tasks in the slots, then a "Waiting for a slot" heading with the waiting tasks in fill order (OpenSpec `today-closed-list`); the heading SHALL carry the number of waiting tasks and, when some are due today with a time or have a deadline today, the soonest of them with its time, followed by those tasks soonest first with their time (OpenSpec `today-waiting-time-sensitive`). `--all` SHALL print every task without the heading, and `--json` SHALL carry `waiting_for_slot` on each task and `time_sensitive` on each waiting task. `ot add --done <title>` SHALL create the task already completed now by the user, in one request, refusing `--repeat` and `--remind` with a usage error.
 
 #### Scenario: Waiting section
 - **WHEN** the limit is 2 and Today has three tasks
 - **THEN** `ot today` prints two tasks, then "Waiting for a slot" and the third
+
+#### Scenario: Time-sensitive waiting tasks
+- **WHEN** the limit is 1 and "Send the form" at 16:00 and "Call the school" at 09:00 wait with two other tasks
+- **THEN** `ot today` prints "Waiting for a slot · 4 — next: Call the school, 09:00", the two lines 09:00 then 16:00, then the waiting tasks in fill order, and `--json` has `time_sensitive: true` on those two
 
 #### Scenario: Log a win from the terminal
 - **WHEN** the user runs `ot add --done "Fixed the printer"`
@@ -487,3 +491,26 @@ While the user's Today limit is on, `ot today` SHALL print the tasks in the slot
 #### Scenario: Win that repeats
 - **WHEN** the user runs `ot add --done "Stretch" --repeat "every day"`
 - **THEN** the command exits with a usage error and creates nothing
+
+### Requirement: Task note command
+`ot task note <ref>` SHALL print a task's note as Markdown (its projection followed by pending appends), with `--json` carrying the task id, the text, the pending appends and `body_version`. `--set <text>` and `--file <path>` (`-` for standard input) SHALL replace the note through `PATCH /api/v1/tasks/{id}` with `If-Match` set to the version the command read; `--clear` SHALL replace it with empty text the same way; `--append <text>` SHALL add text at the end through `POST /api/v1/tasks/{id}/note/append` without replacing anything. Only one of these options SHALL be accepted per call (otherwise exit 2). Writes honour `--dry-run` and `--read-only`. On an encrypted account the command SHALL decrypt and encrypt with an unlocked profile and otherwise refuse text writes with `encryption_enabled` (exit 5). The CLI is online-only; devices receive the change on their next sync and fold it into the document.
+
+#### Scenario: Read a task's note
+- **WHEN** the user runs `ot task note 8c2a` for a task whose note has a heading and a checklist
+- **THEN** the heading is printed as a `#` line and the checklist as `- [ ]` lines
+
+#### Scenario: Replace from a file
+- **WHEN** the user runs `ot task note 8c2a --file plan.md` and nobody edited the note since the command read it
+- **THEN** the task's note becomes the file's text, shown formatted on every device after sync
+
+#### Scenario: Replace after a concurrent edit
+- **WHEN** the note was edited in the app between the command's read and its write
+- **THEN** the command fails with `body_changed`, exit 1, and the app's edit stays
+
+#### Scenario: Append
+- **WHEN** an agent runs `ot task note 8c2a --append "- called, no answer" --json`
+- **THEN** the envelope carries the append id, and every device shows the line at the end of the note after sync, with the rest of the note unchanged
+
+#### Scenario: Two options
+- **WHEN** the user runs `ot task note 8c2a --set "x" --append "y"`
+- **THEN** nothing is sent and the exit code is 2

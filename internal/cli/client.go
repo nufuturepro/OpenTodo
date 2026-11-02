@@ -25,6 +25,8 @@ const (
 	// ExitNotPermitted: refused by scope, role, a switch, encryption or
 	// read-only mode. Retrying cannot help (agent-ready-cli D2).
 	ExitNotPermitted = 5
+	// ExitRunFailed: `ot routine run` ran the routine and the run failed.
+	ExitRunFailed = 6
 )
 
 // notPermittedCodes are the envelope codes that exit with ExitNotPermitted.
@@ -41,6 +43,9 @@ type exitError struct {
 	jsonCode string
 	msg      string
 	envelope []byte // raw server envelope when the server produced one
+	// printed: the command already wrote its JSON answer (a failed routine
+	// run's record); only the stderr line follows.
+	printed bool
 }
 
 func (e *exitError) Error() string { return e.msg }
@@ -298,6 +303,8 @@ type task struct {
 	// it waits for and the location as stored.
 	Deadline *string `json:"deadline"`
 	Evening  bool    `json:"evening"`
+	// Span draws the task from Start to its due date (multi-day-tasks).
+	Span bool `json:"span"`
 	// DayPart is "morning", "afternoon" or null (day-parts); Evening stays the flag.
 	DayPart *string `json:"day_part"`
 	// Energy is "deep", "medium", "low", or "" or absent for none (task-energy).

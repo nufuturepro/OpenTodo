@@ -13,7 +13,7 @@ import { headingsOf, parseFrontMatter, repoRootFrom, specNames } from './lib.mjs
 import { END, START, loadShortcuts, shortcutsMarkdown } from './shortcuts.mjs'
 import { missingScreenshots } from '../../../scripts/site-bundle.mjs'
 
-/** Help screen ids the app links to: <HelpLink screen="id">, <HelpHeading screen="id">, <SettingsSection helpId="id">, data-help-screen="id", helpScreen('id') or a settings card's learnMore: 'id'. */
+/** Help screen ids the app links to: <HelpLink screen="id">, <HelpHeading screen="id">, <LearnMore screen="id">, <SettingsSection helpId="id">, data-help-screen="id", helpScreen('id') or a settings card's learnMore: 'id'. */
 export function appScreenIds(repoRoot) {
   const ids = new Map()
   const walk = (dir) => {
@@ -26,7 +26,7 @@ export function appScreenIds(repoRoot) {
       // Reported paths always use forward slashes (the checks run on Windows too).
       const rel = p.slice(repoRoot.length + 1).split('\\').join('/')
       for (const m of src.matchAll(/(?:data-help-screen|helpScreen|openHelp)\s*[=:(]\s*\{?\s*["'`]([^"'`]+)["'`]/g)) ids.set(m[1], rel)
-      for (const m of src.matchAll(/<Help(?:Link|Heading)\b[^>]*?\bscreen=["']([^"']+)["']/g)) ids.set(m[1], rel)
+      for (const m of src.matchAll(/<(?:Help(?:Link|Heading)|LearnMore)\b[^>]*?\bscreen=["']([^"']+)["']/g)) ids.set(m[1], rel)
       // The page template's Help action (ux-overhaul): <PageHeader … help="id" />, or help={`settings/${id}`} resolved by HELP_SCREENS.
       for (const m of src.matchAll(/\shelp=["']([^"']+)["']/g)) ids.set(m[1], rel)
       // A settings card's Learn more (settings-copy D4): `learnMore: 'id'` in the settings copy table.

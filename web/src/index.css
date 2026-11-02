@@ -37,7 +37,9 @@
 }
 
 @theme inline {
-  --font-sans: "OpenTaskKit Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* A theme may set --ot-font (theme-engine D1: a system, serif, monospace or installed
+     font, never one from another host); without it the bundled Inter applies. */
+  --font-sans: var(--ot-font, "OpenTaskKit Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
   --color-canvas: var(--ot-canvas);
   --color-surface: var(--ot-surface);
   --color-raised: var(--ot-raised);
@@ -104,22 +106,25 @@
   --border-color-strong: var(--ot-line-strong);
   /* Precision type (precision-tokens D2): the list and control step is one token,
      --ot-text-list (13 px); set it to 0.875rem for 14 px. Prose (notes, help, the
-     briefing) keeps 15 px through --text-prose. */
-  --text-hint: 0.71875rem; --text-hint--line-height: 1rem; --text-hint--font-weight: 500;
-  --text-meta: 0.78125rem; --text-meta--line-height: 1.125rem;
+     briefing) keeps 15 px through --text-prose. The steps under 16 px read --ot-text-*
+     variables, so a text field on a touch screen can raise them to 16 px (#724, the
+     base layer below). */
+  --text-hint: var(--ot-text-hint); --text-hint--line-height: 1rem; --text-hint--font-weight: 500;
+  --text-meta: var(--ot-text-meta); --text-meta--line-height: 1.125rem;
   --text-body: var(--ot-text-list); --text-body--line-height: 1.25rem;
-  --text-prose: 0.9375rem; --text-prose--line-height: 1.5rem;
+  --text-prose: var(--ot-text-prose); --text-prose--line-height: 1.5rem;
   /* Headings and the display step (tokens-v2 D7): weight 600, tighter tracking as the size grows. */
-  --text-h3: 0.875rem; --text-h3--line-height: 1.25rem; --text-h3--font-weight: 600;
+  --text-h3: var(--ot-text-h3); --text-h3--line-height: 1.25rem; --text-h3--font-weight: 600;
   --text-h2: 1.25rem; --text-h2--line-height: 1.75rem; --text-h2--font-weight: 600; --text-h2--letter-spacing: -0.01em;
   --text-h1: 1.375rem; --text-h1--line-height: 1.75rem; --text-h1--font-weight: 600; --text-h1--letter-spacing: -0.015em;
   --text-display: 1.75rem; --text-display--line-height: 2.125rem; --text-display--font-weight: 650; --text-display--letter-spacing: -0.025em;
-  /* Precision radii (precision-tokens D3): row 6, control 7, card 8, the inset surface 10, popover 12. */
-  --radius-chip: 6px;
-  --radius-control: 7px;
-  --radius-card: 8px;
-  --radius-surface: 10px;
-  --radius-popover: 12px;
+  /* Precision radii (precision-tokens D3): row 6, control 7, card 8, the inset surface 10, popover 12.
+     A theme may set its own scale through --ot-radius-* (theme-engine D1). */
+  --radius-chip: var(--ot-radius-chip, 6px);
+  --radius-control: var(--ot-radius-control, 7px);
+  --radius-card: var(--ot-radius-card, 8px);
+  --radius-surface: var(--ot-radius-surface, 10px);
+  --radius-popover: var(--ot-radius-popover, 12px);
   /* Lists and cards are flat (precision-tokens D4); only overlays keep a shadow. */
   --shadow-1: 0 0 #0000;
   --shadow-2: 0 4px 12px rgb(15 23 42 / 0.10);
@@ -207,6 +212,10 @@
   --duration-moment: 400ms;
   --size-row: 36px;
   --ot-text-list: 0.8125rem;
+  --ot-text-hint: 0.71875rem;
+  --ot-text-meta: 0.78125rem;
+  --ot-text-prose: 0.9375rem;
+  --ot-text-h3: 0.875rem;
   /* Derivation ratios (tokens-v2 D4, D5): every accent and hue step is one of these
      mixes, so a theme or a hue is declared once. The contrast check reads them back.
      Soft steps mix into the surface in OKLab (a tinted dark surface would turn the
@@ -385,6 +394,11 @@
 [data-accent="orange"] { --ot-al-accent: oklch(0.5534 0.1739 38.4); --ot-ad-accent-text: oklch(0.7576 0.159 55.93); --ot-a-on-accent: oklch(1 0 0); }
 [data-accent="teal"] { --ot-al-accent: oklch(0.5109 0.0861 186.39); --ot-ad-accent-text: oklch(0.7845 0.1325 181.91); --ot-a-on-accent: oklch(1 0 0); }
 [data-accent="graphite"] { --ot-al-accent: oklch(0.3717 0.0392 257.29); --ot-ad-accent-text: oklch(0.869 0.0198 252.89); --ot-a-on-accent: oklch(1 0 0); /* override: dark buttons a step lighter than the light accent, so on-accent text on the dark canvas keeps its edge */ --ot-ad-accent: oklch(0.4455 0.0374 257.28); }
+/* The custom accent (accent-colour D3) has no block here: its derived values are
+   inline properties on the root (or on a preview). A built-in theme tile under a
+   custom root must not inherit the custom dark button, so the themes without their
+   own override drop it. */
+[data-accent]:where(:not([data-accent="graphite"], [data-accent="custom"])) { --ot-ad-accent: initial; }
 :root[data-accent], [data-accent] {
   --ot-accent: var(--ot-al-accent, oklch(0.5081 0.1049 165.61));
   --ot-accent-hover: color-mix(in oklch, var(--ot-accent) var(--ot-mix-accent-hover), oklch(0 0 0));
@@ -697,6 +711,24 @@ body {
   }
 }
 
+/* No zoom on focus (issue #724): Safari on iOS zooms the page in when a text field
+   with text smaller than 16 px gets focus, and an installed app stays zoomed after the
+   keyboard closes. On touch screens every field, and everything inside an editable
+   area, is at least 16 px: the variables behind the small type steps are 16 px there
+   (a utility such as text-meta reads them on the element itself; the list step's
+   choices stop at 15 px), and a field without one inherits at least 16 px. Larger tokens and the desktop design are unchanged, and pinch zoom stays
+   on (no maximum-scale). The layout check fails on a smaller field (scripts/e2e-layout.mjs). */
+@layer base {
+  @media (pointer: coarse) {
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="hidden"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"]),
+    textarea, select, [contenteditable]:not([contenteditable="false"]) {
+      --ot-text-hint: 16px; --ot-text-meta: 16px; --ot-text-list: 16px;
+      --ot-text-prose: 16px; --ot-text-h3: 16px;
+      font-size: max(16px, 1em);
+    }
+  }
+}
+
 @layer components {
 /* Shared Input (src/ui/Field.tsx): 40 px tall, so it lines up with a medium button. */
 .ui-input {
@@ -815,6 +847,14 @@ select.ui-input:not([multiple]) {
 .slash-menu { @apply z-50 w-64 max-w-[calc(100vw-2rem)] rounded-control border border-default bg-surface p-1 shadow-3 dark:bg-raised; }
 .slash-menu [aria-selected="true"] { @apply bg-accent-soft text-strong; }
 .editor-toolbar { @apply -mx-2 mb-1 flex items-center gap-1 overflow-x-auto px-2 py-1; }
+/* The Formatting toggle on a computer (notes-toolbar-desktop D2): at the note's top
+   end corner, over end padding of the first block (and of the row), so text never
+   runs under it. */
+.notes-frame { @apply relative; }
+.notes-frame > .formatting-toggle { @apply absolute end-0 top-0 z-10; }
+.formatting-toggle[aria-pressed="true"] { @apply bg-selected text-strong; }
+.notes-frame[data-formatting] .notes-editor > :first-child,
+.notes-frame[data-formatting] .editor-toolbar { padding-inline-end: 2.25rem; }
 }
 
 /* Surfaces (OpenSpec change surfaces-v2): structure felt through soft fills and
@@ -844,6 +884,26 @@ select.ui-input:not([multiple]) {
   border-inline-start: 3px dashed var(--ot-accent);
   color: var(--ot-text-strong);
 }
+/* A task drawn across days (multi-day-tasks D3): the block recipe; where it continues
+   past the shown days its end is squared off and the leading edge is left off. */
+.ui-span--before { border-start-start-radius: 0; border-end-start-radius: 0; border-inline-start-width: 0; }
+.ui-span--after { border-start-end-radius: 0; border-end-end-radius: 0; }
+/* The part of a bar over days before today, dimmed like past blocks. */
+.ui-span-past { background: color-mix(in oklab, var(--ot-surface) 45%, transparent); }
+/* Month's bars lie over the cells: only the bars take the pointer. */
+.ui-span-overlay [data-span-piece] { pointer-events: auto; }
+/* While a bar is dragged the pointer reaches the days under every bar. */
+body[data-span-dragging] [data-span-piece] { pointer-events: none; }
+/* A projected occurrence of a repeating task (series-occurrences D3): a fainter fill than
+   the past, a dashed leading edge in the hue (told from a past block without colour) and
+   muted text. In high contrast the dashed edge is the marker. */
+.ui-block--projected {
+  background: color-mix(in oklab, var(--hue-soft) 40%, var(--ot-surface));
+  border-inline-start: 3px dashed var(--hue-solid);
+  color: var(--ot-muted);
+}
+.ui-block--projected:hover { background: color-mix(in oklab, var(--hue-soft) 70%, var(--ot-surface)); }
+html:root[data-contrast="high"] .ui-block--projected:not(:focus-visible) { background: var(--ot-surface); outline: 1px dashed var(--hue-solid); outline-offset: -1px; }
 .ui-block--late {
   background: var(--ot-danger-soft);
   border-inline-start-color: var(--ot-danger);
@@ -874,6 +934,15 @@ select.ui-input:not([multiple]) {
   border-color: color-mix(in oklab, var(--hue-solid) 60%, var(--ot-surface));
 }
 .ui-event-past .ui-block-dot { background: color-mix(in oklab, var(--hue-solid) 60%, var(--ot-surface)); }
+/* A day that holds calendar events, in the Year and in a phone's Month (calendar-events-all-views):
+   a small hollow ring in the muted tone, told apart from the filled over-capacity dot and the
+   density bar by its shape. */
+.ui-event-mark {
+  height: 0.375rem;
+  width: 0.375rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ot-muted);
+}
 .ui-column { @apply rounded-card bg-sunken p-1.5 dark:border dark:border-default; }
 /* The board's "Add a section" column (precision-boards-timeline D4): a dashed outline the height of a column. */
 .ui-column-add { @apply flex h-[calc(100dvh-14rem)] w-[88vw] shrink-0 snap-start flex-col items-stretch gap-2 rounded-card border border-dashed border-input p-1.5 text-meta text-muted sm:w-72; }
@@ -883,6 +952,11 @@ button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hov
   border-radius: var(--radius-control);
   background: var(--ot-accent-soft);
 }
+/* A folded board column (board-polish D2): a strip of the column surface the board's height,
+   48 px on a phone and 40 px from 640 px; it lifts like a card, and a card dragged over it
+   gives it the placeholder's dashed edge along its whole length (D3). */
+.ui-column-strip { @apply flex h-[calc(100dvh-14rem)] w-12 shrink-0 snap-start flex-col rounded-card bg-sunken p-0 transition-shadow duration-(--duration-ui) hover:shadow-2 focus-within:shadow-2 sm:w-10 dark:border dark:border-default; }
+.ui-column-strip[data-drop-over] { border: 2px dashed var(--ot-border-input); background: var(--ot-accent-soft); }
 .ui-section-flat { @apply px-4 py-5 sm:px-6; }
 /* A settings section (precision-settings D3): flat on the page, its rows between hairlines; the page spaces them. */
 .ui-settings-section { @apply min-w-0; }
@@ -965,6 +1039,9 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   content: '·'; color: var(--ot-faint); margin-inline-end: 0.125rem;
 }
 [data-row-meta="row"] [data-row-labels] { margin-inline: 0.25rem; }
+/* A routine word followed by punctuation ("Comment on [each task]: …"): no gap before
+   the colon or comma (routines-describe-it). Unlayered, so it wins over the word's mx and px. */
+[data-word]:has(+ [data-punct]) { margin-inline-end: 0; padding-inline-end: 0; }
 /* The time column's width (rows-v2 D2): one value for every list, from the user's time
    format; DateTimePrefsProvider sets it on the root ("23:59" or "12:00 PM"). */
 :root { --row-time-w: 3.25rem; }
@@ -1169,6 +1246,8 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
 @media (hover: hover) {
   .ui-reveal { opacity: 0; transition: opacity var(--duration-ui); }
   :is(.group, [data-sidebar-item], [data-sidebar-group-header]):is(:hover, :focus-within) .ui-reveal, .ui-reveal:focus-within { opacity: 1; }
+  /* A note's Formatting toggle (notes-toolbar-desktop D2): with the note, and always while pressed. */
+  .notes-frame:is(:hover, :focus-within) > .ui-reveal, .ui-reveal[aria-pressed="true"] { opacity: 1; }
 }
 /* Every count on (sidebar-polish D2): the count sits in a slot as wide as the row's
    menu button; with a fine pointer the button takes the slot while the row is hovered
@@ -1341,6 +1420,7 @@ html:root[data-contrast="high"] .quick-add-tint { background-color: transparent;
    unanimated from 640 px up — this rule comes after it and wins there. */
 @media (min-width: 640px) { .dialog-card-in { animation: overlay-in var(--duration-ui) var(--ease-calm, ease-out) both; } }
 }
+
 
 
 /* The docked panel's width (web-app "Task panel layout"): 26 rem, 30 rem from 1440 px,

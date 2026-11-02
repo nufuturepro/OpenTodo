@@ -112,6 +112,16 @@ export function setTodayEventsShown(shown: boolean): Promise<void> {
   return mutate('user_prefs', USER_PREFS_ID, { today_events: shown ? 'shown' : 'hidden' })
 }
 
+/** Upcoming starts with Today's groups (OpenSpec change upcoming-start-with-today, D1): off unless the account chose "on". */
+export function upcomingStartsWithToday(row: Partial<UserPrefs> | null | undefined): boolean {
+  return row?.upcoming_today === 'on'
+}
+
+/** Turns Start with Today on or off for the account: one synced op, offline included. */
+export function setUpcomingStartsWithToday(on: boolean): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { upcoming_today: on ? 'on' : 'off' })
+}
+
 /** How a task opens from a list (OpenSpec change task-side-panel, D1): its page, or a side panel beside the list. */
 export type TaskOpenPref = 'page' | 'panel'
 
@@ -150,4 +160,18 @@ export { readDefaultReminders, type DefaultReminders } from './defaultReminder'
 export function setDefaultReminder(kind: 'timed' | 'dated', minutes: number | null): Promise<void> {
   if (minutes !== null && (!Number.isInteger(minutes) || Math.abs(minutes) > MAX_DEFAULT_OFFSET)) return Promise.reject(new Error('reminder offset out of range'))
   return mutate('user_prefs', USER_PREFS_ID, { [kind === 'timed' ? 'reminder_default_timed' : 'reminder_default_dated']: formatDefaultReminder(minutes) })
+}
+
+/**
+ * The Formatting button (OpenSpec change notes-toolbar-desktop, design D4): whether
+ * notes and the comment composer offer the Formatting toggle on a computer. Only
+ * "off" hides it; an empty or unknown value reads as on and is kept.
+ */
+export function formattingButtonOn(prefs: Partial<UserPrefs> | null | undefined): boolean {
+  return prefs?.formatting_toggle !== 'off'
+}
+
+/** Turns the Formatting button on or off for the account: one synced op, offline included. */
+export function setFormattingButton(on: boolean): Promise<void> {
+  return mutate('user_prefs', USER_PREFS_ID, { formatting_toggle: on ? 'on' : 'off' })
 }

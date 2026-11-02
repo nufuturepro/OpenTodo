@@ -1,6 +1,6 @@
 ---
 title: Calendar feeds
-summary: Show your other calendars next to your tasks in Day and Week, and subscribe to your tasks from Google Calendar, Outlook or Apple Calendar.
+summary: Show your other calendars next to your tasks in the calendar views, and subscribe to your tasks from Google Calendar, Outlook or Apple Calendar.
 audience: user
 section: Guides
 specs: [calendar-feeds]
@@ -13,7 +13,7 @@ order: 63
 
 Calendar feeds work in both directions:
 
-- **Other calendars in OpenTodo.** Subscribe to the iCal address of a Google, Outlook, Apple, Fastmail or Nextcloud calendar, and its events appear next to your tasks in [Day and Week](calendar-views.md). You see your real free time while you plan.
+- **Other calendars in OpenTodo.** Subscribe to the iCal address of a Google, Outlook, Apple, Fastmail or Nextcloud calendar, and its events appear next to your tasks in [Day, Week, Month and Year](calendar-views.md). You see your real free time while you plan.
 - **Your tasks in your calendar app.** Create a private feed address, then subscribe to it from Google Calendar, Outlook or Apple Calendar. Your dated tasks show up there as events.
 
 Both directions are read-only. Events from other calendars can't be moved or edited in OpenTodo, and calendar apps can't change your tasks. For two-way sync with the calendar you use (iCloud, Fastmail, Nextcloud or Google Calendar), use [calendar sync](calendar-sync.md): moving an event there moves the task. For to-do apps that speak CalDAV, use [CalDAV](caldav.md).
@@ -22,11 +22,11 @@ Calendar feeds are off until the server owner turns them on under **Settings →
 
 ## Subscribe to another calendar
 
-Copy the calendar's iCal or `webcal://` address from its app, then open **Settings → Integrations → Calendar feeds**, choose **Add calendar** and paste it, with a name and a colour if you like. The server fetches the calendar straight away and then on its own schedule, and its events appear in Day and Week beside your tasks. [Other calendars in Day and Week](other-calendars.md) has the steps for each calendar app, what the events look like, how refreshing works, and the limits.
+Copy the calendar's iCal or `webcal://` address from its app, then open **Settings → Integrations → Calendar feeds**, choose **Add calendar** and paste it, with a name and a colour if you like. The server fetches the calendar straight away and then on its own schedule, and its events appear in the calendar beside your tasks. [Other calendars in Day and Week](other-calendars.md) has the steps for each calendar app, what the events look like, how refreshing works, and the limits.
 
 ### Exchange on-premises
 
-Outlook on the web on your organisation's own Exchange server refuses non-browser requests with error 400. When a calendar answers 400, 403 or 406, OpenTodo retries once as a desktop browser and keeps doing so for that calendar. If **http_400** stays, check the calendar is still published.
+Outlook on the web on your own Exchange server refuses non-browser requests with error 400. When a calendar answers 400, 403 or 406, OpenTodo retries once as a desktop browser and keeps doing so for that calendar. If **http_400** stays, check the calendar is still published.
 
 ## Your tasks as a calendar
 
@@ -36,7 +36,7 @@ In **Settings → Integrations → Calendar feeds**, under **Your tasks as a cal
 - **Outlook**: *Add calendar* → **Subscribe from web**.
 - **Apple Calendar**: **File → New Calendar Subscription**.
 
-The feed holds your open tasks due from 30 days ago to a year ahead, including tasks in projects shared with you. Tasks in archived projects are left out. Repeating tasks repeat in the calendar app too. A task with a time and an estimate becomes an event of that length. A task with a time but no estimate becomes a 30-minute event, and a date-only task becomes an all-day event. Completed tasks drop out. Calendar apps refresh subscriptions on their own schedule, which can be every few minutes or once a day.
+The feed holds your open tasks due from 30 days ago to a year ahead, including tasks in projects shared with you. Tasks in archived projects are left out. Repeating tasks repeat in the calendar app too. A task with a time and an estimate becomes an event of that length. A task with a time but no estimate becomes a 30-minute event, and a date-only task becomes an all-day event. A multi-day task becomes one all-day event over its days. Completed tasks drop out. Calendar apps refresh subscriptions on their own schedule.
 
 ### Rotate or revoke
 
@@ -45,7 +45,7 @@ Anyone who has the address can read the tasks in it, so treat it like a password
 - **Rotate** creates a new address. The old one stops working at once, so calendar apps need the new address.
 - **Revoke** turns the feed off.
 
-The panel shows when the address was created and when a calendar app last fetched it.
+The panel shows when the address was created and last fetched.
 
 ## End-to-end encryption
 

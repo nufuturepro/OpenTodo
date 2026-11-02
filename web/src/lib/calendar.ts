@@ -5,6 +5,7 @@
 import { addDaysISO, localDueOf } from './dates'
 import { formatMinutes, MAX_ESTIMATE_MINUTES } from './duration'
 import type { CalendarEvent, CalendarWhen, Due, Project, Task } from './types'
+import { spanClip, spanOf } from './span'
 
 export const SLOT_MINUTES = 15
 /**
@@ -147,18 +148,72 @@ function wallPoint(p: CalendarWhen, zone?: string): { date: string; minutes: num
 export function eventBlocks(events: readonly CalendarEvent[], date: string, zone?: string): EventBlock[] {
   const out: EventBlock[] = []
   for (const ev of events) {
-    if (ev.allDay) continue
-    const start = wallPoint(ev.start, zone)
-    if (!start) continue
-    const end = wallPoint(ev.end, zone) ?? { date: start.date, minutes: start.minutes }
-    if (start.date > date || end.date < date) continue
-    const from = start.date < date ? 0 : start.minutes
-    const to = end.date > date ? DAY_MINUTES : end.minutes
-    // An event ending at 00:00 is not on the next day; a zero-length one still gets a slot-high block.
-    if (to <= from && !(start.date === date && to === from)) continue
-    out.push({ id: `event:${ev.id}`, start: from, end: Math.max(to, Math.min(DAY_MINUTES, from + SLOT_MINUTES)), event: ev })
+    const span = timedSpan(ev, zone)
+    const b = span && blockOn(ev, span, date)
+    if (b) out.push(b)
   }
-  return out.sort((a, b) => a.start - b.start || b.end - a.end)
+  return out.sort(byStart)
+}
+
+const byStart = (a: EventBlock, b: EventBlock) => a.start - b.start || b.end - a.end
+
+type TimedSpan = { start: { date: string; minutes: number }; end: { date: string; minutes: number } }
+
+/** A timed event's start and end in the viewer's zone; null for all-day events. */
+function timedSpan(ev: CalendarEvent, zone?: string): TimedSpan | null {
+  if (ev.allDay) return null
+  const start = wallPoint(ev.start, zone)
+  if (!start) return null
+  return { start, end: wallPoint(ev.end, zone) ?? { date: start.date, minutes: start.minutes } }
+}
+
+/** The part of a timed event inside `date`, or null when it is not on that day. */
+function blockOn(ev: CalendarEvent, { start, end }: TimedSpan, date: string): EventBlock | null {
+  if (start.date > date || end.date < date) return null
+  const from = start.date < date ? 0 : start.minutes
+  const to = end.date > date ? DAY_MINUTES : end.minutes
+  // An event ending at 00:00 is not on the next day; a zero-length one still gets a slot-high block.
+  if (to <= from && !(start.date === date && to === from)) return null
+  return { id: `event:${ev.id}`, start: from, end: Math.max(to, Math.min(DAY_MINUTES, from + SLOT_MINUTES)), event: ev }
+}
+
+/** One day's events for Month and Year: all-day ones as allDayEvents orders them, timed ones as eventBlocks. */
+export interface DayEvents {
+  allDay: CalendarEvent[]
+  timed: EventBlock[]
+}
+
+/**
+ * The events of every day in [from, to] (calendar-events-all-views): each event is
+ * placed once on the days it covers, with the same rules as allDayEvents and
+ * eventBlocks, so a Month or a Year does not test every event against every day.
+ * Days without events are absent.
+ */
+export function eventsByDay(events: readonly CalendarEvent[], from: string, to: string, zone?: string): Map<string, DayEvents> {
+  const out = new Map<string, DayEvents>()
+  const day = (d: string) => {
+    let x = out.get(d)
+    if (!x) out.set(d, (x = { allDay: [], timed: [] }))
+    return x
+  }
+  for (const ev of events) {
+    if (ev.allDay) {
+      const end = ev.end.date > ev.start.date ? ev.end.date : addDaysISO(ev.start.date, 1)
+      for (let d = ev.start.date < from ? from : ev.start.date; d < end && d <= to; d = addDaysISO(d, 1)) day(d).allDay.push(ev)
+      continue
+    }
+    const span = timedSpan(ev, zone)
+    if (!span) continue
+    for (let d = span.start.date < from ? from : span.start.date; d <= span.end.date && d <= to; d = addDaysISO(d, 1)) {
+      const b = blockOn(ev, span, d)
+      if (b) day(d).timed.push(b)
+    }
+  }
+  for (const x of out.values()) {
+    x.allDay.sort((a, b) => (a.start.date < b.start.date ? -1 : a.start.date > b.start.date ? 1 : a.summary.localeCompare(b.summary)))
+    x.timed.sort(byStart)
+  }
+  return out
 }
 
 /** All-day events covering `date` (the end date is exclusive, as in iCalendar). */
@@ -172,10 +227,17 @@ export function allDayEvents(events: readonly CalendarEvent[], date: string): Ca
     .sort((a, b) => (a.start.date < b.start.date ? -1 : a.start.date > b.start.date ? 1 : a.summary.localeCompare(b.summary)))
 }
 
-/** Live tasks due in [from, to], optionally including completed work; archived projects stay excluded. */
+/** Live tasks due in [from, to], or spans covering a day of it, optionally including completed work; archived projects stay excluded. */
 export function calendarTasks(tasks: readonly Task[], projects: readonly Pick<Project, 'id' | 'archived'>[], from: string, to: string, showCompleted = false): Task[] {
   const archived = new Set(projects.filter((p) => p.archived).map((p) => p.id))
-  return tasks.filter((t) => !t.deleted_at && (showCompleted || !t.completed_at) && t.due && t.due.date >= from && t.due.date <= to && !(t.project_id && archived.has(t.project_id)))
+  // A span is on screen when any of its days is (multi-day-tasks D3).
+  const inRange = (t: Task) => {
+    if (!t.due) return false
+    if (t.due.date >= from && t.due.date <= to) return true
+    const span = spanOf(t)
+    return !!span && spanClip(span, from, to) !== null
+  }
+  return tasks.filter((t) => !t.deleted_at && (showCompleted || !t.completed_at) && inRange(t) && !(t.project_id && archived.has(t.project_id)))
 }
 
 /**
@@ -212,6 +274,8 @@ export interface DayLoad {
   tasks: number
   /** Busy event minutes counted (0 unless "Count meetings in capacity" is on). */
   events: number
+  /** Estimates of the projected occurrences drawn on the day (series-occurrences D5). */
+  projected: number
   /** Open tasks of the day without an estimate (counted as 0). */
   unestimated: number
   /** The tasks alone exceed the day length (the danger tone). */
@@ -227,9 +291,11 @@ export interface DayLoad {
  * capacity"): the open tasks' estimates, plus `eventMinutes` when the device counts
  * meetings (meeting-aware-capacity D3). `slots` is what the day's calendar slots
  * change (calendar-slots D6, lib/slots `slotCapacity`): each slot counts once with
- * the greater of its length and its tasks' estimates.
+ * the greater of its length and its tasks' estimates. `projected` are the day's drawn
+ * projected occurrences (series-occurrences D5): their estimates join the tasks', named
+ * apart, and one without an estimate joins the unestimated count.
  */
-export function dayLoad(tasks: readonly Pick<Task, 'due' | 'estimate_minutes' | 'completed_at' | 'deleted_at'>[], date: string, dayLength: number, eventMinutes = 0, slots: { extra: number; covered: number } = NO_SLOT_LOAD): DayLoad {
+export function dayLoad(tasks: readonly Pick<Task, 'due' | 'estimate_minutes' | 'completed_at' | 'deleted_at'>[], date: string, dayLength: number, eventMinutes = 0, slots: { extra: number; covered: number } = NO_SLOT_LOAD, projected: readonly { estimate_minutes: number | null }[] = []): DayLoad {
   let taskMinutes = slots.extra
   let unestimated = -slots.covered
   for (const t of tasks) {
@@ -238,11 +304,16 @@ export function dayLoad(tasks: readonly Pick<Task, 'due' | 'estimate_minutes' | 
     else unestimated++
   }
   unestimated = Math.max(0, unestimated)
+  let repeating = 0
+  for (const p of projected) {
+    if (p.estimate_minutes) repeating += p.estimate_minutes
+    else unestimated++
+  }
   const events = Math.max(0, eventMinutes)
-  const planned = taskMinutes + events
-  const overTasks = taskMinutes > dayLength
+  const planned = taskMinutes + repeating + events
+  const overTasks = taskMinutes + repeating > dayLength
   const overWithEvents = !overTasks && planned > dayLength
-  return { planned, tasks: taskMinutes, events, unestimated, overTasks, overWithEvents, over: overTasks || overWithEvents }
+  return { planned, tasks: taskMinutes, events, projected: repeating, unestimated, overTasks, overWithEvents, over: overTasks || overWithEvents }
 }
 
 /**

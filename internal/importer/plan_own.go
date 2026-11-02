@@ -41,6 +41,9 @@ func (pl *planner) planOwn(rows []Row) []change {
 			if row.Kind == KindProject && (k == "role" || k == "owner_id") {
 				continue // read-only sharing annotations of the export, not data
 			}
+			if row.Kind == KindRule && (k == "paused_reason" || k == "warnings") {
+				continue // read-only server annotations of a routine (routines-engine)
+			}
 			if !opsync.KnownField(row.Kind, k) {
 				res.Warnings = append(res.Warnings, fmt.Sprintf("unknown field %q dropped", k))
 				continue
@@ -106,6 +109,9 @@ func (pl *planner) planOwn(rows []Row) []change {
 		default:
 			var diff []field
 			for _, f := range fields {
+				if _, isAppend := opsync.AppendID(f.name); isAppend && existing[f.name] != nil {
+					continue // an append id takes one text; a folded one stays folded
+				}
 				if !jsonEqual(existing[f.name], f.value) {
 					diff = append(diff, f)
 				}

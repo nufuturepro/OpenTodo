@@ -35,7 +35,7 @@ func (r *Registry) loadFor(ctx context.Context, c Caller, overlay ChangeSet) (*s
 
 // apply lays planned changes over the snapshot (in-app assistant turns).
 func (snap *snapshot) apply(cs ChangeSet) {
-	snap.idx, snap.part = nil, nil
+	snap.idx, snap.part, snap.bySeries, snap.hasSplit = nil, nil, nil, false
 	for _, ch := range cs {
 		switch ch.Entity {
 		case "task":
@@ -61,6 +61,17 @@ func (snap *snapshot) apply(cs ChangeSet) {
 			snap.projects[ch.EntityID] = p
 			if !ok {
 				snap.projList = append(snap.projList, p)
+			}
+		case "section":
+			// A section planned earlier in the turn (a routine's template step)
+			// takes tasks like a stored one.
+			if _, ok := snap.sectionProject[ch.EntityID]; ok || ch.Create {
+				if pid, has := ch.Patch["project_id"]; has {
+					snap.sectionProject[ch.EntityID] = rawStr(opsync.Entity{"project_id": pid}, "project_id")
+				}
+				if name, has := ch.Patch["name"]; has {
+					snap.sections[ch.EntityID] = rawStr(opsync.Entity{"name": name}, "name")
+				}
 			}
 		case "label":
 			if _, ok := snap.labels[ch.EntityID]; ok || ch.Create {

@@ -38,14 +38,24 @@ var contentArgs = map[string]struct {
 	fields []string
 	create bool
 }{
-	"create_tasks":    {list: "items", entity: "task", fields: []string{"title", "description", "location"}, create: true},
-	"update_tasks":    {list: "updates", entity: "task", fields: []string{"title", "description", "location"}},
-	"create_project":  {entity: "project", fields: []string{"name"}, create: true},
-	"update_project":  {entity: "project", fields: []string{"name"}},
-	"create_label":    {entity: "label", fields: []string{"name"}, create: true},
-	"add_comment":     {entity: "comment", fields: []string{"body"}, create: true},
-	"create_sections": {list: "items", entity: "section", fields: []string{"name"}, create: true},
-	"update_sections": {list: "updates", entity: "section", fields: []string{"name"}},
+	"create_tasks":   {list: "items", entity: "task", fields: []string{"title", "description", "location"}, create: true},
+	"update_tasks":   {list: "updates", entity: "task", fields: []string{"title", "description", "location"}},
+	"create_project": {entity: "project", fields: []string{"name"}, create: true},
+	"update_project": {entity: "project", fields: []string{"name", "description"}},
+	// agent-tools-complete: label names and time entry notes; a project note's
+	// append_description becomes a description first (projectAppend).
+	"update_labels":       {list: "updates", entity: "label", fields: []string{"name"}},
+	"start_timer":         {entity: "time_entry", fields: []string{"note"}, create: true},
+	"log_time":            {list: "items", entity: "time_entry", fields: []string{"note"}, create: true},
+	"update_time_entries": {list: "updates", entity: "time_entry", fields: []string{"note"}},
+	"create_label":        {entity: "label", fields: []string{"name"}, create: true},
+	"add_comment":         {entity: "comment", fields: []string{"body"}, create: true},
+	"create_sections":     {list: "items", entity: "section", fields: []string{"name"}, create: true},
+	"update_sections":     {list: "updates", entity: "section", fields: []string{"name"}},
+	// Notes (notes-overview D13); append_to_note is sealed by encryptAppend,
+	// for the field appends.<append_id> of the note or the task.
+	"create_note": {entity: "note", fields: []string{"title", "description"}, create: true},
+	"update_note": {entity: "note", fields: []string{"title", "description"}},
 }
 
 type decrypter struct {
@@ -83,6 +93,9 @@ func (d *decrypter) before(ctx context.Context, message []byte) ([]byte, string,
 		return message, method, "", false, nil
 	}
 	tool, _ := params["name"].(string)
+	if tool == "update_project" {
+		d.projectAppend(ctx, params)
+	}
 	if err := d.encryptCall(params); err != nil {
 		return nil, "", "", false, err
 	}
@@ -149,12 +162,15 @@ func (d *decrypter) after(ctx context.Context, response []byte, method, _ string
 // encryptCall rewrites a tools/call request's content arguments as envelopes.
 func (d *decrypter) encryptCall(params map[string]any) error {
 	name, _ := params["name"].(string)
-	spec, ok := contentArgs[name]
-	if !ok {
-		return nil
-	}
 	args, _ := params["arguments"].(map[string]any)
 	if args == nil {
+		return nil
+	}
+	if name == "append_to_note" {
+		return d.encryptAppend(args)
+	}
+	spec, ok := contentArgs[name]
+	if !ok {
 		return nil
 	}
 	items := []map[string]any{args}
@@ -248,7 +264,7 @@ func (d *decrypter) row(ctx context.Context, entity, id string) map[string]json.
 		d.rows[entity] = m
 		var list []map[string]json.RawMessage
 		switch entity {
-		case "task", "project", "label", "section", "field":
+		case "task", "project", "label", "section", "field", "note":
 			var out map[string][]map[string]json.RawMessage
 			if d.c.getJSON(ctx, "/"+entity+"s", &out) == nil {
 				list = out[entity+"s"]
@@ -318,6 +334,9 @@ func (d *decrypter) open(ctx context.Context, entity, id, field string) (string,
 		_ = json.Unmarshal(r["fields"], &values)
 		v = rawString(values[fid])
 	}
+	if aid, ok := strings.CutPrefix(field, "appends."); ok {
+		v = appendValue(r, aid)
+	}
 	if !e2ee.IsCiphertext(v) {
 		return "", false
 	}
@@ -379,6 +398,10 @@ func (d *decrypter) walk(ctx context.Context, v any, key string) {
 }
 
 func (d *decrypter) fix(ctx context.Context, obj, u map[string]any, key string) {
+	if isNoteObject(obj, key) {
+		d.fixNote(ctx, obj, u)
+		return
+	}
 	id, _ := obj["id"].(string)
 	all := true
 	switch {

@@ -1,10 +1,11 @@
 // Shared data types. Field names mirror the server op schema exactly
 // (internal/sync/ops.go); never rename a field without a migration plan.
 
-import type { AttachmentFields, CommentFields, FieldDefFields, FrameFields, LabelFields, PlaceFields, ProjectFields, ProjectPrefsFields, ReminderFields, ReviewFields, RuleFields, SectionFields, SlotFields, TaskFields, TimeEntryFields, UserPrefsFields, ViewFields } from '../generated/opSchema'
+import type { AttachmentFields, CommentFields, FieldDefFields, FrameFields, CustomThemeFields, LabelFields, NoteFields, PlaceFields, ProjectFields, ProjectPrefsFields, ReminderFields, ReviewFields, RuleFields, SectionFields, SlotFields, TaskFields, TimeEntryFields, UserPrefsFields, ViewFields } from '../generated/opSchema'
+import type { ThemeDocument } from './theme/format'
 
-export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place' | 'rule' | 'frame' | 'slot'
-export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place', 'rule', 'frame', 'slot']
+export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place' | 'rule' | 'frame' | 'slot' | 'note' | 'theme'
+export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place', 'rule', 'frame', 'slot', 'note', 'theme']
 
 export interface Op {
   id: string
@@ -95,6 +96,12 @@ export interface Task extends TaskFields {
   /** This Evening: grouped below the day's tasks in Today. Read with `?? false`. */
   evening?: boolean
   /**
+   * Draw the task as a span from `start` to `due.date` (OpenSpec change
+   * `multi-day-tasks`). Only drawing changes; read with `spanOf` in `lib/span.ts`,
+   * which ignores the flag without a valid range. Read with `?? false`.
+   */
+  span?: boolean
+  /**
    * The tasks this one waits for, in its own sharing scope (OpenSpec change
    * `task-dependencies`). Blocked while any of them is live and open. Optional on
    * rows stored before the field; read with `?? []`.
@@ -113,6 +120,12 @@ export interface Task extends TaskFields {
   recurrence: string | null
   /** On a completed occurrence record or a detached copy: the id of its series; otherwise null. */
   series_id: string | null
+  /**
+   * On a piece of a split series (OpenSpec change `series-split`): the series it
+   * continues and the date it starts, set once at creation. Read the lineage with
+   * `lineageOf` from `lib/lineage.ts`; rows stored before the field read as undefined.
+   */
+  split_from?: SplitFrom | null
   /**
    * Account id of the assignee or null (OpenSpec `task-assignment`). The server
    * accepts only a current member of the task's shared project, or the author for
@@ -169,6 +182,12 @@ export interface Task extends TaskFields {
    */
   fields?: Record<string, FieldValue>
   /**
+   * Pending appends keyed by append id (notes-overview D13): each entry is its own
+   * op `appends.<id>`; a non-empty value is Markdown a plain-text writer added, waiting
+   * to be inserted at the end of the note (docs/sync.md "Mergeable documents" rule 5).
+   */
+  appends?: Record<string, string>
+  /**
    * Where the task came from (OpenSpec change `task-origin`): a page, a mail, an
    * issue or an import, or null. One last-writer-wins value like `due`. Rows
    * stored before the field read as undefined, and a value this device could not
@@ -202,6 +221,13 @@ export interface Task extends TaskFields {
  * A task's location (task-locations D1): at least a name, an address or a
  * coordinate pair; `lat` and `lon` both present or both absent.
  */
+/** A piece's link to the series it continues (task.split_from, series-split D2). */
+export interface SplitFrom {
+  series: string
+  /** YYYY-MM-DD: the first date the piece produces occurrences on. */
+  date: string
+}
+
 export interface TaskLocation {
   name?: string
   address?: string
@@ -278,8 +304,48 @@ export interface Slot extends SlotFields {
   _e2ee?: RowEncryption
 }
 
+/**
+ * A standalone note (OpenSpec change `notes-overview`, design D1): a title, a
+ * mergeable note document with its Markdown projection, an optional project
+ * (which decides its sharing scope, like a task) and labels. Never a task: it
+ * shows only on the Notes page, the palette and the Trash.
+ */
+export interface Note extends NoteFields {
+  id: string
+  title: string
+  description: string
+  notes_doc?: string
+  project_id: string | null
+  labels: string[]
+  position: number
+  created_at: number
+  deleted_at: number | null
+  workspace_id?: string | null
+  /** Pending appends (rule 5), as on tasks. */
+  appends?: Record<string, string>
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
+export type { ThemeDocument }
+
+/**
+ * A custom theme (OpenSpec change `theme-editor`, design D1): one whole theme
+ * document (`lib/theme/format.ts`), personal, chosen for a side as
+ * `user:<id>`. Never a content field: an encrypted account stores it in plain text.
+ */
+export interface CustomTheme extends CustomThemeFields {
+  id: string
+  doc: ThemeDocument | null
+  position: number
+  created_at: number
+  deleted_at: number | null
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
 /** A task's origin kind; the list is closed (the server refuses any other). */
-export type OriginKind = 'url' | 'email' | 'issue' | 'import'
+export type OriginKind = 'url' | 'email' | 'issue' | 'import' | 'obsidian'
 
 /**
  * A task's origin (task-origin D1): `url` needs `url`, the other kinds need
@@ -308,7 +374,8 @@ export interface FieldDef extends FieldDefFields {
   id: string
   name: string
   project_id: string
-  type: FieldType | string
+  /** A FieldType, or a type a newer server added. */
+  type: string
   options: string
   position: number
   created_at: number
@@ -428,7 +495,7 @@ export interface OnDropRule {
 }
 
 /** Trigger kinds of an automation rule (automation-rules "Rule validation"). */
-export const RULE_TRIGGERS = ['task.created', 'task.completed', 'task.reopened', 'label.added', 'label.removed', 'assigned.to_me', 'task.moved', 'due.reached', 'overdue', 'schedule'] as const
+export const RULE_TRIGGERS = ['task.created', 'task.completed', 'task.reopened', 'label.added', 'label.removed', 'assigned.to_me', 'task.moved', 'due.reached', 'overdue', 'schedule', 'manual'] as const
 export type RuleTriggerKind = (typeof RULE_TRIGGERS)[number]
 
 /** An automation rule's trigger: one kind with the members it takes. */
@@ -440,6 +507,8 @@ export interface RuleTrigger {
   /** `schedule`: HH:MM in the user's zone, on these weekdays (1 Monday … 7 Sunday). */
   at?: string
   weekdays?: number[]
+  /** `schedule` instead of weekdays: days of the month, 1 to 31 or "last" (routines-dynamic-data D5). */
+  month_days?: (number | 'last')[]
 }
 
 /** A date predicate (`due`, `deadline`). */
@@ -463,6 +532,8 @@ export interface RuleCondition {
   habit?: boolean
   estimate?: RuleMinutesPredicate
   tracked?: 'none' | { min_minutes: number }
+  /** No field of the task changed in this many days (routines-dynamic-data D5). */
+  unchanged?: { days: number }
 }
 
 /** An automation rule's actions: the on-drop keys plus the automation keys (automation-rules "Actions"). */
@@ -488,11 +559,142 @@ export interface RuleRun {
   depth: number
 }
 
+/** One step of a routine run (routines-engine D10): ids, counts and codes, never text. */
+export interface RoutineStepRecord {
+  index: number
+  step_id: string
+  kind: string
+  status: 'ok' | 'skipped' | 'ended' | 'failed' | 'unavailable' | 'truncated'
+  duration_ms: number
+  items: number
+  output: string
+  ids: string[]
+  error?: string
+  /** A test's preview of the step's output (titles included, never stored). */
+  preview?: unknown
+  /** An AI step's tokens, and a test's estimate before the model is called (routines-ai-step D11). */
+  tokens?: number
+  estimate?: number
+  warning?: { step: string; kind: string; reason: string; setting?: string; message: string }
+}
+
+/** A routine run (GET /api/v1/rules/{id}/runs/{run}, GET /api/v1/me/rules/runs). */
+export interface RoutineRun {
+  id: number
+  run_id: string
+  rule_id: string
+  task_id?: string
+  at: number
+  outcome: RuleRun['outcome'] | 'ended' | 'proposal' | 'waiting_device' | 'missed'
+  reason?: string
+  source: 'event' | 'schedule' | 'due' | 'manual' | 'mcp' | 'test'
+  run_as: string
+  test: boolean
+  steps_count: number
+  writes: number
+  duration_ms: number
+  undone_at: number | null
+  failed_step: number
+  steps?: RoutineStepRecord[]
+  /** AI tokens of the run; an AI result applied without asking; its proposal (routines-ai-step). */
+  tokens?: number
+  ai_auto?: boolean
+  proposal?: RoutineProposal
+}
+
+/** A run the Inbox card lists (routines-editor D10; proposals: routines-ai-step D2). */
+export interface RoutineInboxRun extends RoutineRun {
+  /** waiting: a run of an encrypted account waiting for one of the user's devices (routines-ai-step D9). */
+  kind: 'failure' | 'success' | 'proposal' | 'waiting'
+}
+
+/** One reviewable item of a routine's proposal (routines-ai-step D3). */
+export interface RoutineProposalItem {
+  key: string
+  kind: 'create' | 'change' | 'notify' | 'webhook' | 'email'
+  entity?: string
+  id?: string
+  fields?: Record<string, unknown>
+  before?: Record<string, unknown>
+  /** Text the AI wrote ("Written by AI"). */
+  ai: boolean
+  side?: { kind: string; notice?: { text: string; taskId?: string }; fired?: { taskId?: string }; hook?: string; delivery?: { Text?: string | null }; mail?: { Subject: string; Text: string } }
+}
+
+/** What applying a proposal did. */
+export interface RoutineProposalApplied {
+  state: RoutineProposal['state']
+  applied: number
+  skipped: number
+  changed: number
+  refused: number
+  run_id: string
+  rule_id: string
+}
+
+/** A routine's AI mode (routines-ai-step D4, D5): auto when it applies AI results itself. */
+export interface RoutineAIMode {
+  auto: boolean
+  /** ai_apply is "auto". */
+  asked: boolean
+  /** Why auto mode is off although asked: limit, failures, disallowed_write or agent. */
+  reason?: string
+  at?: number
+  /** The first step Apply without asking cannot run with, and what it does. */
+  blocked?: { step: string; what: string }
+}
+
+/** GET /api/v1/rules/{id}/ai-usage. */
+export interface RoutineAIUsage {
+  days: { day: string; tokens: number }[]
+  budget: number
+  mode: RoutineAIMode | null
+}
+
+/** A routine's proposal: its planned changes waiting for review (routines-ai-step D2). */
+export interface RoutineProposal {
+  id: string
+  rule_id: string
+  run_id: string
+  created_at: number
+  expires_at: number
+  state: 'waiting' | 'applied' | 'partly_applied' | 'dismissed' | 'expired'
+  items: number
+  applied: number
+  skipped: number
+  encrypted: boolean
+  list?: RoutineProposalItem[]
+  envelope?: string
+}
+
+/** A test of a routine or a draft (POST …/run with test, POST /api/v1/rules/test). */
+export interface RoutineTestResult {
+  run: RoutineRun
+  steps: RoutineStepRecord[]
+  writes: number
+  test: boolean
+}
+
+/** One step kind of GET /api/v1/me/rules/catalogue: whether it is available now. */
+export interface RoutineCatalogueEntry {
+  kind: string
+  group: string
+  available: boolean
+  reason?: string
+  setting?: string
+}
+
 /** The Rules page's server state (GET /api/v1/me/rules). */
 export interface RulesStatus {
   enabled: boolean
   paused: boolean
-  rules: Record<string, { last_run?: number; runs_7d?: number; paused_reason?: string }>
+  rules: Record<string, {
+    last_run?: number; runs_7d?: number; paused_reason?: string
+    /** A shared routine's run-as person, null before anyone turned it on (routines-shared D4). */
+    run_as?: { id: string; name: string } | null
+    /** Whose edit paused it (paused_reason edited_by_other, D5). */
+    paused_by?: { id: string; name: string }
+  }>
 }
 
 /** The owner's automations switch (GET /api/v1/settings/automations). */
@@ -514,11 +716,29 @@ export interface Rule extends RuleFields {
   trigger: RuleTrigger | null
   condition: RuleCondition | null
   actions: RuleActions | null
+  /** A routine's steps (routines-engine D2): null reads the rule as one Change tasks step with `actions`. */
+  steps?: RoutineStep[] | null
   position: number
   created_at: number
   deleted_at: number | null
   _clock: Clock
   _e2ee?: RowEncryption
+}
+
+/** The type of a routine step's output (routines-engine D3); lines is a list of text. */
+export type RoutineStepType = 'text' | 'task' | 'tasks' | 'project' | 'date' | 'number' | 'lines' | 'none'
+
+/** A step input: a reference to the trigger, an earlier step or a Repeat's item, or a literal. */
+export type RoutineArg = { ref: string } | { literal: unknown }
+
+/** One step of a routine (routines-engine D3); `then`/`otherwise` for if, `do` for repeat. */
+export interface RoutineStep {
+  id: string
+  kind: string
+  in?: Record<string, RoutineArg>
+  then?: RoutineStep[]
+  otherwise?: RoutineStep[]
+  do?: RoutineStep[]
 }
 
 /** 'deadline' (OpenSpec change `deadlines`): offset from 09:00 local on the task's deadline. */
@@ -935,6 +1155,8 @@ export interface AuthStatus {
   demo?: DemoInfo
   /** The instance's name and logo (OpenSpec `instance-branding`); absent on older servers. */
   branding?: { name: string; logoVersion: number }
+  /** The version of the instance's themes (theme-instance-default D3), signed in only; absent on older servers. */
+  themes?: { version: number }
   /** Outgoing email (OpenSpec `outgoing-email`): email actions are shown only when enabled; absent on older servers. */
   outgoingEmail?: { enabled: boolean }
   /** A tenant of a hosted service (OpenSpec `multi-tenant-host`): the operator owns server settings; absent when self-hosted. */
@@ -1056,7 +1278,7 @@ export interface CalendarSyncRun {
 /** A calendar sync connection (calendar-two-way) as the server reports it: never the password or token. */
 export interface CalendarConnection {
   id: string
-  provider: 'caldav' | 'google'
+  provider: 'caldav' | 'google' | 'microsoft'
   name: string
   server_url: string
   username: string
@@ -1085,6 +1307,18 @@ export interface GoogleClientSetting {
   secret_set: boolean
   from_env: boolean
   redirect_uri: string
+}
+
+/** The owner's Microsoft app registration for calendar sync (outlook-calendar-sync D2). */
+export interface MicrosoftClientSetting {
+  client_id: string
+  /** common, organizations, consumers, a tenant id or a domain. */
+  tenant: string
+  secret_set: boolean
+  from_env: boolean
+  redirect_uri: string
+  /** When Microsoft last refused the secret (Unix ms), null otherwise. */
+  refused_at: number | null
 }
 
 /** The body of changing a calendar connection. */
@@ -1477,7 +1711,7 @@ export const PROJECT_FIELDS = ['name', 'color', 'position', 'archived', 'parent_
 export const TASK_FIELDS = [
   'title', 'description', 'project_id', 'parent_id', 'priority', 'due', 'labels',
   'position', 'created_at', 'completed_at', 'deleted_at', 'estimate_minutes', 'recurrence', 'series_id',
-  'assignee_id', 'section_id', 'notes_doc', 'deadline', 'start', 'evening', 'blocked_by', 'completed_by', 'note_mentions',
+  'assignee_id', 'section_id', 'notes_doc', 'deadline', 'start', 'evening', 'span', 'blocked_by', 'completed_by', 'note_mentions',
 ] as const
 export const SECTION_FIELDS = ['name', 'project_id', 'position', 'created_at', 'deleted_at'] as const
 export const LABEL_FIELDS = ['name', 'color', 'position', 'created_at', 'deleted_at'] as const
@@ -2023,11 +2257,55 @@ export interface MemberInvitationPayload {
  * `notifications` table so it shows offline. Server-side account data, not an op.
  * `readPending` marks a local "read" not yet confirmed by the server.
  */
+/** A routine's Notify me step (OpenSpec change routines-engine): the routine, the run and the step's text. */
+export interface RoutinePayload {
+  ruleId: string
+  ruleName: string
+  runId: string
+  stepId: string
+  text: string
+  taskId?: string
+  at: number
+  projectName?: undefined
+  projectId?: undefined
+  actorName?: undefined
+}
+
+/** A routine's failed run (routines-editor D11): one per routine and day, counting later failures. */
+export interface RoutineAlertPayload {
+  ruleId: string
+  ruleName: string
+  runId: string
+  step: number
+  stepKind?: string
+  day: string
+  count: number
+  at: number
+  taskId?: undefined
+  projectName?: undefined
+  projectId?: undefined
+  actorName?: undefined
+}
+
+/** A shared project's routine paused because its run-as person no longer edits the project (routines-shared D9). */
+export interface RoutinePausedSharedPayload {
+  ruleId: string
+  ruleName: string
+  projectId: string
+  projectName: string
+  runAsName: string
+  /** 'run_as_left', 'run_as_viewer' or a reason a newer server added. */
+  reason: string
+  at: number
+  taskId?: undefined
+  actorName?: undefined
+}
+
 export interface AppNotification {
   id: string
   kind: string
-  /** AssignedPayload for kind `assigned`, MentionedPayload for `mentioned`, UnblockedPayload for `unblocked`, PagePayload for `page_replied` and `page_completed`, MemberInvitationPayload for `member_invitation`. */
-  payload: AssignedPayload | MentionedPayload | UnblockedPayload | PagePayload | MemberInvitationPayload
+  /** AssignedPayload for kind `assigned`, MentionedPayload for `mentioned`, UnblockedPayload for `unblocked`, PagePayload for `page_replied` and `page_completed`, MemberInvitationPayload for `member_invitation`, RoutinePayload for `routine`. */
+  payload: AssignedPayload | MentionedPayload | UnblockedPayload | PagePayload | MemberInvitationPayload | RoutinePayload | RoutineAlertPayload | RoutinePausedSharedPayload
   createdAt: number
   readAt: number | null
   readPending?: boolean

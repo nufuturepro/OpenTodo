@@ -23,7 +23,8 @@ import { buildProjectTree, collapseAllProjects, expandAllProjects, expandAncesto
 import { flattenTree } from '../lib/tree'
 import type { Label, Project, Review, Task, User, View } from '../lib/types'
 import { useTrackedTotals } from '../lib/timeEntries'
-import { evaluateViews, inToday, isDashboard, openCount } from '../lib/views'
+import { evaluateViews, isDashboard, openCount } from '../lib/views'
+import { todayCount } from '../lib/appBadge'
 import { LabelRow, NewLabelForm, useLabelData, useLabelDrag } from './LabelsView'
 import { ViewMark, ViewMenu } from './ViewsView'
 import { FavouritesGroup } from './FavouritesGroup'
@@ -202,15 +203,14 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onAssistant, onSig
   // Re-read every minute, so the counts move to the new day at midnight.
   const today = useToday()
   const counts = useMemo(() => {
-    let due = 0
     let assigned = 0
     // Deferred and parked tasks are not counted (someday-and-evening D2).
     const active = openTasks.filter((tk) => openCount(tk, today))
     for (const task of active) {
       if (task.assignee_id === user.id) assigned++
     }
-    for (const item of openTasks) if (inToday(item, today)) due++
-    return { inbox: countInbox(openTasks, liveTasks ?? openTasks), today: due, assigned, byProject: openCountsByProject(active, tree, collapsed_) }
+    // The same number the app icon badge shows (app-icon-badge).
+    return { inbox: countInbox(openTasks, liveTasks ?? openTasks), today: todayCount(openTasks, today), assigned, byProject: openCountsByProject(active, tree, collapsed_) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zone: a zone change re-groups zoned dues (absolute-datetimes)
   }, [openTasks, liveTasks, tree, collapsed_, user.id, zone, today])
 
@@ -380,7 +380,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onAssistant, onSig
 
   const item = (r: Route, label: string, icon: IconName, count?: number, badge?: ReactNode, tip?: string) => {
     // Day, Week, Month and Plan are one Calendar destination (ux-overhaul, planner-view).
-    const calendar = (v: string) => v === 'day' || v === 'week' || v === 'month' || v === 'plan'
+    const calendar = (v: string) => v === 'day' || v === 'week' || v === 'month' || v === 'plan' || v === 'year'
     const active = calendar(r.view) ? calendar(route.view) : JSON.stringify(r) === JSON.stringify(route)
     // With "Show shortcut hints" on, the destination prints its `g` key (keyboard-shortcuts "Hints preference").
     const go = hints && !collapsed && badge == null ? GO_KEYS[r.view] : undefined
@@ -601,11 +601,13 @@ function moreEntriesOf(o: { shared: boolean; reviewDot: ReactNode; reviewText: s
     { id: 'stats', route: { view: 'stats' }, label: t('Statistics'), icon: 'chart-column' },
     // Focus (focus-everywhere D1): after Statistics in every mode, promotable, no count.
     { id: 'focus', route: { view: 'focus' }, label: t('Focus'), icon: 'clock' },
+    // Notes (notes-overview, app-shell "Notes in the More group"): after Focus in every mode, promotable, no count, no marker.
+    { id: 'notes', route: { view: 'notes' }, label: t('Notes'), icon: 'notebook-pen' },
     ...(o.shared ? [{ id: 'feed' as const, route: { view: 'feed' } as Route, label: t('Updates'), icon: 'newspaper' as IconName, badge: o.unreadBadge, note: o.unreadTotal > 0 ? `${formatUnread(o.unreadTotal)} ${t('unread updates')}` : undefined }] : []),
     // Saved locations (task-locations "Locations page"): in More in every mode, never primary.
     { id: 'places', route: { view: 'places' }, label: t('Locations'), icon: 'map-pin' },
     // Automation rules (automation-rules "Rules page"): after Locations in every mode.
-    { id: 'rules', route: { view: 'rules' }, label: t('Rules'), icon: 'zap' },
+    { id: 'rules', route: { view: 'rules' }, label: t('Routines'), icon: 'zap' },
     { id: 'trash', route: { view: 'trash' }, label: t('Trash'), icon: 'trash-2' },
     { id: 'filter', route: { view: 'filter' }, label: t('New view'), icon: 'filter' },
     ...(o.ask ? [{ id: 'ask' as const, route: { view: 'ask' } as Route, label: t('Assistant'), icon: 'message-circle' as IconName }] : []),

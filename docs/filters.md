@@ -30,6 +30,7 @@ term     := "@" name                       label
           | ("due" | "created" | "deadline" | "start" | "completed") cmp date
           | keyword
           | "search:" text
+          | "notes:" text                               text in the task's note
           | "origin:" text                              where the task came from
           | "energy:" ("deep" | "medium" | "low")        the energy a task asks for
           | "workspace:" name                           the task's workspace
@@ -47,7 +48,7 @@ weekday  := "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturd
 keyword  := "overdue" | "today" | "tomorrow" | "no date" | "no project"
           | "no labels" | "no time" | "no deadline" | "no start" | "completed" | "open" | "subtask"
           | "someday" | "deferred" | "evening" | "morning" | "afternoon" | "blocked" | "unblocked" | "available" | "habit"
-          | "origin" | "no origin" | "tracked" | "energy" | "no energy"
+          | "origin" | "no origin" | "tracked" | "energy" | "no energy" | "notes" | "no notes"
 duration := INT ("m" | "min" | "mins" | "minutes")? | NUM "h" (INT ("m" | "min")?)?
 name     := word | '"' chars '"'
 text     := word | '"' chars '"'
@@ -100,9 +101,12 @@ text     := word | '"' chars '"'
 | `completed` | completed tasks; the record a skipped habit day leaves is not one |
 | `open` | open (not completed) tasks |
 | `search: text` | title or notes contain the text, ignoring case; quote several words: `search: "oat milk"` |
-| `origin` | tasks that know where they came from: a captured page, an email, an issue or an import (see [Where a task came from](capture.md#where-a-task-came-from)) |
+| `notes` | tasks with a note: anything but blank space in the task's notes |
+| `no notes` | tasks without a note |
+| `notes: text` | tasks whose note contains the text, ignoring case; the title is not searched (use `search:` for both). Quote several words: `notes: "permit office"`. On an [encrypted account](e2ee.md) the note is read on your device, decrypted |
+| `origin` | tasks that know where they came from: a captured page, an email, an issue, an import or an Obsidian note (see [Where a task came from](capture.md#where-a-task-came-from)) |
 | `no origin` | tasks without an origin |
-| `origin: value` | tasks whose origin's provider is the value, ignoring case (`origin: github`, `origin: linear`, `origin: todoist`), or, for an origin without a provider, whose kind is (`origin: url` for captured pages, `origin: email` for mail); quotes allowed |
+| `origin: value` | tasks whose origin's provider is the value, ignoring case (`origin: github`, `origin: linear`, `origin: todoist`), or, for an origin without a provider, whose kind is (`origin: url` for captured pages, `origin: email` for mail, `origin: obsidian` for tasks from an Obsidian note); quotes allowed |
 | `energy` | tasks with an [energy](method/set-up.md#energy-levels) set (Deep, Medium or Low) |
 | `no energy` | tasks without one |
 | `energy: value` | tasks whose energy is `deep`, `medium` or `low`, ignoring case; quotes allowed. Any other value is an error. The terms work whether or not **Energy levels** is on |
@@ -114,7 +118,7 @@ text     := word | '"' chars '"'
 
 ### Custom fields
 
-A [custom field](custom-fields.md) is named like a project or label, ignoring case, in every project you see that defines a field of that name; quote names with spaces: `"Order date" <= friday`. The words the grammar already uses (`due`, `created`, `deadline`, `start`, `completed`, `no`, `origin`, `tracked`, `energy`, the keywords and `p1` to `p4`) keep their meaning, so a field named "due" is reached only through its quoted name, `"due" <= tomorrow`. How a field compares depends on its type:
+A [custom field](custom-fields.md) is named like a project or label, ignoring case, in every project you see that defines a field of that name; quote names with spaces: `"Order date" <= friday`. The words the grammar already uses (`due`, `created`, `deadline`, `start`, `completed`, `no`, `origin`, `tracked`, `energy`, `notes`, the keywords and `p1` to `p4`) keep their meaning, so a field named "due" is reached only through its quoted name, `"due" <= tomorrow`. How a field compares depends on its type:
 
 | Type | Terms |
 | --- | --- |
@@ -127,7 +131,7 @@ A [custom field](custom-fields.md) is named like a project or label, ignoring ca
 
 ### Open, completed and deleted tasks
 
-A query matches **open tasks only**, unless `completed` or `open` appears somewhere in it, or it compares the completion date (`completed >= this week`). `completed` on its own lists only completed tasks, `p1 & completed` the completed priority-1 tasks, and `completed | open` both. Deleted tasks never match, and neither does the record a skipped day of a habit leaves (it is neither completed nor open). Parked and deferred tasks match like any other unless you exclude them: `!someday`, `!deferred`. Like the other cross-project views, the New view page leaves out tasks of archived projects.
+A query matches **open tasks only**, unless `completed` or `open` appears somewhere in it, or it compares the completion date (`completed >= this week`). `completed` on its own lists only completed tasks, `p1 & completed` the completed priority-1 tasks, and `completed | open` both. Deleted tasks never match, and neither does the record a skipped day of a habit leaves (it is neither completed nor open). Parked and deferred tasks match like any other unless you exclude them: `!someday`, `!deferred`. Like the other cross-project views, the New view page leaves out tasks of archived projects, and so does a [routine](routines.md#which-tasks-a-routine-finds) that finds tasks with a query or a saved view, unless its Find tasks step has **Archived projects** on. The filter language has no term for archived projects.
 
 ### Dates
 
@@ -184,6 +188,7 @@ A query that does not follow the grammar shows a message under the input, and th
 | `tracked > soon` | `Expected a duration such as 30m or 1h30 after ">" at position 11` |
 | `workspace: & p1` | `Expected a workspace name after "workspace:" at position 1` |
 | `energy: high` | `Energy must be deep, medium or low at position 1` |
+| `notes: & p1` | `Expected text after "notes:" at position 1` |
 
 An empty query shows a short usage hint and no results.
 
@@ -219,7 +224,7 @@ A query you come back to can be saved as a **view**: it keeps the query and its 
 
 - **Save.** On the New view page, press `s` while the results have focus (or choose **Save as view**). The header becomes a card: type a name and press Enter, or Esc to cancel. The view is created with the current query, grouping, order and display options, listed under **Views** in the sidebar and pinned to **Favourites**, and opened at `/views/<id>`. Saving works offline; other devices show the view after they sync.
 - **Edit.** A view shows its conditions in the toolbar. The filter button, a condition chip or `/` opens the same filter panel as the New view page, with a count for the changed query before you save. Enter or **Save** saves a changed query for every device, Esc discards the change. A query that does not parse shows the error and is not saved.
-- **Display options.** The sliders button at the right of the toolbar opens them, reachable with Tab: **List** or **Board**, **One line** or **Detailed** rows ([One-line and detailed rows](row-layouts.md)) (one column of cards per group), **Group by** (project, due date, priority, label, none), **Order by** (due date, priority, manual order, created, deadline, title), **Completed tasks** (hide or show) and **Show on rows** (date, project, labels, estimate, assignee, deadline, start, origin, energy); the direction is under **More options**. Defaults are *list, group by project, order by due date ascending with undated tasks last, completed hidden, everything shown*. Grouping by due date shows *Earlier*, *Today*, *Tomorrow*, then each later date and finally *No date*; grouping by label lists a task under each of its labels. For priority, *descending* puts priority 1 first. **Manual order** is the view's own order: drag a task within its group, or move it with <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> (see [Group and order a list](group-and-order.md#your-own-order-on-a-label-page-or-saved-view)); the New view page does not offer it until the view is saved. **Show** completed lists finished matches too, unless the query already names a state (`completed`, `open` or a completion date); the sidebar still counts open tasks. Every choice is stored on the view at once and syncs.
+- **Display options.** The sliders button at the right of the toolbar opens them, reachable with Tab: **List** or **Board**, **One line** or **Detailed** rows ([One-line and detailed rows](row-layouts.md)) (one column of cards per group), **Group by** (project, due date, priority, label, none), **Order by** (due date, priority, manual order, created, deadline, title), **Completed tasks** (hide or show) and **Show on rows** (date, project, labels, estimate, assignee, deadline, start, origin, energy; with **Board**, also **Notes on cards**: two lines of each card's notes as plain text, off by default); the direction is under **More options**. Defaults are *list, group by project, order by due date ascending with undated tasks last, completed hidden, everything shown*. Grouping by due date shows *Earlier*, *Today*, *Tomorrow*, then each later date and finally *No date*; grouping by label lists a task under each of its labels. For priority, *descending* puts priority 1 first. **Manual order** is the view's own order: drag a task within its group, or move it with <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> (see [Group and order a list](group-and-order.md#your-own-order-on-a-label-page-or-saved-view)); the New view page does not offer it until the view is saved. **Show** completed lists finished matches too, unless the query already names a state (`completed`, `open` or a completion date); the sidebar still counts open tasks. Every choice is stored on the view at once and syncs.
 - **Sidebar.** The **Views** group appears with your first saved view. Pinned views are listed under it with a live count of their open tasks, computed on the device. The `⋯` menu of a view renames, moves it up or down, unpins or deletes it, and sets it as this device's start view. `g` then `v` opens the overview of every view, pinned or not, where views can be pinned again.
 - **Start view.** Each device can open on a different view: choose it in **Settings → General → Start view and briefing** or from a view's menu. The choice stays on the device (it is not synced). If the saved view is deleted, for example on another device, the app opens the Inbox and says so once.
 - **Dashboards.** **New dashboard** in the overview creates a view that shows up to six other views side by side as panels, each with its name, open-task count and first ten tasks, updating live. Add panels from the header, reorder or remove them with **Arrange**. Tab / Shift+Tab move between panels, `j` / `k` select a task inside one, Enter opens it (or the view when nothing is selected) and `o` opens the panel's view. A panel whose view was deleted shows *View removed* with a button to remove it. Panels stack on narrow screens. A panel whose view has an **on-drop rule** (set with **Rule** in **Arrange**) is a drop target: dragging a card onto it, or `Shift+→` / `Shift+←` on the selected card, applies the rule (labels added or removed, priority, a due date of today, tomorrow, next week or none, Someday or no start, a project and section, complete or reopen) as one undoable change; the rule's wording is the panel's description, and panels without a rule take no drops. A task that still does not match the panel's filter afterwards stays shown there, marked *Not matching*, until you leave the board. **New board** offers an empty board or the **Eisenhower matrix**: the filters `(p1 | p2) & (due <= tomorrow | deadline <= tomorrow)`, `(p1 | p2) & !(due <= tomorrow | deadline <= tomorrow) & !someday`, `!(p1 | p2) & (due <= tomorrow | deadline <= tomorrow)` and `!(p1 | p2) & !(due <= tomorrow | deadline <= tomorrow) & !someday` with the rules priority 1 and today, priority 2 and next week, priority 3 and today, priority 4 and no date, on one pinned board.
@@ -394,4 +399,16 @@ available & @phone
 
 ```filter
 energy: low & unblocked & today
+```
+
+### 29. Renovation tasks with notes
+
+```filter
+notes & #Renovation
+```
+
+### 30. Urgent tasks nobody wrote anything down for
+
+```filter
+no notes & p1
 ```

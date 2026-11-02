@@ -32,6 +32,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   { section: 'account', label: msg('Profile'), description: msg('Your picture, name and email'), page: 'profile', anchor: 'profile-heading', keywords: 'avatar photo picture rename name email address' },
   { section: 'account', label: msg('Profile'), description: msg('Your name, email and role'), page: 'profile', anchor: 'profile' },
   { section: 'account', label: msg('How you work'), description: msg('Simple lists, method hints or the full Open Loops method'), page: 'profile', anchor: 'how-you-work-heading', keywords: 'open loops gtd method mode loop home simple lists companion hints daily focus bento frog summit' },
+  { section: 'account', label: msg('Formatting button'), description: msg('A button beside notes and comments on a computer that shows bold, lists and links.'), page: 'profile', anchor: 'formatting-button', keywords: 'formatting toolbar bold italic lists links editor notes comments' },
   { section: 'account', label: msg('Sign out of this device'), description: msg('Removes your tasks from this device after uploading pending changes'), page: 'security', anchor: 'session-heading', keywords: 'logout log out' },
   { section: 'account', label: msg('Password'), description: msg('Change your password'), page: 'security', anchor: 'password-heading' },
   { section: 'account', label: msg('Two-factor authentication'), description: msg('A code from your phone on top of your password, and recovery codes'), page: 'security', anchor: 'mfa-heading', keywords: '2fa totp mfa' },
@@ -41,7 +42,8 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   { section: 'account', label: msg('Recent activity'), description: msg('Sign-ins and token changes on your account over the last 90 days'), page: 'activity', anchor: 'activity-heading', keywords: 'sessions sign-ins' },
   // Appearance
   { section: 'appearance', label: msg('Mode'), description: msg('System, light or dark'), page: 'theme', anchor: 'appearance-mode', keywords: 'dark light theme' },
-  { section: 'appearance', label: msg('Theme'), description: msg('The colour of buttons, links and selection'), page: 'theme', anchor: 'appearance-theme', keywords: 'accent colour color' },
+  { section: 'appearance', label: msg('Theme'), description: msg('The colours of the whole app, for light and for dark'), page: 'theme', anchor: 'appearance-themes', keywords: 'palette colours colors look' },
+  { section: 'appearance', label: msg('Accent'), description: msg('The colour of buttons, links and selection'), page: 'theme', anchor: 'appearance-theme', keywords: 'accent colour color theme' },
   { section: 'appearance', label: msg('Density'), description: msg('Comfortable or compact rows'), page: 'theme', anchor: 'appearance-density', keywords: 'compact rows' },
   { section: 'appearance', label: msg('Task rows'), description: msg('One line or detailed rows in every list without its own choice'), page: 'theme', anchor: 'appearance-rows', keywords: 'row layout detailed one line priority labels' },
   { section: 'appearance', label: msg('Motion'), description: msg('Instant overlays when off'), page: 'theme', anchor: 'appearance-motion', keywords: 'animation transitions reduce' },
@@ -65,12 +67,14 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   // Notifications
   { section: 'notifications', label: msg('Push notifications'), description: msg('Reminders delivered to this device, and a test'), page: 'push', anchor: 'notifications-heading', keywords: 'reminders' },
   { section: 'notifications', label: msg('Default reminders'), description: msg('A reminder added when a task gets a date or a time'), page: 'push', anchor: 'default-reminders-heading', keywords: 'reminder default automatic alarm due time all-day before' },
+  { section: 'notifications', label: msg('App icon badge'), description: msg('The installed app\'s icon shows how many of today\'s tasks are open.'), page: 'push', anchor: 'app-badge-heading', keywords: 'badge count icon home screen today' },
   { section: 'notifications', label: msg('Delivery channels'), description: msg('Send notifications to ntfy, Pushover, Gotify or any address you choose.'), page: 'channels', anchor: 'notification-channels-heading', keywords: 'ntfy pushover gotify webhook phone' },
   { section: 'notifications', label: msg('Weekly digest'), description: msg('An email on your review day with last week\'s numbers'), page: 'digest', anchor: 'email-digest-heading', keywords: 'email summary review statistics' },
   // About (welcome-note)
   { section: 'about', label: msg('Documentation'), description: msg('The same guides on the website, with setup and self-hosting.'), anchor: 'about-docs', keywords: 'docs help manual guide website version' },
   { section: 'about', label: msg('Share feedback or report a problem'), description: msg('Open an issue on GitHub. Every report is read.'), anchor: 'about-feedback', keywords: 'bug issue github feedback support contact' },
   { section: 'about', label: msg('Community'), description: msg('Questions, ideas and other people who use OpenTaskKit, on Discord.'), anchor: 'about-community', keywords: 'discord community chat forum people' },
+  { section: 'about', label: msg('News and updates'), description: msg('Releases and what is being built, on X.'), anchor: 'about-news', keywords: 'x twitter news updates follow social' },
   { section: 'about', label: msg('Buy me a coffee'), description: msg('Support OpenTaskKit'), anchor: 'about-support-heading', keywords: 'donate sponsor support coffee' },
   { section: 'about', label: msg('Welcome note'), description: msg('The thank-you shown the first time you opened this server.'), anchor: 'about-welcome', visible: owner, keywords: 'thanks welcome' },
   // Capture
@@ -82,7 +86,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   // Integrations
   { section: 'integrations', label: msg('Calendar apps (CalDAV)'), description: msg('See your tasks in calendar and reminder apps with an app password'), page: 'caldav', anchor: 'caldav-heading', keywords: 'caldav app password' },
   { section: 'integrations', label: msg('Calendar feeds'), description: msg('Show your other calendars beside your tasks, and subscribe to your tasks from a calendar app'), page: 'calendar-feeds', anchor: 'calendar-feeds-heading', keywords: 'ics subscribe google outlook apple calendar' },
-  { section: 'integrations', label: msg('Calendar sync'), description: msg('Your dated tasks become events in your own calendar; moving an event moves the task.'), page: 'calendar-sync', anchor: 'calendar-sync-heading', keywords: 'google icloud fastmail nextcloud caldav two-way calendar events' },
+  { section: 'integrations', label: msg('Calendar sync'), description: msg('Your dated tasks become events in your own calendar; moving an event moves the task.'), page: 'calendar-sync', anchor: 'calendar-sync-heading', keywords: 'google icloud fastmail nextcloud caldav outlook microsoft 365 two-way calendar events' },
   { section: 'integrations', label: msg('Issues'), description: msg('Open GitHub and GitLab issues assigned to you become tasks that follow them.'), page: 'issues', anchor: 'issues-heading', keywords: 'github gitlab issue import' },
   { section: 'integrations', label: msg('Webhooks'), description: msg('Send a message to another service when tasks change'), page: 'webhooks', anchor: 'webhooks-heading' },
   { section: 'integrations', label: msg('API tokens'), description: msg('Keys for scripts and the command-line client'), page: 'tokens', anchor: 'tokens-heading', keywords: 'api key cli' },

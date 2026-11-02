@@ -31,6 +31,9 @@ func (s *Server) registerMCPRoutes(mux *routes) {
 	s.agentTools = agenttools.New(s.sync, agenttools.Options{
 		Audit: s.audit, Log: s.log, Exclusions: s.agentExclusions,
 		LocalToday: func() string { return localToday(s.now()) },
+		// Reminders an assistant adds are read in the zone REST uses (agent-tools-complete D2).
+		UserZone: s.tzLocation,
+		Now:      s.now,
 		// Relative reminders follow a new due date (deadline reminders a new
 		// deadline), as for a REST write, and a task that gets a due date gets
 		// the person's default reminder (default-reminders D6).
@@ -41,6 +44,10 @@ func (s *Server) registerMCPRoutes(mux *routes) {
 			return s.agentReminderOps(ctx, uid, c.EntityID, c.Create, c.Patch, ts, device)
 		},
 	})
+	if s.rules != nil {
+		// Routine tools (routines-engine D11): the REST checks and the engine's runs.
+		s.agentTools.SetRoutines(routineTools{s})
+	}
 	s.mcp = mcp.New(s.sync, mcp.Options{Version: s.version, Log: s.log, Tools: s.agentTools, IssuesResource: s.issuesResource})
 	// Every method reaches the handler so a disabled endpoint is 404 for all of
 	// them and an enabled one can answer 405 for anything but POST.

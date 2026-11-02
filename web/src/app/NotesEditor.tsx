@@ -12,13 +12,14 @@ import { byteLength, MAX_PLAINTEXT_BYTES } from '../lib/crypto'
 import { DocTooLargeError, MAX_DOC_CHARS_ENCRYPTED, MAX_TEXT_VALUE } from '../lib/docfields'
 import { encryptionSnapshot } from '../lib/e2ee'
 import { checkLineAt, mentionIds, sameIds, subtaskLine } from '../lib/editorNotes'
-import { foldNote, mutate, mutateMany, planTask, type Change, type PushTiming } from '../lib/ops'
+import { foldNote, mutate, mutateMany, planTask, saveNote, type Change, type PushTiming } from '../lib/ops'
 import { activeBody, activeBodyName, decodeDoc, docBytes, encodeDoc, MAX_DOC_CHARS, renderMarkdown, toModel, WARN_DOC_CHARS } from '../lib/richtext'
 import { applyBody, createState, insertBlocks, markdownSlice, pmToModel, remoteKey, schema, writeBody, type EditorHooks } from '../lib/richtextEditor'
 import { pushPendingNotes } from '../lib/sync'
 import { useMe } from '../lib/timeEntries'
 import type { Clock } from '../lib/types'
 import { EditorToolbar, openCellMenu, useEditorChrome } from './EditorChrome'
+import { FormattingToggle, useFormattingToggle } from './FormattingToggle'
 import type { CommandEnv } from './editorCommands'
 import { imageViews } from './editorImage'
 import { LinkDialog } from './LinkDialog'
@@ -34,6 +35,7 @@ import { messageOf } from '../lib/errorText'
  * the editor pushes at once.
  */
 const SAVE_MS = 400
+const NO_TARGETS: ReturnType<typeof useMentionTargets> = []
 const LOCAL = 'local'
 const REMOTE = 'remote'
 
@@ -51,9 +53,12 @@ function usage(doc: Y.Doc, pm: import('prosemirror-model').Node): number {
   return Math.ceil(Math.max(encodeDoc(doc).length / docCap, text / textCap) * MAX_DOC_CHARS)
 }
 
-/** Whose note the editor edits: a task's or a project's (OpenSpec change project-notes, D3). */
+/**
+ * Whose note the editor edits: a task's, a project's (OpenSpec change project-notes,
+ * D3) or a standalone note's (notes-overview D7: no mentions, images or Make subtask).
+ */
 export interface NoteTarget {
-  entity: 'task' | 'project'
+  entity: 'task' | 'project' | 'note'
   id: string
   notes_doc?: string
   description?: string
@@ -127,6 +132,20 @@ async function embedImages(view: EditorView, taskId: string, files: File[]): Pro
   view.focus()
 }
 
+/** A document this device cannot read: its plain text instead. */
+function UnreadableNote({ text }: { text: string }) {
+  return (
+    <div className="space-y-1">
+      <p role="note" className="text-meta text-warning">
+        {t('This note\'s formatting could not be read on this device; its text is shown instead.')}
+      </p>
+      <div className="rounded-control border border-default p-3 text-body">
+        <Markdown source={text} />
+      </div>
+    </div>
+  )
+}
+
 export default function NotesEditor({ note, readOnly, autoFocus = false, onEscape }: {
   note: NoteTarget
   readOnly: boolean
@@ -155,11 +174,16 @@ export default function NotesEditor({ note, readOnly, autoFocus = false, onEscap
   const [linkAsk, setLinkAsk] = useState<{ current: string; answer: (href: string | null) => void } | null>(null)
   const askLink = (current: string) => new Promise<string | null>((answer) => setLinkAsk({ current, answer }))
   const isTask = entity === 'task'
-  // People, then the workspace's groups (group-mentions D4).
-  const members = useMentionTargets(isTask ? note.project_id : null)
+  // People, then the workspace's groups (group-mentions D4); a standalone note has nobody to notify.
+  const targets = useMentionTargets(isTask ? note.project_id : null)
+  const members = entity === 'note' ? NO_TARGETS : targets
   const me = useMe()
   const picker = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  // The Formatting toggle on a computer (notes-toolbar-desktop D1-D4); the row needs the view.
+  const formatting = useFormattingToggle('notes', !readOnly)
+  const rowId = `${useId()}-formatting`
+  const [, setMounted] = useState(0)
   const mentioned = useRef(note.note_mentions)
   mentioned.current = note.note_mentions
   const projectId = useRef(note.project_id ?? null)
@@ -213,7 +237,7 @@ export default function NotesEditor({ note, readOnly, autoFocus = false, onEscap
     timer.current = null
     if (!dirty.current || !ydoc.current) return void (push === 'now' && pushPendingNotes())
     dirty.current = false
-    mutate(entity, taskId, notePatch(), { push }).then(
+    saveNote(entity, taskId, notePatch(), { push }).then(
       () => setError(null),
       (err) => setError(err instanceof DocTooLargeError ? err.message : t('Could not save the note: {reason}', { reason: messageOf(err) })),
     )
@@ -296,6 +320,7 @@ export default function NotesEditor({ note, readOnly, autoFocus = false, onEscap
     })
     view.current = v
     views.set(v.dom, v)
+    setMounted((n) => n + 1)
     size.current = usage(doc, v.state.doc)
     if (autoFocus && !readOnly) v.focus()
     const onHide = () => {
@@ -347,21 +372,12 @@ export default function NotesEditor({ note, readOnly, autoFocus = false, onEscap
     size.current = usage(d, v.state.doc)
   }, [task.notes_doc, unreadable])
 
-  if (unreadable) {
-    return (
-      <div className="space-y-1">
-        <p role="note" className="text-meta text-warning">
-          {t('This note\'s formatting could not be read on this device; its text is shown instead.')}
-        </p>
-        <div className="rounded-control border border-default p-3 text-body">
-          <Markdown source={task.description ?? ''} />
-        </div>
-      </div>
-    )
-  }
+  if (unreadable) return <UnreadableNote text={task.description ?? ''} />
   return (
-    <div className="space-y-1">
-      {!readOnly && <EditorToolbar view={view.current} env={env} visible={editing || menuOpen} onMenu={setMenuOpen} />}
+    <div className="notes-frame space-y-1" data-formatting={formatting.offered || undefined}>
+      {/* Before the text in the Tab order, so Shift+Tab from the note reaches it (D2). */}
+      {formatting.offered && <FormattingToggle className="ui-reveal" pressed={formatting.pressed} onToggle={formatting.set} controls={rowId} data-notes-formatting="" />}
+      {!readOnly && <EditorToolbar id={rowId} view={view.current} env={env} visible={editing || menuOpen} onMenu={setMenuOpen} always={formatting.open} />}
       <div ref={host} className="notes-host" data-notes-editing={editing || undefined} />
       {chrome.overlays}
       {isTask && !readOnly && <ImagePicker picker={picker} onFiles={(files) => { if (view.current) void embedImages(view.current, taskId, files) }} />}

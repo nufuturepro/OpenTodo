@@ -14,7 +14,7 @@ import { createProject, createSubtask, createTask, resetDeviceId, updateTask } f
 import { createSection, saveViewMode } from '../../lib/sections'
 import { setCurrentUserId } from '../../lib/sharing'
 import { logTime, startTracking } from '../../lib/timeEntries'
-import type { Label, Project, Task, User } from '../../lib/types'
+import type { CalendarEvent, Label, Project, Task, User } from '../../lib/types'
 import { HUES, type HueName } from '../../ui'
 import { resetPanel } from '../panel'
 
@@ -318,6 +318,30 @@ export async function seedCalendarPlan(): Promise<void> {
 }
 
 /**
+ * A subscribed calendar over `base` (calendar-events-all-views): a meeting today, a
+ * two-day all-day offsite from tomorrow, a crowded Friday, a free block and a long
+ * planning morning next week, for the Week agenda, the Month's cells and the Year's rings.
+ */
+export function seedCalendarEvents(base: () => Promise<void> = seedCalendarWeek): () => Promise<void> {
+  return async () => {
+    await base()
+    const ev = (id: string, summary: string, start: CalendarEvent['start'], end: CalendarEvent['end'], extra: Partial<CalendarEvent> = {}): CalendarEvent =>
+      ({ id, subscriptionId: 'story-sub', uid: id, summary, location: '', start, end, allDay: !start.time, free: false, ...extra })
+    await db.calendarSubscriptions.put({ id: 'story-sub', name: 'Work calendar', color: hue('blue'), enabled: true, lastSuccessAt: Date.parse('2026-10-14T11:00:00') })
+    await db.calendarEvents.bulkPut([
+      ev('story-sync', 'Team sync', { date: TODAY, time: '11:00' }, { date: TODAY, time: '11:30' }, { location: 'Room 4' }),
+      ev('story-offsite', 'Offsite', { date: TOMORROW }, { date: '2026-10-17' }),
+      ev('story-one', '1:1 with Sam', { date: '2026-10-16', time: '09:00' }, { date: '2026-10-16', time: '09:30' }),
+      ev('story-demo', 'Sprint demo', { date: '2026-10-16', time: '15:00' }, { date: '2026-10-16', time: '16:00' }),
+      ev('story-focus', 'Focus time', { date: '2026-10-19', time: '13:00' }, { date: '2026-10-19', time: '15:00' }, { free: true }),
+      ev('story-planning', 'Quarterly planning', { date: '2026-10-20', time: '09:00' }, { date: '2026-10-20', time: '12:00' }),
+      ev('story-conf', 'Conference', { date: '2026-11-24' }, { date: '2026-11-27' }),
+    ])
+    await setMeta('calendar.events.window', { from: '2026-01-01', to: '2026-12-31', fetchedAt: Date.parse('2026-10-14T11:00:00') })
+  }
+}
+
+/**
  * Calendar clarity (calendar-clarity D1, D3): the calendar week with labels and
  * priorities on its tasks, a deadline on Friday for a task planned today ("Submit the
  * grant"), a task due on its deadline day ("Pay the rent", Thursday), and the device's
@@ -334,6 +358,40 @@ export function seedCalendarClarity(mode: 'project' | 'label' | 'priority'): () 
     await createTask({ title: 'Submit the grant', due: { date: TODAY, time: '15:00' }, estimate_minutes: 60, deadline: '2026-10-16', project_id: seeded.work, priority: 1 })
     await createTask({ title: 'Pay the rent', due: { date: TOMORROW }, deadline: TOMORROW, project_id: seeded.home })
     await setMeta('calendar.colorBy', mode)
+  }
+}
+
+/**
+ * Tasks that span days (multi-day-tasks): the seeded week plus a trip from Monday to
+ * Wednesday (partly past, dimmed), a conference from Friday into next week, a weekly
+ * two-day shift whose next occurrences are projected, and a deferred task that is
+ * not a span (drawn on its due day only).
+ */
+export async function seedCalendarSpans(): Promise<void> {
+  await seedCalendarWeek()
+  await createTask({ title: 'Lisbon trip', start: '2026-10-12', due: { date: '2026-10-14' }, span: true, project_id: seeded.home })
+  await createTask({ title: 'Design conference', start: '2026-10-16', due: { date: '2026-10-20' }, span: true, estimate_minutes: 240, project_id: seeded.work })
+  await createTask({ title: 'Weekend shift', start: '2026-10-17', due: { date: '2026-10-18' }, span: true, recurrence: 'every sunday', project_id: seeded.health })
+  await createTask({ title: 'Quarterly report', start: '2026-10-13', due: { date: '2026-10-16' }, project_id: seeded.work })
+}
+
+/**
+ * A year of plans (year-view): the calendar week, a weekly Monday report projected over
+ * the year, a busy launch week in March (six tasks on one day, an over-capacity day), a
+ * holiday span in August and a few tasks scattered over the months. `months` sets the
+ * Month's "Months shown" on the device.
+ */
+export function seedCalendarYear(months?: 2 | 3 | 6): () => Promise<void> {
+  return async () => {
+    await seedCalendarWeek()
+    await createTask({ title: 'Weekly report', due: { date: '2026-10-19', time: '09:00' }, recurrence: 'every monday', estimate_minutes: 45, project_id: seeded.work })
+    const launch = ['Final copy', 'Press kit', 'Pricing check', 'Release build', 'Launch post', 'Support rota']
+    for (const [i, title] of launch.entries()) await createTask({ title, due: { date: '2026-03-17' }, estimate_minutes: i < 3 ? 180 : 30, project_id: seeded.website })
+    for (const d of ['2026-03-16', '2026-03-18', '2026-03-18', '2026-03-19']) await createTask({ title: 'Launch prep', due: { date: d }, project_id: seeded.website })
+    await createTask({ title: 'Summer holiday', start: '2026-08-03', due: { date: '2026-08-14' }, span: true, project_id: seeded.home })
+    const scattered: [string, string][] = [['2026-01-12', 'Tax papers'], ['2026-02-20', 'Car service'], ['2026-05-04', 'Garden plan'], ['2026-06-11', 'Dentist'], ['2026-11-26', 'Gift list'], ['2026-12-21', 'Book the trains'], ['2026-12-21', 'Wrap presents'], ['2026-12-22', 'Bake']]
+    for (const [d, title] of scattered) await createTask({ title, due: { date: d }, project_id: seeded.home })
+    if (months) localStorage.setItem('ot.calendar.months', String(months))
   }
 }
 

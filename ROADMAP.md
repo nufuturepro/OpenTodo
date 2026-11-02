@@ -54,17 +54,18 @@ Recurring depth, calendar range, and notes that stay cheap to store and easy to 
 
 | Change | What | Issues |
 | --- | --- | --- |
-| [`series-occurrences`](openspec/changes/series-occurrences/) | Future occurrences of repeating tasks and habits in Day, Week and Month | [#550](https://github.com/OpenTodoApp/OpenTodo/issues/550), [#537](https://github.com/OpenTodoApp/OpenTodo/issues/537) |
-| [`series-exceptions`](openspec/changes/series-exceptions/) | Move, skip or edit one occurrence alone | [#551](https://github.com/OpenTodoApp/OpenTodo/issues/551) |
-| [`series-split`](openspec/changes/series-split/) | "This and following": edit from one occurrence onward | [#552](https://github.com/OpenTodoApp/OpenTodo/issues/552) |
-| [`multi-day-tasks`](openspec/changes/multi-day-tasks/) | Tasks that span days on the calendar | [#558](https://github.com/OpenTodoApp/OpenTodo/issues/558) |
-| [`year-view`](openspec/changes/year-view/) | Several months and a Year view | [#557](https://github.com/OpenTodoApp/OpenTodo/issues/557) |
-| [`board-polish`](openspec/changes/board-polish/) | Fold a board column, preview notes on cards | [#561](https://github.com/OpenTodoApp/OpenTodo/issues/561) |
-| [`accent-colour`](openspec/changes/accent-colour/) | Your own accent colour, with contrast guaranteed | [#563](https://github.com/OpenTodoApp/OpenTodo/issues/563) |
+| [`series-occurrences`](openspec/changes/archive/2026-10-31-series-occurrences/) | **Shipped.** Future occurrences of repeating tasks and habits in Day, Week and Month | [#550](https://github.com/OpenTodoApp/OpenTodo/issues/550), [#537](https://github.com/OpenTodoApp/OpenTodo/issues/537) |
+| [`series-exceptions`](openspec/changes/archive/2026-10-31-series-exceptions/) | **Shipped.** Move, skip or edit one occurrence alone | [#551](https://github.com/OpenTodoApp/OpenTodo/issues/551) |
+| [`series-split`](openspec/changes/archive/2026-10-31-series-split/) | **Shipped.** "This and following": edit from one occurrence onward | [#552](https://github.com/OpenTodoApp/OpenTodo/issues/552) |
+| [`series-all-scope`](openspec/changes/archive/2026-10-31-series-all-scope/) | **Shipped.** "All occurrences": only future ones or also past ones | — |
+| [`multi-day-tasks`](openspec/changes/archive/2026-10-31-multi-day-tasks/) | **Shipped.** Tasks that span days on the calendar | [#558](https://github.com/OpenTodoApp/OpenTodo/issues/558) |
+| [`year-view`](openspec/changes/archive/2026-10-31-year-view/) | **Shipped.** Several months and a Year view | [#557](https://github.com/OpenTodoApp/OpenTodo/issues/557) |
+| [`board-polish`](openspec/changes/archive/2026-10-31-board-polish/) | **Shipped.** Fold a board column, preview notes on cards | [#561](https://github.com/OpenTodoApp/OpenTodo/issues/561) |
+| [`accent-colour`](openspec/changes/archive/2026-10-31-accent-colour/) | **Shipped.** Your own accent colour, with contrast guaranteed | [#563](https://github.com/OpenTodoApp/OpenTodo/issues/563) |
 | [`notes-compaction`](openspec/changes/archive/2026-10-31-notes-compaction/) | **Shipped.** The server drops superseded note versions after 30 days and reclaims the space | [#652](https://github.com/OpenTodoApp/OpenTodo/issues/652) |
 | [`notes-save-cadence`](openspec/changes/archive/2026-10-31-notes-save-cadence/) | **Shipped.** Notes save on the device at every pause and sync after 3 s quiet | [#653](https://github.com/OpenTodoApp/OpenTodo/issues/653) |
-| [`notes-toolbar-desktop`](openspec/changes/notes-toolbar-desktop/) | A Formatting toggle beside notes on a computer | [#654](https://github.com/OpenTodoApp/OpenTodo/issues/654) |
-| [`notes-overview`](openspec/changes/notes-overview/) | A Notes page with standalone notes and search on the device | [#655](https://github.com/OpenTodoApp/OpenTodo/issues/655) |
+| [`notes-toolbar-desktop`](openspec/changes/archive/2026-10-31-notes-toolbar-desktop/) | **Shipped.** A Formatting toggle beside notes on a computer | [#654](https://github.com/OpenTodoApp/OpenTodo/issues/654) |
+| [`notes-overview`](openspec/changes/archive/2026-10-31-notes-overview/) | **Shipped.** A Notes page with standalone notes and search on the device | [#655](https://github.com/OpenTodoApp/OpenTodo/issues/655) |
 
 The notes overview depends on `notes-compaction` and `notes-save-cadence`, which keep many long, often-edited notes cheap to store and sync; its budgets are part of `performance-10k`.
 
@@ -77,14 +78,23 @@ Phones, Apple, Obsidian and voice.
 | [`ios-distribution`](openspec/changes/ios-distribution/) | The iPhone app in TestFlight and the App Store | [#105](https://github.com/OpenTodoApp/OpenTodo/issues/105) |
 | [`apple-shortcuts`](openspec/changes/apple-shortcuts/) | Siri, Shortcuts, the Action Button and iOS widgets |  |
 | [`focus-live-activity`](openspec/changes/focus-live-activity/) | Focus as a Live Activity and in the Dynamic Island |  |
-| [`focus-session-readable`](openspec/changes/focus-session-readable/) | The running Focus session readable by the shells and agents |  |
-| [`obsidian-origin`](openspec/changes/obsidian-origin/) | An `obsidian` origin that links a task back to its note |  |
-| [`obsidian-plugin`](openspec/changes/obsidian-plugin/) | An Obsidian community plugin, mobile included |  |
-| [`obsidian-vault-sync`](openspec/changes/obsidian-vault-sync/) | Vault sync from inside Obsidian |  |
-| [`voice-ramble`](openspec/changes/voice-ramble/) | Speak a brain dump or drop a photo of notes; review the proposed tasks |  |
-| [`outlook-calendar-sync`](openspec/changes/outlook-calendar-sync/) | Microsoft 365 and Outlook in calendar sync |  |
-| [`play-production`](openspec/changes/play-production/) | Google Play production, F-Droid and reproducible builds |  |
-| [`agent-tools-complete`](openspec/changes/agent-tools-complete/) | Agent and MCP tools for reminders, project notes, sections, fields, time and Focus | [#565](https://github.com/OpenTodoApp/OpenTodo/issues/565) |
+| [`focus-session-readable`](openspec/changes/archive/2026-10-31-focus-session-readable/) | **Shipped.** The running Focus session readable by the shells and agents | [#604](https://github.com/OpenTodoApp/OpenTodo/issues/604) |
+| [`obsidian-origin`](openspec/changes/archive/2026-10-31-obsidian-origin/) | **Shipped.** An `obsidian` origin that links a task back to its note | [#605](https://github.com/OpenTodoApp/OpenTodo/issues/605) |
+| [`obsidian-plugin`](openspec/changes/obsidian-plugin/) | An Obsidian community plugin, mobile included (built and released; waiting for the directory listing) | [#606](https://github.com/OpenTodoApp/OpenTodo/issues/606) |
+| [`obsidian-vault-sync`](openspec/changes/obsidian-vault-sync/) | Vault sync from inside Obsidian (built; waiting for the manual runs on devices) | [#607](https://github.com/OpenTodoApp/OpenTodo/issues/607) |
+| [`voice-ramble`](openspec/changes/archive/2026-10-31-voice-ramble/) | **Shipped.** Speak a brain dump or drop a photo of notes; review the proposed tasks | [#608](https://github.com/OpenTodoApp/OpenTodo/issues/608) |
+| [`outlook-calendar-sync`](openspec/changes/archive/2026-10-31-outlook-calendar-sync/) | **Shipped.** Microsoft 365 and Outlook in calendar sync | [#609](https://github.com/OpenTodoApp/OpenTodo/issues/609) |
+| [`play-production`](openspec/changes/play-production/) | **In progress.** Google Play production, F-Droid and reproducible builds: reproducible builds, the F-Droid metadata and the Play upload are in; the store listings wait for the owner's Play Console and F-Droid steps | [#603](https://github.com/OpenTodoApp/OpenTodo/issues/603) |
+| [`agent-tools-complete`](openspec/changes/archive/2026-10-31-agent-tools-complete/) | **Shipped.** Agent and MCP tools for reminders, project notes, sections, fields, time and Focus | [#565](https://github.com/OpenTodoApp/OpenTodo/issues/565) |
+
+**Themes (prioritised).** Real themes, the way code editors have them, from [#638](https://github.com/OpenTodoApp/OpenTodo/issues/638). They start alongside `routines-engine` and run in parallel, in this order:
+
+| Change | What | Issues |
+| --- | --- | --- |
+| [`theme-engine`](openspec/changes/archive/2026-11-01-theme-engine/) | **Shipped.** A documented theme format, tokens derived from a few seeds, applied before the first paint, chosen per light and dark side and synced, with a contrast gate; OpenTodo Light and Dark become themes | [#708](https://github.com/OpenTodoApp/OpenTodo/issues/708) |
+| [`theme-catalogue`](openspec/changes/archive/2026-11-01-theme-catalogue/) | **Shipped.** Built-in editor palettes (Solarized, Gruvbox, Catppuccin, Rosé Pine, Tokyo Night, One, Nord, Dracula), credited and AA-checked | [#709](https://github.com/OpenTodoApp/OpenTodo/issues/709) |
+| [`theme-editor`](openspec/changes/archive/2026-11-01-theme-editor/) | **Shipped.** Your own themes: seeds, every token, live preview and contrast fixes, files, VS Code theme import | [#710](https://github.com/OpenTodoApp/OpenTodo/issues/710) |
+| [`theme-instance-default`](openspec/changes/archive/2026-11-01-theme-instance-default/) | **Shipped.** The owner's default theme and server themes for every member | [#711](https://github.com/OpenTodoApp/OpenTodo/issues/711) |
 
 ### [0.21 "Horizons and home"](https://github.com/OpenTodoApp/OpenTodo/milestone/5)
 
@@ -123,11 +133,15 @@ Multi-step routines with AI steps, built on Automations: every existing rule bec
 
 | Change | What | Issues |
 | --- | --- | --- |
-| [`routines-engine`](openspec/changes/routines-engine/) | Rules grow into routines: typed steps, manual runs, Test, step-by-step run log, Undo a run, full CLI and MCP | [#658](https://github.com/OpenTodoApp/OpenTodo/issues/658) |
-| [`routines-editor`](openspec/changes/routines-editor/) | Sentence-card editor with live previews, run history, and "Routines since your last visit" in the Inbox | [#659](https://github.com/OpenTodoApp/OpenTodo/issues/659) |
-| [`routines-starters`](openspec/changes/routines-starters/) | Starter routines in the template library, and "Describe it" to draft one with AI | [#660](https://github.com/OpenTodoApp/OpenTodo/issues/660) |
-| [`routines-ai-step`](openspec/changes/routines-ai-step/) | Ask AI and Summarise steps, proposals by default, a bounded "apply without asking", device runs for encrypted accounts | [#661](https://github.com/OpenTodoApp/OpenTodo/issues/661) |
-| [`routines-shared`](openspec/changes/routines-shared/) | Routines that belong to a shared project and run as whoever turned them on | [#662](https://github.com/OpenTodoApp/OpenTodo/issues/662) |
+| [`routines-engine`](openspec/changes/archive/2026-11-01-routines-engine/) | **Shipped.** Rules grow into routines: typed steps, manual runs, Test, step-by-step run log, Undo a run, full CLI and MCP | [#658](https://github.com/OpenTodoApp/OpenTodo/issues/658) |
+| [`routines-editor`](openspec/changes/archive/2026-11-01-routines-editor/) | **Shipped.** Sentence-card editor with live previews, run history, and "Routines since your last visit" in the Inbox | [#659](https://github.com/OpenTodoApp/OpenTodo/issues/659) |
+| [`routines-dynamic-data`](openspec/changes/archive/2026-11-01-routines-dynamic-data/) | **Shipped.** Data flows instead of hand-picked tasks: task steps act on each task of a list, Pick (first, last, all, where), the editor wires the trigger, earlier outputs and the loop item; Get the date, a task's project, subtasks, completed tasks, "not changed for", days of the month; pickers next to the word, text edited in the card | [#722](https://github.com/OpenTodoApp/OpenTodo/issues/722) |
+| [`routines-find-scope`](openspec/changes/archive/2026-11-01-routines-find-scope/) | **Shipped.** Find tasks and scheduled triggers find what the app's lists show: never the Trash or a project in it, archived projects only when asked ("Archived projects" on the card) | [#734](https://github.com/OpenTodoApp/OpenTodo/issues/734) |
+| [`routines-starters`](openspec/changes/archive/2026-11-01-routines-starters/) | **Shipped.** Eleven starter routines in the template library, tested against seeded data, offered on the Routines page with inline choices | [#660](https://github.com/OpenTodoApp/OpenTodo/issues/660) |
+| [`routines-describe-it`](openspec/changes/archive/2026-11-01-routines-describe-it/) | **Shipped.** "Describe it": the AI drafts a routine from one sentence into the editor, never saving or running it | [#735](https://github.com/OpenTodoApp/OpenTodo/issues/735) |
+| [`routines-ai-step`](openspec/changes/archive/2026-11-01-routines-ai-step/) | **Shipped.** Ask AI and Summarise steps, proposals by default, a bounded "apply without asking", device runs for encrypted accounts | [#661](https://github.com/OpenTodoApp/OpenTodo/issues/661) |
+| [`routines-shared`](openspec/changes/archive/2026-11-01-routines-shared/) | **Shipped.** Routines that belong to a shared project and run as whoever turned them on | [#662](https://github.com/OpenTodoApp/OpenTodo/issues/662) |
+| `routines-shared-email` | Email project members and a "members" recipient for Notify me in shared routines | [#741](https://github.com/OpenTodoApp/OpenTodo/issues/741) |
 
 The five changes land in this order. Routines never fetch URLs or feeds: outbound requests stay with configured webhooks, delivery channels and the owner's SMTP server.
 
@@ -316,7 +330,7 @@ Phone and desktop apps as thin shells around the same web app, loaded from your 
 
 | # | Shell | Change | Notes |
 | --- | --- | --- | --- |
-| 1 | **In closed testing on Google Play.** Android app: first-run server screen, reminders scheduled on the phone without a push service, the share menu, Today and quick-add widgets, fingerprint unlock of an encrypted account | `native-shells` | Hand-written Kotlin around a `WebView`, AndroidX only (APK about 1 MB), in `mobile/android` since 0.10. Production, F-Droid and reproducible builds: `play-production` in 0.20 |
+| 1 | **In closed testing on Google Play.** Android app: first-run server screen, reminders scheduled on the phone without a push service, the share menu, Today and quick-add widgets, fingerprint unlock of an encrypted account | `native-shells` | Hand-written Kotlin around a `WebView`, AndroidX only (APK about 1 MB), in `mobile/android` since 0.10. Reproducible builds, one certificate for Google Play, F-Droid and GitHub, and the upload to Play's internal track are in (`play-production`); production on Play and the F-Droid listing are in progress in 0.20 |
 | 2 | **Built; waiting for the owner.** iOS app with the same bridge: first-run server screen, reminders scheduled on the phone without a push service, the share sheet, a Today widget, Face ID unlock, and an opt-in build setting that adds the installed web app's offline start | `ios-shell` | Hand-written Swift around a `WKWebView`, no third-party code, in `mobile/ios`. Store distribution is `ios-distribution` in 0.20 |
 | 3 | Desktop app for macOS and Windows: the embedded server plus a window, a tray icon and native notifications | `desktop-shell` | Open: Wails v3 or the `webview/webview` binding (D2), code signing and notarisation, where the data directory lives |
 

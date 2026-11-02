@@ -5,11 +5,11 @@
 // a task, by drag onto a day or with the arrows, is one due edit that keeps its time
 // and zone. Projections and events are read-only and written nowhere. Works offline.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, hueFor, MenuItem, MenuSeparator, PageBody, Skeleton, useWide, Tooltip } from '../ui'
+import { Button, hueFor, MenuItem, MenuSeparator, PageBody, Skeleton, useWide } from '../ui'
 import { allDayEvents, calendarTasks, deadlineMarkers, eventBlocks, nudgeDue } from '../lib/calendar'
-import { setShowEvents } from '../lib/calendarFeeds'
+import { CalendarsToggle } from './calendar/CalendarsToggle'
 import { rememberCalendarMode } from '../lib/calendarMode'
-import { addDaysISO, dueFromView, formatShort, viewedTask, formatDateParts } from '../lib/dates'
+import { addDaysISO, daysBetweenISO, dueFromView, formatShort, viewedTask, formatDateParts } from '../lib/dates'
 import { beginDrag } from '../lib/dnd'
 import { getTask, saveGridPrefs, useMembershipMap } from '../lib/localData'
 import { useCalendarShowCompleted, useGridPrefs, useLiveProjects } from '../lib/liveData'
@@ -33,7 +33,9 @@ import { CapacityBar, PlanDayRows, type PlanDayData } from './calendar/PlanRow'
 import { useCalendarFeeds } from './calendar/useCalendarFeeds'
 import { setPanelTaskId, usePanelTaskId } from './panel'
 import { useShortcutScope } from './shortcuts'
-import { completeWithUndo, setDueWithUndo } from './undoable'
+import { isProjectionTarget } from './calendar/projections'
+import { completeWithUndo, setDueWithUndo, spanWithUndo } from './undoable'
+import { moveSpanPatch, spanOf } from '../lib/span'
 import { useToday, useViewerZone } from './useViews'
 
 const ARROWS: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }
@@ -60,19 +62,27 @@ function usePlanDays(dates: string[], today: string, dayLength: number, showComp
   const hiddenRaw = useMemo(() => shownRaw.filter((task) => !task.completed_at && inScope(task) && !keeps(task)), [shownRaw, inScope, keeps])
   const deadlines = useMemo(() => deadlineMarkers(viewed.filter(keeps), projects, from, to), [viewed, keeps, projects, from, to])
   const series = useMemo(() => planSeries(rawTasks, projects), [rawTasks, projects])
-  const projections = useMemo(() => projectedOccurrences(series, rawTasks, today, from, to, zone), [series, rawTasks, today, from, to, zone])
+  const seriesMembers = useMembershipMap()
+  // An editor of a calendar series may act on its projections (series-exceptions D4).
+  const projections = useMemo(() => {
+    const projectOf = new Map(series.map((s) => [s.id, s.project_id]))
+    return projectedOccurrences(series, rawTasks, today, from, to, zone).map((p) => ({ ...p, actionable: !p.afterCompletion && canEditTasks(roleOf(projectOf.get(p.seriesId), seriesMembers)) }))
+  }, [series, rawTasks, today, from, to, zone, seriesMembers])
+  // The columns draw the projections of the series the scope and the filter keep (series-occurrences: the filter applies to projections too).
+  const viewedById = useMemo(() => new Map(viewed.map((task) => [task.id, task])), [viewed])
+  const drawnProjections = useMemo(() => projections.filter((p) => { const s = viewedById.get(p.seriesId); return !!s && keeps(s) }), [projections, viewedById, keeps])
   // Slots count once toward a day's load (calendar-slots D6); the Plan lists their tasks as usual.
   const slotRows = useSlots()
   const slotViews = useMemo(() => slotsByDate(slotRows, dates, new Map(viewed.map((task) => [task.id, task]))), [slotRows, dates, viewed])
   const days = useMemo<PlanDayData[]>(() => dates.map((date) => ({
     date,
-    entries: columnEntries(drawnRaw, projections.filter((p) => !chrome.scope || (!!p.project_id && chrome.scope.projectIds.has(p.project_id))), date, zone),
+    entries: columnEntries(drawnRaw, drawnProjections, date, zone),
     deadlines: deadlines.get(date),
     hidden: hiddenRaw.filter((task) => viewedTask(task, zone).due?.date === date).length,
     events: eventBlocks(feeds.visibleEvents, date, zone),
     allDay: allDayEvents(feeds.visibleEvents, date),
     load: planLoad(shownRaw, projections, feeds.visibleEvents, date, dayLength, zone, slotCapacity(slotViews.get(date))),
-  })), [dates, shownRaw, drawnRaw, hiddenRaw, deadlines, projections, chrome.scope, feeds.visibleEvents, zone, dayLength, slotViews])
+  })), [dates, shownRaw, drawnRaw, hiddenRaw, deadlines, projections, drawnProjections, feeds.visibleEvents, zone, dayLength, slotViews])
   return { zone, projects, rawTasks, viewed, feeds, days, chrome, loading: live === undefined }
 }
 
@@ -95,7 +105,7 @@ export function PlanView({ date }: { date?: string }) {
   const canEdit = useCallback((task: Task) => canEditTasks(roleOf(task.project_id, memberMap)), [memberMap])
   const editable = useCallback((task: Task) => !task.completed_at && canEdit(task), [canEdit])
   /** Selection order: the span's task rows column by column; projected and event rows never take part. */
-  const order = useMemo(() => days.flatMap((d) => d.entries.flatMap((e) => (e.kind === 'task' ? [e.task.id] : []))), [days])
+  const order = useMemo(() => [...new Set(days.flatMap((d) => d.entries.flatMap((e) => (e.kind === 'task' ? [e.task.id] : []))))], [days])
 
   const [focused, setFocused] = useState(anchor)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -126,23 +136,31 @@ export function PlanView({ date }: { date?: string }) {
       if (!raw || raw.deleted_at || raw.completed_at || !raw.due) return
       const task = viewedTask(raw)
       if (!task.due) return
-      const due = nudgeDue(task.due, { days: n })
-      await updateTask(id, { due: dueFromView(raw.due, due) })
+      // A span moves whole (multi-day-tasks D4).
+      const whole = spanOf(task) ? moveSpanPatch(task, n) : null
+      const due = whole ? whole.due : nudgeDue(task.due, { days: n })
+      await updateTask(id, whole ? { start: whole.start, due: dueFromView(raw.due, due) } : { due: dueFromView(raw.due, due) })
       show(due.date)
     }).catch(reportActionError)
   }, [show])
 
-  /** Dropped on a day: same time and zone, new date (one due edit, with Undo). */
-  const dropOn = useCallback((id: string, d: string) => {
+  /** Dropped on a day: same time and zone, new date (one due edit, with Undo); a span moves by the distance from the column it was taken from (multi-day-tasks D3). */
+  const dropOn = useCallback((id: string, d: string, from?: string) => {
     const task = viewedMap.get(id)
+    const raw = rawMap.get(id)
+    if (task && raw && from && spanOf(task) && !task.completed_at) {
+      const patch = moveSpanPatch(raw, daysBetweenISO(from, d))
+      if (patch && from !== d) { act(spanWithUndo(id, patch)); setSelectedId(id); setFocused(d) }
+      return
+    }
     if (!task || task.completed_at || task.due?.date === d) return
     act(setDueWithUndo(id, dueFromView(rawMap.get(id)?.due, { date: d, ...(task.due?.time ? { time: task.due.time } : {}) })))
     setSelectedId(id)
     setFocused(d)
   }, [viewedMap, rawMap])
-  const startDrag = useCallback((task: Task, e: React.PointerEvent) => {
+  const startDrag = useCallback((task: Task, e: React.PointerEvent, from?: string) => {
     if (e.button !== 0 || !editable(task)) return
-    beginDrag(e, { label: task.title || t('Untitled'), onDrop: (key) => { if (key.startsWith('day:')) dropOn(task.id, key.slice(4)) } })
+    beginDrag(e, { label: task.title || t('Untitled'), onDrop: (key) => { if (key.startsWith('day:')) dropOn(task.id, key.slice(4), from) } })
   }, [editable, dropOn])
 
   const selectedTask = selectedId && order.includes(selectedId) ? rawMap.get(selectedId) : undefined
@@ -161,7 +179,8 @@ export function PlanView({ date }: { date?: string }) {
     'plan.focus': (e) => show(addDaysISO(focused, ARROWS[e.key])),
     'plan.next': () => step(1),
     'plan.prev': () => step(-1),
-    'plan.open': () => { if (!selectedTask) return false; setPanelTaskId(selectedTask.id) },
+    // A focused button (a projected occurrence, series-occurrences D6) keeps its own Enter.
+    'plan.open': (e) => { if (!selectedTask || isProjectionTarget(e.target)) return false; setPanelTaskId(selectedTask.id) },
     'plan.complete': () => {
       if (!selectedTask || !editable(selectedTask)) return false
       act(completeWithUndo(selectedTask.id, true))
@@ -209,13 +228,7 @@ export function PlanView({ date }: { date?: string }) {
     {chrome.overflow}
   </>
   const rangeActions = <>
-          {feeds.subs.length > 0 && (
-            <Tooltip label={feeds.eventsShown ? t('Hide other calendars on this device') : t('Show other calendars on this device')}>
-              <Button variant="ghost" size="sm" icon="calendar-range" aria-pressed={feeds.eventsShown} data-calendars-toggle
-                className={feeds.eventsShown ? 'bg-sunken dark:bg-raised' : 'text-muted'}
-                onClick={() => act(setShowEvents(!feeds.eventsShown))}>{t('Calendars')}</Button>
-            </Tooltip>
-          )}
+          <CalendarsToggle shown={feeds.eventsShown} count={feeds.subs.length} />
           <span className="flex items-center" role="group" aria-label={t('Range')}>
             <Button variant="ghost" size="sm" icon="chevron-left" aria-label={t('Previous week')} onClick={() => goTo(addDaysISO(anchor, -7))} />
             <Button variant="ghost" size="sm" onClick={() => goTo(today)}>{t('Today')}</Button>

@@ -246,7 +246,7 @@ func runList(a *App, ctx context.Context, g *globalFlags, o *listOptions) error 
 		slots, waiting := split.parts(tasks)
 		a.renderTasks(slots, projects, all, today)
 		fmt.Fprintln(a.Stdout)
-		fmt.Fprintln(a.Stdout, "Waiting for a slot")
+		split.printWaiting(a.Stdout, waiting)
 		a.renderTasks(waiting, projects, all, today)
 		return nil
 	}
@@ -744,7 +744,7 @@ func cmdEdit(a *App, ctx context.Context, g *globalFlags, args []string) error {
 		}
 	}
 	if !set["title"] && !set["priority"] && !set["label"] && !set["note"] && !set["due"] && !set["time"] && !set["project"] && !set["repeat"] && !set["origin-url"] && !f.plan.any(set) {
-		return usageErr("nothing to change; pass at least one of --title, --project, --due, --time, --priority, --label, --note, --repeat, --origin-url, --deadline, --start, --evening, --part, --energy, --blocked-by, --location")
+		return usageErr("nothing to change; pass at least one of --title, --project, --due, --time, --priority, --label, --note, --repeat, --origin-url, --deadline, --start, --evening, --span, --no-span, --part, --energy, --blocked-by, --location")
 	}
 	c, _, err := a.connect(g)
 	if err != nil {
