@@ -145,7 +145,7 @@ async function audit(name, env, mapsOn) {
     assert(paths.some((p) => p.startsWith('/planet/v1/')), `${name}: no tile request (${paths.join(', ')})`)
     assert(paths.includes('/api'), `${name}: no search request (${paths.join(', ')})`)
     assert(received.every((h) => !h.creds), `${name}: a provider request carried the viewer's cookie, token or address`)
-    assert(received.every((h) => /OpenTaskKit/i.test(h.ua)), `${name}: a provider request without the server's User-Agent: ${received.map((h) => h.ua).join(' | ')}`)
+    assert(received.every((h) => /OpenTodo/i.test(h.ua)), `${name}: a provider request without the server's User-Agent: ${received.map((h) => h.ua).join(' | ')}`)
     console.log(`  provider requests: ${received.length} (${[...new Set(paths.map((p) => p.split('/').slice(0, 2).join('/')))].join(', ')})`)
   }
   console.log(`  browser requests outside ${base}: 0`)

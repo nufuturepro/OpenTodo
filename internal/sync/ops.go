@@ -846,13 +846,6 @@ var Schema = map[string]map[string]Field{
 		// Maps on this user's devices (OpenSpec change task-locations, design
 		// D6): "on" or "off"; clients read an empty or unknown value as "on".
 		"maps": {Kind: kString, Default: `""`},
-		// Built-in plugins this user turned off (OpenSpec change plugin-section,
-		// plugins "Enable and disable state", design D3): a comma-separated
-		// list of plugin ids in the client's own registry; an empty value means
-		// every plugin is on, and an unknown id is ignored on read and kept in
-		// the stored value, so a list from a newer build stays harmless. Ids
-		// only, never content.
-		"disabled_plugins": {Kind: kString, Default: `""`},
 		// Haptic feedback on this user's devices (OpenSpec change motion-v2,
 		// design D6): "on" or "off"; clients read an empty or unknown value as
 		// "on" and keep the stored value, so the field stays additive.

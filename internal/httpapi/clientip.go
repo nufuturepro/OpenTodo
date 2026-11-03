@@ -148,7 +148,7 @@ func (s *Server) warnUnforwarded(r *http.Request) {
 		return
 	}
 	if s.unforwardedWarned.CompareAndSwap(false, true) {
-		s.log.Warn("a request came from a trusted proxy address without X-Forwarded-For: if a reverse proxy, NAT or port forwarder sits in front of OpenTaskKit, every client looks like this address in rate limits and the audit log; make the proxy append X-Forwarded-For, or set OPENTODO_TRUSTED_PROXIES to your proxy only",
+		s.log.Warn("a request came from a trusted proxy address without X-Forwarded-For: if a reverse proxy, NAT or port forwarder sits in front of OpenTodo, every client looks like this address in rate limits and the audit log; make the proxy append X-Forwarded-For, or set OPENTODO_TRUSTED_PROXIES to your proxy only",
 			"peer", peer)
 	}
 }

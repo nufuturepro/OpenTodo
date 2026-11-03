@@ -1,12 +1,12 @@
 // Instance branding (OpenSpec change instance-branding): the owner's name and
 // logo for this server, read from `auth/status` on every profile read and
 // mirrored on this device so the first paint and offline use show them too.
-// Without branding the app shows its own mark and the name OpenTaskKit.
+// Without branding the app shows its own mark and the name OpenTodo.
 import { createStore } from './store'
 import { readJSON, writeString } from './deviceStorage'
 
 export interface Branding {
-  /** The instance name shown in place of "OpenTaskKit"; empty for the default. */
+  /** The instance name shown in place of "OpenTodo"; empty for the default. */
   name: string
   /** Above 0, a logo is served at /branding/logo-<size>.png?v=<version>. */
   logoVersion: number
@@ -40,9 +40,9 @@ export const getBranding = store.get
 /** The branding, re-rendering when it changes. */
 export const useBranding = store.use
 
-/** The instance name: the owner's, or OpenTaskKit. */
+/** The instance name: the owner's, or OpenTodo. */
 export function instanceName(b: Branding = store.get()): string {
-  return b.name || 'OpenTaskKit'
+  return b.name || 'OpenTodo'
 }
 
 /** The address of the logo at one rendered size, or undefined without a logo. */

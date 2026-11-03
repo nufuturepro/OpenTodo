@@ -34,7 +34,6 @@ import { ProjectInvitePolicyPanel } from './ProjectInvitePolicyPanel'
 import { MfaPolicyPanel, TwoFactorPanel } from './TwoFactorPanel'
 import { EncryptionPanel } from './EncryptionPanel'
 import { AboutSection } from './AboutSection'
-import { PluginsSection } from './PluginsSection'
 import { TokensSection } from './TokensSection'
 import { WebhooksPanel } from './WebhooksPanel'
 import { CaldavPanel } from './CaldavPanel'
@@ -141,8 +140,6 @@ function SectionCards({ section, user, onLogout, demo, hosted }: { section: Sett
       return <WorkspacesSettings user={user} />
     case 'about':
       return <AboutSection user={user} />
-    case 'plugins':
-      return <PluginsSection />
     case 'data':
       return <><YourDataSection demo={demo} isOwner={user.role === 'owner'} /><Anchor id="projects"><AutoArchiveSection /></Anchor></>
     default: {

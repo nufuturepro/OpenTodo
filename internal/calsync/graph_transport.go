@@ -137,7 +137,7 @@ func (t *graphTransport) changes(ctx context.Context, cal string, _ version, _ s
 	return t.deltas[cal], nil
 }
 
-// fetch reads linked events with OpenTaskKit's property; one that is gone is
+// fetch reads linked events with OpenTodo's property; one that is gone is
 // left out (the next delta reports it removed).
 func (t *graphTransport) fetch(ctx context.Context, _ string, ids []string) (map[string]remote, error) {
 	out := map[string]remote{}
@@ -203,7 +203,7 @@ func writeStatus(status int) error {
 	return nil
 }
 
-// create posts a new event with OpenTaskKit's property and a transaction id, so
+// create posts a new event with OpenTodo's property and a transaction id, so
 // a creation retried after a lost answer makes no second event (design D5).
 func (t *graphTransport) create(ctx context.Context, cal string, task calfeed.FeedTask, opts calfeed.FeedOptions, again string) (int, string, string, error) {
 	body := graphBody(task, opts, t.zone)

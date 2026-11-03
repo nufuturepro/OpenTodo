@@ -26,15 +26,15 @@ export function useInstanceName(): string {
   return instanceName(useBranding())
 }
 
-/** The sign-in footer: the licence line, with "Powered by OpenTaskKit" on a branded instance. */
+/** The sign-in footer: the licence line, with "Powered by OpenTodo" on a branded instance. */
 export function PoweredBy({ version }: { version: string }) {
   const b = useBranding()
   const branded = !!b.name || b.logoVersion > 0
   return (
     <p className="mt-6 text-center text-meta text-faint" data-powered-by={branded || undefined}>
       {branded
-        ? t('Powered by OpenTaskKit {version} · AGPL-3.0 · no tracking, no telemetry', { version })
-        : t('OpenTaskKit {version} · AGPL-3.0 · no tracking, no telemetry', { version })}
+        ? t('Powered by OpenTodo {version} · AGPL-3.0 · no tracking, no telemetry', { version })
+        : t('OpenTodo {version} · AGPL-3.0 · no tracking, no telemetry', { version })}
     </p>
   )
 }

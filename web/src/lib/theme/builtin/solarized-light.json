@@ -49,6 +49,6 @@
       "hue-teal": "#2aa198",
       "hue-slate": "#93a1a1"
     },
-    "text": "Solarized Light by Ethan Schoonover, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (green, cyan, violet) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Solarized Light by Ethan Schoonover, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (green, cyan, violet) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

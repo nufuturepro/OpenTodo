@@ -1,6 +1,6 @@
 {{.Inviter}} möchte ein Projekt oder einen Arbeitsbereich mit dir teilen
 
-{{.Inviter}} möchte dein Konto {{.Email}} als {{.Role}} auf dem OpenTaskKit-Server {{.Origin}} hinzufügen. Nichts wird mit dir geteilt, bevor du antwortest.
+{{.Inviter}} möchte dein Konto {{.Email}} als {{.Role}} auf dem OpenTodo-Server {{.Origin}} hinzufügen. Nichts wird mit dir geteilt, bevor du antwortest.
 
 Um anzunehmen oder abzulehnen, melde dich an und öffne:
 

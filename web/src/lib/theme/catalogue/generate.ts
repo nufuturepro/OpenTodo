@@ -1,6 +1,6 @@
 // Turns a palette of palettes.ts into its theme document (OpenSpec change
 // theme-catalogue, design D3): the published colours as seeds and explicit tokens,
-// the label hues the palette lacks at OpenTaskKit's hue with the palette's own lightness
+// the label hues the palette lacks at OpenTodo's hue with the palette's own lightness
 // and chroma, then the "fix to AA" search: while a contrast pair fails, the explicit
 // value it belongs to moves its OKLCH lightness only (the hue kept, the chroma
 // clamped to the sRGB gamut) to the nearest value at which none of its pairs fails.
@@ -41,7 +41,7 @@ export function atLightness(c: Lch, L: number): Lch {
 
 const hexOf = (v: string) => toHex(labToRgb(lchToLab(...(Object.values(parseColour(v)).slice(0, 3) as [number, number, number]))))
 
-/** The label hues the palette lacks: OpenTaskKit's hue at the mean lightness and the strongest chroma of the palette's own hues. */
+/** The label hues the palette lacks: OpenTodo's hue at the mean lightness and the strongest chroma of the palette's own hues. */
 function missingHues(p: Palette): Partial<Record<Hue, string>> {
   const own = Object.entries(p.hues).filter(([h]) => h !== 'slate').map(([, v]) => parseColour(v!))
   const L = own.reduce((s, c) => s + c.L, 0) / own.length
@@ -148,7 +148,7 @@ export function generateTheme(p: Palette): Generated {
   const derivedHues = HUES.filter((h) => !p.hues[h])
   out.notes = {
     ...(Object.keys(adapted).length ? { adapted } : {}),
-    text: `${p.name} by ${p.project.author}, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md.${derivedHues.length ? ` Label colours not in the palette (${derivedHues.join(', ')}) use OpenTaskKit's hue at the palette's lightness and chroma.` : ''}${Object.keys(adapted).length ? ' Some colours were adapted for contrast: their published values are under adapted.' : ''}`,
+    text: `${p.name} by ${p.project.author}, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md.${derivedHues.length ? ` Label colours not in the palette (${derivedHues.join(', ')}) use OpenTodo's hue at the palette's lightness and chroma.` : ''}${Object.keys(adapted).length ? ' Some colours were adapted for contrast: their published values are under adapted.' : ''}`,
   }
   return { doc: out, derivedHues }
 }

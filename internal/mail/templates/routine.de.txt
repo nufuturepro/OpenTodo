@@ -3,7 +3,7 @@
 {{.Text}}
 
 --
-Diese Nachricht hat deine Routine „{{.Routine}}“ in OpenTaskKit unter {{.Origin}} gesendet.
+Diese Nachricht hat deine Routine „{{.Routine}}“ in OpenTodo unter {{.Origin}} gesendet.
 
 Diesen Lauf ansehen:
 

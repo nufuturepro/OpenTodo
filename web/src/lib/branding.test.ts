@@ -4,8 +4,8 @@ import { getBranding, instanceName, logoUrl, setBranding } from './branding'
 describe('branding store', () => {
   beforeEach(() => setBranding(undefined))
 
-  it('defaults to OpenTaskKit without a logo', () => {
-    expect(instanceName()).toBe('OpenTaskKit')
+  it('defaults to OpenTodo without a logo', () => {
+    expect(instanceName()).toBe('OpenTodo')
     expect(logoUrl(32)).toBeUndefined()
     expect(getBranding()).toEqual({ name: '', logoVersion: 0 })
   })
@@ -16,6 +16,6 @@ describe('branding store', () => {
     expect(logoUrl(192)).toBe('/branding/logo-192.png?v=3')
     // Absent on an older server: back to the default.
     setBranding(undefined)
-    expect(instanceName()).toBe('OpenTaskKit')
+    expect(instanceName()).toBe('OpenTodo')
   })
 })

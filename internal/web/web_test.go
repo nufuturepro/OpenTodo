@@ -109,7 +109,7 @@ func TestMissingFilesAreNotFound(t *testing.T) {
 }
 
 func TestBrand(t *testing.T) {
-	page := []byte(`<!doctype html><html><head><meta name="description" content="OpenTaskKit: your tasks." /><link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="apple-touch-icon" href="/apple-touch-icon.png" /><title>OpenTaskKit</title></head><body></body></html>`)
+	page := []byte(`<!doctype html><html><head><meta name="description" content="OpenTodo: your tasks." /><link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="apple-touch-icon" href="/apple-touch-icon.png" /><title>OpenTodo</title></head><body></body></html>`)
 	if string(Brand(page, Branding{})) != string(page) {
 		t.Fatal("unbranded page changed")
 	}
@@ -119,17 +119,17 @@ func TestBrand(t *testing.T) {
 			t.Fatalf("lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "favicon.svg") || strings.Contains(got, "OpenTaskKit") {
+	if strings.Contains(got, "favicon.svg") || strings.Contains(got, "OpenTodo") {
 		t.Fatalf("old mark kept:\n%s", got)
 	}
 	// A name alone keeps the app's icons; a logo alone keeps the name.
 	if got = string(Brand(page, Branding{Name: "Acme"})); !strings.Contains(got, "favicon.svg") || !strings.Contains(got, "<title>Acme</title>") {
 		t.Fatalf("name only:\n%s", got)
 	}
-	if got = string(Brand(page, Branding{LogoVersion: 1})); !strings.Contains(got, "<title>OpenTaskKit</title>") || !strings.Contains(got, "logo-32.png?v=1") {
+	if got = string(Brand(page, Branding{LogoVersion: 1})); !strings.Contains(got, "<title>OpenTodo</title>") || !strings.Contains(got, "logo-32.png?v=1") {
 		t.Fatalf("logo only:\n%s", got)
 	}
-	manifest := []byte(`{"name":"OpenTaskKit","short_name":"OpenTaskKit","icons":[{"src":"/pwa-192.png"}],"start_url":"/"}`)
+	manifest := []byte(`{"name":"OpenTodo","short_name":"OpenTodo","icons":[{"src":"/pwa-192.png"}],"start_url":"/"}`)
 	got = string(BrandManifest(manifest, Branding{Name: "Acme Family Planner", LogoVersion: 2}))
 	for _, want := range []string{`"name":"Acme Family Planner"`, `"short_name":"Acme Family"`, `"/branding/logo-512.png?v=2"`, `"purpose":"maskable"`, `"start_url":"/"`} {
 		if !strings.Contains(got, want) {

@@ -18,7 +18,7 @@ import { navigate } from './router'
 import { CoffeeButton, DISCORD_URL, ISSUES_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
 import { ChangelogDialog } from './ChangelogDialog'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
-import { shell, shellOutdated, type OpenTaskKitShell } from '../lib/shell'
+import { shell, shellOutdated, type OpenTodoShell } from '../lib/shell'
 
 export const WEBSITE_URL = 'https://open-todo.app'
 export const DOCS_URL = 'https://open-todo.app/docs/'
@@ -45,16 +45,16 @@ function useServerVersion(): string | null {
   return version
 }
 
-const PLATFORM_NAME: Record<OpenTaskKitShell['platform'], string> = { android: 'Android', ios: 'iOS', desktop: 'desktop' }
+const PLATFORM_NAME: Record<OpenTodoShell['platform'], string> = { android: 'Android', ios: 'iOS', desktop: 'desktop' }
 
 /** The native shell this page runs in (native-shells): its name and version, and a notice when it is older than this server expects. */
-export function ShellAppRow({ app }: { app: { platform: OpenTaskKitShell['platform']; version: string; outdated: boolean } | null }) {
+export function ShellAppRow({ app }: { app: { platform: OpenTodoShell['platform']; version: string; outdated: boolean } | null }) {
   if (!app) return null
   return (
     <>
-      <SettingRow id="about-shell" label={t('OpenTaskKit for {platform}', { platform: PLATFORM_NAME[app.platform] ?? app.platform })}
+      <SettingRow id="about-shell" label={t('OpenTodo for {platform}', { platform: PLATFORM_NAME[app.platform] ?? app.platform })}
         status={<Badge hue="slate">{app.version}</Badge>} />
-      {app.outdated && <Notice tone="warning">{t('This app is older than this server expects. Update OpenTaskKit from your app store to keep everything working.')}</Notice>}
+      {app.outdated && <Notice tone="warning">{t('This app is older than this server expects. Update OpenTodo from your app store to keep everything working.')}</Notice>}
     </>
   )
 }

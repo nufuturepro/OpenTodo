@@ -86,7 +86,7 @@ export interface AttachmentBlob {
   reason?: string
 }
 
-class OpenTaskKitDB extends Dexie {
+class OpenTodoDB extends Dexie {
   projects!: Table<Project, string>
   tasks!: Table<Task, string>
   labels!: Table<Label, string>
@@ -441,11 +441,11 @@ class OpenTaskKitDB extends Dexie {
   }
 }
 
-export let db = watchVersionChange(new OpenTaskKitDB())
+export let db = watchVersionChange(new OpenTodoDB())
 
 /** Replace the database instance (tests use this to get an isolated store). */
-export function useDatabase(name: string): OpenTaskKitDB {
-  db = watchVersionChange(new OpenTaskKitDB(name))
+export function useDatabase(name: string): OpenTodoDB {
+  db = watchVersionChange(new OpenTodoDB(name))
   return db
 }
 
@@ -458,7 +458,7 @@ const outdated = createStore('databaseOutdated', false)
  * connection (so the upgrade is not blocked) and asks to be reloaded. Its
  * writes would fail from here on, so the banner is the only way forward.
  */
-function watchVersionChange(d: OpenTaskKitDB): OpenTaskKitDB {
+function watchVersionChange(d: OpenTodoDB): OpenTodoDB {
   d.on('versionchange', () => {
     d.close()
     outdated.set(true)
@@ -510,7 +510,7 @@ export function bumpLocalEpoch(): number {
 /** A row of any synced entity, for code that treats every kind alike. */
 export type EntityRow = Record<string, unknown> & { id: string; _clock?: Clock; _e2ee?: RowEncryption }
 
-function tableMap(d: OpenTaskKitDB) {
+function tableMap(d: OpenTodoDB) {
   // `satisfies` keeps this exhaustive: a new entity kind does not compile until
   // it has its table here, and there is no fallback table (client-data-safety).
   return {
@@ -520,7 +520,7 @@ function tableMap(d: OpenTaskKitDB) {
   } satisfies Record<Entity, Table<unknown, string>>
 }
 
-let tables: { of: OpenTaskKitDB; map: Record<Entity, Table<EntityRow, string>> } | null = null
+let tables: { of: OpenTodoDB; map: Record<Entity, Table<EntityRow, string>> } | null = null
 
 /** The one registry of the Dexie table of each synced entity kind. */
 export function tableOf(entity: Entity): Table<EntityRow, string> {

@@ -46,6 +46,6 @@
       "hue-blue": "#31748f",
       "hue-slate": "#6e6a86"
     },
-    "text": "Rosé Pine by Rosé Pine, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (orange, lime, green, teal, indigo) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Rosé Pine by Rosé Pine, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (orange, lime, green, teal, indigo) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

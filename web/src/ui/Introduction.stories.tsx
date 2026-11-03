@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 function Introduction() {
   return (
     <div className="max-w-2xl space-y-3 text-body text-default">
-      <h1 className="text-h1 font-semibold">OpenTaskKit design system</h1>
+      <h1 className="text-h1 font-semibold">OpenTodo design system</h1>
       <p className="text-muted">
         Tokens, foundations and the shared building blocks in <code>web/src/ui</code>: icons, buttons, form controls, menus,
         the smart picker, surfaces and patterns. Every story is checked for accessibility and visual changes in light and dark.

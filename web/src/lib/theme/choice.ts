@@ -1,7 +1,7 @@
 // The theme of each side (OpenSpec change theme-engine, design D6; themes "Theme
 // choice per light and dark side, synced"): `user_prefs.theme_light` and
 // `theme_dark`. Empty is the side's default: the server's default for the side
-// when it has one (theme-instance-default), else OpenTaskKit Light or Dark;
+// when it has one (theme-instance-default), else OpenTodo Light or Dark;
 // `builtin:<id>` names a theme shipped with the app, `user:<id>` one of the user's
 // own (theme-editor D1) and `instance:<id>` one of the server's. A value this app
 // cannot apply reads as the side's default, writes nothing and stays stored, so it
@@ -16,7 +16,7 @@
 // in the one first-load module that reads them: the owner's default of each side
 // and the server themes as last read from `GET /api/v1/themes/instance`, remembered
 // on the device (`ot.instanceThemes`) so offline use and the first frame have them.
-// A device that never read them has none: OpenTaskKit's themes. Reading them again
+// A device that never read them has none: OpenTodo's themes. Reading them again
 // when their version moves is lazy (instanceSync.ts).
 import { mutate } from '../ops'
 import type { UserPrefs } from '../types'
@@ -36,7 +36,7 @@ export interface InstanceThemeEntry {
 
 export interface InstanceThemes {
   version: number
-  /** Each side's default: "" (OpenTaskKit's), `builtin:<id>` or `instance:<id>`. */
+  /** Each side's default: "" (OpenTodo's), `builtin:<id>` or `instance:<id>`. */
   default: { light: string; dark: string }
   themes: InstanceThemeEntry[]
 }
@@ -84,15 +84,15 @@ export function instanceTheme(id: string, kind?: ThemeKind, from: InstanceThemes
   return e && (!kind || e.kind === kind) ? e : null
 }
 
-/** A theme shipped with the app: its id and kind. The OpenTaskKit themes are the defaults and apply no sheet. */
+/** A theme shipped with the app: its id and kind. The OpenTodo themes are the defaults and apply no sheet. */
 export interface BuiltinTheme {
   id: string
   kind: ThemeKind
-  /** OpenTaskKit Light or Dark: choosing it is the same as the default. */
+  /** OpenTodo Light or Dark: choosing it is the same as the default. */
   isDefault?: true
 }
 
-/** The OpenTaskKit themes, each side's default; the palettes are in the lazy catalogue (builtin/index.ts). */
+/** The OpenTodo themes, each side's default; the palettes are in the lazy catalogue (builtin/index.ts). */
 export const BUILTIN_THEMES: readonly BuiltinTheme[] = [
   { id: 'opentodo-light', kind: 'light', isDefault: true },
   { id: 'opentodo-dark', kind: 'dark', isDefault: true },
@@ -102,7 +102,7 @@ export const DEFAULT_THEME: Record<Side, string> = { light: 'opentodo-light', da
 
 /** What a side's stored value means on this device. */
 export type ChoiceStatus =
-  /** Empty, or an OpenTaskKit theme: today's look, no sheet. */
+  /** Empty, or an OpenTodo theme: today's look, no sheet. */
   | 'default'
   /** A theme this app has (applied through a generated sheet). */
   | 'theme'
@@ -137,7 +137,7 @@ const VALUE = /^(builtin|user|instance):([a-z0-9-]{1,64})$/
 /**
  * The server's default for a side (theme-instance-default D3), as a choice: null
  * when there is none, or when this device cannot show it (an instance theme it has
- * not read, a theme of the other kind); the side then shows OpenTaskKit's theme.
+ * not read, a theme of the other kind); the side then shows OpenTodo's theme.
  */
 function serverDefault(side: Side, known: readonly BuiltinTheme[] | null, inst: InstanceThemes): SideChoice | null {
   const m = VALUE.exec(inst.default[side])
@@ -152,7 +152,7 @@ function serverDefault(side: Side, known: readonly BuiltinTheme[] | null, inst: 
 /**
  * Reads one side's choice from the synced row (design D6). Never writes. An empty
  * value, or a theme that is gone, reads as the side's default: the server's when it
- * has one (theme-instance-default), else OpenTaskKit's.
+ * has one (theme-instance-default), else OpenTodo's.
  */
 export function readThemeChoice(row: Partial<UserPrefs> | null | undefined, side: Side, known: readonly BuiltinTheme[] | null = null, custom: readonly KnownCustomTheme[] | null = null, inst: InstanceThemes = getInstanceThemes()): SideChoice {
   const raw = row?.[FIELD[side]]
@@ -193,12 +193,12 @@ export function readThemeChoices(row: Partial<UserPrefs> | null | undefined, kno
   return { light: readThemeChoice(row, 'light', known, custom, inst), dark: readThemeChoice(row, 'dark', known, custom, inst) }
 }
 
-/** Whether the server has a default for the side (then choosing OpenTaskKit's theme is stored explicitly). */
+/** Whether the server has a default for the side (then choosing OpenTodo's theme is stored explicitly). */
 export const hasServerDefault = (side: Side, inst: InstanceThemes = getInstanceThemes()) => inst.default[side] !== ''
 
 /**
  * Chooses a builtin theme for one side: one op for one field (offline-safe, synced).
- * OpenTaskKit's theme is stored as the empty value, unless the server has a default for
+ * OpenTodo's theme is stored as the empty value, unless the server has a default for
  * the side: then it is stored by name, so it wins over that default.
  */
 export function setThemeChoice(side: Side, id: string, known: readonly BuiltinTheme[] = BUILTIN_THEMES, inst: InstanceThemes = getInstanceThemes()): Promise<void> {
@@ -207,7 +207,7 @@ export function setThemeChoice(side: Side, id: string, known: readonly BuiltinTh
   return mutate('user_prefs', USER_PREFS_ID, { [FIELD[side]]: t.isDefault && !hasServerDefault(side, inst) ? '' : `builtin:${id}` })
 }
 
-/** Follows the side's default again (the server's, else OpenTaskKit's): the empty value. */
+/** Follows the side's default again (the server's, else OpenTodo's): the empty value. */
 export function setDefaultThemeChoice(side: Side): Promise<void> {
   return mutate('user_prefs', USER_PREFS_ID, { [FIELD[side]]: '' })
 }

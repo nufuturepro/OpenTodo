@@ -3,7 +3,7 @@
 // link opens once through the shell, and a shell without `obsidian-links` gets a
 // chip whose menu copies the link instead of opening it.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { OpenTaskKitShell } from '../lib/shell'
+import type { OpenTodoShell } from '../lib/shell'
 import type { Origin } from '../lib/types'
 import { click, render, waitFor } from '../ui/test-utils'
 import { OriginChip } from './OriginChip'
@@ -12,7 +12,7 @@ const note: Origin = { kind: 'obsidian', id: 'Daily/2026-10-29.md', url: 'obsidi
 
 function installShell(capabilities: string[]) {
   const openExternal = vi.fn()
-  const s: OpenTaskKitShell = { bridge: 1, platform: 'android', app: '0.20.0', capabilities, openExternal }
+  const s: OpenTodoShell = { bridge: 1, platform: 'android', app: '0.20.0', capabilities, openExternal }
   window.opentodoShell = s
   return openExternal
 }

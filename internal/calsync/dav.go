@@ -42,7 +42,7 @@ func NewDAV(client *http.Client, base string, auth func(h http.Header), version 
 	if u, err := url.Parse(base); err == nil {
 		host = strings.ToLower(u.Hostname())
 	}
-	return &DAV{HTTP: client, Auth: auth, UserAgent: "OpenTaskKit/" + version, home: host}
+	return &DAV{HTTP: client, Auth: auth, UserAgent: "OpenTodo/" + version, home: host}
 }
 
 // sameSite reports whether host may receive the credentials: the typed host,

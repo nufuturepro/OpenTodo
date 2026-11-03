@@ -7,14 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, getMeta } from '../lib/db'
 import { createTask, resetDeviceId } from '../lib/ops'
 import { addReminder } from '../lib/reminders'
-import type { OpenTaskKitShell } from '../lib/shell'
+import type { OpenTodoShell } from '../lib/shell'
 import { META_SHELL_NOTIFICATIONS, setShellNotifications } from '../lib/shellPublish'
 import { ShellNotificationsView } from './ShellNotifications'
 
 function install(answer: 'granted' | 'denied') {
   const scheduleReminders = vi.fn(async () => answer)
   const testNotification = vi.fn(async () => true)
-  window.opentodoShell = { bridge: 1, platform: 'android', app: '0.10.0', capabilities: ['reminders'], scheduleReminders, testNotification } as OpenTaskKitShell
+  window.opentodoShell = { bridge: 1, platform: 'android', app: '0.10.0', capabilities: ['reminders'], scheduleReminders, testNotification } as OpenTodoShell
   return { scheduleReminders, testNotification }
 }
 
@@ -47,7 +47,7 @@ describe('notifications through the Android app', () => {
     const html = renderToStaticMarkup(
       <ShellNotificationsView state={{ enabled: false, includeContent: false, permission: 'denied' }} busy={false} message={null} onEnable={() => {}} onIncludeContent={() => {}} onTest={() => {}} />,
     )
-    expect(html).toContain('Android refused notifications for OpenTaskKit')
+    expect(html).toContain('Android refused notifications for OpenTodo')
     expect(html).toContain('reminders still appear inside the app')
   })
 

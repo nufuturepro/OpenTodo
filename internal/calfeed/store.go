@@ -202,7 +202,7 @@ func (s *Store) Update(ctx context.Context, userID, id string, p Patch) (*Subscr
 	if _, err := s.db.ExecContext(ctx, `UPDATE calendar_subscriptions SET `+strings.Join(set, ", ")+` WHERE id = ? AND user_id = ?`, args...); err != nil {
 		return nil, err
 	}
-	if p.URL != nil { // a new address starts over with the OpenTaskKit User-Agent
+	if p.URL != nil { // a new address starts over with the OpenTodo User-Agent
 		if _, err := s.db.ExecContext(ctx, `DELETE FROM calendar_feed_browser_agents WHERE subscription_id = ?`, id); err != nil {
 			return nil, err
 		}

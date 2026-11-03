@@ -1,8 +1,8 @@
 {
   "opentodoTheme": 1,
   "id": "opentodo-light",
-  "name": "OpenTaskKit Light",
-  "author": "OpenTaskKit contributors",
+  "name": "OpenTodo Light",
+  "author": "OpenTodo contributors",
   "licence": "AGPL-3.0-only",
   "source": "web/src/index.css",
   "kind": "light",

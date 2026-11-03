@@ -35,7 +35,6 @@ import type { Entry, Step } from './entries'
 import { runBulk } from '../bulk/BulkActions'
 import { keysOf } from '../../lib/shortcuts'
 import { runGroupDue } from '../task-list/EarlierActions'
-import { pluginCommands } from '../../plugins/registry'
 import { hueName } from '../../lib/colourNames'
 import { t, msg, translatedList } from '../../lib/i18n'
 import { DAY_PARTS, dayPartFields, dayPartName, dayPartOf } from '../../lib/dayParts'
@@ -70,8 +69,6 @@ export interface PaletteContext {
   showShortcuts: () => void
   /** Focus quick add on this screen; false when it has none. */
   focusQuickAdd: () => boolean
-  /** The plugin ids this account has turned off (plugin-section); absent means every plugin is on. */
-  disabledPlugins?: ReadonlySet<string>
   /** The tasks of Today's Earlier group (page-rhythm D6); its two commands are offered while it is not empty. */
   earlier?: readonly string[]
   /** The account groups Today by part of the day (day-parts D4): the part commands are offered. */
@@ -376,8 +373,6 @@ export function commands(ctx: PaletteContext): Command[] {
     out.push({ id: 'routine:describe-setup', label: t('Set up the assistant to describe a routine'), icon: 'settings', keywords: 'routine describe draft ai assistant',
       run: () => navigate({ view: 'settings', section: 'integrations', page: 'assistant' }) })
   }
-  // Commands of the enabled plugins (plugin-section "Commands from enabled plugins").
-  out.push(...pluginCommands(ctx.disabledPlugins).map((c): Command => ({ id: `plugin:${c.id}`, label: c.label, icon: c.icon, keywords: c.keywords, run: c.run })))
   if (ctx.query.trim()) {
     const q = ctx.query.trim()
     out.push({ id: 'app:help-search', label: t('Search Help for “{query}”', { query: q }), icon: 'search', run: () => navigate({ view: 'help', q }) })

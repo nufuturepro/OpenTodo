@@ -27,7 +27,7 @@ func TestInstanceThemeRoutes(t *testing.T) {
 	member, _ := e.member("member@example.com", "203.0.113.20")
 	anon := newClientFor(e)
 
-	// Nothing set: version 0, no themes, OpenTaskKit's default.
+	// Nothing set: version 0, no themes, OpenTodo's default.
 	resp, out = member.do("GET", "/api/v1/themes/instance", nil)
 	e.mustStatus(resp, 200, out)
 	if out["version"].(float64) != 0 || len(out["themes"].([]any)) != 0 {

@@ -9,7 +9,7 @@ import ThemeAbout from './ThemeAbout'
 // The built-in catalogue (OpenSpec change theme-catalogue, design D7). The picker's
 // states have visual baselines: the Light and Dark lists with a palette chosen, its
 // About this theme button and the counterpart offer, and the About dialog; so do the
-// sample screens of OpenTaskKit's two themes. The palettes' sample screens are in
+// sample screens of OpenTodo's two themes. The palettes' sample screens are in
 // themeCatalogueSamples.stories.tsx, checked by the a11y gate only (as theming decided).
 const meta: Meta = { title: 'Settings/App/Theme catalogue', decorators: [withClock] }
 export default meta
@@ -41,5 +41,5 @@ export const AboutDialog: StoryObj = {
   render: () => <ThemeAbout theme={entry('nord')} creditsUrl="/assets/CREDITS.md" onClose={() => {}} />,
 }
 
-export const OpenTaskKitLight: StoryObj = { render: () => <Sample theme={{ id: 'opentodo-light', name: 'OpenTaskKit Light' }} /> }
-export const OpenTaskKitDark: StoryObj = { render: () => <Sample theme={{ id: 'opentodo-dark', name: 'OpenTaskKit Dark' }} /> }
+export const OpenTodoLight: StoryObj = { render: () => <Sample theme={{ id: 'opentodo-light', name: 'OpenTodo Light' }} /> }
+export const OpenTodoDark: StoryObj = { render: () => <Sample theme={{ id: 'opentodo-dark', name: 'OpenTodo Dark' }} /> }

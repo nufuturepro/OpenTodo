@@ -20,12 +20,12 @@ const (
 	MaxRedirects = 3
 )
 
-// BrowserUserAgent is sent instead of "OpenTaskKit/<version>" to a feed that
-// refused the OpenTaskKit User-Agent with 400, 403 or 406. Microsoft Exchange
+// BrowserUserAgent is sent instead of "OpenTodo/<version>" to a feed that
+// refused the OpenTodo User-Agent with 400, 403 or 406. Microsoft Exchange
 // on-premises (OWA published calendars) answers 400 to any User-Agent that is
 // not a full desktop browser string: it wants "Mozilla/5.0", a platform in
 // parentheses, an engine token and a browser version, so a short "Mozilla/5.0"
-// or an app name in front is refused too (#622). OpenTaskKit still identifies
+// or an app name in front is refused too (#622). OpenTodo still identifies
 // itself first; this string is only the fallback, kept in this one place.
 const BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
@@ -96,8 +96,8 @@ func StoreWindow(now time.Time) Window {
 }
 
 // Fetch reads one subscription with conditional headers. It identifies as
-// OpenTaskKit unless the subscription is known to need BrowserUserAgent; a 400,
-// 403 or 406 to the OpenTaskKit User-Agent is retried once with the browser one.
+// OpenTodo unless the subscription is known to need BrowserUserAgent; a 400,
+// 403 or 406 to the OpenTodo User-Agent is retried once with the browser one.
 func (f *Fetcher) Fetch(ctx context.Context, sub *Subscription) (*Result, error) {
 	target, err := FetchURL(sub.URL)
 	if err != nil {
@@ -149,7 +149,7 @@ func (f *Fetcher) Fetch(ctx context.Context, sub *Subscription) (*Result, error)
 	return r, nil
 }
 
-// get sends one conditional GET with the OpenTaskKit or the browser User-Agent.
+// get sends one conditional GET with the OpenTodo or the browser User-Agent.
 func (f *Fetcher) get(ctx context.Context, target string, sub *Subscription, browser bool) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -159,7 +159,7 @@ func (f *Fetcher) get(ctx context.Context, target string, sub *Subscription, bro
 	if browser {
 		req.Header.Set("User-Agent", BrowserUserAgent)
 	} else {
-		req.Header.Set("User-Agent", "OpenTaskKit/"+f.Version)
+		req.Header.Set("User-Agent", "OpenTodo/"+f.Version)
 	}
 	if sub.ETag != "" {
 		req.Header.Set("If-None-Match", sub.ETag)

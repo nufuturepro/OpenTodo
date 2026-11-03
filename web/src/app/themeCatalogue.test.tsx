@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The built-in catalogue in Settings › Appearance (theme-catalogue tasks 3.1 to 3.3):
-// the palettes listed only on the side of their kind, OpenTaskKit first and then by
+// the palettes listed only on the side of their kind, OpenTodo first and then by
 // name; choosing one offline applies it at once and writes one op; under System the
 // counterpart offer writes one more op only when accepted; About this theme shows the
 // credits and opens nothing outside the server's origin.
@@ -41,7 +41,7 @@ const fields = async () => (await db.outbox.toArray()).map((o) => `${o.field}=${
 const loaded = () => !!list('dark')?.querySelector('[data-theme-card="nord"]')
 
 describe('the built-in catalogue in Settings', () => {
-  it('lists each palette on the side of its kind only, OpenTaskKit first and then by name', async () => {
+  it('lists each palette on the side of its kind only, OpenTodo first and then by name', async () => {
     const r = await render(<AppearanceProvider><AppearanceSection /></AppearanceProvider>)
     await waitFor(loaded, 'the catalogue')
     expect(cards('light')).toEqual(['opentodo-light', 'catppuccin-latte', 'gruvbox-light', 'one-light', 'rose-pine-dawn', 'solarized-light', 'tokyo-night-light'])
@@ -113,7 +113,7 @@ describe('the built-in catalogue in Settings', () => {
     await click(document.querySelector<HTMLButtonElement>('[data-theme-about="catppuccin-mocha"]')!)
     await waitFor(() => !!document.querySelector('[data-theme-about-dialog="catppuccin-mocha"]'), 'the dialog')
     const d = document.querySelector<HTMLElement>('[data-theme-about-dialog]')!
-    for (const s of ['Catppuccin', 'MIT', 'Copyright (c) 2021 Catppuccin', 'https://github.com/catppuccin/catppuccin', 'OpenTaskKit is not affiliated with this project']) expect(d.textContent).toContain(s)
+    for (const s of ['Catppuccin', 'MIT', 'Copyright (c) 2021 Catppuccin', 'https://github.com/catppuccin/catppuccin', 'OpenTodo is not affiliated with this project']) expect(d.textContent).toContain(s)
     // The project's address is text, never a link or an image.
     expect([...d.querySelectorAll('a, img, iframe')].map((e) => e.getAttribute('href') ?? e.getAttribute('src'))).toEqual([d.querySelector('[data-theme-licence]')!.getAttribute('href')])
     const licence = new URL(d.querySelector('[data-theme-licence]')!.getAttribute('href')!, location.href)

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import vectors from '../../../internal/origin/testdata/origin_vectors.json'
-import type { OpenTaskKitShell } from './shell'
+import type { OpenTodoShell } from './shell'
 import { cutOriginTitle, obsidianLink, obsidianURL, openOrigin, originFromUrl, originIcon, originLabel, originLink, originMatches, originOf, obsidianPlace } from './taskOrigin'
 import type { Origin } from './types'
 
@@ -113,7 +113,7 @@ describe('opening an Obsidian origin', () => {
 
   it('hands it to a shell that lists obsidian-links, and only then', () => {
     const openExternal = vi.fn()
-    const s: OpenTaskKitShell = { bridge: 1, platform: 'android', app: '0.20.0', capabilities: ['links'], openExternal }
+    const s: OpenTodoShell = { bridge: 1, platform: 'android', app: '0.20.0', capabilities: ['links'], openExternal }
     g.window = { opentodoShell: s }
     expect(originLink(note)).toBeNull()
     openOrigin(note)

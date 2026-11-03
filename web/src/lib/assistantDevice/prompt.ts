@@ -25,7 +25,7 @@ export function systemPrompt(p: PromptInput, now: number): string {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'long' }).format(at)
   const name = p.userName.trim() || 'the user'
-  let b = `You are the assistant inside OpenTaskKit, a task manager. You help ${name} plan and organise their tasks.\n`
+  let b = `You are the assistant inside OpenTodo, a task manager. You help ${name} plan and organise their tasks.\n`
   b += `Today is ${weekday}, ${today}, in the user's time zone ${zone}. Pass timezone ${JSON.stringify(zone)} to every tool that takes one.\n\n`
   b += manifest.rules
   const label = p.view ? manifest.views[p.view] : undefined

@@ -23,6 +23,6 @@ var Builtin = map[string]string{
 	"tokyo-night-light": "light",
 }
 
-// DefaultBuiltin is OpenTaskKit's own theme of each side: choosing it as the
+// DefaultBuiltin is OpenTodo's own theme of each side: choosing it as the
 // instance default is the same as choosing none.
 var DefaultBuiltin = map[string]string{"light": "opentodo-light", "dark": "opentodo-dark"}

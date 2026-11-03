@@ -37,17 +37,17 @@ describe('BrandMark', () => {
   })
 
   it('is named by its title', async () => {
-    const { container } = await render(<BrandMark title="OpenTaskKit" variant="colour" size={32} />)
+    const { container } = await render(<BrandMark title="OpenTodo" variant="colour" size={32} />)
     const svg = container.querySelector('svg[role="img"]')!
-    expect(svg.getAttribute('aria-label')).toBe('OpenTaskKit')
+    expect(svg.getAttribute('aria-label')).toBe('OpenTodo')
     expect(svg.getAttribute('data-brand-mark')).toBe('colour')
   })
 })
 
 describe('BrandWordmark', () => {
-  it('is the text OpenTaskKit in the strong tone', async () => {
+  it('is the text OpenTodo in the strong tone', async () => {
     const { container } = await render(<BrandWordmark />)
-    expect(container.textContent).toBe('OpenTaskKit')
+    expect(container.textContent).toBe('OpenTodo')
     expect(container.firstElementChild!.className).toContain('text-strong')
   })
 })

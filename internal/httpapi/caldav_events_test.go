@@ -13,7 +13,7 @@ func veventBody(uid string, lines ...string) string {
 }
 
 // TestEventsBecomeTasks (caldav-events-as-tasks, GitHub issue 500): an event
-// saved or moved into an OpenTaskKit calendar from a calendar app becomes a task
+// saved or moved into an OpenTodo calendar from a calendar app becomes a task
 // instead of being refused, is served back as a VTODO under the same name and
 // UID, is listed by sync, and a later PUT of the event updates the task.
 func TestEventsBecomeTasks(t *testing.T) {

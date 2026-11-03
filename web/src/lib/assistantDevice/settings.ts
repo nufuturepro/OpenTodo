@@ -1,7 +1,7 @@
 // The on-device assistant's settings on this device (OpenSpec change
 // assistant-on-device, design D5): provider, model, model server address and the
 // user's own key, in one record of the local `meta` table. Never synced, never
-// sent to the OpenTaskKit server, deleted at sign-out with the rest of `meta`.
+// sent to the OpenTodo server, deleted at sign-out with the rest of `meta`.
 import { getMeta, setMeta } from '../db'
 
 export type DeviceProvider = 'anthropic' | 'openai' | 'gemini' | 'compatible'

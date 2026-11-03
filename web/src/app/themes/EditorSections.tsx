@@ -133,7 +133,7 @@ export function ShapeTypeSection({ doc, onChange }: { doc: ThemeDocument; onChan
         )}
         <Labelled label={t('Font')} className="@min-[30rem]/theme-controls:col-span-2">
           <SegmentedControl label={t('Font')} value={font} wrap data-theme-font className="w-full"
-            options={[{ id: 'inter', label: t('OpenTaskKit Inter') }, { id: 'system', label: t('System') }, { id: 'serif', label: t('Serif') }, { id: 'mono', label: t('Monospace') }, { id: 'local', label: t('Installed font') }]}
+            options={[{ id: 'inter', label: t('OpenTodo Inter') }, { id: 'system', label: t('System') }, { id: 'serif', label: t('Serif') }, { id: 'mono', label: t('Monospace') }, { id: 'local', label: t('Installed font') }]}
             onChange={(f) => { setWantLocal(f === 'local'); if (f !== 'local') setType(f); else if (localOk) setType({ local }) }} />
         </Labelled>
         {font === 'local' && (

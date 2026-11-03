@@ -181,7 +181,7 @@ export function ThemeEditor({ id, state, actions }: { id: string; state: ThemeEd
       {confirmDelete && (
         <Dialog title={t('Delete {name}?', { name: doc.name })} onClose={() => setConfirmDelete(false)} role="alertdialog">
           <div className="flex flex-col gap-4">
-            <p className="text-body text-default">{t('The theme is removed from all your devices. A side that uses it goes back to OpenTaskKit\'s theme. You can undo this.')}</p>
+            <p className="text-body text-default">{t('The theme is removed from all your devices. A side that uses it goes back to OpenTodo\'s theme. You can undo this.')}</p>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setConfirmDelete(false)} data-autofocus>{t('Cancel')}</Button>
               <Button variant="danger" onClick={async () => {

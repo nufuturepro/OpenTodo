@@ -1,15 +1,15 @@
 // Derivation of a theme from its seeds (OpenSpec change theme-engine, design D3;
 // themes "Missing tokens are derived from the seeds"). Every token a document does
-// not set starts from OpenTaskKit's own value for the theme's kind (reference.json,
+// not set starts from OpenTodo's own value for the theme's kind (reference.json,
 // generated from index.css) carried onto the theme's seeds: the lightness keeps its
-// offset from the seed it is anchored to, a neutral seed keeps OpenTaskKit's slate
+// offset from the seed it is anchored to, a neutral seed keeps OpenTodo's slate
 // tint and a coloured one gives its own hue. Mixed steps (accent hover, soft and
 // focus, the label palette's soft and text steps, the chart ramp) use the
 // stylesheet's ratios. Then each token, or each family of tokens that move
 // together, walks one axis (OKLCH lightness at a fixed hue, chroma clamped to the
 // sRGB gamut) to the nearest value at which every contrast pair of ui/tokens/pairs.ts
 // it takes part in passes, measured on the value that is written. A value that
-// already passes does not move, so OpenTaskKit's seeds reproduce the stylesheet. An
+// already passes does not move, so OpenTodo's seeds reproduce the stylesheet. An
 // explicit value is never moved, even when it fails a pair (checkTheme reports it).
 // Pure and deterministic; client-only, in the lazy theme chunk (never before the
 // first paint: public/appearance.js applies the cached result).
@@ -47,7 +47,7 @@ const MIX = REF.mix
 
 const STEP = 0.005
 const MAX_STEPS = 200
-/** Below this chroma a seed counts as neutral: it takes OpenTaskKit's tint. */
+/** Below this chroma a seed counts as neutral: it takes OpenTodo's tint. */
 const NEUTRAL = 0.01
 const ALL_PAIRS: readonly Pair[] = [...PAIRS, ...GLYPH_PAIRS]
 const WHITE: Lch = { L: 1, C: 0, H: 0, a: 1 }
@@ -119,7 +119,7 @@ function linearInGamut({ L, A, B }: Lab): boolean {
 /**
  * The colour of lightness L at the hue and at most the chroma of `c` that sRGB can
  * show, rounded. A colour that does not move keeps its chroma: the browser clips it
- * as the contrast check does, so OpenTaskKit's own values stay exactly as written.
+ * as the contrast check does, so OpenTodo's own values stay exactly as written.
  */
 function fit(c: Lch, L = c.L): Lch {
   if (L === c.L) return q(c)
@@ -150,13 +150,13 @@ function mixLabRaw(x: Lch, p: number, y: Lch): Lch {
 }
 const mixLab = (x: Lch, p: number, y: Lch) => q(mixLabRaw(x, p, y))
 
-/** A neutral token carried from its OpenTaskKit anchor `rA` onto the theme's anchor `a`. */
+/** A neutral token carried from its OpenTodo anchor `rA` onto the theme's anchor `a`. */
 function carryNeutral(r: Lch, rA: Lch, a: Lch): Lch {
   const L = r.L + (a.L - rA.L)
   if (a.C < NEUTRAL) return { L, C: r.C, H: r.H, a: r.a }
   return { L, C: Math.max(0, a.C + r.C - rA.C), H: a.H, a: r.a }
 }
-/** A coloured token carried from its OpenTaskKit anchor `rA` onto `a`: lightness offset, chroma ratio, hue offset. */
+/** A coloured token carried from its OpenTodo anchor `rA` onto `a`: lightness offset, chroma ratio, hue offset. */
 function carryHue(r: Lch, rA: Lch, a: Lch, rL: Lch = rA, l: Lch = a): Lch {
   const k = rA.C > NEUTRAL ? Math.min(2, Math.max(0, a.C / rA.C)) : 1
   return { L: r.L + (l.L - rL.L), C: r.C * k, H: a.C < NEUTRAL ? r.H : r.H + (a.H - rA.H), a: r.a }
@@ -280,7 +280,7 @@ function units(s: State, seeds: Record<string, Lch>): Unit[] {
   for (const t of ['text-strong', 'muted', 'faint']) out.push(single(s, t, () => carryNeutral(s.ref(t), s.ref('text'), s.get('text')!)))
   // 3. Lines, anchored on the surface.
   for (const t of ['border', 'border-soft', 'line-strong', 'border-input']) out.push(single(s, t, () => carryNeutral(s.ref(t), s.ref('surface'), s.get('surface')!)))
-  // 5. Status: the seed or OpenTaskKit's colour; the soft step follows the surface, its text the status.
+  // 5. Status: the seed or OpenTodo's colour; the soft step follows the surface, its text the status.
   for (const st of STATUS) {
     out.push({
       names: [st, `${st}-soft`, `${st}-soft-text`], base: st,
@@ -293,7 +293,7 @@ function units(s: State, seeds: Record<string, Lch>): Unit[] {
       },
     })
   }
-  // 7. The label palette: OpenTaskKit's hue, its soft step mixed into the surface (canvas in dark), its text toward black (white).
+  // 7. The label palette: OpenTodo's hue, its soft step mixed into the surface (canvas in dark), its text toward black (white).
   for (const h of HUES) {
     const solid = `hue-${h}-solid`
     out.push({
@@ -361,7 +361,7 @@ function farFromRed(s: State, c: Lch): boolean {
  * Step 4: the accent. The button keeps the seed's hue and moves its lightness until
  * the text on it (white, or the theme's darkest colour, whichever needs the smaller
  * move) passes; in dark the accent text is the seed when it already reads on the
- * surfaces, else OpenTaskKit's step above the button, lifted until every accent pair
+ * surfaces, else OpenTodo's step above the button, lifted until every accent pair
  * passes. A red accent turns away from danger until it keeps the red guard.
  */
 function deriveAccentFamily(s: State, seed: Lch) {

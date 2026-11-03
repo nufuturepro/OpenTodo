@@ -46,7 +46,7 @@ type remote struct {
 	// Events are the object's events: the master and its overrides.
 	Events   []calfeed.Event
 	Warnings []string
-	// TaskID is the task an event carries OpenTaskKit's mark for (Graph's
+	// TaskID is the task an event carries OpenTodo's mark for (Graph's
 	// extended property), "" when the transport does not mark events.
 	TaskID string
 	// Version identifies this state of the event for op ids.

@@ -21,7 +21,7 @@ export { followLink }
 /** Each page's Help screen (documentation "Help links name the same screens"); the guide's `screens` resolve them. */
 const PAGE_HELP_SCREENS: Record<SettingsSectionId, string> = {
   account: 'settings/account', workspaces: 'settings/workspaces', appearance: 'settings/appearance', general: 'settings/general', language: 'settings/language',
-  notifications: 'settings/notifications', capture: 'settings/capture', plugins: 'settings/plugins', about: 'settings/about', integrations: 'settings/integrations', data: 'settings/data',
+  notifications: 'settings/notifications', capture: 'settings/capture', about: 'settings/about', integrations: 'settings/integrations', data: 'settings/data',
   people: 'settings/people', server: 'settings/server',
 }
 
@@ -242,7 +242,7 @@ export function SettingsList({ user, current, inPage = false, compact = false }:
       </nav>
       {!compact && (
         <p className="text-meta text-faint">
-          {t('OpenTaskKit is free software (AGPL-3.0). No telemetry, no tracking, no subscription.')}<a className="ml-1 underline" href="https://github.com/nufuturepro/OpenTaskKit" target="_blank" rel="noreferrer">{t('Source code')}</a>
+          {t('OpenTodo is free software (AGPL-3.0). No telemetry, no tracking, no subscription.')}<a className="ml-1 underline" href="https://github.com/nufuturepro/OpenTaskKit" target="_blank" rel="noreferrer">{t('Source code')}</a>
         </p>
       )}
     </div>

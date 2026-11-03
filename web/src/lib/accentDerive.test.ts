@@ -123,7 +123,7 @@ describe('normalizeHex', () => {
   })
 })
 
-// theme-engine task 2.1: the search's base tokens are a parameter; the default is OpenTaskKit's.
+// theme-engine task 2.1: the search's base tokens are a parameter; the default is OpenTodo's.
 describe('base tokens as a parameter', () => {
   it('gives the vectors with the default base and another answer on other surfaces', () => {
     expect(deriveAccent('#1f6feb', BASE_TOKENS)).toEqual(deriveAccent('#1f6feb'))

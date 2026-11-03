@@ -1,4 +1,4 @@
-// Generates the OpenTaskKit theme documents and the derivation's reference values
+// Generates the OpenTodo theme documents and the derivation's reference values
 // from index.css (OpenSpec change theme-engine, design D3, D9). index.css stays
 // the source of the default tokens; themes.test.ts fails when the generated files
 // are stale and rewrites them with UPDATE_THEMES=1 (scripts/themes-sync.mjs). Test
@@ -64,15 +64,15 @@ function resolvedHex(tokens: Record<string, string>, name: string): string {
   return toHex(composite(c, parseRgba(tokens.surface, lookup)))
 }
 
-/** OpenTaskKit Light or OpenTaskKit Dark as a theme document (design D9): the seeds as written, every token's resolved value. */
+/** OpenTodo Light or OpenTodo Dark as a theme document (design D9): the seeds as written, every token's resolved value. */
 export function opentodoDocument(css: string, kind: ThemeKind): ThemeDocument {
   const tokens = modeTokens(css, kind)
   const lit = (n: string) => substitute(tokens[n], (x) => tokens[x]).trim()
   return {
     opentodoTheme: 1,
     id: `opentodo-${kind}`,
-    name: kind === 'light' ? 'OpenTaskKit Light' : 'OpenTaskKit Dark',
-    author: 'OpenTaskKit contributors',
+    name: kind === 'light' ? 'OpenTodo Light' : 'OpenTodo Dark',
+    author: 'OpenTodo contributors',
     licence: 'AGPL-3.0-only',
     source: 'web/src/index.css',
     kind,

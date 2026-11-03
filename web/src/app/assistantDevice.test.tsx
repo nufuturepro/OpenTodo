@@ -2,7 +2,7 @@
 // The on-device assistant in the panel (OpenSpec change assistant-on-device):
 // an encrypted account sets up its provider on this device, accepts the device
 // disclosure, and a turn runs here against the provider (a fake Anthropic
-// stream) with a reviewable proposal; the OpenTaskKit server gets no turn and no key.
+// stream) with a reviewable proposal; the OpenTodo server gets no turn and no key.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetSkills } from '../lib/assistantSkills'

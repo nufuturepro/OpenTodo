@@ -44,6 +44,6 @@
       "muted": "#bdae93",
       "faint": "#928374"
     },
-    "text": "Gruvbox Dark by Pavel Pertsev, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (green, blue, indigo, violet) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Gruvbox Dark by Pavel Pertsev, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (green, blue, indigo, violet) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

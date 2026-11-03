@@ -42,6 +42,6 @@
       "hue-red": "#ff5555",
       "hue-slate": "#6272a4"
     },
-    "text": "Dracula by Dracula Theme, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime, teal, blue, indigo) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Dracula by Dracula Theme, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime, teal, blue, indigo) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

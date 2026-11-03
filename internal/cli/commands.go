@@ -317,7 +317,7 @@ var cmdSpecs = []cmdSpec{
 	{Name: "workspaces", Summary: "list your workspaces (the current one marked)", Output: arrayOf("workspace")},
 	{Name: "export", Summary: "download the full JSON export", Flags: []flagSpec{{Name: "out", Short: "o", Type: "string", Description: "write to this file instead of stdout"}},
 		Output: map[string]any{"anyOf": []any{map[string]any{"type": "object", "description": "the server's export document (format opentodo-export)"}, ref("export_file")}}},
-	{Name: "import", Summary: "import a file into the account (an OpenTaskKit export, CSV or another app's export) and wait for the job; --dry-run prints the server's preview; --workspace picks the target workspace",
+	{Name: "import", Summary: "import a file into the account (an OpenTodo export, CSV or another app's export) and wait for the job; --dry-run prints the server's preview; --workspace picks the target workspace",
 		Args: []argSpec{{Name: "file", Required: true}},
 		Flags: []flagSpec{
 			{Name: "format", Type: "string", Description: "force a format instead of detecting it (the names `ot import` errors list, such as csv, opentodo or todoist-backup)"},
@@ -380,5 +380,5 @@ var errorCodes = []map[string]any{
 	{"code": "idempotency_conflict", "exit": ExitServer, "meaning": "the idempotency key was already used for different content"},
 	{"code": "rate_limited", "exit": ExitServer, "meaning": "too many requests; retry after a while", "retry": true},
 	{"code": "internal", "exit": ExitServer, "meaning": "server error; retry later", "retry": true},
-	{"code": "http_<status>", "exit": ExitServer, "meaning": "a non-OpenTaskKit error response (proxy, wrong URL)"},
+	{"code": "http_<status>", "exit": ExitServer, "meaning": "a non-OpenTodo error response (proxy, wrong URL)"},
 }

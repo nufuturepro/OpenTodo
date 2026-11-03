@@ -1,8 +1,8 @@
 {{.Inviter}} invited you to a workspace
 
-This is an invitation to a shared workspace in OpenTaskKit.
+This is an invitation to a shared workspace in OpenTodo.
 
-{{.Inviter}} invited {{.Email}} to join a workspace as {{.Role}} on the OpenTaskKit server at {{.Origin}}. Members of a workspace can share projects with each other. To join, open this link:
+{{.Inviter}} invited {{.Email}} to join a workspace as {{.Role}} on the OpenTodo server at {{.Origin}}. Members of a workspace can share projects with each other. To join, open this link:
 
 {{.Link}}
 

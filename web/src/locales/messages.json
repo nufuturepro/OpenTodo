@@ -406,13 +406,13 @@
   "A new project from a template, with dates from a start": [
     "web/src/lib/rules/sentence.ts"
   ],
-  "A new version of OpenTaskKit is ready.": [
+  "A new version of OpenTodo is ready.": [
     "web/src/app/UpdateBanner.tsx"
   ],
-  "A newer version of OpenTaskKit is open in another tab. Reload this tab to keep working.": [
+  "A newer version of OpenTodo is open in another tab. Reload this tab to keep working.": [
     "web/src/app/UpdateBanner.tsx"
   ],
-  "A newer version of OpenTaskKit is required to read your data.": [
+  "A newer version of OpenTodo is required to read your data.": [
     "web/src/app/App.tsx"
   ],
   "A note for tomorrow morning": [
@@ -689,7 +689,7 @@
   "About": [
     "web/src/app/settingsSections.ts"
   ],
-  "About OpenTaskKit": [
+  "About OpenTodo": [
     "web/src/lib/settingsCopy.ts"
   ],
   "About this demo": [
@@ -1140,7 +1140,7 @@
     "web/src/app/task-detail/TimeTab.tsx",
     "web/src/app/task-detail/WhenControl.tsx"
   ],
-  "Add to OpenTaskKit": [
+  "Add to OpenTodo": [
     "web/src/app/CaptureSettings.tsx"
   ],
   "Add to a note": [
@@ -1422,7 +1422,7 @@
   "Allow plain http (the password is sent unencrypted; only on a trusted network)": [
     "web/src/app/BackupsPanel.tsx"
   ],
-  "Allow pop-ups for this site to capture it to OpenTaskKit.": [
+  "Allow pop-ups for this site to capture it to OpenTodo.": [
     "web/src/lib/share.ts"
   ],
   "Allow private endpoints": [
@@ -1511,10 +1511,10 @@
   "An AI step that would use more today does not run. Default {n}.": [
     "web/src/app/routines/AISettings.tsx"
   ],
-  "An OpenTaskKit export, a CSV file or another app’s JSON export; open it with {kbd}.": [
+  "An OpenTodo export, a CSV file or another app’s JSON export; open it with {kbd}.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "An OpenTaskKit theme or a filled-in template": [
+  "An OpenTodo theme or a filled-in template": [
     "web/src/app/themes/YourThemes.tsx"
   ],
   "An SPDX identifier where one applies, such as CC0-1.0 or MIT.": [
@@ -1532,7 +1532,7 @@
   "An answer written by AI from your instruction": [
     "web/src/lib/rules/sentence.ts"
   ],
-  "An archive made by OpenTaskKit ({name}, optionally {suffix}), for example from another server.": [
+  "An archive made by OpenTodo ({name}, optionally {suffix}), for example from another server.": [
     "web/src/app/RestoreSection.tsx"
   ],
   "An assistant asks to run {tool} with this text:": [
@@ -1571,7 +1571,7 @@
   "Android device": [
     "web/src/app/SecurityPanel.tsx"
   ],
-  "Android refused notifications for OpenTaskKit. Allow them in Android's settings (Apps → OpenTaskKit → Notifications); reminders still appear inside the app.": [
+  "Android refused notifications for OpenTodo. Allow them in Android's settings (Apps → OpenTodo → Notifications); reminders still appear inside the app.": [
     "web/src/app/ShellNotifications.tsx"
   ],
   "Animals|icon category": [
@@ -1857,7 +1857,7 @@
   "Ask AI {instruction} using {context}": [
     "web/src/lib/rules/sentence.ts"
   ],
-  "Ask OpenTaskKit": [
+  "Ask OpenTodo": [
     "web/src/ui/patterns/AskComposer.tsx"
   ],
   "Ask about your tasks or ask for changes. Changes are proposed for you to review; nothing changes until you apply them.": [
@@ -2358,7 +2358,7 @@
   "Bring in tasks from a file or another app": [
     "web/src/app/settingsIndex.ts"
   ],
-  "Bring in tasks from an OpenTaskKit export, a CSV file or another task manager's JSON export. You see a preview first; nothing is written until you confirm, and every import can be undone. Import runs on your server, so it needs a connection. Help explains the formats and options.": [
+  "Bring in tasks from an OpenTodo export, a CSV file or another task manager's JSON export. You see a preview first; nothing is written until you confirm, and every import can be undone. Import runs on your server, so it needs a connection. Help explains the formats and options.": [
     "web/src/app/ImportScreen.tsx"
   ],
   "Brown": [
@@ -2384,12 +2384,6 @@
   ],
   "Built-in": [
     "web/src/app/PreferencesPanels.tsx"
-  ],
-  "Built-in plugins and the commands they add": [
-    "web/src/app/settingsSections.ts"
-  ],
-  "Built-in plugins, each adding commands you can turn off here.": [
-    "web/src/lib/settingsCopy.ts"
   ],
   "Bullet list": [
     "web/src/app/EditorChrome.tsx",
@@ -3642,12 +3636,6 @@
   "Copy this {what} now. It will not be shown again.": [
     "web/src/app/TokensSection.tsx"
   ],
-  "Copy today's open tasks as a Markdown checklist.": [
-    "web/src/plugins/daily-digest/index.ts"
-  ],
-  "Copy today's tasks as Markdown": [
-    "web/src/plugins/daily-digest/index.ts"
-  ],
   "Copy {label}": [
     "web/src/app/CaldavPanel.tsx"
   ],
@@ -4015,9 +4003,6 @@
     "web/src/app/review/ReviewView.tsx",
     "web/src/lib/method/vocabulary.json",
     "web/src/lib/shortcuts.ts"
-  ],
-  "Daily digest": [
-    "web/src/plugins/daily-digest/index.ts"
   ],
   "Daily focus": [
     "web/src/app/review/DailyCheck.tsx",
@@ -4819,7 +4804,7 @@
   "Drafted by AI: check each step, then Save": [
     "web/src/app/routines/RoutineEditor.tsx"
   ],
-  "Drag <strong>Add to OpenTaskKit</strong> to your bookmarks bar, then click it on any page.": [
+  "Drag <strong>Add to OpenTodo</strong> to your bookmarks bar, then click it on any page.": [
     "web/src/lib/settingsCopy.ts"
   ],
   "Drag a bar to move its dates, or its ends to set the start and deadline. ← → move the selected task, Shift+← → its deadline.": [
@@ -4947,7 +4932,7 @@
   "Each person may then choose Anthropic, OpenAI or Google Gemini with their own key and model for their turns, instead of yours. The compatible endpoint is never offered to members, so no one but you decides which other host the server connects to.": [
     "web/src/app/assistant/AssistantSettings.tsx"
   ],
-  "Each phrase is recorded in this browser while the microphone is on, then sent once to your OpenTaskKit server.": [
+  "Each phrase is recorded in this browser while the microphone is on, then sent once to your OpenTodo server.": [
     "web/src/app/VoiceSettings.tsx"
   ],
   "Each restore keeps the database it replaced. Delete old ones to free space.": [
@@ -5663,7 +5648,7 @@
   "Everywhere": [
     "web/src/lib/shortcuts.ts"
   ],
-  "Exact alarms are not allowed for OpenTaskKit, so reminders may arrive a few minutes late. Allow \"Alarms & reminders\" for the app in Android's settings.": [
+  "Exact alarms are not allowed for OpenTodo, so reminders may arrive a few minutes late. Allow \"Alarms & reminders\" for the app in Android's settings.": [
     "web/src/app/ShellNotifications.tsx"
   ],
   "Examples": [
@@ -6236,7 +6221,7 @@
   "For example http://stt.home.lan:8000 (Speaches or whisper.cpp).": [
     "web/src/app/SpeechServerPanel.tsx"
   ],
-  "For example: OpenTaskKit <todo@example.com>. Your mail provider may require an address it owns.": [
+  "For example: OpenTodo <todo@example.com>. Your mail provider may require an address it owns.": [
     "web/src/app/OutgoingEmailPanel.tsx"
   ],
   "For example: every Friday at five, make tasks in Errands from my Groceries note.": [
@@ -6698,7 +6683,7 @@
     "web/src/app/CalendarSyncDialogs.tsx",
     "web/src/lib/settingsCopy.ts"
   ],
-  "Google did not grant lasting access. Remove OpenTaskKit at myaccount.google.com/permissions and connect again.": [
+  "Google did not grant lasting access. Remove OpenTodo at myaccount.google.com/permissions and connect again.": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
   "Got it": [
@@ -7546,7 +7531,7 @@
   "Installed font name": [
     "web/src/app/themes/EditorSections.tsx"
   ],
-  "Installed, OpenTaskKit opens in its own window and works offline on your phone, tablet or computer.": [
+  "Installed, OpenTodo opens in its own window and works offline on your phone, tablet or computer.": [
     "web/src/app/FirstRun.tsx"
   ],
   "Instant overlays when off": [
@@ -7856,7 +7841,7 @@
     "web/src/app/assistant/ChangeSetReview.tsx",
     "web/src/app/bulk/UndoToast.tsx"
   ],
-  "Kept only in this browser: never synced, never sent to the OpenTaskKit server, deleted when you sign out. The app’s page on this device can read it.": [
+  "Kept only in this browser: never synced, never sent to the OpenTodo server, deleted when you sign out. The app’s page on this device can read it.": [
     "web/src/app/assistant/AssistantDevice.tsx"
   ],
   "Kept until you delete them permanently": [
@@ -8569,7 +8554,7 @@
     "web/src/app/routines/RoutinePage.tsx",
     "web/src/app/routines/RoutinesView.tsx"
   ],
-  "Made with a newer version of OpenTaskKit": [
+  "Made with a newer version of OpenTodo": [
     "web/src/app/ThemeRow.tsx"
   ],
   "Mail sent to your current address will no longer create tasks. Update anything that forwards to it.": [
@@ -10338,9 +10323,6 @@
   "Nothing is due in the next seven days.": [
     "web/src/app/review/ReviewView.tsx"
   ],
-  "Nothing is due today.": [
-    "web/src/plugins/daily-digest/index.ts"
-  ],
   "Nothing is due today. Pick your focus from Next.": [
     "web/src/app/review/DailyCheck.tsx"
   ],
@@ -10763,7 +10745,7 @@
   "On iPhone and iPad the badge appears only once notifications are allowed.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "On iPhone and iPad, push works only in the app installed to the Home Screen: check Settings → Notifications → OpenTaskKit, and Focus.": [
+  "On iPhone and iPad, push works only in the app installed to the Home Screen: check Settings → Notifications → OpenTodo, and Focus.": [
     "web/src/lib/push.ts"
   ],
   "On macOS, check System Settings → Notifications → your browser (allow notifications, banners or alerts), and Focus.": [
@@ -11141,62 +11123,62 @@
   "Open {title}": [
     "web/src/app/palette/registry.ts"
   ],
-  "OpenTaskKit Dark": [
+  "OpenTodo Dark": [
     "web/src/app/ThemeRow.tsx"
   ],
-  "OpenTaskKit Inter": [
+  "OpenTodo Inter": [
     "web/src/app/themes/EditorSections.tsx"
   ],
-  "OpenTaskKit Light": [
+  "OpenTodo Light": [
     "web/src/app/BrandingThemes.tsx",
     "web/src/app/ThemeRow.tsx"
   ],
-  "OpenTaskKit asks the browser to recognise speech on this device when it offers that choice.": [
+  "OpenTodo asks the browser to recognise speech on this device when it offers that choice.": [
     "web/src/app/VoiceSettings.tsx"
   ],
-  "OpenTaskKit can't reach the server.": [
+  "OpenTodo can't reach the server.": [
     "web/src/app/App.tsx"
   ],
-  "OpenTaskKit contributors": [
+  "OpenTodo contributors": [
     "web/src/app/ThemeRow.tsx"
   ],
-  "OpenTaskKit export (JSON)": [
+  "OpenTodo export (JSON)": [
     "web/src/app/ImportScreen.tsx"
   ],
-  "OpenTaskKit for {platform}": [
+  "OpenTodo for {platform}": [
     "web/src/app/AboutSection.tsx"
   ],
-  "OpenTaskKit is free and open source, made by one person in the open. It is yours now: your server, your data, no subscription.": [
+  "OpenTodo is free and open source, made by one person in the open. It is yours now: your server, your data, no subscription.": [
     "web/src/app/WelcomeDialog.tsx"
   ],
-  "OpenTaskKit is free software (AGPL-3.0). No telemetry, no tracking, no subscription.": [
+  "OpenTodo is free software (AGPL-3.0). No telemetry, no tracking, no subscription.": [
     "web/src/app/SettingsView.tsx"
   ],
-  "OpenTaskKit is not affiliated with this project": [
+  "OpenTodo is not affiliated with this project": [
     "web/src/app/ThemeAbout.tsx"
   ],
-  "OpenTaskKit reads {path}.": [
+  "OpenTodo reads {path}.": [
     "web/src/app/SsoPanel.tsx"
   ],
-  "OpenTaskKit recovery codes ({host})": [
+  "OpenTodo recovery codes ({host})": [
     "web/src/app/TwoFactorPanel.tsx"
   ],
-  "OpenTaskKit recovery key": [
+  "OpenTodo recovery key": [
     "web/src/app/EncryptionPanel.tsx"
   ],
-  "OpenTaskKit theme template, made from {name}.": [
+  "OpenTodo theme template, made from {name}.": [
     "web/src/app/themes/templateText.ts"
   ],
-  "OpenTaskKit {appVersion}": [
+  "OpenTodo {appVersion}": [
     "web/src/app/RestoreSection.tsx"
   ],
-  "OpenTaskKit {version} · AGPL-3.0 · no tracking, no telemetry": [
+  "OpenTodo {version} · AGPL-3.0 · no tracking, no telemetry": [
     "web/src/app/InstanceBrand.tsx"
   ],
-  "OpenTaskKit {version} · free and open source · no tracking, no telemetry.": [
+  "OpenTodo {version} · free and open source · no tracking, no telemetry.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "OpenTaskKit {version} · works offline": [
+  "OpenTodo {version} · works offline": [
     "web/src/app/help/HelpView.tsx"
   ],
   "Opening the shared files…": [
@@ -11367,7 +11349,7 @@
   "Outlook was not connected: the sign-in expired or was started elsewhere. Try again.": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
-  "Outlook was not connected: your organisation’s administrator must approve OpenTaskKit first. Ask them to grant admin consent, then connect again.": [
+  "Outlook was not connected: your organisation’s administrator must approve OpenTodo first. Ask them to grant admin consent, then connect again.": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
   "Outlook was not connected: {reason}": [
@@ -11669,7 +11651,7 @@
   "Photos": [
     "web/src/app/assistant/ComposerCapture.tsx"
   ],
-  "Photos you add go to {provider} with this message and are not kept by OpenTaskKit.": [
+  "Photos you add go to {provider} with this message and are not kept by OpenTodo.": [
     "web/src/app/assistant/ComposerCapture.tsx"
   ],
   "Pick": [
@@ -11812,13 +11794,6 @@
     "web/src/app/App.tsx",
     "web/src/app/AuthScreen.tsx"
   ],
-  "Plugins": [
-    "web/src/app/settingsSections.ts",
-    "web/src/lib/settingsCopy.ts"
-  ],
-  "Plugins are part of the app itself; nothing is downloaded.": [
-    "web/src/lib/settingsCopy.ts"
-  ],
   "Policy for this server": [
     "web/src/lib/settingsCopy.ts"
   ],
@@ -11858,7 +11833,7 @@
   "Posts a signed request to your endpoint when tasks or projects change.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "Powered by OpenTaskKit {version} · AGPL-3.0 · no tracking, no telemetry": [
+  "Powered by OpenTodo {version} · AGPL-3.0 · no tracking, no telemetry": [
     "web/src/app/InstanceBrand.tsx"
   ],
   "Prefer modal editing? Vim keybindings can be enabled in Settings → General → Keyboard.": [
@@ -12388,7 +12363,7 @@
   "Question": [
     "web/src/app/task-detail/ReactionBar.tsx"
   ],
-  "Questions, ideas and other people who use OpenTaskKit, on Discord.": [
+  "Questions, ideas and other people who use OpenTodo, on Discord.": [
     "web/src/app/settingsIndex.ts",
     "web/src/lib/settingsCopy.ts"
   ],
@@ -14243,7 +14218,7 @@
   "Shared project": [
     "web/src/app/Sidebar.tsx"
   ],
-  "Shared with OpenTaskKit. Notes, labels and names of the people on this project are not shown.": [
+  "Shared with OpenTodo. Notes, labels and names of the people on this project are not shown.": [
     "web/src/app/PublicListScreen.tsx"
   ],
   "Sharing changes: {note}": [
@@ -14430,7 +14405,7 @@
   "Shown as {current}, the nearest palette colour. Pick one to store it.": [
     "web/src/app/LabelsView.tsx"
   ],
-  "Shown in place of OpenTaskKit. Up to 40 characters; empty keeps OpenTaskKit.": [
+  "Shown in place of OpenTodo. Up to 40 characters; empty keeps OpenTodo.": [
     "web/src/lib/settingsCopy.ts"
   ],
   "Shown in the theme's details.": [
@@ -14480,7 +14455,7 @@
   "Sign in to add links.": [
     "web/src/lib/attachments.ts"
   ],
-  "Sign in to add the shared page to OpenTaskKit. It is kept on this screen until then.": [
+  "Sign in to add the shared page to OpenTodo. It is kept on this screen until then.": [
     "web/src/app/App.tsx"
   ],
   "Sign in to comment.": [
@@ -14901,7 +14876,7 @@
   "Speak your list": [
     "web/src/app/assistant/ComposerCapture.tsx"
   ],
-  "Speech is recognised by your browser, not by OpenTaskKit.": [
+  "Speech is recognised by your browser, not by OpenTodo.": [
     "web/src/app/VoiceSettings.tsx"
   ],
   "Speech to text": [
@@ -14928,7 +14903,7 @@
   "Standalone only": [
     "web/src/app/notes/NoteFilters.tsx"
   ],
-  "Star OpenTaskKit on GitHub": [
+  "Star OpenTodo on GitHub": [
     "web/src/app/WelcomeDialog.tsx"
   ],
   "Start": [
@@ -15025,7 +15000,7 @@
     "web/src/app/bulk/BulkActions.tsx",
     "web/src/app/task-detail/TimeTab.tsx"
   ],
-  "Start using OpenTaskKit": [
+  "Start using OpenTodo": [
     "web/src/app/WelcomeDialog.tsx"
   ],
   "Start view": [
@@ -15276,7 +15251,7 @@
   "Sunken surface": [
     "web/src/app/themes/tokenNames.ts"
   ],
-  "Support OpenTaskKit": [
+  "Support OpenTodo": [
     "web/src/app/settingsIndex.ts",
     "web/src/lib/settingsCopy.ts"
   ],
@@ -15666,7 +15641,7 @@
   "Text to write": [
     "web/src/app/RelayConfirm.tsx"
   ],
-  "Thanks for installing OpenTaskKit": [
+  "Thanks for installing OpenTodo": [
     "web/src/app/WelcomeDialog.tsx"
   ],
   "That address is on a private network (LAN, localhost or similar). The server owner can allow private network targets below.": [
@@ -15762,7 +15737,7 @@
   "The answer took too long and was stopped.": [
     "web/src/lib/assistant.ts"
   ],
-  "The app could not show a notification. Allow notifications for OpenTaskKit in Android's settings.": [
+  "The app could not show a notification. Allow notifications for OpenTodo in Android's settings.": [
     "web/src/app/ShellNotifications.tsx"
   ],
   "The app showed a test notification on this device.": [
@@ -15966,7 +15941,7 @@
   "The file is larger than this server allows ({detail}).": [
     "web/src/lib/i18n/errors.ts"
   ],
-  "The file is not an OpenTaskKit theme.": [
+  "The file is not an OpenTodo theme.": [
     "web/src/lib/theme/files.ts"
   ],
   "The file is not encrypted: anyone who has it can read your task titles and notes.": [
@@ -16567,13 +16542,13 @@
   "The theme is larger than 16 KB.": [
     "web/src/lib/theme/files.ts"
   ],
-  "The theme is removed from all your devices. A side that uses it goes back to OpenTaskKit's theme. You can undo this.": [
+  "The theme is removed from all your devices. A side that uses it goes back to OpenTodo's theme. You can undo this.": [
     "web/src/app/themes/ThemeEditor.tsx"
   ],
   "The theme needs a name of at most 60 characters.": [
     "web/src/lib/theme/files.ts"
   ],
-  "The theme was made with a newer version of OpenTaskKit.": [
+  "The theme was made with a newer version of OpenTodo.": [
     "web/src/lib/theme/files.ts"
   ],
   "The token is removed from the server and nothing is polled any more. The {n, plural, one {# task} other {# tasks}} it created stay as ordinary tasks.": [
@@ -16612,10 +16587,10 @@
   "The weekly digest is set on the server, so changing it needs a connection.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "The whole server as one archive, to restore into your own OpenTaskKit server.": [
+  "The whole server as one archive, to restore into your own OpenTodo server.": [
     "web/src/lib/settingsCopy.ts"
   ],
-  "The whole server as one backup archive, to move to your own OpenTaskKit server": [
+  "The whole server as one backup archive, to move to your own OpenTodo server": [
     "web/src/app/settingsIndex.ts"
   ],
   "The workspace is removed for everyone.": [
@@ -16763,13 +16738,13 @@
   "This and following": [
     "web/src/app/task-detail/OccurrenceScope.tsx"
   ],
-  "This app is older than this server expects. Update OpenTaskKit from your app store to keep everything working.": [
+  "This app is older than this server expects. Update OpenTodo from your app store to keep everything working.": [
     "web/src/app/AboutSection.tsx"
   ],
-  "This archive comes from a newer version of OpenTaskKit. Update this server first. ({detail})": [
+  "This archive comes from a newer version of OpenTodo. Update this server first. ({detail})": [
     "web/src/lib/restore.ts"
   ],
-  "This archive comes from a newer version of OpenTaskKit. Upgrade the server first.": [
+  "This archive comes from a newer version of OpenTodo. Upgrade the server first.": [
     "web/src/lib/i18n/errors.ts"
   ],
   "This archive is encrypted. Enter its passphrase.": [
@@ -16981,10 +16956,10 @@
   "This invite link was issued for a different email address.": [
     "web/src/lib/i18n/errors.ts"
   ],
-  "This is a high-contrast theme. OpenTaskKit's own high-contrast setting, under Appearance, may suit you better.": [
+  "This is a high-contrast theme. OpenTodo's own high-contrast setting, under Appearance, may suit you better.": [
     "web/src/app/themes/ImportReport.tsx"
   ],
-  "This is a public demo of OpenTaskKit.": [
+  "This is a public demo of OpenTodo.": [
     "web/src/app/AuthScreen.tsx"
   ],
   "This is disabled on the demo instance.": [
@@ -16996,10 +16971,10 @@
   "This is managed by the operator of this hosted service.": [
     "web/src/lib/i18n/errors.ts"
   ],
-  "This is not a usable OpenTaskKit backup: {detail}": [
+  "This is not a usable OpenTodo backup: {detail}": [
     "web/src/lib/restore.ts"
   ],
-  "This is not an OpenTaskKit template.": [
+  "This is not an OpenTodo template.": [
     "web/src/app/TemplateDialogs.tsx",
     "web/src/lib/templates.ts"
   ],
@@ -17546,7 +17521,7 @@
   "To answer, the assistant sends what you type and the task data it needs to <strong>{provider}</strong>{model}. Your server owner chose it. Nothing is sent before you accept.": [
     "web/src/app/assistant/AssistantConsent.tsx"
   ],
-  "To answer, this device sends what you type and the task data it needs <strong>directly to {provider}</strong>{model}, with your own key. The OpenTaskKit server sees none of it. Nothing is sent before you accept.": [
+  "To answer, this device sends what you type and the task data it needs <strong>directly to {provider}</strong>{model}, with your own key. The OpenTodo server sees none of it. Nothing is sent before you accept.": [
     "web/src/app/assistant/AssistantDevice.tsx"
   ],
   "To do": [
@@ -18520,9 +18495,6 @@
   "Use {name}": [
     "web/src/lib/rules/fixes.ts"
   ],
-  "Use {plugin}": [
-    "web/src/app/PluginsSection.tsx"
-  ],
   "Used only on devices that have this font installed; others show the system font. It is never downloaded.": [
     "web/src/app/themes/EditorSections.tsx"
   ],
@@ -19326,10 +19298,10 @@
   "Your API key for {provider}": [
     "web/src/app/assistant/AssistantSettings.tsx"
   ],
-  "Your OpenTaskKit server never receives audio or transcripts. Only the task you save with Enter is stored and synced, like a typed one.": [
+  "Your OpenTodo server never receives audio or transcripts. Only the task you save with Enter is stored and synced, like a typed one.": [
     "web/src/app/VoiceSettings.tsx"
   ],
-  "Your account is end-to-end encrypted, so the server cannot read your tasks. This device can: it sends what a question needs directly to the provider you choose, with your own key. The OpenTaskKit server sees none of it.": [
+  "Your account is end-to-end encrypted, so the server cannot read your tasks. This device can: it sends what a question needs directly to the provider you choose, with your own key. The OpenTodo server sees none of it.": [
     "web/src/app/assistant/AssistantDevice.tsx"
   ],
   "Your account is end-to-end encrypted: while the request runs, the phrase and its text are readable by this server and the speech service.": [
@@ -22857,7 +22829,7 @@
   "{offset} the deadline": [
     "web/src/lib/reminderTime.ts"
   ],
-  "{page} – OpenTaskKit": [
+  "{page} – OpenTodo": [
     "web/src/app/pageFocus.tsx"
   ],
   "{pct}% left the Inbox": [

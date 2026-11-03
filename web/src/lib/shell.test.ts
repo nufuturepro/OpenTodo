@@ -1,11 +1,11 @@
 // The native shell bridge (OpenSpec change native-shells, "The bridge is optional and versioned").
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { biometricRead, biometricStore, has, needsLightIcons, olderThan, openExternal, publishWidget, scheduleReminders, setSystemBars, shell, shellOutdated, testNotification, type OpenTaskKitShell } from './shell'
+import { biometricRead, biometricStore, has, needsLightIcons, olderThan, openExternal, publishWidget, scheduleReminders, setSystemBars, shell, shellOutdated, testNotification, type OpenTodoShell } from './shell'
 
-const g = globalThis as unknown as { window?: { opentodoShell?: OpenTaskKitShell } }
+const g = globalThis as unknown as { window?: { opentodoShell?: OpenTodoShell } }
 
-function install(s: Partial<OpenTaskKitShell> | undefined) {
-  g.window = { opentodoShell: s as OpenTaskKitShell | undefined }
+function install(s: Partial<OpenTodoShell> | undefined) {
+  g.window = { opentodoShell: s as OpenTodoShell | undefined }
 }
 
 afterEach(() => { delete g.window })

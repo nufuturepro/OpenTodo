@@ -30,7 +30,7 @@
 ## 6. The specs say what shipped
 
 - [x] 6.1 Deltas for `settings-navigation` ("About section") and `task-list-presentation` ("Nothing between the header and the list").
-- [x] 6.2 An Unreleased CHANGELOG.md entry marked **OpenTaskKit**, with the compiled module regenerated after it.
+- [x] 6.2 An Unreleased CHANGELOG.md entry marked **OpenTodo**, with the compiled module regenerated after it.
 - [ ] 6.3 `make openspec-validate` (`npx @fission-ai/openspec validate --all --strict`) passes.
 
 ## 7. Tests

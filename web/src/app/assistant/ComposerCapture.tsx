@@ -168,7 +168,7 @@ export function CaptureStrip(p: CaptureStripProps) {
       )}
       {p.note && (
         <div className="space-y-2 rounded-control border border-default bg-sunken px-2 py-2 text-meta" role="group" aria-label={t('Photos')} data-assistant-photo-note>
-          <p>{t('Photos you add go to {provider} with this message and are not kept by OpenTaskKit.', { provider: p.note.provider })}</p>
+          <p>{t('Photos you add go to {provider} with this message and are not kept by OpenTodo.', { provider: p.note.provider })}</p>
           <div className="flex gap-2">
             <Button size="sm" variant="primary" onClick={p.note.onContinue}>{t('Continue')}</Button>
             <Button size="sm" variant="ghost" onClick={p.note.onCancel}>{t('Cancel')}</Button>

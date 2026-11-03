@@ -1,4 +1,4 @@
-// Package cli implements the `ot` command-line client for the OpenTaskKit REST API.
+// Package cli implements the `ot` command-line client for the OpenTodo REST API.
 // It is an online client: it keeps no local copy of tasks and every command is one
 // or a few HTTP calls. Output is a compact table for people and, with --json, the
 // API's own entity shapes for scripts.
@@ -189,7 +189,7 @@ func init() {
 		{"time", "track time: start, stop, status, log, list, export", "ot time start <ref> [--note <text>]\not time stop\not time status\not time log <ref> <duration> [--on <day>] [--note <text>]\not time log <ref> --from HH:MM --to HH:MM [--on <day>] [--note <text>]\not time list [--task <ref>] [--from <day>] [--to <day>] [--running] [--limit <n>]\not time export [--from <day>] [--to <day>] [-o <file>]", cmdTime},
 		{"workspaces", "list your workspaces", "ot workspaces", cmdWorkspaces},
 		{"export", "download the full JSON export", "ot export [--out <file>]", cmdExport},
-		{"import", "import a file: an OpenTaskKit export, CSV or another app's export", "ot import <file> [--format <f>] [--existing skip|overwrite] [--duplicates skip|import] [--time-zone <zone>] [--workspace <name-or-id>]", cmdImport},
+		{"import", "import a file: an OpenTodo export, CSV or another app's export", "ot import <file> [--format <f>] [--existing skip|overwrite] [--duplicates skip|import] [--time-zone <zone>] [--workspace <name-or-id>]", cmdImport},
 		{"schema", "print commands, flags, exit codes and output schemas as JSON", "ot schema", cmdSchema},
 		{"skill", "print the agent skill file embedded in ot", "ot skill", cmdSkill},
 		{"completion", "print a shell completion script: bash, zsh or fish", "ot completion bash|zsh|fish", cmdCompletion},
@@ -353,7 +353,7 @@ func (a *App) helpOr(name string, err error) error {
 
 func (a *App) printUsage() {
 	w := a.Stdout
-	fmt.Fprintln(w, "ot: command-line client for OpenTaskKit")
+	fmt.Fprintln(w, "ot: command-line client for OpenTodo")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage: ot [--profile <name>] [--server <url>] [--json] [--dry-run] [--read-only] <command> [arguments]")
 	fmt.Fprintln(w)

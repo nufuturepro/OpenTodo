@@ -133,7 +133,7 @@ function GuideStep({ step, id, userId, method, onMethod, next, onAdded, onClose 
       {id === 'task' && <TaskStep userId={userId} onAdded={onAdded} />}
       {id === 'work' && <WorkStep method={method} onMethod={onMethod} />}
       {id === 'install' && (
-        <p className="mt-1 text-body text-muted">{t('Installed, OpenTaskKit opens in its own window and works offline on your phone, tablet or computer.')}</p>
+        <p className="mt-1 text-body text-muted">{t('Installed, OpenTodo opens in its own window and works offline on your phone, tablet or computer.')}</p>
       )}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {id === 'install' && <InstallButton next={next} />}

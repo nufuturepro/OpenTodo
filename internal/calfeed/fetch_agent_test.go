@@ -52,7 +52,7 @@ func TestFetchRetriesWithBrowserAgentAndRemembersIt(t *testing.T) {
 	if res, err := w.Refresh(ctx, sub); err != nil || !res.Replaced || !res.BrowserAgent {
 		t.Fatalf("first poll = %+v %v", res, err)
 	}
-	if got := log.take(); len(got) != 2 || got[0] != "OpenTaskKit/test" || got[1] != BrowserUserAgent {
+	if got := log.take(); len(got) != 2 || got[0] != "OpenTodo/test" || got[1] != BrowserUserAgent {
 		t.Fatalf("first poll agents = %q", got)
 	}
 	sub, _ = s.Get(ctx, "u1", sub.ID)
@@ -65,7 +65,7 @@ func TestFetchRetriesWithBrowserAgentAndRemembersIt(t *testing.T) {
 	if got := log.take(); len(got) != 1 || got[0] != BrowserUserAgent {
 		t.Fatalf("second poll agents = %q", got)
 	}
-	// A new address starts over with the OpenTaskKit User-Agent.
+	// A new address starts over with the OpenTodo User-Agent.
 	u := exchange.URL + "/other.ics"
 	if sub, err = s.Update(ctx, "u1", sub.ID, Patch{URL: &u}); err != nil || sub.BrowserAgent {
 		t.Fatalf("URL change = %+v %v", sub, err)
@@ -80,12 +80,12 @@ func TestFetchBrowserRetryOnlyOnceAndOnlyForRefusals(t *testing.T) {
 		code   int
 		agents []string
 	}{
-		{400, []string{"OpenTaskKit/test", BrowserUserAgent}},
-		{403, []string{"OpenTaskKit/test", BrowserUserAgent}},
-		{406, []string{"OpenTaskKit/test", BrowserUserAgent}},
-		{404, []string{"OpenTaskKit/test"}},
-		{401, []string{"OpenTaskKit/test"}},
-		{500, []string{"OpenTaskKit/test"}},
+		{400, []string{"OpenTodo/test", BrowserUserAgent}},
+		{403, []string{"OpenTodo/test", BrowserUserAgent}},
+		{406, []string{"OpenTodo/test", BrowserUserAgent}},
+		{404, []string{"OpenTodo/test"}},
+		{401, []string{"OpenTodo/test"}},
+		{500, []string{"OpenTodo/test"}},
 	}
 	for _, c := range cases {
 		srv := serve(t, func(w http.ResponseWriter, r *http.Request) {

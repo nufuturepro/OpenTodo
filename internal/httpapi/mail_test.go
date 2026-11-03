@@ -60,7 +60,7 @@ func mailEnv(t *testing.T, allowSignup bool, opts ...Option) (*env, *smtptest.Se
 func (e *env) configureMail(srv *smtptest.Server) {
 	e.t.Helper()
 	resp, out := e.do("PUT", "/api/v1/settings/smtp", map[string]any{"host": srv.Host, "port": srv.Port, "security": "starttls",
-		"username": "todo", "password": "hunter2", "from": "OpenTaskKit <todo@example.com>"})
+		"username": "todo", "password": "hunter2", "from": "OpenTodo <todo@example.com>"})
 	e.mustStatus(resp, 200, out)
 }
 
@@ -435,7 +435,7 @@ func TestPasswordResetAnswersBeforeSending(t *testing.T) {
 		}
 	}()
 	resp, out := e.do("PUT", "/api/v1/settings/smtp", map[string]any{"host": "127.0.0.1", "port": ln.Addr().(*net.TCPAddr).Port,
-		"security": "starttls", "username": "todo", "password": "hunter2", "from": "OpenTaskKit <todo@example.com>"})
+		"security": "starttls", "username": "todo", "password": "hunter2", "from": "OpenTodo <todo@example.com>"})
 	e.mustStatus(resp, 200, out)
 	c := newClientAt(e, "10.3.1.1")
 	c.server = nil

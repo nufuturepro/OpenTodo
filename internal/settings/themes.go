@@ -50,7 +50,7 @@ func refuse(kind error, format string, a ...any) error {
 	return &ThemeInputError{Kind: kind, Msg: fmt.Sprintf(format, a...)}
 }
 
-// ThemeDefault is the default of each side: "" (OpenTaskKit's), builtin:<id> or instance:<id>.
+// ThemeDefault is the default of each side: "" (OpenTodo's), builtin:<id> or instance:<id>.
 type ThemeDefault struct {
 	Light string `json:"light"`
 	Dark  string `json:"dark"`
@@ -171,7 +171,7 @@ func (s *Store) updateThemes(ctx context.Context, fn func(*InstanceThemes) error
 	return cur, nil
 }
 
-// checkChoice normalises one side's default: "" for OpenTaskKit's, else a built-in
+// checkChoice normalises one side's default: "" for OpenTodo's, else a built-in
 // or instance theme of that side's kind.
 func checkChoice(side, v string, list []InstanceTheme) (string, error) {
 	if v == "" {

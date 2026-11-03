@@ -1,4 +1,4 @@
-// The OpenTaskKit mark and wordmark (OpenSpec change sidebar-v2, design D2 and D3).
+// The OpenTodo mark and wordmark (OpenSpec change sidebar-v2, design D2 and D3).
 // brand.svg is the one source: this inlines its symbols, and
 // scripts/brand-icons.mjs renders every raster from the same file.
 import source from './brand.svg?raw'
@@ -44,5 +44,5 @@ export function BrandMark({ size = 24, variant = 'mono', title, className }: Bra
 
 /** The product name as text in the strong tone: it renders with the page's font and is never translated. */
 export function BrandWordmark({ className }: { className?: string }) {
-  return <span className={`font-semibold text-strong${className ? ` ${className}` : ''}`} data-brand-wordmark>OpenTaskKit</span>
+  return <span className={`font-semibold text-strong${className ? ` ${className}` : ''}`} data-brand-wordmark>OpenTodo</span>
 }

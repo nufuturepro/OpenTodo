@@ -23,7 +23,7 @@ export function useCatalogue(): CatalogueModule | null {
   return mod
 }
 
-/** Every built-in theme this app has: the OpenTaskKit themes, then the catalogue once loaded. */
+/** Every built-in theme this app has: the OpenTodo themes, then the catalogue once loaded. */
 export function knownThemes(c: CatalogueModule | null): readonly BuiltinTheme[] | null {
   return c ? [...BUILTIN_THEMES, ...c.CATALOGUE] : null
 }
@@ -33,7 +33,7 @@ export interface ThemeSettingsProps {
   mode: ThemeModePref
   choices: Record<Side, SideChoice>
   catalogue: CatalogueModule | null
-  /** The side shown has a theme other than OpenTaskKit's: the accent comes from it (theme-engine D7). */
+  /** The side shown has a theme other than OpenTodo's: the accent comes from it (theme-engine D7). */
   accentFromTheme?: boolean
   /** The signed-in person's name, the author of a theme they make (theme-editor D4). */
   author?: string

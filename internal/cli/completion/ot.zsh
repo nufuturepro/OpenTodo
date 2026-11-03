@@ -1,5 +1,5 @@
 #compdef ot
-# zsh completion for ot, the OpenTaskKit command-line client.
+# zsh completion for ot, the OpenTodo command-line client.
 # Printed by `ot completion zsh`. Install it once into a directory on $fpath:
 #   mkdir -p ~/.zfunc
 #   ot completion zsh > ~/.zfunc/_ot

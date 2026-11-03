@@ -203,7 +203,7 @@ describe('the built-in catalogue', () => {
     expect(labelClashes(broken)).toContainEqual(expect.stringMatching(/^nord: label colours teal and cyan are ΔE 0\.0 apart, need 8$/))
   })
 
-  it("keeps OpenTaskKit's own label colours distinguishable by the same measure", () => {
+  it("keeps OpenTodo's own label colours distinguishable by the same measure", () => {
     for (const k of ['light', 'dark']) expect(labelClashes(deriveTheme(read(`opentodo-${k}`)))).toEqual([])
   })
 })

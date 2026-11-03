@@ -24,7 +24,7 @@ import (
 )
 
 // davRealm is the Basic authentication realm.
-const davRealm = "OpenTaskKit CalDAV"
+const davRealm = "OpenTodo CalDAV"
 
 // Deps is what httpapi hands the endpoint.
 type Deps struct {

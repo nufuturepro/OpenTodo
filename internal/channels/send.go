@@ -110,7 +110,7 @@ func (s *Service) request(ctx context.Context, t target, deliveryID string, m Me
 		f := url.Values{"token": {t.token}, "user": {t.userKey}, "title": {m.Title}, "message": {m.Body}, "priority": {fmt.Sprint(pP)}}
 		if m.URL != "" {
 			f.Set("url", m.URL)
-			f.Set("url_title", "OpenTaskKit")
+			f.Set("url_title", "OpenTodo")
 		}
 		body = []byte(f.Encode())
 	case KindGotify:
@@ -130,7 +130,7 @@ func (s *Service) request(ctx context.Context, t target, deliveryID string, m Me
 		return nil, err
 	}
 	req.Header.Set("Content-Type", ctype)
-	req.Header.Set("User-Agent", "OpenTaskKit/"+s.version)
+	req.Header.Set("User-Agent", "OpenTodo/"+s.version)
 	switch t.kind {
 	case KindNtfy:
 		if t.token != "" {

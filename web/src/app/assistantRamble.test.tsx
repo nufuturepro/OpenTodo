@@ -151,7 +151,7 @@ describe('photos', () => {
     await waitFor(() => !!$('[data-assistant-photo]'), 'Add photo')
     await choose([jpeg()])
     await waitFor(() => !!$('[data-assistant-photo-note]'), 'the first-photo note')
-    expect($('[data-assistant-photo-note]')!.textContent).toContain('Photos you add go to Google Gemini with this message and are not kept by OpenTaskKit.')
+    expect($('[data-assistant-photo-note]')!.textContent).toContain('Photos you add go to Google Gemini with this message and are not kept by OpenTodo.')
     expect($('[data-assistant-photos]')).toBeNull()
     const cont = [...document.querySelectorAll('[data-assistant-photo-note] button')].find((b) => b.textContent === 'Continue')!
     await click(cont)

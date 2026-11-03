@@ -46,6 +46,6 @@
       "hue-pink": "#be5046",
       "hue-slate": "#5c6370"
     },
-    "text": "One Dark by GitHub Inc., mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime, teal, indigo) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "One Dark by GitHub Inc., mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime, teal, indigo) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

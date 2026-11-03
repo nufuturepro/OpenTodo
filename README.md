@@ -1,4 +1,4 @@
-<h1 align="center">OpenTaskKit</h1>
+<h1 align="center">OpenTodo</h1>
 
 <p align="center"><strong>A self-hosted, local-first task manager.</strong><br>
 Plan your day, keep projects in order, set reminders and share lists with your family or your team. Works on your phone and your computer, even offline. No monthly plan per person, and your tasks stay with you.</p>
@@ -15,13 +15,13 @@ Plan your day, keep projects in order, set reminders and share lists with your f
 
 ## What this is
 
-OpenTaskKit is a **distribution of [OpenTodo](https://github.com/pixari/opentodo)**, with some in-house updates:
+This repository is a **fork of [OpenTodo](https://github.com/pixari/opentodo)**, kept close to upstream:
 
 - **Upstream:** all features and bug fixes come from [pixari/OpenTodo](https://github.com/pixari/opentodo), a great task manager built in the open with specs. Use its [demo](https://demo.open-todo.app), its [documentation](https://open-todo.app/docs/) and its [issue tracker](https://github.com/pixari/opentodo/issues) — that is where the project lives, and general bug fixes belong there.
-- **This repository** carries the OpenTaskKit branding and will carry this distribution's own defaults and features. It merges upstream releases regularly (see [FORKING.md](FORKING.md) for the exact workflow, branch scheme and the list of files the brand touches).
+- **This repository** tracks upstream release for release and carries this fork's own additions until they are proposed upstream. The workflow — remotes, sync, versioning — is in [FORKING.md](FORKING.md).
 - Generic bug fixes found here are sent upstream first, so everyone benefits and the two stay close.
 
-OpenTaskKit is licensed **AGPL-3.0**, exactly like upstream. It is not affiliated with or endorsed by the upstream author; if OpenTaskKit saves you a subscription, consider [supporting upstream](https://buymeacoffee.com/pixari) and starring [pixari/OpenTodo](https://github.com/pixari/opentodo).
+This fork is licensed **AGPL-3.0**, exactly like upstream. It is not affiliated with or endorsed by the upstream author; if OpenTodo saves you a subscription, consider [supporting upstream](https://buymeacoffee.com/pixari) and starring [pixari/OpenTodo](https://github.com/pixari/opentodo).
 
 ## Quick start
 
@@ -31,7 +31,7 @@ On your machine or server (no configuration needed):
 docker run -d -p 8080:8080 -v opentodo-data:/data ghcr.io/nufuturepro/opentaskkit:stable
 ```
 
-Open <http://localhost:8080>; the first visit creates your account. The data volume keeps the upstream name (`opentodo-data`) and the archive format, so data moves freely between OpenTaskKit and OpenTodo.
+Open <http://localhost:8080>; the first visit creates your account. The data volume keeps the upstream name (`opentodo-data`) and the archive format, so data moves freely between this fork and upstream OpenTodo.
 
 Or with Docker Compose:
 
@@ -44,7 +44,7 @@ Behind a reverse proxy, set `OPENTODO_BASE_URL=https://todo.example.com` (needed
 
 ## Try it in 30 seconds
 
-No install: open the [upstream demo](https://demo.open-todo.app) and press **Try the demo**. You get a private copy with sample data, deleted after a few hours. The demo runs upstream OpenTodo; OpenTaskKit behaves the same apart from the name.
+No install: open the [upstream demo](https://demo.open-todo.app) and press **Try the demo**. You get a private copy with sample data, deleted after a few hours. The demo runs upstream OpenTodo; this fork behaves the same.
 
 ## Why it is good
 
@@ -55,7 +55,7 @@ No install: open the [upstream demo](https://demo.open-todo.app) and press **Try
 - **Private by design.** No telemetry, no analytics, no phone-home, no third-party scripts or fonts.
 - **Keyboard-first, spec-driven, AI-optional.** Vim keybindings, quick add in plain language in six languages, time blocking, shared projects, CalDAV, a REST API and CLI, passkeys, two-factor, single sign-on, optional end-to-end encryption, and bring-your-own-AI that is off by default.
 
-The full feature list, guides and the reference live in the [upstream documentation](https://open-todo.app/docs/) and inside the app under **Help** (`g` then `?`); they describe OpenTaskKit accurately apart from the name on a few pages.
+The full feature list, guides and the reference live in the [upstream documentation](https://open-todo.app/docs/) and inside the app under **Help** (`g` then `?`); they describe this fork accurately.
 
 ## Configuration
 
@@ -109,7 +109,7 @@ make check  # vet, staticcheck, typecheck, lint, Go and web tests, i18n, docs, O
 make build  # production binary in bin/opentodo with the web app embedded
 ```
 
-Contributing to OpenTaskKit: generic bug fixes should go upstream to [pixari/OpenTodo](https://github.com/pixari/opentodo) first (see its [CONTRIBUTING.md](https://github.com/pixari/opentodo/blob/main/CONTRIBUTING.md); bug fixes need no spec); they flow back here with the next sync. Distribution-specific work (branding, defaults, own features) belongs in this repository. The mechanics — remotes, sync script, brand overlay, versioning — are in [FORKING.md](FORKING.md).
+Contributing to this fork: generic bug fixes should go upstream to [pixari/OpenTodo](https://github.com/pixari/opentodo) first (see its [CONTRIBUTING.md](https://github.com/pixari/opentodo/blob/main/CONTRIBUTING.md); bug fixes need no spec); they flow back here with the next sync. This fork's own additions belong in this repository until they are proposed upstream. The mechanics — remotes, sync script, versioning — are in [FORKING.md](FORKING.md).
 
 ## Privacy
 
@@ -134,4 +134,4 @@ Issues and pull requests are welcome, and so are questions on [Discord](https://
 
 ## License
 
-[AGPL-3.0](LICENSE). OpenTaskKit is a modified distribution of [OpenTodo](https://github.com/pixari/opentodo) by Raffaele Pizzari, used under the AGPL-3.0. Modifications are published in this repository.
+[AGPL-3.0](LICENSE). This repository is a modified fork of [OpenTodo](https://github.com/pixari/opentodo) by Raffaele Pizzari, used under the AGPL-3.0. Modifications are published in this repository.

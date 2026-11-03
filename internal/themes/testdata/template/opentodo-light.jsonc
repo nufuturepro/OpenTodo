@@ -1,11 +1,11 @@
-// OpenTaskKit theme template.
+// OpenTodo theme template.
 // Lines that start with // are notes.
 {
   "$schema": "https://raw.githubusercontent.com/OpenTodoApp/OpenTodo/main/docs/themes/opentodo-theme.schema.json",
   "opentodoTheme": 1, // Keep 1.
   "id": "opentodo-light", // An id.
-  "name": "OpenTaskKit Light", // A name.
-  "author": "OpenTaskKit contributors", // You.
+  "name": "OpenTodo Light", // A name.
+  "author": "OpenTodo contributors", // You.
   "licence": "AGPL-3.0-only", // SPDX.
   "source": "web/src/index.css", // Text.
   "kind": "light", // light or dark.

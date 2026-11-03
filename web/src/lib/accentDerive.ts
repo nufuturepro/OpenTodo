@@ -208,7 +208,7 @@ export function normalizeHex(raw: string): string | null {
 
 /**
  * Derives the custom accent of a `#rrggbb` colour (design D2) on the given base
- * tokens, OpenTaskKit's own by default (theme-engine D3 generalises the search so the
+ * tokens, OpenTodo's own by default (theme-engine D3 generalises the search so the
  * base is a parameter). Throws on anything else.
  */
 export function deriveAccent(hex: string, tokens: BaseTokens = BASE_TOKENS): DerivedAccent {

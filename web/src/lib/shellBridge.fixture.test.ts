@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { forgetShellData, setSystemBars, type OpenTaskKitShell } from './shell'
+import { forgetShellData, setSystemBars, type OpenTodoShell } from './shell'
 import { shellUrlAction } from './shellActions'
 import { shellReminders, shellWidget } from './shellPublish'
 import { openOrigin } from './taskOrigin'
@@ -54,7 +54,7 @@ interface Fixture {
 
 function captureSignOut(): { reminders: string; widget: string } {
   const calls: { reminders?: string; widget?: string } = {}
-  const bridge: OpenTaskKitShell = {
+  const bridge: OpenTodoShell = {
     bridge: 1, platform: 'android', app: '0.14.0', capabilities: ['reminders', 'widgets', 'biometric'],
     scheduleReminders: (json) => void (calls.reminders = json),
     publishWidget: (json) => void (calls.widget = json),

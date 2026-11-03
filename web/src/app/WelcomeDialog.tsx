@@ -1,5 +1,5 @@
 // The owner's welcome note (OpenSpec change welcome-note): the first time the
-// owner opens a new server, a dialog thanks them for installing OpenTaskKit and
+// owner opens a new server, a dialog thanks them for installing OpenTodo and
 // points to the issue tracker, the GitHub star and the Buy Me a Coffee page.
 // It shows once per account: closing it is an ordinary preference op
 // (`welcome`) that syncs to the owner's other devices. Members, the demo and
@@ -18,7 +18,7 @@ import { act } from './actionError'
 export const ISSUES_URL = 'https://github.com/nufuturepro/OpenTaskKit/issues'
 export const REPO_URL = 'https://github.com/nufuturepro/OpenTaskKit'
 export const COFFEE_URL = 'https://buymeacoffee.com/pixari'
-/** The OpenTaskKit Discord server (OpenSpec change discord-community): a plain link, nothing is loaded from Discord. */
+/** The OpenTodo Discord server (OpenSpec change discord-community): a plain link, nothing is loaded from Discord. */
 export const DISCORD_URL = 'https://discord.gg/Jmj7WuRQ'
 // The project's account on X (x-account-link): releases and work in progress in short form.
 export const X_URL = 'https://x.com/opentodoapp'
@@ -64,20 +64,20 @@ function LinkRow({ href, icon, title, detail }: { href: string; icon: IconName; 
 /** The note itself: shown once by WelcomeDialog, and again on demand from Settings → About. */
 export function WelcomeNote({ onClose }: { onClose: () => void }) {
   return (
-    <Dialog title={t('Thanks for installing OpenTaskKit')} onClose={onClose} size="md" testId="welcome">
+    <Dialog title={t('Thanks for installing OpenTodo')} onClose={onClose} size="md" testId="welcome">
       <div className="space-y-4 p-4">
         <p className="text-body">
-          {t('OpenTaskKit is free and open source, made by one person in the open. It is yours now: your server, your data, no subscription.')}
+          {t('OpenTodo is free and open source, made by one person in the open. It is yours now: your server, your data, no subscription.')}
         </p>
         <div className="-mx-1 space-y-0.5">
           <LinkRow href={ISSUES_URL} icon="message-circle" title={t('Share feedback or report a problem')} detail={t('Open an issue on GitHub. Every report is read.')} />
           <LinkRow href={DISCORD_URL} icon="messages-square" title={t('Join the community on Discord')} detail={t('Ask questions and see what other people build.')} />
-          <LinkRow href={REPO_URL} icon="star" title={t('Star OpenTaskKit on GitHub')} detail={t('A star helps other people find it.')} />
+          <LinkRow href={REPO_URL} icon="star" title={t('Star OpenTodo on GitHub')} detail={t('A star helps other people find it.')} />
         </div>
         <CoffeeButton />
         <p className="text-meta text-muted">{t('This message will not appear again. You can open it from Settings → About.')}</p>
         <div className="flex justify-end">
-          <Button variant="primary" onClick={onClose} data-welcome-close data-autofocus>{t('Start using OpenTaskKit')}</Button>
+          <Button variant="primary" onClick={onClose} data-welcome-close data-autofocus>{t('Start using OpenTodo')}</Button>
         </div>
       </div>
     </Dialog>

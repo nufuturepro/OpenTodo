@@ -1,22 +1,22 @@
-# Forking playbook — OpenTaskKit
+# Forking playbook
 
-OpenTaskKit is a **distribution of [OpenTodo](https://github.com/pixari/opentodo)**, in the
-relationship Debian has with Ubuntu: upstream is where features and general bug fixes are built;
-this repository is its own product, carrying the OpenTaskKit identity and (eventually) its own
-defaults and features, while staying close enough to merge upstream releases routinely.
+This repository is a **fork of [OpenTodo](https://github.com/pixari/OpenTodo)**, in the
+relationship Debian has with Ubuntu: upstream is where features and general bug fixes are
+built; this repository stays close enough to merge upstream releases routinely and carries
+this fork's own additions until they are proposed upstream.
 
 ## The three repositories
 
 | Repository | Role |
 | --- | --- |
-| [pixari/OpenTodo](https://github.com/pixari/OpenTodo) | **Upstream.** The product this distribution is built from. |
-| [nufuturepro/OpenTodo](https://github.com/nufuturepro/OpenTodo) | **Thin fork.** Kept identical to upstream; exists only so bugfix branches can be proposed as PRs to upstream. Never add distribution work here. |
-| [nufuturepro/OpenTaskKit](https://github.com/nufuturepro/OpenTaskKit) | **This repository.** The product. Carries the brand, merges upstream releases, publishes `ghcr.io/nufuturepro/opentaskkit`. |
+| [pixari/OpenTodo](https://github.com/pixari/OpenTodo) | **Upstream.** The product this fork is built from. |
+| [nufuturepro/OpenTodo](https://github.com/nufuturepro/OpenTodo) | **Thin fork.** Kept identical to upstream; exists only so bugfix branches can be proposed as PRs to upstream. Never add fork-specific work here. |
+| [nufuturepro/OpenTaskKit](https://github.com/nufuturepro/OpenTaskKit) | **This repository.** The fork. Merges upstream releases and publishes `ghcr.io/nufuturepro/opentaskkit` — the image name follows the repository name, which is still the address this fork is published under. |
 
 Local remotes in a clone of this repository:
 
 ```
-origin   → nufuturepro/OpenTaskKit   (the product)
+origin   → nufuturepro/OpenTaskKit   (this fork)
 upstream → pixari/OpenTodo           (the source of releases)
 fork     → nufuturepro/OpenTodo      (the staging area for upstream PRs)
 ```
@@ -24,46 +24,27 @@ fork     → nufuturepro/OpenTodo      (the staging area for upstream PRs)
 ## Branches, tags and versions
 
 - `main` is the product. Upstream releases are merged into it with a
-  `Merge upstream vX.Y.Z` commit; distribution changes land on top.
+  `Merge upstream vX.Y.Z` commit; this fork's changes land on top.
 - Every synced upstream release is marked with a local tag **`upstream-vX.Y.Z`**
   (same commit as upstream's `vX.Y.Z`). `git log upstream-vX.Y.Z..HEAD --oneline`
-  is this distribution's exact delta on top of that release.
-- Distribution releases are tagged **`opentaskkit-X.Y.Z-otk.N`** and published by CI
-  (container image, binaries, GitHub release). The in-app version string comes from
-  `git describe`, so a build from `main` reads like the nearest tag plus commits.
+  is this fork's exact delta on top of that release.
+- Fork releases are tagged **`opentodo-X.Y.Z-N`** (for example `opentodo-0.19.0-1`)
+  and published by CI (container image, binaries, GitHub release). The in-app version
+  string comes from `git describe`, so a build from `main` reads like the nearest tag
+  plus commits.
 - Feature work happens on branches off `main`; merge back with a PR.
 
-## The brand overlay (what a sync usually conflicts on)
+## What a sync usually conflicts on
 
-The brand is the **capitalised word**: `OpenTodo` → `OpenTaskKit`. Lowercase
-`opentodo` is an identifier — the Go module path, binaries, `OPENTODO_*` variables,
-the `opentodo-*.tar.gz` archive format, `urn:opentodo:*` tokens — and **stays
-upstream everywhere**, so data, archives and deployments remain compatible.
-
-Files that carry the brand (the conflict hotspots; resolve by keeping our side):
+The fork speaks upstream's name everywhere, so there is no brand sweep to re-apply.
+What still diverges from upstream and needs a hand during a merge:
 
 | Area | Files |
 | --- | --- |
-| App strings | `web/src/**` — every `t('…OpenTaskKit…')` key, all six `web/src/locales/*.json` catalogs, `web/src/index.css` (font name), `web/index.html` |
-| Server strings | `internal/**`, `cmd/**` — passkey RP name, TOTP issuer, calendar feed name, push VAPID subject, assistant prompt, backup error messages |
-| Docs build | `web/scripts/docs/site.mjs`, `web/scripts/docs/lib.mjs` (`REPO_URL`) |
-| Identity | `README.md`, `CHANGELOG.md` (OpenTaskKit note), `docker-compose.yml` (image), `.github/workflows/helm.yml` (chart namespace) |
+| This fork's features | the grip row menu, the one-time grip hint, the version row and changelog dialog, the animation preference |
+| Removed features | the built-in plugins settings section (deleted here; a sync that brings it back is re-removed) |
 | Distribution tooling | `FORKING.md`, `scripts/sync-upstream.sh`, `scripts/upstream-pr.sh`, `.github/workflows/sync-upstream.yml` |
-
-Deliberately **not** rebranded (upstream-owned or guarded by upstream's checks):
-`docs/**` guide text, `skills/**`, `openspec/**`, `SECURITY.md`, `CODEOWNERS`,
-`.github/FUNDING.yml`, the logo artwork, and the Go module path.
-
-After a sync merge, re-apply the brand to anything upstream added:
-
-```sh
-git diff upstream-vX.Y.Z upstream/vX.Y.Z --name-only | grep -vE '^(docs/|skills/|openspec/|web/src/generated/)' \
-  | xargs grep -rlI 'OpenTodo' 2>/dev/null \
-  | xargs sed -i 's/OpenTodo/OpenTaskKit/g'
-```
-
-Then run `make i18n-check docs-check` (both validate branded output) and check the
-diff for lowercase identifiers the sweep should not have touched.
+| Housekeeping | `CHANGELOG.md` fork entries, `README.md` |
 
 ## Syncing an upstream release
 
@@ -72,17 +53,17 @@ by hand:
 
 ```sh
 git fetch upstream --tags
-scripts/sync-upstream.sh vX.Y.Z     # tags, merges into main, reminds about the brand sweep
+scripts/sync-upstream.sh vX.Y.Z     # tags, merges into main, prints the follow-up steps
 ```
 
 The script refuses to run with a dirty tree, tags `upstream-vX.Y.Z`, merges with
-`--no-ff`, and prints the follow-up steps (brand sweep, `make check`, changelog).
-Resolve conflicts in the brand overlay by keeping our side; everything else is a
-genuine merge — take upstream's and re-apply our change on top if it still matters.
+`--no-ff`, and prints the follow-up steps (`make check`, changelog). Resolve conflicts
+by taking upstream's side where this fork's change no longer applies, and re-applying
+this fork's change on top where it still matters.
 
 ## Sending a bug fix upstream
 
-Generic fixes (a bug anyone can hit, no distribution-specific behaviour) go upstream
+Generic fixes (a bug anyone can hit, no fork-specific behaviour) go upstream
 first; they return with the next sync, conflict-free, because the same change flows
 both ways:
 
@@ -90,18 +71,15 @@ both ways:
 scripts/upstream-pr.sh fix-short-description <commit>...
 ```
 
-The script branches off `upstream/main`, cherry-picks the commits, **strips the
-brand**, pushes to the `fork` remote and opens the PR against `pixari/OpenTodo`.
-The brand pass runs on the whole proposed diff: `CHANGELOG.md` goes back to
-upstream's (its release notes are written there), every other changed file gets
-`OpenTaskKit` rewritten to `OpenTodo`, and the script refuses to push if any
-`OpenTaskKit` string survives — so a PR never needs manual reformatting. Run it
-with a clean tree; on a cherry-pick conflict it stops and prints the manual steps,
-after which the same strip must be applied by hand. Follow upstream's
-CONTRIBUTING: bug fixes need no OpenSpec change; `make check` must be green there;
-UI changes need before/after screenshots from `make screens`.
+The script branches off `upstream/main`, cherry-picks the commits, resets
+`CHANGELOG.md` to upstream's (its release notes are written there), refuses to push if
+an `OpenTaskKit` string ever survives in the diff, pushes to the `fork` remote and opens
+the PR against `pixari/OpenTodo`. Run it with a clean tree; on a cherry-pick conflict it
+stops and prints the manual steps. Follow upstream's CONTRIBUTING: bug fixes need no
+OpenSpec change; `make check` must be green there; UI changes need before/after
+screenshots from `make screens`.
 
-Distribution-specific work (branding, own defaults, own features) stays here.
+This fork's own additions stay here until they are proposed upstream.
 
 ## Windows development notes
 

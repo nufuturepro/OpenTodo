@@ -14,7 +14,7 @@ func TestVaultTaskNotes(t *testing.T) {
 	obsidian := t.TempDir()
 	writeFile(t, filepath.Join(obsidian, ".obsidian", "plugins", "tasknotes", "data.json"), `{"taskTag": "task"}`)
 	// init inside an Obsidian vault with TaskNotes prints the hint.
-	dir := filepath.Join(obsidian, "OpenTaskKit")
+	dir := filepath.Join(obsidian, "OpenTodo")
 	code, _, errb := h.run("vault", "init", dir)
 	if code != 0 || !strings.Contains(errb, "ot vault tasknotes <folder>") {
 		t.Fatalf("init hint: %d %q", code, errb)

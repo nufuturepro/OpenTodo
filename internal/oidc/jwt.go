@@ -166,7 +166,7 @@ func keyMatchesAlg(k JWK, alg string) bool {
 	return false
 }
 
-// Claims are the identity-token claims OpenTaskKit reads.
+// Claims are the identity-token claims OpenTodo reads.
 type Claims struct {
 	Issuer            string   `json:"iss"`
 	Subject           string   `json:"sub"`

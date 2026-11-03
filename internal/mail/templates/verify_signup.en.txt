@@ -1,6 +1,6 @@
-Confirm your OpenTaskKit account
+Confirm your OpenTodo account
 
-This is a sign-up confirmation from OpenTaskKit.
+This is a sign-up confirmation from OpenTodo.
 
 Someone signed up at {{.Origin}} with {{.Email}}. To create the account, open this link and press the button on the page:
 

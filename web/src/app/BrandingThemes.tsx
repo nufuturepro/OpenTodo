@@ -1,5 +1,5 @@
 // The themes of Settings → Server → Branding (OpenSpec change theme-instance-default,
-// design D4): the server's default light and dark theme, chosen from OpenTaskKit's, the
+// design D4): the server's default light and dark theme, chosen from OpenTodo's, the
 // built-in and the server's themes with their colours, and the server themes (up to
 // 20): Add from file, Offer one of my themes, Remove. A server theme with contrast
 // warnings shows them, and making it a default asks first, listing the pairs. Server
@@ -45,11 +45,11 @@ export interface BrandingThemesViewProps {
   onDefault: (side: Side, choice: string) => void
   onAdd: (doc: ThemeDocument) => void
   onRemove: (theme: InstanceThemeEntry) => void
-  /** Download a template, made from OpenTaskKit Light (themes-layout-template). */
+  /** Download a template, made from OpenTodo Light (themes-layout-template). */
   onTemplate?: () => void | Promise<void>
 }
 
-/** The card id of a stored default: OpenTaskKit's theme for "", the palette id, or `instance:<id>`. */
+/** The card id of a stored default: OpenTodo's theme for "", the palette id, or `instance:<id>`. */
 const cardOf = (side: Side, choice: string) => (choice === '' ? DEFAULT_THEME[side] : choice.startsWith('builtin:') ? choice.slice(8) : choice)
 /** The stored default of a card. */
 const choiceOf = (side: Side, card: string) => (card === DEFAULT_THEME[side] ? '' : card.startsWith('instance:') ? card : `builtin:${card}`)
@@ -207,7 +207,7 @@ export default function BrandingThemes({ online }: { online: boolean }) {
       onRemove={(x) => write(() => api.deleteInstanceTheme(x.id))}
       onTemplate={async () => {
         const base = await builtinDocument(DEFAULT_THEME.light)
-        if (base) await downloadThemeTemplate(newDocument(base, '', t('Server theme')), t('OpenTaskKit Light'))
+        if (base) await downloadThemeTemplate(newDocument(base, '', t('Server theme')), t('OpenTodo Light'))
       }} />
   )
 }

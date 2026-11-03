@@ -638,7 +638,7 @@ func TestDemoRestrictedRoutes(t *testing.T) {
 	}
 
 	// Everyday use still works: create, edit and delete a task, list members, sync.
-	resp, out := e.do("POST", "/api/v1/tasks", map[string]any{"title": "Try OpenTaskKit"})
+	resp, out := e.do("POST", "/api/v1/tasks", map[string]any{"title": "Try OpenTodo"})
 	e.mustStatus(resp, http.StatusCreated, out)
 	id, _ := out["id"].(string)
 	resp, out = e.do("PATCH", "/api/v1/tasks/"+id, map[string]any{"priority": 1})

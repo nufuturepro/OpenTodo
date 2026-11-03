@@ -23,12 +23,12 @@ import (
 )
 
 // Instance branding (OpenSpec change instance-branding, issue #234): the owner
-// gives the instance a name and a logo. The name replaces "OpenTaskKit" in the
+// gives the instance a name and a logo. The name replaces "OpenTodo" in the
 // page title, the manifest and the app's wordmark; the logo, uploaded once as a
 // PNG or JPEG, is rendered into the sizes the favicon, the touch icon, the
 // installed app and the sidebar need and served from /branding/. The page and
 // the manifest are rewritten on the way out of the embedded web app, so the
-// build stays one binary. "Powered by OpenTaskKit" stays on the sign-in screen.
+// build stays one binary. "Powered by OpenTodo" stays on the sign-in screen.
 
 const (
 	brandingSettingKey  = "branding"

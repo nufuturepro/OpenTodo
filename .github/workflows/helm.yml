@@ -2,7 +2,7 @@ name: Helm chart
 
 # The Kubernetes chart in deploy/helm/opentodo (docs/self-hosting/kubernetes.md).
 # Pull requests that touch it: lint and render it. Release tags (v*, not release
-# candidates): publish it as an OCI artifact at oci://ghcr.io/nufuturepro/charts/opentaskkit,
+# candidates): publish it as an OCI artifact at oci://ghcr.io/nufuturepro/charts/opentodo,
 # with the Artifact Hub metadata beside it. The chart's version and appVersion are the
 # release; node scripts/deploy-check.mjs keeps them on the latest release in CHANGELOG.md.
 on:

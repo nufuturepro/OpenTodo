@@ -46,7 +46,7 @@ export function ShellNotifications() {
     const shown = await testNotification()
     setMessage(shown
       ? { kind: 'info', text: t('The app showed a test notification on this device.') }
-      : { kind: 'error', text: t('The app could not show a notification. Allow notifications for OpenTaskKit in Android\'s settings.') })
+      : { kind: 'error', text: t('The app could not show a notification. Allow notifications for OpenTodo in Android\'s settings.') })
     setBusy(false)
   }
   return <ShellNotificationsView state={state} busy={busy} message={message} onEnable={(on) => void enable(on)} onIncludeContent={(on) => void includeContent(on)} onTest={() => void test()} />
@@ -71,10 +71,10 @@ export function ShellNotificationsView({ state: s, busy, message, onEnable, onIn
             status={<Badge hue={s.enabled ? 'green' : 'slate'}>{s.enabled ? t('On') : t('Off')}</Badge>}
             control={<Switch checked={s.enabled} disabled={busy} onChange={onEnable} label={t('Enable notifications on this device')} hideLabel />} />
           {s.permission === 'denied' && (
-            <Notice tone="warning">{t('Android refused notifications for OpenTaskKit. Allow them in Android\'s settings (Apps → OpenTaskKit → Notifications); reminders still appear inside the app.')}</Notice>
+            <Notice tone="warning">{t('Android refused notifications for OpenTodo. Allow them in Android\'s settings (Apps → OpenTodo → Notifications); reminders still appear inside the app.')}</Notice>
           )}
           {s.permission === 'exact-denied' && (
-            <Notice tone="warning">{t('Exact alarms are not allowed for OpenTaskKit, so reminders may arrive a few minutes late. Allow "Alarms & reminders" for the app in Android\'s settings.')}</Notice>
+            <Notice tone="warning">{t('Exact alarms are not allowed for OpenTodo, so reminders may arrive a few minutes late. Allow "Alarms & reminders" for the app in Android\'s settings.')}</Notice>
           )}
           <SettingRow {...rowCopy('notifications', 'shellTitles')}
             control={<Switch checked={s.includeContent} disabled={busy} onChange={onIncludeContent} label={t('Include task titles')} hideLabel />} />

@@ -1,7 +1,7 @@
 // The counterpart of a theme (OpenSpec change theme-editor, design D9): a new draft
 // of the other kind with the same accent and status seeds, the canvas, surface and
 // text seeds mirrored in lightness at their own hues (each keeps its distance from
-// OpenTaskKit's seed of its kind, on the other side's OpenTaskKit seed), and no explicit
+// OpenTodo's seed of its kind, on the other side's OpenTodo seed), and no explicit
 // tokens, so every other colour is derived and passes by construction.
 import dark from './builtin/opentodo-dark.json'
 import light from './builtin/opentodo-light.json'

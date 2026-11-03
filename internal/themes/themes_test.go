@@ -9,13 +9,13 @@ import (
 )
 
 // TestTemplatesAreValid: the theme templates the web app makes (template.test.ts
-// writes OpenTaskKit Light's and Dark's into testdata/template) are documents the
+// writes OpenTodo Light's and Dark's into testdata/template) are documents the
 // server accepts once their notes and trailing commas are taken out, as written and
 // with every commented value line set.
 func TestTemplatesAreValid(t *testing.T) {
 	files, _ := filepath.Glob("testdata/template/*.jsonc")
 	if len(files) != 2 {
-		t.Fatalf("found %d templates, want OpenTaskKit Light's and Dark's", len(files))
+		t.Fatalf("found %d templates, want OpenTodo Light's and Dark's", len(files))
 	}
 	uncomment := regexp.MustCompile(`(?m)^(\s*)// (".*)$`)
 	for _, f := range files {
@@ -123,7 +123,7 @@ func TestRefusalNamesThePath(t *testing.T) {
 	}
 }
 
-// TestBuiltinDocumentsAreValid: every theme the web app ships (OpenTaskKit's two and
+// TestBuiltinDocumentsAreValid: every theme the web app ships (OpenTodo's two and
 // the built-in catalogue, theme-catalogue) is a document the server accepts too.
 func TestBuiltinDocumentsAreValid(t *testing.T) {
 	files, _ := filepath.Glob("../../web/src/lib/theme/builtin/*.json")

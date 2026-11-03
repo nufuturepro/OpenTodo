@@ -4,7 +4,7 @@
 // generates, runs through the on-device assistant with this device's provider
 // and key and the decrypted names; the draft is checked with the shared
 // TypeScript checker and the errors go back to the model once. Nothing reaches
-// the OpenTaskKit server, and nothing is saved: the editor opens the draft.
+// the OpenTodo server, and nothing is saved: the editor opens the draft.
 // web/src/lib/assistantDevice/routineDraft.vectors.json pins the request and
 // the reading of the answer to the server's.
 import { manifest } from '../assistantDevice/manifest'

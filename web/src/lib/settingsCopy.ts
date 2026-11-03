@@ -447,20 +447,11 @@ export const SETTINGS_COPY = {
     description: msg('Save pages and selected text from your browser as tasks.'),
     learnMore: 'settings/capture',
     rows: {
-      bookmarklet: { label: msg('Bookmarklet'), description: msg('Drag <strong>Add to OpenTaskKit</strong> to your bookmarks bar, then click it on any page.') },
+      bookmarklet: { label: msg('Bookmarklet'), description: msg('Drag <strong>Add to OpenTodo</strong> to your bookmarks bar, then click it on any page.') },
       extension: { label: msg('Browser extension'), description: msg('For Chromium and Firefox, in the repository under {path}.') },
       phone: { label: msg('On a phone'), description: msg("Install the app and use your phone's share menu.") },
     },
     notices: { copied: msg('Copied. Create a bookmark and paste it as the address.') },
-  },
-  // Settings → Plugins (plugin-section): the built-in plugins' switches.
-  plugins: {
-    title: msg('Plugins'),
-    description: msg('Built-in plugins, each adding commands you can turn off here.'),
-    icon: 'wrench',
-    notices: {
-      builtIn: msg('Plugins are part of the app itself; nothing is downloaded.'),
-    },
   },
   'email-inbox': {
     title: msg('Email to task'),
@@ -480,10 +471,10 @@ export const SETTINGS_COPY = {
 
   // Settings → About
   about: {
-    title: msg('About OpenTaskKit'),
+    title: msg('About OpenTodo'),
     icon: 'heart',
     description: {
-      version: msg('OpenTaskKit {version} · free and open source · no tracking, no telemetry.'),
+      version: msg('OpenTodo {version} · free and open source · no tracking, no telemetry.'),
       plain: msg('Free and open source · no tracking, no telemetry.'),
     },
     rows: {
@@ -492,14 +483,14 @@ export const SETTINGS_COPY = {
       docs: { label: msg('Documentation'), description: msg('The same guides on the website, with setup and self-hosting.') },
       website: { label: msg('Website'), description: msg('News, guides, comparisons and what is new in each release.') },
       feedback: { label: msg('Feedback and problems'), description: msg('Open an issue on GitHub. Every report is read.') },
-      community: { label: msg('Community'), description: msg('Questions, ideas and other people who use OpenTaskKit, on Discord.') },
+      community: { label: msg('Community'), description: msg('Questions, ideas and other people who use OpenTodo, on Discord.') },
       news: { label: msg('News and updates'), description: msg('Releases and what is being built, on X.') },
       source: { label: msg('Source code'), description: msg('A star on GitHub helps other people find it.') },
       welcome: { label: msg('Welcome note'), description: msg('The thank-you shown the first time you opened this server.') },
     },
   },
   'about-support': {
-    title: msg('Support OpenTaskKit'),
+    title: msg('Support OpenTodo'),
     icon: 'messages-square',
     description: msg('No paid plan: if it saves you a subscription, a coffee helps.'),
   },
@@ -715,7 +706,7 @@ export const SETTINGS_COPY = {
         label: msg('Attachments'),
         description: { on: msg('Files may be up to {bytes} each.'), off: msg('Adding files is turned off on this server.') },
       },
-      import: { label: msg('Import'), description: msg('An OpenTaskKit export, a CSV file or another app’s JSON export; open it with {kbd}.') },
+      import: { label: msg('Import'), description: msg('An OpenTodo export, a CSV file or another app’s JSON export; open it with {kbd}.') },
       sync: { label: msg('Sync') },
       backups: { label: msg('Backups') },
     },
@@ -783,7 +774,7 @@ export const SETTINGS_COPY = {
     description: msg('Your own name and logo in the tab, the app icon, the sign-in screen and the sidebar.'),
     learnMore: 'settings/branding',
     rows: {
-      name: { label: msg('Name'), description: msg('Shown in place of OpenTaskKit. Up to 40 characters; empty keeps OpenTaskKit.') },
+      name: { label: msg('Name'), description: msg('Shown in place of OpenTodo. Up to 40 characters; empty keeps OpenTodo.') },
       logo: { label: msg('Logo'), description: msg('A square PNG or JPEG of at least 192 pixels; the server renders every size.') },
       // The server's default theme and themes (theme-instance-default D4).
       defaultTheme: { label: msg('Default theme'), description: msg('People who never chose a theme see this one; their own choice always wins.') },
@@ -847,7 +838,7 @@ export const SETTINGS_COPY = {
   'server-archive': {
     title: msg('Download your data'),
     icon: 'upload',
-    description: msg('The whole server as one archive, to restore into your own OpenTaskKit server.'),
+    description: msg('The whole server as one archive, to restore into your own OpenTodo server.'),
     learnMore: 'settings/server',
     rows: { archive: { label: msg('Server archive'), description: msg('Keep it private: it holds every account’s sign-in data.') } },
     notices: { offline: msg('You are offline. The download needs a connection to the server.') },

@@ -1,4 +1,4 @@
-# fish completion for ot, the OpenTaskKit command-line client.
+# fish completion for ot, the OpenTodo command-line client.
 # Printed by `ot completion fish`. Install it once:
 #   ot completion fish > ~/.config/fish/completions/ot.fish
 # The candidates come from `ot __complete`: commands and flags from the ot on

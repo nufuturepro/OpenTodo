@@ -1,8 +1,8 @@
 # Credits of the built-in themes
 
-The palettes of OpenTaskKit's built-in themes come from the projects below, each under the MIT licence. Their colours are mapped onto OpenTaskKit's tokens by `MAPPING.md` in this folder; where a published colour misses a contrast pair, the theme uses the same hue at another lightness and lists the published value under `notes.adapted`. The names are used only to credit the palettes: OpenTaskKit is not affiliated with these projects.
+The palettes of OpenTodo's built-in themes come from the projects below, each under the MIT licence. Their colours are mapped onto OpenTodo's tokens by `MAPPING.md` in this folder; where a published colour misses a contrast pair, the theme uses the same hue at another lightness and lists the published value under `notes.adapted`. The names are used only to credit the palettes: OpenTodo is not affiliated with these projects.
 
-Each notice below is copied verbatim from the project's licence file, checked on 2026-11-01. OpenTaskKit's own themes (`opentodo-light`, `opentodo-dark`) are part of OpenTaskKit, under its licence (AGPL-3.0-only).
+Each notice below is copied verbatim from the project's licence file, checked on 2026-11-01. OpenTodo's own themes (`opentodo-light`, `opentodo-dark`) are part of OpenTodo, under its licence (AGPL-3.0-only).
 
 ## Solarized
 

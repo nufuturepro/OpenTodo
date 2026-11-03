@@ -1,6 +1,6 @@
 // Importing a VS Code colour theme (OpenSpec change theme-editor, design D12): a
 // file of at most 1 MB read with a small JSONC reader; its kind and its workbench
-// `colors` mapped onto OpenTaskKit's seeds and tokens by one written table (first key
+// `colors` mapped onto OpenTodo's seeds and tokens by one written table (first key
 // present wins), translucent colours composited over what they sit on, the
 // terminal's ANSI colours given to the nearest label hues, everything else left
 // to the derivation. Syntax colours are ignored (there is no code editor) and
@@ -54,7 +54,7 @@ export const BAR_KEYS = ['titleBar.activeBackground'] as const
 const ANSI = ['Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta'] as const
 export const ANSI_KEYS = [...ANSI.map((c) => `terminal.ansi${c}`), ...ANSI.map((c) => `terminal.ansiBright${c}`)]
 
-/** OpenTaskKit's label hues by angle (reference.json, light), slate left out: it is a grey. */
+/** OpenTodo's label hues by angle (reference.json, light), slate left out: it is a grey. */
 const HUE_ANGLE: Partial<Record<Hue, number>> = { red: 27.33, orange: 41.12, yellow: 58.32, lime: 131.59, green: 149.21, teal: 184.7, cyan: 221.72, blue: 262.88, indigo: 276.97, violet: 293.01, pink: 0.58 }
 /** A bright ANSI colour takes a free label hue only this close (degrees). */
 const BRIGHT_REACH = 30
@@ -166,7 +166,7 @@ export function importVsCodeTheme(text: string, fileName = '', bytes = new TextE
     used.add(hit.key)
     mapped.push({ target: seed, kind: 'seed', key: hit.key, value: hit.value })
   }
-  // A required seed the file does not give comes from OpenTaskKit's own of the kind.
+  // A required seed the file does not give comes from OpenTodo's own of the kind.
   const fallback: Record<string, string> = kind === 'light'
     ? { canvas: '#eef0f2', surface: '#ffffff', text: '#17191c', accent: '#0f766e' }
     : { canvas: '#111315', surface: '#1a1d21', text: '#e7e9ec', accent: '#34d399' }

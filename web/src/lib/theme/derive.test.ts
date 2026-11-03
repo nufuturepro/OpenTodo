@@ -1,4 +1,4 @@
-// The derivation (theme-engine D3, task 2.2): OpenTaskKit's own seeds reproduce every
+// The derivation (theme-engine D3, task 2.2): OpenTodo's own seeds reproduce every
 // default token of index.css in both modes; a theme of four seeds is complete and
 // passes its pairs; explicit values are kept; the result is pinned by
 // derive.vectors.json (UPDATE_THEME_VECTORS=1 rewrites it).
@@ -30,7 +30,7 @@ function drawn(tokens: Record<string, string>, name: string): string {
 
 describe('derivation from seeds', () => {
   for (const kind of ['light', 'dark'] as const) {
-    it(`OpenTaskKit's ${kind} seeds reproduce every default token of index.css`, () => {
+    it(`OpenTodo's ${kind} seeds reproduce every default token of index.css`, () => {
       const got = deriveTheme(seedsOnly(kind))
       const sheet = modeTokens(css, kind)
       const diff = CSS_TOKENS.filter((n) => drawn(got.tokens, n) !== drawn(sheet, n)).map((n) => `${n}: derived ${drawn(got.tokens, n)} (${got.tokens[n]}), stylesheet ${drawn(sheet, n)}`)

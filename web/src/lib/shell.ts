@@ -34,7 +34,7 @@ export interface ShellWidgetData {
 export type ShellPermission = 'granted' | 'denied' | 'exact-denied'
 
 /** What the shell injects: the version fields plus the methods of bridge version 1. */
-export interface OpenTaskKitShell {
+export interface OpenTodoShell {
   bridge: number
   platform: 'android' | 'ios' | 'desktop'
   app: string
@@ -52,12 +52,12 @@ export interface OpenTaskKitShell {
 
 declare global {
   interface Window {
-    opentodoShell?: OpenTaskKitShell
+    opentodoShell?: OpenTodoShell
   }
 }
 
 /** The shell's bridge, or null in a browser (or a bridge of an unknown shape). */
-export function shell(): OpenTaskKitShell | null {
+export function shell(): OpenTodoShell | null {
   if (typeof window === 'undefined') return null
   const s = window.opentodoShell
   if (!s || typeof s !== 'object' || typeof s.bridge !== 'number' || !Array.isArray(s.capabilities)) return null

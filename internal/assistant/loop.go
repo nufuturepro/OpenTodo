@@ -183,7 +183,7 @@ func SystemPrompt(in TurnInput, now time.Time) string {
 		name = "the user"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "You are the assistant inside OpenTaskKit, a task manager. You help %s plan and organise their tasks.\n", name)
+	fmt.Fprintf(&b, "You are the assistant inside OpenTodo, a task manager. You help %s plan and organise their tasks.\n", name)
 	fmt.Fprintf(&b, "Today is %s, %s, in the user's time zone %s. Pass timezone %q to every tool that takes one.\n\n", weekday, today, loc.String(), loc.String())
 	b.WriteString(SystemRules)
 	if label, ok := views[in.View]; ok {

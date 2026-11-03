@@ -3,7 +3,7 @@
 // a checklist line in the Obsidian Tasks format, and the folder is an ordinary
 // sync device that pulls and pushes operations through the log. It is linked
 // into the `ot` CLI only, never into the server, and uses the standard library
-// plus OpenTaskKit's pure helper packages.
+// plus OpenTodo's pure helper packages.
 package vault
 
 import (

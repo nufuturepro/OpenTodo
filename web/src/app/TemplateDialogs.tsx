@@ -184,7 +184,7 @@ function TemplateFileForm({ projects, onBack, onClose }: { projects: Project[]; 
     try {
       const text = await file.text()
       let doc: unknown
-      try { doc = JSON.parse(text) } catch { throw new TemplateFileError(t('This is not an OpenTaskKit template.')) }
+      try { doc = JSON.parse(text) } catch { throw new TemplateFileError(t('This is not an OpenTodo template.')) }
       const template = treeFromFile(doc)
       const total = countTasks(template)
       if (total > 1000) throw new TemplateTooLargeError(total)

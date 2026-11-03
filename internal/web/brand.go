@@ -10,7 +10,7 @@ import (
 )
 
 // Branding is the owner's instance branding (OpenSpec change instance-branding):
-// a name shown in place of "OpenTaskKit" and, with LogoVersion above 0, a logo
+// a name shown in place of "OpenTodo" and, with LogoVersion above 0, a logo
 // served at /branding/logo-<size>.png?v=<version> in place of the app's mark.
 type Branding struct {
 	Name        string

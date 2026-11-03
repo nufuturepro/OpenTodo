@@ -129,7 +129,7 @@ func TestShownCalendarsBecomeEvents(t *testing.T) {
 		names = append(names, e.Summary)
 	}
 	if strings.Join(names, ",") != "Team meeting,Birthday" {
-		t.Fatalf("events = %v (OpenTaskKit's own events must be left out)", names)
+		t.Fatalf("events = %v (OpenTodo's own events must be left out)", names)
 	}
 	// Managed subscriptions never show up as the user's subscriptions.
 	if list, _ := h.w.Feeds.List(h.ctx, "alice"); len(list) != 0 {
@@ -147,7 +147,7 @@ func TestShownCalendarsBecomeEvents(t *testing.T) {
 	if len(managed) != 2 || family < 0 || managed[family].Color != "#FF0000" {
 		t.Fatalf("managed = %+v", managed)
 	}
-	// Unchanged calendars are not read again (the cycle after OpenTaskKit's own
+	// Unchanged calendars are not read again (the cycle after OpenTodo's own
 	// writes reads the target once more).
 	h.cycle(h.conn(c.ID))
 	reports := h.srv.Count("REPORT")

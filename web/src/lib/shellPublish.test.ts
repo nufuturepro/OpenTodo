@@ -2,7 +2,7 @@
 // What the web app hands a native shell (OpenSpec change native-shells, "Reminders
 // scheduled on the device", "Widgets", and external links in "The bridge is optional").
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { installShellLinks, type OpenTaskKitShell } from './shell'
+import { installShellLinks, type OpenTodoShell } from './shell'
 import { shellReminders, shellWidget } from './shellPublish'
 import type { Reminder, Task } from './types'
 
@@ -68,7 +68,7 @@ describe('the widgets\' Today list', () => {
 })
 
 describe('external links in a shell', () => {
-  afterEach(() => { delete (window as { opentodoShell?: OpenTaskKitShell }).opentodoShell })
+  afterEach(() => { delete (window as { opentodoShell?: OpenTodoShell }).opentodoShell })
 
   function click(href: string, target = '') {
     const a = document.createElement('a')

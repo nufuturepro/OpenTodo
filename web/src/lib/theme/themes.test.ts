@@ -1,4 +1,4 @@
-// OpenTaskKit Light and OpenTaskKit Dark as theme documents (theme-engine D9, task 3.1):
+// OpenTodo Light and OpenTodo Dark as theme documents (theme-engine D9, task 3.1):
 // generated from index.css with the derivation's reference values; this test fails
 // when a generated file is stale, naming the token, and rewrites them with
 // UPDATE_THEMES=1 (node scripts/themes-sync.mjs).
@@ -43,7 +43,7 @@ describe('generated theme files', () => {
   })
 
   for (const kind of ['light', 'dark'] as const) {
-    it(`OpenTaskKit ${kind} is a valid document with every token explicit`, () => {
+    it(`OpenTodo ${kind} is a valid document with every token explicit`, () => {
       const doc = opentodoDocument(css, kind)
       const r = validateTheme(doc)
       expect(r.ok, JSON.stringify(r)).toBe(true)

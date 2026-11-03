@@ -343,7 +343,7 @@ func TestApplyPendingRestoreWhileAnotherServerRuns(t *testing.T) {
 		t.Fatal("database changed while another server held the data directory")
 	}
 	last, _ := readLastRestore(e.dir)
-	if last.OK || last.RetryID != r.ID || !strings.Contains(last.Error, "another OpenTaskKit process") {
+	if last.OK || last.RetryID != r.ID || !strings.Contains(last.Error, "another OpenTodo process") {
 		t.Fatalf("last = %+v", last)
 	}
 	if _, err := os.Stat(e.svc.stagingDir(r.ID)); err != nil {

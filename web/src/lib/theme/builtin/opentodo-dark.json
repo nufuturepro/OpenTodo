@@ -1,8 +1,8 @@
 {
   "opentodoTheme": 1,
   "id": "opentodo-dark",
-  "name": "OpenTaskKit Dark",
-  "author": "OpenTaskKit contributors",
+  "name": "OpenTodo Dark",
+  "author": "OpenTodo contributors",
   "licence": "AGPL-3.0-only",
   "source": "web/src/index.css",
   "kind": "dark",

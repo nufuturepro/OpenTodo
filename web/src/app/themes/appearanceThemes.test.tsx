@@ -102,8 +102,8 @@ describe('Your themes', () => {
     await waitFor(() => currentPath().startsWith('/settings/appearance/themes/'), 'the editor address', 20_000)
     const id = currentPath().split('/').pop()!
     const draft = readDraft(id)!
-    expect(draft.doc).toMatchObject({ id, name: 'OpenTaskKit Dark (custom)', author: 'Ada', kind: 'dark', licence: 'AGPL-3.0-only' })
-    expect(draft.doc.notes?.text).toMatch(/^Based on OpenTaskKit Dark by OpenTaskKit contributors/)
+    expect(draft.doc).toMatchObject({ id, name: 'OpenTodo Dark (custom)', author: 'Ada', kind: 'dark', licence: 'AGPL-3.0-only' })
+    expect(draft.doc.notes?.text).toMatch(/^Based on OpenTodo Dark by OpenTodo contributors/)
     expect(await db.outbox.count()).toBe(0)
     await r.unmount()
   })

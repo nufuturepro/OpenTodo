@@ -36,7 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const ALL = ['account', 'workspaces', 'appearance', 'general', 'language', 'notifications', 'capture', 'plugins', 'about', 'integrations', 'data', 'people', 'server'] as const
+const ALL = ['account', 'workspaces', 'appearance', 'general', 'language', 'notifications', 'capture', 'about', 'integrations', 'data', 'people', 'server'] as const
 
 describe('routes', () => {
   it('parses and builds /settings/<section> for the thirteen sections', () => {
@@ -97,7 +97,7 @@ describe('section table', () => {
     const shape = (u: User) => groupedSections(u).map((g) => [g.group.label, g.sections.map((s) => s.id)])
     expect(shape(owner)).toEqual([
       ['You', ['account', 'workspaces', 'appearance']],
-      ['App', ['general', 'language', 'notifications', 'capture', 'plugins', 'about']],
+      ['App', ['general', 'language', 'notifications', 'capture', 'about']],
       ['Data', ['integrations', 'data']],
       ['Server', ['people', 'server']],
     ])

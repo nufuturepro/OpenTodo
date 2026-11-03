@@ -71,7 +71,7 @@ async function mount(ui: React.ReactNode): Promise<Rendered> {
 
 describe('enrolment on a session that did not sign in recently', () => {
   it('asks for the password, then shows the authenticator setup', async () => {
-    on('POST /api/v1/mfa/totp/enroll', { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/OpenTaskKit:owner@example.com?secret=JBSWY3DPEHPK3PXP', expiresAt: Date.now() + 600000 } })
+    on('POST /api/v1/mfa/totp/enroll', { status: 200, body: { secret: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/OpenTodo:owner@example.com?secret=JBSWY3DPEHPK3PXP', expiresAt: Date.now() + 600000 } })
     const r = await mount(<EnrolmentWizard online onEnrolled={() => {}} />)
     await confirmPassword()
     await waitFor(() => r.container.textContent?.includes('JBSW') ?? false, 'manual key')
@@ -92,7 +92,7 @@ describe('enrolment on a session that did not sign in recently', () => {
 
   it('adds a passkey after the password is confirmed', async () => {
     on('GET /api/v1/passkeys', { status: 200, body: { passkeys: [] } })
-    on('POST /api/v1/passkeys/register/options', { status: 200, body: { publicKey: { challenge: 'c', rp: { id: 'localhost', name: 'OpenTaskKit' }, user: { id: 'u', name: 'o', displayName: 'O' }, pubKeyCredParams: [] } } })
+    on('POST /api/v1/passkeys/register/options', { status: 200, body: { publicKey: { challenge: 'c', rp: { id: 'localhost', name: 'OpenTodo' }, user: { id: 'u', name: 'o', displayName: 'O' }, pubKeyCredParams: [] } } })
     on('POST /api/v1/passkeys/register', { status: 201, body: { passkey: { id: 'k', name: 'Laptop', createdAt: 1, lastUsedAt: null, suspiciousAt: null, backedUp: false } } })
     const r = await mount(<SecurityPanel />)
     await waitFor(() => [...r.container.querySelectorAll('button')].some((b) => b.textContent === 'Add passkey'), 'add button')

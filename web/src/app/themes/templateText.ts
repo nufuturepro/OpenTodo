@@ -19,7 +19,7 @@ export function templateText(from: string): TemplateText {
   }
   return {
     header: [
-      t('OpenTaskKit theme template, made from {name}.', { name: from }),
+      t('OpenTodo theme template, made from {name}.', { name: from }),
       t('1. Change the colours: #rrggbb, or oklch(L C H) with L from 0 to 1.'),
       t('2. Import the file: Settings → Appearance → Your themes → Import → Theme file.'),
       t('Lines that start with // are notes: the app ignores them, and trailing commas too.'),

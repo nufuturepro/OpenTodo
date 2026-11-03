@@ -1,4 +1,4 @@
-# bash completion for ot, the OpenTaskKit command-line client.
+# bash completion for ot, the OpenTodo command-line client.
 # Printed by `ot completion bash`. Install it once:
 #   mkdir -p ~/.local/share/bash-completion/completions
 #   ot completion bash > ~/.local/share/bash-completion/completions/ot

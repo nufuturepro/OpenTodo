@@ -1,7 +1,7 @@
 // Describe it on the device (OpenSpec change routines-describe-it, task 2.3):
 // the same request as the server's (vectors from internal/assistant), the
 // same reading of the answer, the TypeScript check with one retry, and no
-// request to the OpenTaskKit server.
+// request to the OpenTodo server.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import vectors from '../assistantDevice/routineDraft.vectors.json'
 import { draftNamesOf, editorDraftOf, type DraftNames } from './describe'
@@ -82,7 +82,7 @@ describe('the device check', () => {
 })
 
 describe('a draft on the device', () => {
-  it('"Encrypted account": a draft fixed on retry, and no request reaches the OpenTaskKit server', async () => {
+  it('"Encrypted account": a draft fixed on retry, and no request reaches the OpenTodo server', async () => {
     provider.rounds = [
       { stop: 'tool_use', calls: [call('c1', `[{"id":"a","kind":"get_task","in":{"task":{"literal":{"task":"t1"}}}}]`)] },
       { stop: 'tool_use', calls: [call('c2', groceries)] },

@@ -10,7 +10,7 @@ describe('the shell app in Settings → About', () => {
 
   it('names the Android app and its version', () => {
     const html = renderToStaticMarkup(<ShellAppRow app={{ platform: 'android', version: '0.10.0', outdated: false }} />)
-    expect(html).toContain('OpenTaskKit for Android')
+    expect(html).toContain('OpenTodo for Android')
     expect(html).toContain('0.10.0')
     expect(html).not.toContain('older than this server expects')
   })

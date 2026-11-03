@@ -28,11 +28,11 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 
 describe('the workspace control', () => {
-  it('One workspace: the header reads OpenTaskKit · Personal', async () => {
+  it('One workspace: the header reads OpenTodo · Personal', async () => {
     await storeWorkspaces([entry('w-p', { default: true, name: 'Personal' })])
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} onSearch={() => {}} />)
     await waitFor(() => visibleText(r.container.querySelector('[data-workspace-trigger]')!).includes('Personal'))
-    expect(visibleText(r.container.querySelector('[data-workspace-trigger]')!)).toContain('OpenTaskKit')
+    expect(visibleText(r.container.querySelector('[data-workspace-trigger]')!)).toContain('OpenTodo')
     await r.unmount()
   })
 
@@ -42,15 +42,15 @@ describe('the workspace control', () => {
     const trigger = () => r.container.querySelector<HTMLElement>('[data-workspace-trigger]')!
     await waitFor(() => !!trigger().querySelector('[data-workspace-lines]'))
     const lines = trigger().querySelector('[data-workspace-lines]')!
-    expect(lines.querySelector('[data-workspace-app]')!.textContent!.trim()).toBe('OpenTaskKit')
+    expect(lines.querySelector('[data-workspace-app]')!.textContent!.trim()).toBe('OpenTodo')
     expect(lines.querySelector('[data-workspace-name]')!.textContent).toBe('Personal')
-    // The visible text reads "OpenTaskKit Personal", so it stays inside the accessible name
+    // The visible text reads "OpenTodo Personal", so it stays inside the accessible name
     // once punctuation is ignored (axe label-content-name-mismatch).
-    expect(lines.textContent).toBe('OpenTaskKit Personal')
+    expect(lines.textContent).toBe('OpenTodo Personal')
     expect(lines.querySelector('[data-workspace-name]')!.className).toMatch(/\btruncate\b/)
     expect(lines.querySelector('[data-workspace-app]')!.className).toMatch(/\btruncate\b/)
     expect(visibleText(trigger())).not.toContain('·')
-    expect(trigger().getAttribute('aria-label')).toBe('Workspace: OpenTaskKit · Personal')
+    expect(trigger().getAttribute('aria-label')).toBe('Workspace: OpenTodo · Personal')
     await r.unmount()
   })
 
@@ -62,7 +62,7 @@ describe('the workspace control', () => {
     await waitFor(() => visibleText(trigger()).includes('Work'))
     expect(trigger().querySelector('[data-workspace-lines]')).toBeNull()
     expect(trigger().querySelector('[data-workspace-name]')!.textContent).toBe('Work')
-    expect(visibleText(trigger())).not.toContain('OpenTaskKit')
+    expect(visibleText(trigger())).not.toContain('OpenTodo')
     await r.unmount()
   })
 

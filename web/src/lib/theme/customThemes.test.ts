@@ -80,7 +80,7 @@ describe('Customise and New (design D4)', () => {
     expect(validateTheme(c).ok).toBe(true)
   })
 
-  it('New starts from the side\'s OpenTaskKit seeds with every token derived', () => {
+  it('New starts from the side\'s OpenTodo seeds with every token derived', () => {
     const n = newDocument(LIGHT, 'Ana', 'My theme', 'th-n')
     expect(n).toMatchObject({ id: 'th-n', name: 'My theme', kind: 'light', seeds: LIGHT.seeds })
     expect(n.tokens).toBeUndefined()

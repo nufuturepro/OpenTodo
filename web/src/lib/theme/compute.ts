@@ -60,7 +60,7 @@ export function compute(req: ComputeRequest): ComputeResult {
 
 /**
  * The document with every explicit token that its seeds already give dropped
- * (theme-editor D4): a copy of a theme that writes out all its values (OpenTaskKit's
+ * (theme-editor D4): a copy of a theme that writes out all its values (OpenTodo's
  * own) then follows its seeds, and still looks the same, colour for colour as the
  * screen shows it. A token whose value the derivation would not reproduce stays set.
  */

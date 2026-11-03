@@ -1,8 +1,8 @@
-{{.Inviter}} te ha invitado a OpenTaskKit
+{{.Inviter}} te ha invitado a OpenTodo
 
-Esta es una invitación a OpenTaskKit.
+Esta es una invitación a OpenTodo.
 
-{{.Inviter}} invitó a {{.Email}} al servidor de OpenTaskKit {{.Origin}}. Para crear tu cuenta, abre este enlace:
+{{.Inviter}} invitó a {{.Email}} al servidor de OpenTodo {{.Origin}}. Para crear tu cuenta, abre este enlace:
 
 {{.Link}}
 

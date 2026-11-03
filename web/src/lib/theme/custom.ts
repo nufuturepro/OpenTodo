@@ -146,7 +146,7 @@ export function customiseDocument(source: ThemeDocument, author: string, id = ne
   }
 }
 
-/** A new theme (design D4): OpenTaskKit's seeds of the side, every token derived. */
+/** A new theme (design D4): OpenTodo's seeds of the side, every token derived. */
 export function newDocument(base: ThemeDocument, author: string, name: string, id = newThemeId()): ThemeDocument {
   return { opentodoTheme: THEME_FORMAT, id, name: clip(name, MAX_THEME_NAME), author: clip(author, 120), licence: 'CC0-1.0', kind: base.kind, seeds: { ...base.seeds } }
 }

@@ -1,7 +1,7 @@
 // The theme template (OpenSpec change themes-layout-template): made from a theme,
 // it reads back through the importer as that theme plus `$schema`, names every
 // token of the format, and stays valid with every commented line uncommented. The
-// templates of OpenTaskKit Light and Dark are written to internal/themes/testdata/template/,
+// templates of OpenTodo Light and Dark are written to internal/themes/testdata/template/,
 // where the Go validator reads them too (themes_test.go); UPDATE_THEME_TEMPLATES=1
 // rewrites them.
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -20,7 +20,7 @@ const dir = join(__dirname, '../../../../internal/themes/testdata/template')
 
 /** English notes, fixed, so the shared files do not follow a catalogue's wording. */
 const EN: TemplateText = {
-  header: ['OpenTaskKit theme template.', 'Lines that start with // are notes.'],
+  header: ['OpenTodo theme template.', 'Lines that start with // are notes.'],
   key: { opentodoTheme: 'Keep 1.', id: 'An id.', name: 'A name.', author: 'You.', licence: 'SPDX.', source: 'Text.', kind: 'light or dark.', bar: 'Bar.', notes: 'Notes.', shape: 'Corners.', type: 'Type.' },
   seeds: 'Base colours.',
   statusSeeds: 'Status colours.',
@@ -73,7 +73,7 @@ describe('theme template', () => {
     expect(templateFileName('Nord (custom)')).toBe('nord-custom-template.opentodo-theme.jsonc')
   })
 
-  it('shared templates of OpenTaskKit Light and Dark (read by the Go validator too)', () => {
+  it('shared templates of OpenTodo Light and Dark (read by the Go validator too)', () => {
     for (const source of [light, dark] as unknown as ThemeDocument[]) {
       const file = join(dir, `${source.id}.jsonc`)
       const { text } = templateOf(source)

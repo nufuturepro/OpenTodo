@@ -119,10 +119,10 @@ describe('SidebarGroup header', () => {
 
 // sidebar-v2 D1: the header row is a slot; search and the rail live in the primitive.
 describe('SidebarHeader', () => {
-  it('the rail shows the mark alone, named "OpenTaskKit" with a tooltip', async () => {
-    const r = await render(<SidebarHeader left={<span>OpenTaskKit</span>} rail={<svg data-rail-mark />} railLabel="OpenTaskKit" collapsed onSearch={() => {}} searchLabel="Search" />)
+  it('the rail shows the mark alone, named "OpenTodo" with a tooltip', async () => {
+    const r = await render(<SidebarHeader left={<span>OpenTodo</span>} rail={<svg data-rail-mark />} railLabel="OpenTodo" collapsed onSearch={() => {}} searchLabel="Search" />)
     const mark = r.container.querySelector('[role="img"]')!
-    expect(mark.getAttribute('aria-label')).toBe('OpenTaskKit')
+    expect(mark.getAttribute('aria-label')).toBe('OpenTodo')
     expect(mark.querySelector('[data-rail-mark]')).not.toBeNull()
     expect(r.container.querySelector('[data-palette-button]')).toBeNull()
     await r.unmount()
@@ -130,7 +130,7 @@ describe('SidebarHeader', () => {
 
   it('a custom left keeps the search button and its data-palette-button', async () => {
     let opened = 0
-    const r = await render(<SidebarHeader left={<button type="button" data-workspace>Home</button>} rail={null} railLabel="OpenTaskKit" onSearch={() => opened++} searchLabel="Search and commands" />)
+    const r = await render(<SidebarHeader left={<button type="button" data-workspace>Home</button>} rail={null} railLabel="OpenTodo" onSearch={() => opened++} searchLabel="Search and commands" />)
     expect(r.container.querySelector('[data-workspace]')).not.toBeNull()
     const search = r.container.querySelector<HTMLButtonElement>('[data-palette-button]')!
     expect(search.getAttribute('aria-label')).toBe('Search and commands')

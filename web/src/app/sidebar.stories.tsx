@@ -239,7 +239,7 @@ export const SwitcherOpen: StoryObj = {
   ),
 }
 
-/** One workspace (the account never created one): the header shows OpenTaskKit with Personal below it. */
+/** One workspace (the account never created one): the header shows OpenTodo with Personal below it. */
 export const OneWorkspace: StoryObj = {
   ...withSeed(async () => {
     await seedInbox()

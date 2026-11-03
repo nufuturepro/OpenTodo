@@ -1,7 +1,7 @@
 // The lazy half of the theme engine (OpenSpec change theme-engine, design D5): reads a
 // chosen theme's document, validates and migrates it, and derives it, or keeps the
 // device's cached result when the document and the derivation are unchanged. Loaded
-// only when a side's choice is a theme other than OpenTaskKit's (a built-in, one of the
+// only when a side's choice is a theme other than OpenTodo's (a built-in, one of the
 // user's own themes, theme-editor D1, or one of the server's, theme-instance-default)
 // and with Settings, never before the first paint. A derivation runs in a worker
 // where the browser has one: a document whose seeds sit in the middle band takes

@@ -90,7 +90,7 @@ const (
 	CodeProviderAuth        = "provider_auth"
 	CodeProviderRateLimited = "provider_rate_limited"
 	// CodeProviderNotFound is the provider's own 404: no such model or endpoint
-	// (assistant-providers-fix D2), distinct from OpenTaskKit's not_found.
+	// (assistant-providers-fix D2), distinct from OpenTodo's not_found.
 	CodeProviderNotFound = "provider_not_found"
 	CodeNoToolSupport    = "no_tool_support"
 )

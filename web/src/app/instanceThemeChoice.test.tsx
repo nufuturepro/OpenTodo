@@ -2,7 +2,7 @@
 // The server's themes in Settings › Appearance and the provider (theme-instance-default
 // task 2.3): "Default (Server default: name)" first, the server's themes "From this
 // server" with the default marked, choosing and customising them but not changing
-// them, OpenTaskKit's theme stored by name while a server default is set, and the
+// them, OpenTodo's theme stored by name while a server default is set, and the
 // default applied to a member who never chose a theme without any op.
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -57,14 +57,14 @@ describe('server themes in Settings › Appearance', () => {
     await r.unmount()
   })
 
-  it('choosing OpenTaskKit Dark stores it by name, so it wins over the default; Default stores empty again', async () => {
+  it('choosing OpenTodo Dark stores it by name, so it wins over the default; Default stores empty again', async () => {
     serve()
     await setAppearance('theme_mode', 'dark')
     const r = await render(<AppearanceProvider><AppearanceSection /></AppearanceProvider>)
     await waitFor(() => root().getAttribute('data-ot-theme') === 'house1', 'the house theme')
     const before = (await fields()).length
     await click(card('dark', 'opentodo-dark')!)
-    await waitFor(() => !root().hasAttribute('data-ot-theme'), 'OpenTaskKit Dark')
+    await waitFor(() => !root().hasAttribute('data-ot-theme'), 'OpenTodo Dark')
     await click(card('dark', 'server-default')!)
     await waitFor(() => root().getAttribute('data-ot-theme') === 'house1', 'the house theme again')
     expect((await fields()).slice(before)).toEqual(['theme_dark=builtin:opentodo-dark', 'theme_dark='])

@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-// SQLite's auto_vacuum modes (PRAGMA auto_vacuum). OpenTaskKit creates databases
+// SQLite's auto_vacuum modes (PRAGMA auto_vacuum). OpenTodo creates databases
 // in AutoVacuumIncremental (OpenSpec `op-log-compaction`); databases created
 // before that are AutoVacuumNone until the compaction job converts them once.
 const (

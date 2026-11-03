@@ -19,7 +19,7 @@ import (
 // Microsoft connection sends, with the same outbound client, timeout and
 // response cap as the CalDAV ones (design D9, D10).
 
-// TaskProperty is the single-value extended property OpenTaskKit marks its
+// TaskProperty is the single-value extended property OpenTodo marks its
 // events with; its value is the task id (design D5). The GUID never changes.
 const TaskProperty = "String {6f1c1c9e-2c8b-4d0e-9a51-6f70656e746f} Name opentodoTaskId"
 
@@ -40,7 +40,7 @@ func NewGraph(client *http.Client, base, access, version string, now func() time
 	if now == nil {
 		now = time.Now
 	}
-	return &Graph{HTTP: client, Base: strings.TrimSuffix(base, "/"), Access: access, UserAgent: "OpenTaskKit/" + version, now: now}
+	return &Graph{HTTP: client, Base: strings.TrimSuffix(base, "/"), Access: access, UserAgent: "OpenTodo/" + version, now: now}
 }
 
 // address turns a path under Base, or an absolute link Graph returned, into
@@ -164,7 +164,7 @@ func query(v url.Values) string {
 	return b.String()
 }
 
-// expandProperty asks Graph for OpenTaskKit's mark on each event.
+// expandProperty asks Graph for OpenTodo's mark on each event.
 var expandProperty = "singleValueExtendedProperties($filter=id eq '" + TaskProperty + "')"
 
 // MicrosoftAccount is what discovery found for a Microsoft account.

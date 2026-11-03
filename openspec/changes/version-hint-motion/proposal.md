@@ -25,6 +25,6 @@ No new environment variable and **no breaking change to the op log format**: the
 - Copy: `web/src/lib/settingsCopy.ts`, `web/src/app/settingsIndex.ts`, and `web/src/locales/messages.json` plus the de, es, fr, it and pt catalogs (14 new messages).
 - Build: `scripts/changelog-build.mjs` with `scripts/changelog-build.test.mjs`, the `changelog-check` Makefile target (in `make check` and `make ci-checks`), and the generated `web/src/generated/changelog.json`.
 - Tests: the parser test, a grip-reminder test and an About/changelog test (tasks 7.1–7.3).
-- Docs: one Unreleased CHANGELOG.md entry marked **OpenTaskKit**; `docs/` stays as it is, since the gesture is already documented in `docs/work-from-the-list.md` and the About section in the settings guide.
+- Docs: one Unreleased CHANGELOG.md entry marked **OpenTodo**; `docs/` stays as it is, since the gesture is already documented in `docs/work-from-the-list.md` and the About section in the settings guide.
 - Out of scope: syncing the reminder across devices (no `user_prefs` field), a server-reported changelog, changes to the start guide or the swipe cue's toast, new shortcuts, and any server, API or sync change.
 - Advances no ROADMAP.md item: the original roadmap is complete, so this is follow-up polish on shipped capabilities — About (`settings-navigation`), touch selection (`bulk-actions` through `touch-row-grip`) and the motion system (`design-system`).

@@ -21,13 +21,13 @@ var fakeWeb = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/manifest.webmanifest":
 		w.Header().Set("Content-Type", "application/manifest+json")
-		w.Write([]byte(`{"name":"OpenTaskKit","short_name":"OpenTaskKit","start_url":"/","icons":[{"src":"/pwa-192.png","sizes":"192x192","type":"image/png"}]}`))
+		w.Write([]byte(`{"name":"OpenTodo","short_name":"OpenTodo","start_url":"/","icons":[{"src":"/pwa-192.png","sizes":"192x192","type":"image/png"}]}`))
 	case "/sw.js":
 		w.Header().Set("Content-Type", "text/javascript")
-		w.Write([]byte("// OpenTaskKit worker"))
+		w.Write([]byte("// OpenTodo worker"))
 	default:
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(`<!doctype html><html><head><meta name="description" content="OpenTaskKit: your tasks, your server." /><link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="apple-touch-icon" href="/apple-touch-icon.png" /><title>OpenTaskKit</title></head><body></body></html>`))
+		w.Write([]byte(`<!doctype html><html><head><meta name="description" content="OpenTodo: your tasks, your server." /><link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="apple-touch-icon" href="/apple-touch-icon.png" /><title>OpenTodo</title></head><body></body></html>`))
 	}
 })
 
@@ -71,7 +71,7 @@ func TestBranding(t *testing.T) {
 	e := brandingEnv(t)
 	// Unbranded: the page and the manifest pass through unchanged, status says so.
 	resp, body := e.raw("GET", "/", nil)
-	if resp.StatusCode != 200 || !strings.Contains(string(body), "<title>OpenTaskKit</title>") || !strings.Contains(string(body), "favicon.svg") {
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "<title>OpenTodo</title>") || !strings.Contains(string(body), "favicon.svg") {
 		t.Fatalf("plain page: %d %s", resp.StatusCode, body)
 	}
 	resp, out := e.do("GET", "/api/v1/auth/status", nil)
@@ -100,7 +100,7 @@ func TestBranding(t *testing.T) {
 		t.Fatalf("named manifest: %d %s %v", resp.StatusCode, body, resp.Header)
 	}
 	// Assets are never touched.
-	if _, body = e.raw("GET", "/sw.js", nil); !strings.Contains(string(body), "OpenTaskKit worker") {
+	if _, body = e.raw("GET", "/sw.js", nil); !strings.Contains(string(body), "OpenTodo worker") {
 		t.Fatalf("asset rewritten: %s", body)
 	}
 

@@ -47,7 +47,7 @@ export function googleResultText(result: string): string | null {
     case 'connected': return null
     case 'denied': return t('Google Calendar was not connected: the permission was not granted.')
     case 'invalid_state': return t('Google Calendar was not connected: the sign-in expired or was started elsewhere. Try again.')
-    case 'no_refresh_token': return t('Google did not grant lasting access. Remove OpenTaskKit at myaccount.google.com/permissions and connect again.')
+    case 'no_refresh_token': return t('Google did not grant lasting access. Remove OpenTodo at myaccount.google.com/permissions and connect again.')
     case 'limit_reached': return t('You already have the most calendar accounts allowed.')
   }
   return t('Google Calendar was not connected: {reason}', { reason: syncReasonText(result) })
@@ -58,7 +58,7 @@ export function microsoftResultText(result: string): string | null {
   switch (result) {
     case 'connected': return null
     case 'denied': return t('Outlook was not connected: the permission was not granted.')
-    case 'admin_consent_required': return t('Outlook was not connected: your organisation’s administrator must approve OpenTaskKit first. Ask them to grant admin consent, then connect again.')
+    case 'admin_consent_required': return t('Outlook was not connected: your organisation’s administrator must approve OpenTodo first. Ask them to grant admin consent, then connect again.')
     case 'authorization_failed': return t('Outlook was not connected: Microsoft did not complete the sign-in. Try again.')
     case 'invalid_state': return t('Outlook was not connected: the sign-in expired or was started elsewhere. Try again.')
     case 'no_refresh_token': return t('Microsoft did not grant lasting access. Connect again.')

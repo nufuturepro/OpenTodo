@@ -73,7 +73,7 @@ func (r *cycle) readCalendars(ctx context.Context) error {
 		var warns []string
 		for _, o := range objs {
 			if u == r.c.TargetURL && (r.byHref[r.tr.key(o.Href)] != nil || o.TaskID != "") {
-				continue // OpenTaskKit's own events are tasks already
+				continue // OpenTodo's own events are tasks already
 			}
 			for _, ev := range o.Events {
 				if _, ours := r.links[ev.UID]; !ours || u != r.c.TargetURL {

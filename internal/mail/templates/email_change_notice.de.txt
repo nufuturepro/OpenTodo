@@ -1,6 +1,6 @@
-Deine OpenTaskKit-E-Mail-Adresse wird geändert
+Deine OpenTodo-E-Mail-Adresse wird geändert
 
-Dies ist ein Sicherheitshinweis von OpenTaskKit.
+Dies ist ein Sicherheitshinweis von OpenTodo.
 
 Jemand, der im Konto {{.Email}} auf {{.Origin}} angemeldet ist, möchte dessen Anmeldeadresse ändern. Die Änderung erfolgt erst, wenn der Link geöffnet wird, der an die neue Adresse gesendet wurde.
 

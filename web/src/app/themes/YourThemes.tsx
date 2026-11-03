@@ -80,7 +80,7 @@ export interface YourThemesProps {
   /** Each theme's resolved colours (stylesheet names), for the label colours of its swatches. */
   resolved?: Record<string, Record<string, string>>
   actions: ThemeCardActions
-  /** New theme: the OpenTaskKit theme of the current side, every colour derived. */
+  /** New theme: the OpenTodo theme of the current side, every colour derived. */
   onNew: () => void
   /** Download a template: a starter file made from the theme in use (themes-layout-template). */
   onTemplate: () => void | Promise<void>
@@ -179,7 +179,7 @@ export function YourThemes({ themes, lowContrast, resolved = {}, actions, onNew,
         <Menu label={t('Import a theme')} namedByContent kind="menu" align="start"
           triggerClassName="ui-btn ui-btn--secondary ui-btn--sm" triggerProps={{ disabled: !room, 'data-theme-import': true }}
           trigger={<><Icon name="upload" size="sm" />{t('Import')}<Icon name="chevron-down" size="sm" /></>}>
-          <MenuItem icon="file" label={t('Theme file')} description={t('An OpenTaskKit theme or a filled-in template')} onSelect={() => fileInput.current?.click()} data-theme-import-file />
+          <MenuItem icon="file" label={t('Theme file')} description={t('An OpenTodo theme or a filled-in template')} onSelect={() => fileInput.current?.click()} data-theme-import-file />
           <MenuItem icon="code" label={t('VS Code theme')} description={t('A VS Code colour theme file')} onSelect={() => vsInput.current?.click()} data-theme-import-vscode />
         </Menu>
         <Button size="sm" variant="secondary" icon="download" onClick={onTemplate} data-theme-template>{t('Download a template')}</Button>

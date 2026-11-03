@@ -14,7 +14,7 @@
    service worker. A unique family name keeps a locally installed Inter from being
    used instead; swap shows the system font until it loads. */
 @font-face {
-  font-family: "OpenTaskKit Inter";
+  font-family: "OpenTodo Inter";
   src: url("./assets/fonts/InterVariable-latin.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
@@ -39,7 +39,7 @@
 @theme inline {
   /* A theme may set --ot-font (theme-engine D1: a system, serif, monospace or installed
      font, never one from another host); without it the bundled Inter applies. */
-  --font-sans: var(--ot-font, "OpenTaskKit Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  --font-sans: var(--ot-font, "OpenTodo Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
   --color-canvas: var(--ot-canvas);
   --color-surface: var(--ot-surface);
   --color-raised: var(--ot-raised);

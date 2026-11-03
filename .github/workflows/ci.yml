@@ -650,7 +650,7 @@ jobs:
               echo "::error::The APK is signed with $cert, not the release certificate $want (docs/android-app.md)"
               exit 1
             fi
-            echo "::warning::The APK is signed with $cert, not OpenTaskKit's release certificate (a fork's own key)"
+            echo "::warning::The APK is signed with $cert, not OpenTodo's release certificate (a fork's own key)"
           fi
       - name: Reproducible build (tags)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -908,9 +908,9 @@ jobs:
           # also creates the tag): then title, notes and the pre-release flag are set
           # from CHANGELOG.md here, so nothing has to be typed there.
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "OpenTaskKit $GITHUB_REF_NAME" --notes-file notes.md ${pre:---prerelease=false}
+            gh release edit "$GITHUB_REF_NAME" --title "OpenTodo $GITHUB_REF_NAME" --notes-file notes.md ${pre:---prerelease=false}
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "OpenTaskKit $GITHUB_REF_NAME" --notes-file notes.md $pre
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "OpenTodo $GITHUB_REF_NAME" --notes-file notes.md $pre
           fi
           gh release upload "$GITHUB_REF_NAME" release/* --clobber
 
@@ -995,7 +995,7 @@ jobs:
             echo "::notice::CLAUDE_PLUGIN_DEPLOY_KEY is not set; publish the plugin by hand (deploy/claude-plugin/README.md):"
             echo "  git clone git@github.com:OpenTodoApp/opentodo-claude.git /tmp/opentodo-claude"
             echo "  rsync -a --delete --exclude .git deploy/claude-plugin/upstream/ /tmp/opentodo-claude/"
-            echo "  cd /tmp/opentodo-claude && git add -A && git commit -m 'OpenTaskKit $version' && git tag v$version && git push origin HEAD --tags"
+            echo "  cd /tmp/opentodo-claude && git add -A && git commit -m 'OpenTodo $version' && git tag v$version && git push origin HEAD --tags"
             exit 0
           fi
           install -m 600 /dev/null "$RUNNER_TEMP/deploy_key"
@@ -1010,7 +1010,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "nothing changed since the last publish"
           else
-            git commit -q -m "OpenTaskKit $version"
+            git commit -q -m "OpenTodo $version"
           fi
           git tag -f "v$version"
           git push origin HEAD
@@ -1051,7 +1051,7 @@ jobs:
           if [ -z "$DEPLOY_KEY" ]; then
             echo "::warning::OBSIDIAN_DEPLOY_KEY is not set; publish the plugin by hand (obsidian/README.md, Releases):"
             echo "  node obsidian/scripts/mirror.mjs $version /tmp/obsidian-opentodo   # in a clone of OpenTodoApp/obsidian-opentodo"
-            echo "  cd /tmp/obsidian-opentodo && git add -A && git commit -m 'OpenTaskKit $version' && git tag $version && git push origin HEAD --tags"
+            echo "  cd /tmp/obsidian-opentodo && git add -A && git commit -m 'OpenTodo $version' && git tag $version && git push origin HEAD --tags"
             exit 0
           fi
           install -m 600 /dev/null "$RUNNER_TEMP/deploy_key"
@@ -1066,7 +1066,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "nothing changed since the last publish"
           else
-            git commit -q -m "OpenTaskKit $version"
+            git commit -q -m "OpenTodo $version"
           fi
           git tag -f "$version"
           git push origin HEAD

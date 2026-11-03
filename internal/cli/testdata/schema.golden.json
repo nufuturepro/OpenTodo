@@ -587,7 +587,7 @@
     },
     {
       "name": "import",
-      "summary": "import a file into the account (an OpenTaskKit export, CSV or another app's export) and wait for the job; --dry-run prints the server's preview; --workspace picks the target workspace",
+      "summary": "import a file into the account (an OpenTodo export, CSV or another app's export) and wait for the job; --dry-run prints the server's preview; --workspace picks the target workspace",
       "args": [
         {
           "name": "file",
@@ -2638,7 +2638,7 @@
     {
       "code": "http_<status>",
       "exit": 1,
-      "meaning": "a non-OpenTaskKit error response (proxy, wrong URL)"
+      "meaning": "a non-OpenTodo error response (proxy, wrong URL)"
     }
   ],
   "exit_codes": [

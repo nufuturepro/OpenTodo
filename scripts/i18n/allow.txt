@@ -16,10 +16,10 @@ web/src/app/IssueEditor.tsx: acme/web, acme/api
 # Settings → Notifications → Delivery channels (notification-channels): an address placeholder.
 web/src/app/NotificationChannelEditor.tsx: https://
 # The product name as the wordmark (sidebar-v2 D2): text, never translated.
-web/src/ui/icons/Brand.tsx: OpenTaskKit
+web/src/ui/icons/Brand.tsx: OpenTodo
 
 # The product name as the placeholder of the instance name field (instance-branding)
-web/src/app/BrandingPanel.tsx: OpenTaskKit
+web/src/app/BrandingPanel.tsx: OpenTodo
 # On-device assistant (assistant-on-device): a sample model server origin.
 web/src/app/assistant/AssistantDevice.tsx: http://localhost:11434
 # The calendar's filter (calendar-clarity D4): a sample query in the filter language, which is not translated.

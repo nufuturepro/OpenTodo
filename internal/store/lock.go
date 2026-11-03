@@ -58,7 +58,7 @@ func lockFile(dataDir, name string, shared bool) (func(), error) {
 }
 
 // DataDirGuide is where the guide explains data directory ownership.
-const DataDirGuide = "https://github.com/OpenTodoApp/OpenTaskKit/blob/main/docs/self-hosting/docker.md#bind-mounts"
+const DataDirGuide = "https://github.com/OpenTodoApp/OpenTodo/blob/main/docs/self-hosting/docker.md#bind-mounts"
 
 // notWritable explains a permission error on the data directory (OpenSpec
 // change unwritable-data-dir, issue #511): the lock file is the first thing the

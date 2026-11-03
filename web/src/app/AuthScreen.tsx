@@ -337,7 +337,7 @@ export function DemoPanel({ hours, busy, error, onTry }: { hours?: { idle: numbe
   const max = hours?.max ?? 24
   return (
     <div className="mb-4 rounded-control bg-info-soft p-3 text-body text-on-info-soft" data-testid="demo-panel">
-      <p className="font-medium">{t('This is a public demo of OpenTaskKit.')}</p>
+      <p className="font-medium">{t('This is a public demo of OpenTodo.')}</p>
       <p className="mt-1 text-meta">
         {t('You get a private sandbox with sample data that only you can see. It is deleted after {idle} hours of inactivity, after {max} hours at most, and every night. No sign-up; don\'t store anything personal.', { idle, max })}
       </p>

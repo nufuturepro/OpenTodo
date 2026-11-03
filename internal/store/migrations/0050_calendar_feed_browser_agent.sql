@@ -1,5 +1,5 @@
 -- calendar-feed-user-agent (#622): a subscription whose server refused the
--- OpenTaskKit User-Agent (400, 403 or 406) and then answered a browser-compatible
+-- OpenTodo User-Agent (400, 403 or 406) and then answered a browser-compatible
 -- one is listed here, so later polls send the browser User-Agent directly. The
 -- row is removed when the subscription's address changes. A side table rather
 -- than a column on calendar_subscriptions, because SQLite cannot run ALTER

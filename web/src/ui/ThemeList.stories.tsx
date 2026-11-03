@@ -6,9 +6,9 @@ import examples from './ThemeList.examples.json'
 const meta: Meta = { title: 'UI/Theme list' }
 export default meta
 
-// The OpenTaskKit themes preview through the stylesheet's own tokens (theme-engine D14).
+// The OpenTodo themes preview through the stylesheet's own tokens (theme-engine D14).
 const opentodo = (side: 'light' | 'dark'): ThemeCardData => ({
-  id: `opentodo-${side}`, name: side === 'light' ? 'OpenTaskKit Light' : 'OpenTaskKit Dark', author: 'OpenTaskKit contributors', scheme: side,
+  id: `opentodo-${side}`, name: side === 'light' ? 'OpenTodo Light' : 'OpenTodo Dark', author: 'OpenTodo contributors', scheme: side,
   swatches: { canvas: 'var(--ot-canvas)', surface: 'var(--ot-surface)', text: 'var(--ot-text)', accent: 'var(--ot-accent)', hues: ['green', 'blue', 'violet', 'orange'].map((h) => `var(--ot-hue-${h}-solid)`) },
 })
 // Other themes give their own colours (theme-catalogue ships real ones; these are examples).
@@ -19,7 +19,7 @@ function List({ label, themes, initial, note }: { label: string; themes: ThemeCa
   return <ThemeList label={label} themes={themes} value={value} onChange={setValue} note={note} />
 }
 
-/** A fixed mode: one list, in this version the OpenTaskKit theme alone. */
+/** A fixed mode: one list, in this version the OpenTodo theme alone. */
 export const OneSide: StoryObj = {
   render: () => <div className="max-w-2xl bg-surface p-4"><List label="Theme" themes={[opentodo('light')]} initial="opentodo-light" /></div>,
 }
@@ -38,7 +38,7 @@ export const BothSides: StoryObj = {
 export const ManyWithNote: StoryObj = {
   render: () => (
     <div className="max-w-2xl bg-surface p-4">
-      <List label="Dark" themes={[opentodo('dark'), ...palettes, { ...palettes[0], id: 'example-3', name: 'Example Three' }]} initial="opentodo-dark" note="Made with a newer version of OpenTaskKit" />
+      <List label="Dark" themes={[opentodo('dark'), ...palettes, { ...palettes[0], id: 'example-3', name: 'Example Three' }]} initial="opentodo-dark" note="Made with a newer version of OpenTodo" />
     </div>
   ),
 }

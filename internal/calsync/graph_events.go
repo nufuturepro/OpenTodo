@@ -40,7 +40,7 @@ type graphEvent struct {
 	} `json:"singleValueExtendedProperties"`
 }
 
-// taskID is the task OpenTaskKit's property names, "" for another event.
+// taskID is the task OpenTodo's property names, "" for another event.
 func (e *graphEvent) taskID() string {
 	for _, p := range e.Props {
 		if strings.EqualFold(p.ID, TaskProperty) {

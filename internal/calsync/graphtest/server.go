@@ -36,7 +36,7 @@ type Event struct {
 	Subject, Body      string
 	Start, End         DT
 	IsAllDay           bool
-	// TaskID is the value of OpenTaskKit's extended property, "" without it.
+	// TaskID is the value of OpenTodo's extended property, "" without it.
 	TaskID        string
 	TransactionID string
 	Modified      time.Time
@@ -70,7 +70,7 @@ type Server struct {
 	ExpireDeltas bool
 	// PageSize bounds the events of one page (default 50).
 	PageSize int
-	// Property is the extended property id OpenTaskKit marks events with.
+	// Property is the extended property id OpenTodo marks events with.
 	Property string
 	// Now stamps changes (defaults to time.Now).
 	Now func() time.Time
@@ -453,7 +453,7 @@ func wantsUTC(r *http.Request) bool {
 	return strings.Contains(strings.Join(r.Header.Values("Prefer"), ","), `outlook.timezone="UTC"`)
 }
 
-// view renders an event; expand adds OpenTaskKit's property when asked for.
+// view renders an event; expand adds OpenTodo's property when asked for.
 func (s *Server) render(e *Event, r *http.Request, expand bool) map[string]any {
 	start, end := e.Start, e.End
 	if !e.IsAllDay && wantsUTC(r) {

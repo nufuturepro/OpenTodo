@@ -25,7 +25,7 @@ export default function ThemeAbout({ theme, creditsUrl, onClose }: { theme: Cata
           {row(t('Project'), theme.source)}
         </dl>
         {theme.adapted && <p className="text-meta text-muted" data-theme-adapted>{t('Some colours were adapted for contrast')}</p>}
-        <p className="text-meta text-muted">{t('OpenTaskKit is not affiliated with this project')}</p>
+        <p className="text-meta text-muted">{t('OpenTodo is not affiliated with this project')}</p>
         <div className="flex items-center justify-between gap-2">
           {creditsUrl ? <a className="text-meta text-accent underline" href={creditsUrl} target="_blank" rel="noopener" data-theme-licence>{t('Licence')}</a> : <span />}
           <Button variant="secondary" onClick={onClose}>{t('Close')}</Button>

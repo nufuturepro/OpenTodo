@@ -90,7 +90,7 @@ export function groupOf(fm) {
   return fm.section || 'Integrations'
 }
 export const GROUP_ORDER = ['Get started', 'Open Loops', 'Switch from another app', 'Guides', 'Reference', 'Self-hosting', 'Integrations', 'Internals']
-export const AUDIENCE_LABEL = { user: 'Using OpenTaskKit', admin: 'Self-hosting', developer: 'Integrations and internals' }
+export const AUDIENCE_LABEL = { user: 'Using OpenTodo', admin: 'Self-hosting', developer: 'Integrations and internals' }
 
 /**
  * Loads every page: { rel, slug, fm, body, errors }. The landing page (README.md)

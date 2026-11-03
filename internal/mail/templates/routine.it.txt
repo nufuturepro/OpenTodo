@@ -3,7 +3,7 @@
 {{.Text}}
 
 --
-Questo messaggio è stato inviato dalla tua routine «{{.Routine}}» su OpenTaskKit all’indirizzo {{.Origin}}.
+Questo messaggio è stato inviato dalla tua routine «{{.Routine}}» su OpenTodo all’indirizzo {{.Origin}}.
 
 Vedi questa esecuzione:
 

@@ -339,7 +339,7 @@ describe('resize and collapse (ux-overhaul 4.9)', () => {
     expect(r.container.querySelector('[data-sidebar-collapse]')?.getAttribute('aria-pressed')).toBe('true')
     expect(r.container.querySelector('[data-sidebar-collapse]')?.getAttribute('aria-label')).toBe('Expand sidebar')
     expect(r.container.textContent).not.toContain('Projects')
-    expect(r.container.textContent).not.toContain('OpenTaskKit')
+    expect(r.container.textContent).not.toContain('OpenTodo')
     await r.unmount()
   })
 
@@ -1055,7 +1055,7 @@ describe('the brand header and the sidebar colour', () => {
     await waitFor(() => !!r.container.querySelector('[data-sidebar-header] [data-palette-button]'), 'the header')
     const header = r.container.querySelector('[data-sidebar-header]')!
     expect(header.querySelector('[data-brand-mark="mono"]')).not.toBeNull()
-    expect(header.querySelector('[data-brand-wordmark]')!.textContent).toBe('OpenTaskKit')
+    expect(header.querySelector('[data-brand-wordmark]')!.textContent).toBe('OpenTodo')
     expect(r.container.querySelector('img')).toBeNull()
     expect(header.querySelector('[data-palette-button]')).not.toBeNull()
     // 32 px with a fine pointer (min-h-8), never wrapping: one flex row.
@@ -1064,11 +1064,11 @@ describe('the brand header and the sidebar colour', () => {
     await r.unmount()
   })
 
-  it('Rail: the mark alone, named OpenTaskKit', async () => {
+  it('Rail: the mark alone, named OpenTodo', async () => {
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} onSearch={() => {}} collapsed />)
     await waitFor(() => !!r.container.querySelector('[data-sidebar-header] [role="img"]'), 'the rail header')
     const header = r.container.querySelector('[data-sidebar-header]')!
-    expect(header.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('OpenTaskKit')
+    expect(header.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('OpenTodo')
     expect(header.querySelector('[data-brand-wordmark]')).toBeNull()
     await r.unmount()
   })

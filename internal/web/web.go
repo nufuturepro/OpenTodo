@@ -90,7 +90,7 @@ func handlerFor(sub fs.FS, o Options) http.Handler {
 			return
 		}
 		if index == nil {
-			http.Error(w, "OpenTaskKit frontend is not built. Run `make web` and rebuild the binary.", http.StatusNotFound)
+			http.Error(w, "OpenTodo frontend is not built. Run `make web` and rebuild the binary.", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

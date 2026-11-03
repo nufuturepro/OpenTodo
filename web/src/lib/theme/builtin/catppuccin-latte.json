@@ -49,6 +49,6 @@
       "hue-indigo": "#7287fd",
       "hue-pink": "#ea76cb"
     },
-    "text": "Catppuccin Latte by Catppuccin, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Catppuccin Latte by Catppuccin, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

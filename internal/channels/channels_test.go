@@ -274,7 +274,7 @@ func toString(v any) string {
 func TestContentPolicyAndLanguages(t *testing.T) {
 	e := event{kind: EventReminder, key: txtReminder, withKey: txtReminderWith, taskID: "t1", taskTitle: "Call the plumber", at: 5}
 	m := e.render("en", "https://todo.example.com", false)
-	if m.Title != "OpenTaskKit" || m.Body != "A reminder is due" || m.URL != "https://todo.example.com/?task=t1" || m.TaskTitle != "" {
+	if m.Title != "OpenTodo" || m.Body != "A reminder is due" || m.URL != "https://todo.example.com/?task=t1" || m.TaskTitle != "" {
 		t.Fatalf("titles off: %+v", m)
 	}
 	if raw, _ := json.Marshal(m); strings.Contains(string(raw), "plumber") {
@@ -504,7 +504,7 @@ func TestSendTest(t *testing.T) {
 		t.Fatalf("test: %+v %v", res, err)
 	}
 	form, _ := url.ParseQuery(string(h.recv.all()[1].body))
-	if form.Get("title") != "Test from OpenTaskKit" {
+	if form.Get("title") != "Test from OpenTodo" {
 		t.Fatalf("test message: %v", form)
 	}
 	if _, err := h.svc.Test(ctx, "u2", c.ID); !errors.Is(err, ErrNotFound) {
@@ -574,7 +574,7 @@ func TestRoutineNotice(t *testing.T) {
 	if m := e.render("en", "https://todo.example.com", true); m.Title != "Waiting check" || m.Body != "Too much waiting" || m.URL != "https://todo.example.com/routines/r1?run=run1" {
 		t.Fatalf("with titles: %+v", m)
 	}
-	if m := e.render("en", "", false); m.Title != "OpenTaskKit" || m.Body != "A routine sent you a notice" {
+	if m := e.render("en", "", false); m.Title != "OpenTodo" || m.Body != "A routine sent you a notice" {
 		t.Fatalf("titles off: %+v", m)
 	}
 }

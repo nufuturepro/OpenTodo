@@ -923,12 +923,6 @@ export interface UserPrefs extends UserPrefsFields {
   focus_break_after_minutes: number
   /** Maps on this user's devices (task-locations D6): 'off' turns them off; '' and anything else read as on. */
   maps?: string
-  /**
-   * Built-in plugins this user turned off (OpenSpec change plugin-section,
-   * design D3): comma-separated plugin ids; an unknown id is ignored on read
-   * and kept in the stored value. Empty (the default) means every plugin is on.
-   */
-  disabled_plugins?: string
   /** Haptic feedback on this user's devices (motion-v2 D6): 'off' turns the tick off; '' and anything else read as on. */
   haptics?: string
   /** The day pages' briefing (briefing-links D4): 'hidden' hides it; '' and anything else read as shown. */

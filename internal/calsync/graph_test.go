@@ -202,7 +202,7 @@ func TestGraphOtherEventsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(events) != 1 || events[0].Summary != "Team meeting (moved)" {
-		t.Fatalf("shown events = %+v (OpenTaskKit's own events are left out)", events)
+		t.Fatalf("shown events = %+v (OpenTodo's own events are left out)", events)
 	}
 }
 
@@ -367,7 +367,7 @@ func TestGraphRefreshRotatesAndRevoked(t *testing.T) {
 	if ms.Refreshes() != 1 {
 		t.Fatalf("refreshes = %d (the access token is cached)", ms.Refreshes())
 	}
-	// The user removed OpenTaskKit's access.
+	// The user removed OpenTodo's access.
 	ms.Revoked = true
 	h.later(2 * time.Hour)
 	if _, err := h.w.Cycle(h.ctx, h.conn(c.ID)); err == nil {

@@ -1,6 +1,6 @@
 {{.Inviter}} quer compartilhar um projeto ou espaço de trabalho com você
 
-{{.Inviter}} pediu para adicionar sua conta {{.Email}} como {{.Role}} no servidor OpenTaskKit {{.Origin}}. Nada é compartilhado com você até que responda.
+{{.Inviter}} pediu para adicionar sua conta {{.Email}} como {{.Role}} no servidor OpenTodo {{.Origin}}. Nada é compartilhado com você até que responda.
 
 Para aceitar ou recusar, entre e abra:
 

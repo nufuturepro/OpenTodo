@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Applying a theme (theme-engine D4, task 5.1): one generated rule on the root, the
 // high-contrast presentation winning over it, the theme's kind on data-theme, shape
-// and type applied, nothing written for the OpenTaskKit themes, and no way for a
+// and type applied, nothing written for the OpenTodo themes, and no way for a
 // document to add a declaration.
 import { beforeEach, describe, expect, it } from 'vitest'
 import css from '../../index.css?raw'
@@ -54,7 +54,7 @@ describe('applyTheme', () => {
     expect(value('canvas')).toBe(nord().tokens.canvas)
   })
 
-  it('removes the sheet for an OpenTaskKit theme', () => {
+  it('removes the sheet for an OpenTodo theme', () => {
     applyTheme(nord())
     applyTheme(null)
     expect(document.getElementById('ot-theme')).toBeNull()

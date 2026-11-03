@@ -225,7 +225,7 @@ describe('Microsoft in calendar sync (outlook-calendar-sync)', () => {
       'GET /api/v1/calendar-sync/connections': { connections: [] },
     })
     const r = await render(<CalendarSyncPanel isOwner={false} />)
-    await waitFor(() => r.container.textContent!.includes('administrator must approve OpenTaskKit'))
+    await waitFor(() => r.container.textContent!.includes('administrator must approve OpenTodo'))
     expect(window.location.search).toBe('')
     await r.unmount()
   })

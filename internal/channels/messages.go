@@ -47,7 +47,7 @@ const (
 	txtGuest             = "guest"
 	maxTitleRunes        = 120
 	maxBodyRunes         = 300
-	genericMessageTitle  = "OpenTaskKit"
+	genericMessageTitle  = "OpenTodo"
 )
 
 // texts holds every message in the six app languages. {name} is the actor.
@@ -61,7 +61,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Reminder", txtAssignedBy: "{name} assigned this task to you", txtMentionedBy: "{name} mentioned you",
 		txtUnblockedWith: "Ready to start", txtPageRepliedBy: "{name} replied on the task page",
 		txtPageDoneBy: "{name} completed the task on its page", txtPageReopenedBy: "{name} reopened the task on its page",
-		txtTestTitle: "Test from OpenTaskKit", txtTestBody: "This channel works.", txtGuest: "A guest",
+		txtTestTitle: "Test from OpenTodo", txtTestBody: "This channel works.", txtGuest: "A guest",
 	},
 	"de": {
 		txtRoutine:       "Eine Routine hat dir eine Nachricht geschickt",
@@ -72,7 +72,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Erinnerung", txtAssignedBy: "{name} hat dir diese Aufgabe zugewiesen", txtMentionedBy: "{name} hat dich erwähnt",
 		txtUnblockedWith: "Kann beginnen", txtPageRepliedBy: "{name} hat auf der Aufgabenseite geantwortet",
 		txtPageDoneBy: "{name} hat die Aufgabe auf ihrer Seite erledigt", txtPageReopenedBy: "{name} hat die Aufgabe auf ihrer Seite wieder geöffnet",
-		txtTestTitle: "Test von OpenTaskKit", txtTestBody: "Dieser Kanal funktioniert.", txtGuest: "Ein Gast",
+		txtTestTitle: "Test von OpenTodo", txtTestBody: "Dieser Kanal funktioniert.", txtGuest: "Ein Gast",
 	},
 	"fr": {
 		txtRoutine:       "Une routine vous a envoyé un avis",
@@ -83,7 +83,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Rappel", txtAssignedBy: "{name} vous a attribué cette tâche", txtMentionedBy: "{name} vous a mentionné",
 		txtUnblockedWith: "Peut commencer", txtPageRepliedBy: "{name} a répondu sur la page de la tâche",
 		txtPageDoneBy: "{name} a terminé la tâche sur sa page", txtPageReopenedBy: "{name} a rouvert la tâche sur sa page",
-		txtTestTitle: "Test d’OpenTaskKit", txtTestBody: "Ce canal fonctionne.", txtGuest: "Un invité",
+		txtTestTitle: "Test d’OpenTodo", txtTestBody: "Ce canal fonctionne.", txtGuest: "Un invité",
 	},
 	"es": {
 		txtRoutine:       "Una rutina te envió un aviso",
@@ -94,7 +94,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Recordatorio", txtAssignedBy: "{name} te ha asignado esta tarea", txtMentionedBy: "{name} te ha mencionado",
 		txtUnblockedWith: "Ya puede empezar", txtPageRepliedBy: "{name} respondió en la página de la tarea",
 		txtPageDoneBy: "{name} completó la tarea en su página", txtPageReopenedBy: "{name} reabrió la tarea en su página",
-		txtTestTitle: "Prueba de OpenTaskKit", txtTestBody: "Este canal funciona.", txtGuest: "Un invitado",
+		txtTestTitle: "Prueba de OpenTodo", txtTestBody: "Este canal funciona.", txtGuest: "Un invitado",
 	},
 	"it": {
 		txtRoutine:       "Una routine ti ha inviato un avviso",
@@ -105,7 +105,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Promemoria", txtAssignedBy: "{name} ti ha assegnato questa attività", txtMentionedBy: "{name} ti ha menzionato",
 		txtUnblockedWith: "Può iniziare", txtPageRepliedBy: "{name} ha risposto sulla pagina dell’attività",
 		txtPageDoneBy: "{name} ha completato l’attività sulla sua pagina", txtPageReopenedBy: "{name} ha riaperto l’attività sulla sua pagina",
-		txtTestTitle: "Prova da OpenTaskKit", txtTestBody: "Questo canale funziona.", txtGuest: "Un ospite",
+		txtTestTitle: "Prova da OpenTodo", txtTestBody: "Questo canale funziona.", txtGuest: "Un ospite",
 	},
 	"pt": {
 		txtRoutine:       "Uma rotina enviou um aviso para você",
@@ -116,7 +116,7 @@ var texts = map[string]map[string]string{
 		txtReminderWith: "Lembrete", txtAssignedBy: "{name} atribuiu esta tarefa a você", txtMentionedBy: "{name} mencionou você",
 		txtUnblockedWith: "Já pode começar", txtPageRepliedBy: "{name} respondeu na página da tarefa",
 		txtPageDoneBy: "{name} concluiu a tarefa na página dela", txtPageReopenedBy: "{name} reabriu a tarefa na página dela",
-		txtTestTitle: "Teste do OpenTaskKit", txtTestBody: "Este canal funciona.", txtGuest: "Um convidado",
+		txtTestTitle: "Teste do OpenTodo", txtTestBody: "Este canal funciona.", txtGuest: "Um convidado",
 	},
 }
 

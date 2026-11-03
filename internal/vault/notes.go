@@ -494,7 +494,7 @@ func (e *engine) noteRead(m *mergeRun, n *noteFile, id string, baseP map[string]
 			rr = strings.TrimPrefix(rr, "RRULE:")
 			rule, ok := recurrence.FromRRULE(rr, due)
 			if !ok {
-				bad("%s %s is a rule OpenTaskKit cannot express; it is read-only for this note", k, fk.Scalar)
+				bad("%s %s is a rule OpenTodo cannot express; it is read-only for this note", k, fk.Scalar)
 				break
 			}
 			out["recur"] = rule.Canonical()

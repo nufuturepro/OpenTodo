@@ -1,6 +1,6 @@
-# How the built-in palettes map onto OpenTaskKit's tokens
+# How the built-in palettes map onto OpenTodo's tokens
 
-The built-in themes other than OpenTaskKit's own (OpenSpec change `theme-catalogue`, design D3) take their colours from editor palettes. An editor palette is made for code on one background; a task app needs surface steps, four text tones, selection, soft chips for 12 label colours, four status colours and four priorities. This file is the one written mapping every palette follows. The published values and where each goes are in `web/src/lib/theme/catalogue/palettes.ts`; `web/src/lib/theme/catalogue/generate.ts` applies the mapping and the contrast adaptation, and `catalogue.test.ts` checks the documents in this folder against both (`UPDATE_CATALOGUE=1 npx vitest run src/lib/theme/catalogue.test.ts` rewrites them).
+The built-in themes other than OpenTodo's own (OpenSpec change `theme-catalogue`, design D3) take their colours from editor palettes. An editor palette is made for code on one background; a task app needs surface steps, four text tones, selection, soft chips for 12 label colours, four status colours and four priorities. This file is the one written mapping every palette follows. The published values and where each goes are in `web/src/lib/theme/catalogue/palettes.ts`; `web/src/lib/theme/catalogue/generate.ts` applies the mapping and the contrast adaptation, and `catalogue.test.ts` checks the documents in this folder against both (`UPDATE_CATALOGUE=1 npx vitest run src/lib/theme/catalogue.test.ts` rewrites them).
 
 ## Seeds
 
@@ -26,7 +26,7 @@ Every other token (the remaining surfaces, lines, the accent's hover, soft and f
 
 ## Label colours
 
-The palette's accent colours fill the 12 label colours by nearest hue (OKLCH hue against OpenTaskKit's own label hue): a green that leans yellow (Solarized, Tokyo Night, Nord, Gruvbox) is the `lime` label, a cyan that leans green (Solarized) is `teal`. Each published colour fills at most one label. `slate` is the palette's comment or grey colour. A label colour the palette has no colour for uses OpenTaskKit's hue at the mean lightness and chroma of the palette's own accents, so a project's colour stays recognisable and sits with the palette; the document's `notes.text` lists them. `catalogue.test.ts` requires the 12 solid label colours of each theme to stay at least ΔE 8 apart (CIE76).
+The palette's accent colours fill the 12 label colours by nearest hue (OKLCH hue against OpenTodo's own label hue): a green that leans yellow (Solarized, Tokyo Night, Nord, Gruvbox) is the `lime` label, a cyan that leans green (Solarized) is `teal`. Each published colour fills at most one label. `slate` is the palette's comment or grey colour. A label colour the palette has no colour for uses OpenTodo's hue at the mean lightness and chroma of the palette's own accents, so a project's colour stays recognisable and sits with the palette; the document's `notes.text` lists them. `catalogue.test.ts` requires the 12 solid label colours of each theme to stay at least ΔE 8 apart (CIE76).
 
 ## Adapted values
 

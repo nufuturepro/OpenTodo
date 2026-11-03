@@ -5,7 +5,7 @@ import { Sample } from './stories/themeSample'
 
 // The sample screen of every built-in palette (OpenSpec change theme-catalogue,
 // design D7): checked by the a11y gate in light and dark, without screenshot
-// baselines (tag no-visual), so CI keeps baselines for OpenTaskKit's two themes only.
+// baselines (tag no-visual), so CI keeps baselines for OpenTodo's two themes only.
 const meta: Meta = { title: 'Settings/App/Theme catalogue samples', tags: ['no-visual'], decorators: [withClock] }
 export default meta
 

@@ -30,7 +30,7 @@ export function ImportReport({ report, failures, onCancel, onOpen }: ImportRepor
           {report.kind === 'dark' ? t('A dark theme.') : t('A light theme.')}{' '}
           {t('{mapped, plural, one {# colour was taken from the file} other {# colours were taken from the file}}; {derived, plural, one {# follows} other {# follow}} from them.', { mapped: report.mapped.length, derived: report.derived.length })}
         </p>
-        {report.highContrast && <Notice>{t('This is a high-contrast theme. OpenTaskKit\'s own high-contrast setting, under Appearance, may suit you better.')}</Notice>}
+        {report.highContrast && <Notice>{t('This is a high-contrast theme. OpenTodo\'s own high-contrast setting, under Appearance, may suit you better.')}</Notice>}
         {report.include && <Notice tone="warning">{t('The file includes {file}, which was not read: the importer reads one file and never fetches another.', { file: report.include })}</Notice>}
         <section aria-labelledby="vscode-mapped" className="flex flex-col gap-1">
           <h3 id="vscode-mapped" className="text-meta font-semibold text-muted">{t('Taken from the file')}</h3>

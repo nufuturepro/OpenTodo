@@ -59,7 +59,7 @@ export function DeviceSetupForm({ allowance, setup, onSave, onCancel }: DeviceSe
   return (
     <section className="space-y-3 text-body" aria-labelledby="device-setup-heading" data-device-setup>
       <h3 id="device-setup-heading" className="font-semibold">{t('Set up the assistant on this device')}</h3>
-      <p className="text-muted">{t('Your account is end-to-end encrypted, so the server cannot read your tasks. This device can: it sends what a question needs directly to the provider you choose, with your own key. The OpenTaskKit server sees none of it.')}</p>
+      <p className="text-muted">{t('Your account is end-to-end encrypted, so the server cannot read your tasks. This device can: it sends what a question needs directly to the provider you choose, with your own key. The OpenTodo server sees none of it.')}</p>
       <Field label={t('Provider')}>
         <Select className="min-w-0 max-w-full sm:max-w-sm" value={provider} onChange={(e) => {
           const next = e.target.value as DeviceProvider
@@ -84,7 +84,7 @@ export function DeviceSetupForm({ allowance, setup, onSave, onCancel }: DeviceSe
         </Field>
       )}
       <Field label={provider === 'compatible' ? t('API key (if the server needs one)') : t('Your API key')}
-        description={t('Kept only in this browser: never synced, never sent to the OpenTaskKit server, deleted when you sign out. The app’s page on this device can read it.')}>
+        description={t('Kept only in this browser: never synced, never sent to the OpenTodo server, deleted when you sign out. The app’s page on this device can read it.')}>
         <Input className="max-w-sm" type="password" autoComplete="off" value={key} onChange={(e) => change(() => setKey(e.target.value))} />
       </Field>
       {shown && <Notice tone="danger">{problemText(shown, allowance.origins)}</Notice>}
@@ -150,7 +150,7 @@ export function DeviceDisclosure({ setup, onChange }: { setup: DeviceSetup; onCh
   return (
     <>
       <p data-consent-device>
-        {t.rich('To answer, this device sends what you type and the task data it needs <strong>directly to {provider}</strong>{model}, with your own key. The OpenTaskKit server sees none of it. Nothing is sent before you accept.', {
+        {t.rich('To answer, this device sends what you type and the task data it needs <strong>directly to {provider}</strong>{model}, with your own key. The OpenTodo server sees none of it. Nothing is sent before you accept.', {
           provider: deviceProviderLabel(setup), model: setup.model ? ` (${setup.model})` : '', strong: (chunks) => <strong>{chunks}</strong>,
         })}
       </p>

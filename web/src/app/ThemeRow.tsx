@@ -1,6 +1,6 @@
 // The Theme row of Settings → Appearance (theme-engine D14, theme-catalogue D1, D4,
 // D6): one list of theme cards for a fixed mode, a Light and a Dark list under
-// System. The OpenTaskKit theme of each side comes first, then the built-in palettes of
+// System. The OpenTodo theme of each side comes first, then the built-in palettes of
 // that kind by name, from the catalogue, which loads lazily with this row (never on
 // the first load). Under System, choosing one theme of a light and dark family while
 // the other side is not of that family offers its counterpart for the other side
@@ -29,7 +29,7 @@ import { knownThemes, type CatalogueModule, type ThemeSettingsProps } from './th
 
 const ThemeAbout = lazy(() => import('./ThemeAbout'))
 
-/** The family and counterpart of a theme; OpenTaskKit Light and Dark are one family. */
+/** The family and counterpart of a theme; OpenTodo Light and Dark are one family. */
 export function familyOf(id: string, c: CatalogueModule | null): { family: string; counterpart?: string } {
   if (id === 'opentodo-light') return { family: 'opentodo', counterpart: 'opentodo-dark' }
   if (id === 'opentodo-dark') return { family: 'opentodo', counterpart: 'opentodo-light' }
@@ -39,18 +39,18 @@ export function familyOf(id: string, c: CatalogueModule | null): { family: strin
 
 /** A theme's display name. */
 export function themeName(id: string, c: CatalogueModule | null): string {
-  if (id === 'opentodo-light') return t('OpenTaskKit Light')
-  if (id === 'opentodo-dark') return t('OpenTaskKit Dark')
+  if (id === 'opentodo-light') return t('OpenTodo Light')
+  if (id === 'opentodo-dark') return t('OpenTodo Dark')
   return c?.CATALOGUE.find((x) => x.id === id)?.name ?? id
 }
 
-/** The cards of one side: OpenTaskKit's theme, then the palettes of that kind by name. */
+/** The cards of one side: OpenTodo's theme, then the palettes of that kind by name. */
 export function themeCards(side: Side, c: CatalogueModule | null = null): ThemeCardData[] {
   const own = BUILTIN_THEMES.filter((b) => b.kind === side).map((b): ThemeCardData => ({
     id: b.id,
     name: themeName(b.id, null),
-    author: t('OpenTaskKit contributors'),
-    // The OpenTaskKit themes preview through the stylesheet's own tokens, with the user's accent.
+    author: t('OpenTodo contributors'),
+    // The OpenTodo themes preview through the stylesheet's own tokens, with the user's accent.
     scheme: side,
     swatches: {
       canvas: 'var(--ot-canvas)', surface: 'var(--ot-surface)', text: 'var(--ot-text)', accent: 'var(--ot-accent)',
@@ -76,7 +76,7 @@ export interface ThemeChoiceProps {
 
 const SIDE_LABEL = translatedMap<Side>({ light: msg('Light'), dark: msg('Dark') })
 const STATUS_NOTE: Partial<Record<ChoiceStatus, () => string>> = {
-  newer: () => t('Made with a newer version of OpenTaskKit'),
+  newer: () => t('Made with a newer version of OpenTodo'),
   invalid: () => t('Theme is invalid'),
 }
 
@@ -213,7 +213,7 @@ export function choiceValue(c: SideChoice, serverDefault: boolean): string {
 
 /**
  * The cards of one side before the user's own themes: Default (Server default: name)
- * when the server has a default, OpenTaskKit's theme and the palettes, then the server's
+ * when the server has a default, OpenTodo's theme and the palettes, then the server's
  * themes, each saying it is from this server; the server's default is marked.
  */
 export function serverCards(side: Side, inst: InstanceThemes, c: CatalogueModule | null): ThemeCardData[] {

@@ -26,12 +26,10 @@ fi
 git checkout main
 git merge --no-ff "$tag" -m "Merge upstream $tag" || {
   echo ""
-  echo "Merge conflicts. For the brand overlay files (FORKING.md → brand overlay)"
-  echo "keep OUR side; everything else is a genuine merge: take upstream's, then"
-  echo "re-apply our change on top if it still matters. Afterwards:"
-  echo "  1. Re-apply the brand sweep (sed line in FORKING.md)."
-  echo "  2. make check   (CI on ubuntu is authoritative on Windows)"
-  echo "  3. git push origin main"
+  echo "Merge conflicts. Resolve them (take upstream's side where this fork's change"
+  echo "no longer applies; re-apply ours on top where it still matters), then:"
+  echo "  1. make check   (CI on ubuntu is authoritative on Windows)"
+  echo "  2. git push origin main"
   exit 1
 }
 
@@ -40,8 +38,7 @@ cat <<EOF
 Merged $tag into main.
 
 Next:
-  1. Re-apply the brand sweep (FORKING.md → brand overlay).
-  2. Note the sync in CHANGELOG.md and run: make check
-  3. Tag a distribution release:
-       git tag opentaskkit-$version-otk.1 && git push origin main --tags
+  1. Note the sync in CHANGELOG.md and run: make check
+  2. Tag a fork release:
+       git tag opentodo-$version-1 && git push origin main --tags
 EOF

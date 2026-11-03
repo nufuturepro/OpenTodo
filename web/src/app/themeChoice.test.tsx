@@ -3,7 +3,7 @@
 // 7.2): one list for a fixed mode, a Light and a Dark list under System, one op per
 // choice, keyboard operation, the theme applied live with its bar, the accent tiles'
 // "From the theme" state, and the switch with the operating system. This version
-// ships only the OpenTaskKit themes, so a test palette is added to the builtin list.
+// ships only the OpenTodo themes, so a test palette is added to the builtin list.
 import 'fake-indexeddb/auto'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../lib/db'
@@ -66,8 +66,8 @@ describe('Settings › Appearance › Theme', () => {
     expect(document.getElementById(group('dark').getAttribute('aria-labelledby')!)!.textContent).toBe('Dark')
     expect(card('light', 'opentodo-light').getAttribute('aria-checked')).toBe('true')
     expect(card('dark', 'opentodo-dark').getAttribute('aria-checked')).toBe('true')
-    expect(card('light', 'opentodo-light').textContent).toContain('OpenTaskKit Light')
-    expect(card('light', 'opentodo-light').textContent).toContain('by OpenTaskKit contributors')
+    expect(card('light', 'opentodo-light').textContent).toContain('OpenTodo Light')
+    expect(card('light', 'opentodo-light').textContent).toContain('by OpenTodo contributors')
     // Choosing the theme already chosen writes nothing.
     await click(card('dark', 'opentodo-dark'))
     expect(await fields()).toEqual([])
@@ -99,7 +99,7 @@ describe('Settings › Appearance › Theme', () => {
     expect(JSON.parse(localStorage.getItem('ot.theme')!).dark.id).toBe('test-night')
     await waitFor(() => !!document.querySelector('[data-accent-from-theme]'), 'the accent from the theme')
     expect(document.querySelector('[data-theme-tile="teal"]')).toBeNull()
-    // Back to OpenTaskKit Dark: the default is stored as empty, the sheet goes, Teal is back.
+    // Back to OpenTodo Dark: the default is stored as empty, the sheet goes, Teal is back.
     await click(card('dark', 'opentodo-dark'))
     await waitFor(() => !root().hasAttribute('data-ot-theme'), 'the theme removed')
     expect((await fields()).slice(before)).toEqual(['theme_dark=builtin:test-night', 'theme_dark='])
@@ -110,12 +110,12 @@ describe('Settings › Appearance › Theme', () => {
     await r.unmount()
   })
 
-  it('under System follows the operating system between OpenTaskKit Light and a dark theme', async () => {
+  it('under System follows the operating system between OpenTodo Light and a dark theme', async () => {
     const r = await render(<AppearanceProvider><AppearanceSection /></AppearanceProvider>)
     await waitFor(() => !!list('dark'), 'the lists')
     await click(card('dark', 'test-night'))
     await waitFor(async () => (await fields()).includes('theme_dark=builtin:test-night'), 'the op')
-    // A light system: OpenTaskKit Light, exactly as without a theme, with the dark side's bar for later.
+    // A light system: OpenTodo Light, exactly as without a theme, with the dark side's bar for later.
     await waitFor(() => bars().some(([c]) => c === '#2e3440'), 'the dark bar')
     expect(root().hasAttribute('data-ot-theme')).toBe(false)
     expect(root().hasAttribute('data-theme')).toBe(false)
@@ -133,7 +133,7 @@ describe('Settings › Appearance › Theme', () => {
     const { applyOps } = await import('../lib/ops')
     await applyOps([{ id: 'n1', entity: 'user_prefs', entityId: 'me', field: 'theme_dark', value: 'builtin:from-the-future', ts: '0000001:0000:dev', device: 'phone' }] as never)
     const r = await render(<AppearanceProvider><AppearanceSection /></AppearanceProvider>)
-    await waitFor(() => !!list('dark')?.textContent?.includes('Made with a newer version of OpenTaskKit'), 'the note')
+    await waitFor(() => !!list('dark')?.textContent?.includes('Made with a newer version of OpenTodo'), 'the note')
     expect(card('dark', 'opentodo-dark').getAttribute('aria-checked')).toBe('true')
     expect(root().hasAttribute('data-ot-theme')).toBe(false)
     expect(await db.outbox.count()).toBe(0)

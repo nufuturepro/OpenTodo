@@ -1,8 +1,8 @@
 {{.Inviter}} convidou você para um espaço de trabalho
 
-Este é um convite para um espaço de trabalho compartilhado no OpenTaskKit.
+Este é um convite para um espaço de trabalho compartilhado no OpenTodo.
 
-{{.Inviter}} convidou {{.Email}} para entrar em um espaço de trabalho como {{.Role}} no servidor OpenTaskKit {{.Origin}}. Os membros de um espaço de trabalho podem compartilhar projetos entre si. Para entrar, abra este link:
+{{.Inviter}} convidou {{.Email}} para entrar em um espaço de trabalho como {{.Role}} no servidor OpenTodo {{.Origin}}. Os membros de um espaço de trabalho podem compartilhar projetos entre si. Para entrar, abra este link:
 
 {{.Link}}
 

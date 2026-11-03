@@ -1,6 +1,6 @@
-Your OpenTaskKit email is being changed
+Your OpenTodo email is being changed
 
-This is a security notice from OpenTaskKit.
+This is a security notice from OpenTodo.
 
 Someone signed in to the account {{.Email}} at {{.Origin}} asked to change its sign-in email. The change happens only when the link sent to the new address is opened.
 

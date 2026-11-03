@@ -2,7 +2,7 @@
 // header row names the current workspace and opens the switcher, a menu of the
 // account's workspaces with their Inbox and Today counts, "New workspace" and
 // "Manage workspaces". It is not a destination and adds no row; with one
-// workspace it shows "OpenTaskKit" with "Personal" below it (sidebar-title-lines).
+// workspace it shows "OpenTodo" with "Personal" below it (sidebar-title-lines).
 // Switching is device state.
 import { useMemo } from 'react'
 import { CatalogueIcon, hueFor, Icon, isCatalogueIcon, Menu, MenuItem, MenuSeparator, StatusDot } from '../ui'

@@ -4,7 +4,7 @@
 // public/appearance.js applies before the first paint. Only names of the closed
 // token list and values the app formatted itself are written, each checked against
 // the same patterns as the boot script, so a document can never add a declaration.
-// The OpenTaskKit themes write no sheet at all: the default path is exactly the
+// The OpenTodo themes write no sheet at all: the default path is exactly the
 // stylesheet. First-load code; the derivation is lazy (load.ts).
 import { readJSON, removeItem, writeJSON } from '../deviceStorage'
 import { CSS_TOKENS, RADIUS_STEPS, type RadiusStep } from './tokens'
@@ -62,7 +62,7 @@ export function themeCss(t: AppliedTheme): string {
 }
 
 /**
- * Applies a theme to the document root, or removes it (null: the OpenTaskKit theme of
+ * Applies a theme to the document root, or removes it (null: the OpenTodo theme of
  * the side). `data-theme` follows the theme's kind, so every light and dark rule of
  * the stylesheet (shadows, images, color-scheme) follows it too.
  */
@@ -96,7 +96,7 @@ export function readThemeCache(): ThemeCache {
   return out
 }
 
-/** Remembers the resolved theme of each side (never an op); the OpenTaskKit themes are not cached. */
+/** Remembers the resolved theme of each side (never an op); the OpenTodo themes are not cached. */
 export function writeThemeCache(c: ThemeCache): void {
   if (!c.light && !c.dark) removeItem(THEME_CACHE_KEY)
   else writeJSON(THEME_CACHE_KEY, c)

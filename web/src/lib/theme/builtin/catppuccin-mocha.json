@@ -41,6 +41,6 @@
       "muted": "#a6adc8",
       "faint": "#7f849c"
     },
-    "text": "Catppuccin Mocha by Catppuccin, mapped onto OpenTaskKit's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime) use OpenTaskKit's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
+    "text": "Catppuccin Mocha by Catppuccin, mapped onto OpenTodo's tokens by web/src/lib/theme/builtin/MAPPING.md. Label colours not in the palette (lime) use OpenTodo's hue at the palette's lightness and chroma. Some colours were adapted for contrast: their published values are under adapted."
   }
 }

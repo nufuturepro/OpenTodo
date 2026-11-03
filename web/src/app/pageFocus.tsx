@@ -1,6 +1,6 @@
 // Page changes for assistive technology (OpenSpec assistive-tech-semantics,
 // accessibility "Page changes are announced"): the tab title names the page
-// ("Today – OpenTaskKit"), and a navigation the person started moves focus to the
+// ("Today – OpenTodo"), and a navigation the person started moves focus to the
 // page's heading, so a screen reader reads where they are. Focus is left alone on
 // the first load, while a dialog, an overlay or the task panel holds it, while a
 // text field has it, and when the new page already focused something itself (the
@@ -19,7 +19,7 @@ export function pageTitle(heading: string | null | undefined): string {
   // A branded instance (instance-branding) names itself in the tab.
   const app = getBranding().name
   if (app) return page ? `${page} – ${app}` : app
-  return page ? t('{page} – OpenTaskKit', { page }) : 'OpenTaskKit'
+  return page ? t('{page} – OpenTodo', { page }) : 'OpenTodo'
 }
 
 /** The page's level-one heading: the header's title, or the phone bar's below 768 px. */

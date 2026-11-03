@@ -37,7 +37,7 @@ func NewHTTPClient(base http.RoundTripper) *http.Client {
 	}
 }
 
-// Metadata is the subset of the discovery document OpenTaskKit uses.
+// Metadata is the subset of the discovery document OpenTodo uses.
 type Metadata struct {
 	Issuer                   string   `json:"issuer"`
 	AuthorizationEndpoint    string   `json:"authorization_endpoint"`
