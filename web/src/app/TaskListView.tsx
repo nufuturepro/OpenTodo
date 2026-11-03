@@ -17,7 +17,6 @@ import type { ViewPlacement } from '../lib/viewOrder'
 import type { OrderHost } from '../lib/viewOrderMove'
 import { reorderInView, stepInView } from './viewOrderActions'
 import { LOGBOOK_PAGE } from '../lib/logbook'
-import { createTask } from '../lib/ops'
 import { getPlace, locationFromPlace } from '../lib/locations'
 import { dayTotalsText } from '../lib/time'
 import { useDayTotals } from '../lib/timeEntries'
@@ -61,6 +60,7 @@ import { addTasksUndoable } from '../lib/pasteTasks'
 import { useListBindings } from './task-list/useListBindings'
 import { useListDrag } from './task-list/useListDrag'
 import { useListModel, type ListRoute } from './task-list/useListModel'
+import { LIST_READY, perfMark } from '../lib/perfMarks'
 import { useListShortcuts, type ListUi } from './task-list/useListShortcuts'
 import { noteTodayOpened } from '../lib/firstDay'
 import { InboxMenu } from './SampleNotice'
@@ -73,6 +73,7 @@ import { GripHint } from './task-list/GripHint'
 import { closedListOffered } from '../lib/closedListPrefs'
 import { dayPartsOn, setDayParts } from '../lib/dayParts'
 import { readMethodMode } from '../lib/method/mode'
+import { addManyToList, createUnlessReused } from './reuseAdd'
 
 export { BLOCKED_OPEN_KEY } from '../lib/listGroups'
 
@@ -161,7 +162,15 @@ const NO_DONE: Map<string, Task[]> = new Map()
  */
 function useListReady(route: ListRoute, loaded: boolean, hasProject: boolean): boolean {
   const membership = useMembership(route.view === 'project' ? route.id : '')
-  return loaded && (route.view !== 'project' || (hasProject && membership !== undefined))
+  const ready = loaded && (route.view !== 'project' || (hasProject && membership !== undefined))
+  useListReadyMark(ready, route)
+  return ready
+}
+
+/** LIST_READY once per list opened, after the rows' first commit (performance-10k D4). */
+function useListReadyMark(ready: boolean, route: ListRoute) {
+  const key = 'id' in route ? `${route.view}:${route.id}` : route.view
+  useEffect(() => { if (ready) perfMark(LIST_READY, { view: route.view }) }, [ready, key]) // eslint-disable-line react-hooks/exhaustive-deps -- the key names the route
 }
 
 /**
@@ -264,8 +273,8 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
     return inputs.map(({ labels: typed, ...rest }) => {
       // In Assigned to me a new task is yours (Inbox unless a #project was typed).
       const { labels: viewLabels, ...defaults } = taskDefaults(route, today, userId)
-      // In Someday a line with a date is scheduled, not parked (someday-and-evening).
-      if (rest.due || rest.deadline) delete defaults.start
+      // In Someday a line with a date is scheduled, not parked (someday-and-evening); a typed time sector also takes the view's date (time-sectors D2).
+      if (rest.due || rest.deadline || rest.sector) { delete defaults.start; if (rest.sector) defaults.due = null }
       return {
         ...defaults,
         ...rest,
@@ -280,15 +289,15 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
     // Top or bottom (add-position D3); `o` keeps its anchor, so that entry appends before it moves.
     const placement = insertAfter.current ? 'bottom' : await preferredPlacement()
     const [task] = await withDefaults([input])
-    const id = await createTask({ placement, ...task })
+    const id = await createUnlessReused({ placement, ...task }) // null: a reusable list reused an item (reusable-lists D3)
     // The `o` move, the Inbox's note, or the note for a row out of sight (add-position D5).
     const list = listTitle(route.view, m.currentProject?.name, m.currentLabel?.name, m.currentPlace?.name)
-    await afterListAdd(id, { route, today, insertAfter, sectionMap: latestSectionMap, list, placement: projectManual ? placement : undefined, root: listRoot.current, select: setSelectedId })
+    if (id) await afterListAdd(id, { route, today, insertAfter, sectionMap: latestSectionMap, list, placement: projectManual ? placement : undefined, root: listRoot.current, select: setSelectedId })
   }, [withDefaults, route, today, latestSectionMap, projectManual, m.currentProject, m.currentLabel, m.currentPlace, setSelectedId])
   // A pasted list (paste-to-tasks D3): every line with the view's defaults, one batch, one Undo.
   const onAddMany = useCallback(async (inputs: QuickAddInput[]) => {
     const placement = insertAfter.current ? 'bottom' : await preferredPlacement()
-    await afterListAddMany(await addTasksUndoable(await withDefaults(inputs), { placement }), { route, today, insertAfter, sectionMap: latestSectionMap })
+    await addManyToList(await withDefaults(inputs), async (fresh) => afterListAddMany(await addTasksUndoable(fresh, { placement }), { route, today, insertAfter, sectionMap: latestSectionMap }))
   }, [withDefaults, route, today, latestSectionMap])
 
   const { setPrompt } = ui
@@ -421,7 +430,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
             <GroupedList groups={groups} view={route.view} project={currentProject} fieldColumns={m.fieldColumns} projectFieldDefs={m.projectFieldDefs}
               editable={m.projectEditable} renderRow={renderRow} addingTo={addingTo} setAddingTo={ui.setAddingTo} onToggleSection={toggleSection}
               doneBySection={m.showCompleted ? NO_DONE : m.doneBySection} revealed={revealed}
-              completed={m.showCompleted && projectId ? { tasks: m.completedTasks, open: m.completedOpen, onToggle: () => m.toggleCollapsed(completedOpenKey(projectId)) } : undefined} toggleCollapsed={m.toggleCollapsed} collapsedGroups={collapsedGroups} projects={m.projects} labels={m.labels}
+              completed={m.showCompleted && projectId ? { tasks: m.completedTasks, open: m.completedOpen, onToggle: () => m.toggleCollapsed(completedOpenKey(projectId)), gotIt: m.reusable } : undefined} toggleCollapsed={m.toggleCollapsed} collapsedGroups={collapsedGroups} projects={m.projects} labels={m.labels}
               earlierActions={route.view === 'today' || m.upcomingToday ? earlierActions : undefined}
               onReveal={(key) => setRevealed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n })} />
           )}

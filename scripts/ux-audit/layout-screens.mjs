@@ -27,6 +27,8 @@ export function screens(ids, base) {
     { name: 'project-invite-member', path: `/invite/p/${ids.projectInvite}`, ready: heading(/already a member/) },
     { name: 'inbox', path: '/inbox', ready: row('Undated inbox task'), overlays: ['notifications', 'command-palette', 'help', 'spotlight', 'sidebar', 'sidebar-view-menu', 'task-detail', 'label-picker', 'bulk-actions-menu', 'bulk-review', 'bulk-toast', 'reminder-toast', 'assistant', 'assistant-review', 'template-dialog', 'template-detail'] },
     { name: 'today', path: '/today', ready: row('Renew passport') },
+    // A repeating task's page: the scope toggle's options are not cut (truncated-labels).
+    ...(ids.repeating ? [{ name: 'task-repeating', path: `/task/${ids.repeating}`, ready: (p) => p.locator('[data-scope-control]').waitFor() }] : []),
     // Display mode (display-mode 3.4, 5.1): no shell, large type; high contrast and the largest size included.
     { name: 'display-today', path: '/display/today', ready: (p) => p.locator('[data-screen="display"] [data-display-row]').first().waitFor() },
     { name: 'display-today-high-xl', path: '/display/today?contrast=high&size=xl', ready: (p) => p.locator('[data-screen="display"] [data-display-row]').first().waitFor() },
@@ -37,8 +39,8 @@ export function screens(ids, base) {
     { name: 'triage', path: '/triage', ready: (p) => p.locator('[data-triage-card]').waitFor(), overlays: ['schedule-sheet'] },
     { name: 'upcoming', path: '/upcoming', ready: heading('Upcoming') },
     { name: 'assigned', path: '/assigned', ready: row('Pick paint colours') },
-    { name: 'day', path: '/day', ready: (p) => p.locator('[data-now-line], main').first().waitFor() },
-    { name: 'week', path: '/week', ready: (p) => p.locator('main').first().waitFor() },
+    { name: 'day', path: '/day', gridRoom: true, ready: (p) => p.locator('[data-now-line], main').first().waitFor() },
+    { name: 'week', path: '/week', gridRoom: true, ready: (p) => p.locator('main').first().waitFor() },
     { name: 'month', path: '/month', ready: (p) => p.locator('[data-month-grid]').waitFor() },
     // September, a long month name in several languages, at the tablet width (the check's own date is in November).
     ...(ids.date ? [{ name: 'month-september', path: `/month/${ids.date.slice(0, 4)}-09-30`, widths: [768], ready: (p) => p.locator('[data-month-grid]').waitFor() }] : []),
@@ -81,7 +83,8 @@ export function screens(ids, base) {
     // Routines (routines-editor) and the editor page (routines-editor-page): one column on a phone with the actions in a bar at the bottom.
     { name: 'routines', path: '/routines', ready: heading('Routines') },
     // A word's list opens next to it, never a centred modal (routines-dynamic-data D13).
-    { name: 'routine-page', path: `/routines/${ids.routine}`, ready: (p) => p.locator('[data-step-card]').first().waitFor(), overlays: ['routine-word-list'] },
+    // The trigger's kinds and the step catalogue: next to what was pressed, never a dialog (routines-editor-no-modals).
+    { name: 'routine-page', path: `/routines/${ids.routine}`, ready: (p) => p.locator('[data-step-card]').first().waitFor(), overlays: ['routine-word-list', 'routine-trigger-list', 'routine-add-step'] },
     { name: 'routine-new', path: '/routines/new', ready: (p) => p.locator('[data-routine-editor] [data-when-card]').waitFor() },
     { name: 'locations', path: '/locations', ready: heading('Locations'), overlays: ['new-location'] },
     { name: 'projects-archived', path: '/projects#archived', ready: (p) => p.getByText('No archived projects').first().waitFor() },
@@ -294,6 +297,39 @@ export const OVERLAYS = {
     // The panel holding the list (not the reminder toast, which shows on every screen).
     return { overlay: p.locator('[data-overlay]').filter({ has: p.locator('[data-word-choices]') }).last(), trigger, reopen, kind: 'popover' }
   },
+  // The When card's trigger word (routines-editor-no-modals): the trigger's kinds in the word
+  // pickers' list, from 640 px anchored under the word at its start edge, inside the content
+  // column (never over the sidebar); a bottom sheet on phones.
+  async 'routine-trigger-list'(p, ctx) {
+    const trigger = p.locator('[data-when-card] [data-word="When"]')
+    const reopen = async () => { await trigger.focus(); await p.keyboard.press('Enter') }
+    await reopen()
+    await p.locator('[data-word-choices] [role="option"]').first().waitFor()
+    const overlay = p.locator('[data-overlay]').filter({ has: p.locator('[data-word-choices]') }).last()
+    if (ctx.width >= 640) {
+      await p.waitForTimeout(250)
+      const word = await trigger.boundingBox()
+      const list = await overlay.boundingBox()
+      const main = await p.locator('main').first().boundingBox()
+      if (word && list && Math.abs(list.x - word.x) > 12) throw new Error(`the trigger list is not at the word's start edge (list ${Math.round(list.x)}, word ${Math.round(word.x)})`)
+      if (word && list && list.y < word.y + word.height - 2) throw new Error('the trigger list is not under the word')
+      if (main && list && list.x < main.x) throw new Error(`the trigger list sticks out of the content column (list ${Math.round(list.x)}, main ${Math.round(main.x)})`)
+    }
+    return { overlay, trigger, reopen, kind: 'popover' }
+  },
+  // "+ Add step" (routines-editor-no-modals): the step catalogue expands in place under the
+  // button, in the column, with its search focused; Escape collapses it. Opened from the keyboard,
+  // as the word list is: the seeded reminder toast can cover the button at the page's foot, and a
+  // tap or Escape that reached the toast would dismiss it for every other combination.
+  async 'routine-add-step'(p) {
+    const trigger = p.locator('[data-add-step]')
+    await trigger.focus()
+    await p.keyboard.press('Enter')
+    const overlay = p.locator('[data-add-step-panel]')
+    await overlay.locator('[role="option"]').first().waitFor()
+    if (await p.locator('[data-overlay="dialog"], [role="dialog"]').count()) throw new Error('Add step opened a dialog')
+    return { overlay, trigger, kind: 'combobox' }
+  },
   async 'sidebar-view-menu'(p) {
     await openSidebar(p)
     const trigger = p.locator('aside[data-sidebar]').getByRole('button', { name: /^Menu for view/ }).first()
@@ -426,7 +462,13 @@ export const OVERLAYS = {
     // cover it on a phone; focus it as a keyboard user would.
     await box.focus()
     await box.pressSequentially('@B')
-    return { overlay: p.getByRole('listbox', { name: 'Mention a member' }), kind: 'combobox', after: async () => { await box.fill(''); await p.keyboard.press('Escape'); await p.keyboard.press('Escape') } }
+    // The member list reads the project's members first; on a busy CI runner that took
+    // more than the generic 5 s (PR 756). Wait longer here, and type the mention again
+    // once if the composer took the keys before it was ready.
+    const list = p.getByRole('listbox', { name: 'Mention a member' })
+    const shown = await list.waitFor({ state: 'visible', timeout: 15000 }).then(() => true, () => false)
+    if (!shown) { await box.fill(''); await box.pressSequentially('@B'); await list.waitFor({ state: 'visible', timeout: 15000 }) }
+    return { overlay: list, kind: 'combobox', after: async () => { await box.fill(''); await p.keyboard.press('Escape'); await p.keyboard.press('Escape') } }
   },
   // Task panel (task-panel-facets): a property's picker opens in a popover anchored to its
   // part; a property without a value has no part yet and is reached through Add.

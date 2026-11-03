@@ -6,6 +6,7 @@ import (
 	"github.com/OpenTodoApp/opentodo/internal/e2ee"
 	"github.com/OpenTodoApp/opentodo/internal/flow"
 	"github.com/OpenTodoApp/opentodo/internal/inbox"
+	"github.com/OpenTodoApp/opentodo/internal/sector"
 	"sort"
 	"strings"
 	"time"
@@ -69,6 +70,7 @@ func init() {
 				"priority":          map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "description": "Only tasks of this priority: 1 is the highest, 4 the default."},
 				"due_from":          map[string]any{"type": "string", "format": "date", "description": "Only tasks due on or after this date (YYYY-MM-DD)."},
 				"due_to":            map[string]any{"type": "string", "format": "date", "description": "Only tasks due on or before this date (YYYY-MM-DD)."},
+				"sector":            map[string]any{"type": "string", "description": "Only tasks with this time sector: an absolute period (2026-W45, 2026-11 or 2026-Q4), or carried for tasks whose period has ended (evaluated in timezone with weeks from Monday). Relative words like next week are refused."},
 				"completed_after":   map[string]any{"type": "string", "description": "Only tasks completed at or after this time: YYYY-MM-DD (start of that day in timezone), an RFC 3339 time or Unix milliseconds. Implies completed tasks only."},
 				"completed_before":  map[string]any{"type": "string", "description": "Only tasks completed before this time, in the same forms as completed_after. Implies completed tasks only."},
 				"include_completed": completedArg,
@@ -102,7 +104,7 @@ func init() {
 	})
 	register(tool{
 		def: readDef("today_summary", "Today summary",
-			"One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting; a waiting task also has time_sensitive, true when it is due today with a time or its deadline is today, and waiting_time_sensitive lists those ids soonest first (the slots stay first come, first served).",
+			"One-call overview of the user's day: overdue tasks, tasks due today, and open task counts for the Inbox (tasks without a project that are not scheduled) and each project. today_limit is the user's Today limit (null when off); each listed task has waiting_for_slot, true when that limit keeps it waiting; a waiting task also has time_sensitive, true when it is due today with a time or its deadline is today, a time-sensitive one time_passed, true once its time is before now, and waiting_time_sensitive lists those ids soonest first (the slots stay first come, first served).",
 			object(nil, map[string]any{
 				"timezone": timezoneProp,
 			})),
@@ -141,7 +143,11 @@ type projectOut struct {
 	// FlowMode is how the project's tasks flow: parallel, sequential or area (project-flow-modes).
 	FlowMode string `json:"flow_mode"`
 	// Status is active or maintenance (project-review-cadence).
-	Status    string  `json:"status"`
+	Status string `json:"status"`
+	// Reusable and Aisles are the reusable-list mode (reusable-lists): adding an
+	// item already there reopens it, and new items go to aisle sections.
+	Reusable  bool    `json:"reusable"`
+	Aisles    bool    `json:"aisles"`
 	ParentID  *string `json:"parent_id,omitempty"`
 	Shared    bool    `json:"shared"`
 	Role      string  `json:"role,omitempty"`
@@ -177,7 +183,7 @@ func (snap *snapshot) openCounts() map[string]int {
 func (snap *snapshot) renderProject(p opsync.Entity, counts map[string]int) projectOut {
 	id := str(p, "id")
 	out := projectOut{ID: id, Untrusted: projectText{Name: str(p, "name"), Description: str(p, "description")}, Color: str(p, "color"),
-		Archived: boolean(p, "archived"), FlowMode: flow.ProjectFlow(str(p, "flow_mode")), Status: statusOf(str(p, "status")), ParentID: strPtr(p, "parent_id"), OpenCount: counts[id], Fields: snap.renderFields(id),
+		Archived: boolean(p, "archived"), FlowMode: flow.ProjectFlow(str(p, "flow_mode")), Status: statusOf(str(p, "status")), Reusable: boolean(p, "reusable"), Aisles: boolean(p, "reusable") && boolean(p, "aisles"), ParentID: strPtr(p, "parent_id"), OpenCount: counts[id], Fields: snap.renderFields(id),
 		Encrypted: e2ee.IsCiphertext(rawStr(p, "name")) || e2ee.IsCiphertext(rawStr(p, "description"))}
 	if acc, ok := snap.shared[id]; ok {
 		out.Shared, out.Role = true, acc.Role
@@ -240,12 +246,14 @@ type taskQuery struct {
 	// blocked filters by the derived blocked state when set (agent-planning-fields).
 	blocked *bool
 	// available filters by the derived available state when set (project-flow-modes).
-	available        *bool
-	projectID        string
-	workspace        string
-	label            string
-	priority         int
-	dueFrom, dueTo   string
+	available      *bool
+	projectID      string
+	workspace      string
+	label          string
+	priority       int
+	dueFrom, dueTo string
+	// sector is "", a period or "carried" (OpenSpec change time-sectors).
+	sector           string
 	includeCompleted bool
 	// Completion range [completedAfter, completedBefore) in Unix ms; 0 = open end
 	// (OpenSpec change completed-date-filters, design D6).
@@ -301,6 +309,12 @@ func parseTaskQuery(a args) (taskQuery, error) {
 	}
 	if q.dueTo, err = a.date("due_to"); err != nil {
 		return q, err
+	}
+	if q.sector, err = a.str("sector"); err != nil {
+		return q, err
+	}
+	if q.sector != "" && q.sector != "carried" && !sector.Valid(q.sector) {
+		return q, argErr("sector: must be a period YYYY-Www, YYYY-MM or YYYY-Qn, or carried (absolute, not a word like \"next week\")")
 	}
 	if q.includeCompleted, err = a.boolean("include_completed"); err != nil {
 		return q, err
@@ -425,6 +439,9 @@ func (r *Registry) queryTasks(snap *snapshot, q taskQuery) (map[string]any, erro
 			continue
 		}
 		if wantLabels != nil && !hasAny(stringList(t, "labels"), wantLabels) {
+			continue
+		}
+		if sec := str(t, "sector"); q.sector != "" && !(sec == q.sector || (q.sector == "carried" && sector.Carried(sec, today, 1))) {
 			continue
 		}
 		items = append(items, keyed[taskOut]{key: taskKey(t, q.loc), id: str(t, "id"), v: snap.render(t, q.loc, today, false)})
@@ -712,11 +729,14 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 	}
 	// Today's closed list (today-closed-list): which of these wait for a slot.
 	limit, rev := r.todayLimit(ctx, userID)
-	waiting, sensitive := snap.waitingForSlot(limit, rev, today, loc, todayRows)
+	_, now := zoned.Local(r.now(), loc)
+	waiting, sensitive := snap.waitingForSlot(limit, rev, today, now, loc, todayRows)
 	soon := map[string]bool{}
+	passed := map[string]bool{}
 	soonIDs := []string{}
 	for _, s := range sensitive {
 		soon[s.ID] = true
+		passed[s.ID] = s.Passed
 		soonIDs = append(soonIDs, s.ID)
 	}
 	for _, list := range [][]keyed[taskOut]{overdueItems, todayItems} {
@@ -726,6 +746,10 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 			if w {
 				ts := soon[list[i].id]
 				list[i].v.TimeSensitive = &ts
+				if ts {
+					p := passed[list[i].id]
+					list[i].v.TimePassed = &p
+				}
 			}
 		}
 	}
@@ -762,6 +786,6 @@ func (r *Registry) todaySummary(ctx context.Context, userID string, a args) (map
 
 // plannedOf is the part of a task the Someday and Anytime rules read.
 func plannedOf(t opsync.Entity) inbox.Planned {
-	return inbox.Planned{Start: rawStr(t, "start"), HasDue: taskDue(t) != nil, HasDeadline: rawStr(t, "deadline") != "",
+	return inbox.Planned{Start: rawStr(t, "start"), HasDue: taskDue(t) != nil, HasDeadline: rawStr(t, "deadline") != "", Sector: rawStr(t, "sector"),
 		Completed: !isOpen(t), Deleted: deleted(t)}
 }

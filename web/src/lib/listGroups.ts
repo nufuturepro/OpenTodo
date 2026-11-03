@@ -3,7 +3,7 @@
 // headings (dates, projects, sections, Later, Blocked, the logbook's days), and the
 // tree positions assistive technology announces. TaskListView only wires these to
 // the live data; tests call them directly.
-import { waitingTimeSensitive } from './closedList'
+import { nextWaiting, waitingTimeSensitive } from './closedList'
 import { formatDateHeading, formatTime, type ResolvedDateTime } from './dates'
 import type { Projection } from './occurrences'
 import { inboxTasks } from './inbox'
@@ -13,10 +13,10 @@ import { t } from './i18n'
 import { logbookHeading, type LogbookGroup } from './logbook'
 import { byPosition, compareByPosition, compareDueThenPriority } from './ordering'
 import { effectiveSection, groupBySection } from './sections'
-import { breadcrumbOf } from './subtasks'
-import { flattenTree, type Tree, type TreeNode } from './tree'
+import { breadcrumbOf, buildTaskTree } from './subtasks'
+import { effectiveParents, flattenTree, type Tree, type TreeNode } from './tree'
 import type { Label, Project, Section, Task } from './types'
-import { compareTasks, groupTasks, inAnytime, inToday, isSomeday } from './views'
+import { compareTasks, groupTasks, inAnytime, inLater, inToday, isSomeday } from './views'
 import { compareManual } from './viewOrder'
 import type { ListDisplay } from './listDisplay'
 import type { DayPart } from './dayParts'
@@ -95,10 +95,11 @@ export interface ListGroup {
   projectedNote?: string
 }
 
-/** A waiting task with a time today: its due time in the user's zone, null for a deadline today without one. */
+/** A waiting task with a time today: its due time in the user's zone, null for a deadline today without one; `passed` once that time is before now (today-waiting-time-passed). */
 export interface WaitingSoon {
   task: Task
   time: string | null
+  passed: boolean
 }
 
 /** A board column: a section ('' = "No section") and its top-level cards. */
@@ -139,7 +140,7 @@ export function earlierCollapsed(stored: ReadonlySet<string>, count: number): bo
   return count > EARLIER_FOLD_ABOVE
 }
 
-/** A row outside the tree (flat views, cards, Later): depth 0, no children. */
+/** A row outside the tree (flat views, cards): depth 0, no children. */
 export function flatRow(task: Task, breadcrumb: string | null = null): ListRow {
   return { task, depth: 0, parent: null, hasChildren: false, collapsed: false, breadcrumb }
 }
@@ -180,6 +181,26 @@ export function tasksForView(scope: ListScope, allTasks: readonly Task[], projec
   }
 }
 
+/**
+ * A project list's open tasks split into the main list and its Later group
+ * (subtasks-follow-later): a whole subtree goes where its top-level task goes, so
+ * a deferred or parked parent takes its subtasks into Later, and a deferred
+ * subtask of an active parent stays under it. Both keep the input order.
+ */
+export function splitLater(tasks: readonly Task[], today: string): { active: Task[]; later: Task[] } {
+  const parents = effectiveParents(tasks as Task[])
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const rootOf = (id: string): Task => {
+    let cur = id
+    for (let up = parents.get(cur); up; up = parents.get(cur)) cur = up
+    return byId.get(cur)!
+  }
+  const active: Task[] = []
+  const later: Task[] = []
+  for (const task of tasks) (inLater(rootOf(task.id), today) ? later : active).push(task)
+  return { active, later }
+}
+
 /** Top-level tasks of the project bucketed by section: list headings and board columns. */
 export function sectionBuckets(projectId: string | null, tree: Tree<Task> | null, sections: Section[]): SectionBucket[] | null {
   if (!projectId || !tree) return null
@@ -200,7 +221,7 @@ export interface GroupInput {
   view: ListScope['view']
   /** The view's tasks after filters; for tree views without the Later ones. */
   tasks: Task[]
-  /** Project views: deferred and parked tasks, shown in a Later group at the end (Inbox tasks are never deferred or parked). */
+  /** Project views: deferred and parked top-level tasks with their subtasks (splitLater), shown as a tree in a Later group at the end (Inbox tasks are never deferred or parked). */
   laterTasks: Task[]
   tree: Tree<Task> | null
   today: string
@@ -230,7 +251,7 @@ export interface GroupInput {
    * Today with a limit (today-closed-list D1, D2): the limit, and the tasks waiting for
    * a slot in fill order (left out of the day's groups, listed in a folded group).
    */
-  closedList?: { limit: number; waiting: readonly Task[] }
+  closedList?: { limit: number; waiting: readonly Task[]; now?: string }
   /** Today's Done today group (today-closed-list D6): the tasks completed today, newest first; absent when hidden. */
   doneToday?: readonly Task[]
   /** Upcoming starts with Today's own groups, then Tomorrow onwards (upcoming-start-with-today D2). */
@@ -256,9 +277,6 @@ function sortedRoots(roots: TreeNode<Task>[], order: ((a: Task, b: Task) => numb
 
 /** The list's groups, in render order: one pass, linear in the number of tasks. */
 export function listGroups(p: GroupInput): ListGroup[] {
-  const later: ListGroup[] = p.laterTasks.length
-    ? [{ key: 'later', heading: t('Later'), rows: p.laterTasks.map((task) => flatRow(task, task.parent_id ? breadcrumbOf(task, p.taskMap) : null)) }]
-    : []
   const toRow = (n: TreeNode<Task>): ListRow => ({
     task: n.item,
     depth: n.depth,
@@ -269,6 +287,10 @@ export function listGroups(p: GroupInput): ListGroup[] {
     breadcrumb: n.parent === null && n.item.parent_id ? breadcrumbOf(n.item, p.taskMap) : null,
   })
   const isCollapsed = (id: string) => p.collapsed.has(id)
+  // Later keeps each subtree together under its top-level task (subtasks-follow-later).
+  const later: ListGroup[] = p.laterTasks.length
+    ? [{ key: 'later', heading: t('Later'), rows: flattenTree(buildTaskTree(p.laterTasks).roots, isCollapsed).map(toRow) }]
+    : []
   // Board: cards are top-level tasks, column by column (keyboard order); a folded column has none on screen (board-polish D1).
   if (p.board) return p.columns.map((c) => ({ key: c.key, heading: null, rows: c.folded ? [] : c.cards.map((task) => flatRow(task)) }))
   const order = displayOrder(p.display, p.manualOrder)
@@ -380,11 +402,11 @@ function closedListGroups(p: GroupInput, row: (task: Task) => ListRow): ListGrou
   if (p.closedList && waiting.length) {
     const folded = !p.collapsed.has(WAITING_OPEN_KEY)
     // Folded, the waiting tasks with a time today stay in sight (today-waiting-time-sensitive D2); opened, the group is as before.
-    const soon = folded ? waitingTimeSensitive(waiting, p.today) : []
+    const soon = folded ? waitingTimeSensitive(waiting, p.today, p.closedList.now) : []
     g.push({
       key: 'waiting', heading: t('Waiting for a slot'), count: waiting.length, folded, openKey: WAITING_OPEN_KEY, rows: folded ? [] : waiting.map(row),
       hint: t('Today holds {n}. The next one comes in when you finish one.', { n: p.closedList.limit }),
-      ...(soon.length ? { soon, detail: nextDetail(soon[0], p.resolved) } : {}),
+      ...(soon.length ? { soon, detail: nextDetail(soon, p.resolved) } : {}),
     })
   }
   if (p.doneToday) {
@@ -394,10 +416,18 @@ function closedListGroups(p: GroupInput, row: (task: Task) => ListRow): ListGrou
   return g
 }
 
-/** The folded Waiting heading's "next: Send the form, 4:00 PM" (a deadline today without a time: "next: File the taxes, deadline today"). */
-export function nextDetail(next: WaitingSoon, resolved?: ResolvedDateTime): string {
-  const title = next.task._e2ee?.raw?.title || !next.task.title ? t('Untitled') : next.task.title
-  return next.time ? t('next: {title}, {time}', { title, time: formatTime(next.time, resolved) }) : t('next: {title}, deadline today', { title })
+/**
+ * The folded Waiting heading's words (today-waiting-time-sensitive D2, today-waiting-time-passed D2):
+ * "next: Send the form, 4:00 PM" for the first whose time has not passed (a deadline today
+ * without a time: "next: File the taxes, deadline today"); when every time has passed,
+ * "time passed: Call the school, 9:00 AM" for one and "2 past their time" for more.
+ */
+export function nextDetail(soon: readonly WaitingSoon[], resolved?: ResolvedDateTime): string {
+  const title = (s: WaitingSoon) => (s.task._e2ee?.raw?.title || !s.task.title ? t('Untitled') : s.task.title)
+  const next = nextWaiting(soon)
+  if (next) return next.time ? t('next: {title}, {time}', { title: title(next), time: formatTime(next.time, resolved) }) : t('next: {title}, deadline today', { title: title(next) })
+  if (soon.length === 1) return t('time passed: {title}, {time}', { title: title(soon[0]), time: formatTime(soon[0].time ?? '', resolved) })
+  return t('{n, plural, one {# past its time} other {# past their time}}', { n: soon.length })
 }
 
 /**

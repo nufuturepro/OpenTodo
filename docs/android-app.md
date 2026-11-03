@@ -13,6 +13,8 @@ The OpenTodo app for Android opens your own OpenTodo server, like the [installed
 
 ## Install the app
 
+**Install from GitHub for now.** The Google Play and F-Droid links below don't open yet: the app is still in Google Play's closed testing and waiting for its first F-Droid build. You can switch to a store later (see below).
+
 The same app comes from three places. Pick the one you already use; all three are signed with the same certificate, so updates from one install over the others.
 
 - **Google Play**: search for **OpenTodo** in the Play Store, or open [play.google.com/store/apps/details?id=app.opentodo](https://play.google.com/store/apps/details?id=app.opentodo). Play updates it by itself.
@@ -20,8 +22,6 @@ The same app comes from three places. Pick the one you already use; all three ar
 - **GitHub**: download `opentodo-android-<version>.apk` from the [latest release](https://github.com/OpenTodoApp/OpenTodo/releases/latest) and open it on the phone (Android asks you to allow installing from your browser or file manager once). You update it the same way; tools such as Obtainium can follow the releases for you.
 
 Release candidates (`-rc` versions) are only on GitHub, never in the stores.
-
-While the app is in Google Play's closed testing and waiting for its first F-Droid build, the two store links above don't open yet: install from GitHub meanwhile, and switch to a store later (next section).
 
 ### Switching between Google Play, F-Droid and GitHub
 
@@ -100,6 +100,17 @@ The page itself (`/` and the app's files under `/assets/`) still goes through th
 
 In **Settings → Notifications**, turn on **Notifications through the app**. The app schedules the next seven days of reminders on the phone itself and refreshes them about once an hour, so a reminder you add on your computer reaches the phone too. Details in [Notifications](push-notifications.md#in-the-android-app).
 
+## Location reminders
+
+[Location reminders](location-reminders.md) ("when I arrive at the post office") fire on the phone. Turn on **Settings → Notifications → Location reminders → On this phone**: the app explains what the location is for, then Android asks twice, first for your location (**While using the app** or **Only this time**), then for **Allow all the time**, which on Android 11 and later is a choice on the app's location settings page. Without **Allow all the time** nothing is watched and the setting says so, with **Open settings**.
+
+- The app uses Android's own proximity alerts, with no Google Play services, so it works on phones without Google.
+- It watches at most 19 places, the nearest to where you are, plus one larger circle around that spot; leaving that circle makes it pick the nearest places again.
+- Your position stays on the phone. It is never sent to your server or anyone else, never passed to the app's pages and never logged; the app keeps only the point it last picked the places from, in its private storage.
+- A notification offers **Done** and **Dismiss**; a crossing fires at most once an hour per reminder.
+- Sign-out, locking an encrypted account and **Change server** remove every watched place.
+- **Only the app from GitHub or F-Droid has location reminders for now.** The Google Play version leaves them out, and doesn't ask for your location at all, until Google has approved the background-location use; there the setting reads "Location reminders come to the Google Play version later". To use them now, install the app from GitHub or F-Droid over the Play one ([switching keeps everything](#switching-between-google-play-f-droid-and-github)).
+
 ## Sharing
 
 The app appears in Android's share menu for links, text, photos and files, also on phones without Google Play services. See [Capturing pages](capture.md#from-the-android-app).
@@ -118,4 +129,4 @@ With [end-to-end encryption](e2ee.md#unlock-with-a-fingerprint), the unlock scre
 
 ## Privacy
 
-No trackers, no analytics, no advertising. The app stores the server address, the scheduled reminders, the widget data and, if you turned on fingerprint unlock, the encrypted account key, only in its private storage, excluded from Android backup.
+No trackers, no analytics, no advertising. The app stores the server address, the scheduled reminders, the watched places of your location reminders, the widget data and, if you turned on fingerprint unlock, the encrypted account key, only in its private storage, excluded from Android backup.

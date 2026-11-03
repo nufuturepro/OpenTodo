@@ -15,6 +15,8 @@ OpenTodo syncs with a field-level, last-writer-wins operation log. It is a state
 - **Idempotency**: applying an op twice changes nothing.
 - **Offline safety**: ops can be produced without the server and merged later.
 
+The protocol and the op schema are part of the v1 surface: within 1.x, entities and fields are only added, never removed or renamed ([stability and compatibility](stability.md)).
+
 ## Operation
 
 ```json
@@ -103,7 +105,8 @@ OpenTodo syncs with a field-level, last-writer-wins operation log. It is a state
 | rule | `trigger`, `condition`, `actions` | an [automation rule's](automations.md) whole values: the trigger object (a kind from a closed set, `manual` included), null or a condition object, null or an actions object; checked for shape by `internal/ruleval` |
 | rule | `steps` | null or a [routine's](routines.md) list of at most 20 steps (`{id, kind, in, then?, otherwise?, do?}`, at most 3 block levels, 32 KB), one whole value converging by last-writer-wins; null reads the rule as one Change tasks step with its `actions`. Sync checks known kinds, unique ids, declared inputs and literal shapes and references to earlier steps; REST also checks types and ids. Not content: an encrypted account's text literals inside are envelopes |
 | reminder | `task_id` | string (task id, required) |
-| reminder | `kind` | `"relative"`, `"absolute"` or `"deadline"` (fires at 09:00 local on the task's deadline plus the offset) |
+| reminder | `kind` | `"relative"`, `"absolute"`, `"deadline"` (fires at 09:00 local on the task's deadline plus the offset), or `"arrive"` and `"leave"` (a location reminder, fired by a phone, never a `fire_at` or an offset) |
+| reminder | `radius_m` | integer 100…5000 (metres around the task's location, location kinds only) or null. A batch whose result would give a location kind a `fire_at` or `offset_minutes`, or another kind a `radius_m` (the batch's winning value of each of the four fields, else the stored one), has those four fields' ops of that reminder refused with reason `invalid_reminder`; the rest of the batch applies |
 | reminder | `offset_minutes` | integer −525600…525600 (minutes from the due time, or from 09:00 on the deadline for `deadline`; negative = before) or null |
 | reminder | `fire_at` | positive number (Unix ms, the resolved firing instant) or null |
 | reminder | `delivered_at`, `dismissed_at` | number or null |

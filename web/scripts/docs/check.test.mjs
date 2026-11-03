@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildAll, OUT_SITE, writeAll } from './build.mjs'
-import { quickAddLinkProblems, runChecks } from './check.mjs'
+import { quickAddLinkProblems, runChecks, stabilityLinkProblems } from './check.mjs'
 import { SCREENSHOTS, SHOTS_DIR } from '../../../scripts/site-bundle.mjs'
 
 // A 1×1 WebP (VP8L).
@@ -45,6 +45,14 @@ describe('docs check', () => {
     const help = JSON.parse(read('web/src/generated/help.json'))
     expect(help.screens['board-view']).toEqual({ page: 'boards', anchor: 'switch-to-a-board' })
     expect(help.version).toBe('1.2.3')
+  })
+
+  it('serves a linked file under docs/ beside the pages', async () => {
+    write('docs/themes/format.schema.json', '{"type":"object"}')
+    write('docs/boards.md', read('docs/boards.md') + '\nThe [schema](themes/format.schema.json).\n')
+    const { files } = await buildAll(root)
+    expect(files.get(`${OUT_SITE}/themes/format.schema.json`)?.toString()).toBe('{"type":"object"}')
+    expect(files.get(`${OUT_SITE}/boards/index.html`)).toContain('href="/docs/themes/format.schema.json"')
   })
 
   it('names a page without front matter', async () => {
@@ -140,5 +148,15 @@ describe('docs check', () => {
     const body = '# Views\n\n## What each view shows\n\nAdd with [quick add](quick-add.md).\n\n## Park ideas in Someday\n\nParked tasks.\n\n### More\n\nSee [quick add](quick-add.md).\n'
     const pages = [{ rel: 'views.md', body, fm: { screens: ['inbox#what-each-view-shows', 'someday#park-ideas-in-someday', 'board-view#park-ideas-in-someday'] } }]
     expect(quickAddLinkProblems(pages)).toEqual(['docs/views.md: section "#park-ideas-in-someday" (screen "someday") does not link the quick-add guide (quick-add.md) before its first subheading'])
+  })
+
+  it('names a surface page or the README that does not link the compatibility policy (stability-contract)', () => {
+    const pages = [
+      { rel: 'api.md', body: '# API\n\nSee [stability](stability.md#deprecation).\n', fm: {} },
+      { rel: 'mcp.md', body: '# MCP\n\nNo link here.\n', fm: {} },
+      { rel: 'views.md', body: '# Views\n', fm: {} },
+    ]
+    expect(stabilityLinkProblems(pages, '[policy](docs/stability.md)')).toEqual(['docs/mcp.md: does not link the compatibility policy (stability.md)'])
+    expect(stabilityLinkProblems([], 'no link')).toEqual(['README.md: does not link the compatibility policy (docs/stability.md)'])
   })
 })

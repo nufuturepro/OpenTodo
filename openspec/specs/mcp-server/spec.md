@@ -760,15 +760,15 @@ For an end-to-end encrypted account the `location` argument of `create_tasks` an
 - **THEN** the tool returns an error and nothing is written
 
 ### Requirement: Today summary reports the Today limit
-`today_summary` SHALL return `today_limit` (`null` when off, else the number of slots) and SHALL mark each listed task due today or overdue with `waiting_for_slot` (true when the user's Today limit keeps it waiting, false otherwise), computed with the same fill rule as the web app (OpenSpec `today-closed-list`) from the rows devices have synced. Each waiting task SHALL also carry `time_sensitive` (true when it is due today with a time or its deadline is today), and the result SHALL carry `waiting_time_sensitive`, the ids of those tasks soonest first (OpenSpec `today-waiting-time-sensitive`); the slots SHALL not change because of a time. It SHALL write nothing. `list_tasks` with `view: "today"` SHALL be unchanged and list every task.
+`today_summary` SHALL return `today_limit` (`null` when off, else the number of slots) and SHALL mark each listed task due today or overdue with `waiting_for_slot` (true when the user's Today limit keeps it waiting, false otherwise), computed with the same fill rule as the web app (OpenSpec `today-closed-list`) from the rows devices have synced. Each waiting task SHALL also carry `time_sensitive` (true when it is due today with a time or its deadline is today), each time-sensitive one `time_passed` (true when its time today is before now in the asked time zone; a deadline without a time is never passed), and the result SHALL carry `waiting_time_sensitive`, the ids of those tasks soonest first (OpenSpec `today-waiting-time-sensitive`, `today-waiting-time-passed`); the slots SHALL not change because of a time. It SHALL write nothing. `list_tasks` with `view: "today"` SHALL be unchanged and list every task.
 
 #### Scenario: Limit on
 - **WHEN** the user's limit is 3, Today has five available tasks and an assistant calls `today_summary`
 - **THEN** the result carries `today_limit: 3`, three tasks with `waiting_for_slot: false` and two with `waiting_for_slot: true`
 
 #### Scenario: Time-sensitive waiting tasks
-- **WHEN** the limit is 1 and the waiting tasks include one due today at 16:00, one at 09:00 and one with a deadline today
-- **THEN** those three carry `time_sensitive: true`, the other waiting tasks `time_sensitive: false`, and `waiting_time_sensitive` lists the 09:00 task, the 16:00 task, then the deadline
+- **WHEN** it is 10:00, the limit is 1 and the waiting tasks include one due today at 16:00, one at 09:00 and one with a deadline today
+- **THEN** those three carry `time_sensitive: true`, the other waiting tasks `time_sensitive: false`, the 09:00 task `time_passed: true` and the other two `time_passed: false`, and `waiting_time_sensitive` lists the 09:00 task, the 16:00 task, then the deadline
 
 #### Scenario: Limit off
 - **WHEN** the user has no limit
@@ -931,3 +931,29 @@ The write tools SHALL include `run_routine` (`routine` id or exact name, optiona
 #### Scenario: Unavailable step
 - **WHEN** an assistant creates a routine with Email me on a server without outgoing email
 - **THEN** the routine is created and the result warns that the step is not available, naming the reason
+
+### Requirement: Time sector in tools
+`create_tasks` items and `update_tasks` updates SHALL accept `sector`: an absolute period (`YYYY-Www`, `YYYY-MM` or `YYYY-Qn`, OpenSpec `time-sectors`) or null. It SHALL be written exactly as sent, as one operation through the operation log, converging with device edits by per-field last-writer-wins. Relative words SHALL be refused, because a tool call has no viewer date. Task results of the read tools, the write tools and the `opentodo://` resources SHALL carry `sector` (`null` when empty), in plain text for encrypted accounts too. `list_tasks` SHALL accept a `sector` filter with an absolute period or `carried`, evaluated in the user's time zone with Monday weeks. An invalid or relative value SHALL be a `-32602` error naming the item and the field, and SHALL change nothing.
+
+#### Scenario: Sector a batch
+- **WHEN** an allowed assistant calls `update_tasks` with three updates setting `sector: "2026-W45"`
+- **THEN** the three tasks show "Next week" on devices after sync, their due dates are as stored, and the history shows the change under the assistant
+
+#### Scenario: Relative word refused
+- **WHEN** an assistant sends `sector: "next week"`
+- **THEN** the response is a `-32602` error naming the item and `sector`, and nothing changes
+
+#### Scenario: Read
+- **WHEN** an assistant calls `get_task` on a task with the sector `2026-Q1`
+- **THEN** the result carries `sector: "2026-Q1"`
+
+### Requirement: Objectives in reads
+`tools/list` SHALL advertise a read-only `list_objectives` tool that takes an optional `period` (a quarter or an ISO week) and an optional `timezone`. By default it returns the current quarter's and current week's objectives in that time zone, with Monday weeks. `resources/list` SHALL expose `opentodo://objectives` built from the same read. Each result SHALL carry `id`, `period`, `position`, `done` and `done_at`, with the `title` inside the untrusted-text marking. Deleted objectives SHALL be excluded. The tool SHALL write nothing and reflect only data devices have synced. No write tool for objectives SHALL be advertised. An invalid `period` SHALL be a `-32602` error naming the argument.
+
+#### Scenario: Current objectives
+- **WHEN** an assistant calls `list_objectives` with `timezone: "Europe/Rome"` on 2026-10-28
+- **THEN** the result lists the open and done objectives of `2026-Q4` and `2026-W44`, titles marked as untrusted text
+
+#### Scenario: Invalid period
+- **WHEN** an assistant calls `list_objectives` with `period: "Q4"`
+- **THEN** the response is a `-32602` error naming `period`

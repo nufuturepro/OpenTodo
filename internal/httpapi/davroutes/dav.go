@@ -275,7 +275,9 @@ func (d *davRequest) load() (*davView, error) {
 	for _, r := range reminders {
 		tid := idOf(r["task_id"])
 		v.remTask[idOf(r["id"])] = tid
-		if _, live := v.byID[tid]; live && isNullish(r["deleted_at"]) {
+		// A location reminder is never a VALARM (location-reminders D6): it is
+		// not served, so a PUT without it never deletes it either.
+		if _, live := v.byID[tid]; live && isNullish(r["deleted_at"]) && !opsync.IsLocationKind(idOf(r["kind"])) {
 			v.reminders[tid] = append(v.reminders[tid], r)
 		}
 	}
@@ -437,6 +439,7 @@ func (v *davView) encode(t opsync.Entity) ([]byte, string) {
 	}
 	ct.Deadline = idOf(t["deadline"])
 	ct.Start = idOf(t["start"])
+	ct.Sector = idOf(t["sector"])
 	ct.Evening, ct.Span = string(t["evening"]) == "true", string(t["span"]) == "true"
 	ct.DayPart = daypart.OfRow(t)
 	ct.Energy = idOf(t["energy"])

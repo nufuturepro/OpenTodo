@@ -8,7 +8,7 @@ import { useFlowView } from '../../lib/useFlow'
 import { durationPredicate, loadDurationFilter, saveDurationFilter, type DurationFilter } from '../../lib/filters'
 import { UPCOMING_FILTER_KEY, useQueryFilter } from '../calendar/queryFilter'
 import { habitStatsMap } from '../../lib/habits'
-import { boardColumns, completedBySection, completedNewestFirst, completedOpenKey, listGroups, sectionBuckets, siblingPositions, tasksForView, type ListGroup, type ListScope } from '../../lib/listGroups'
+import { boardColumns, completedBySection, completedNewestFirst, completedOpenKey, listGroups, sectionBuckets, siblingPositions, splitLater, tasksForView, type ListGroup, type ListScope } from '../../lib/listGroups'
 import { useAllLabels, useCollapsedSections, useListColumnsPref, useLiveProjects, useMemberships, useProjectPrefsRow, useProjectSectionRows, useProjectViewMode, useShowCompletedPref } from '../../lib/liveData'
 import { listDisplayOf, type DisplayScope } from '../../lib/listDisplay'
 import { useListDisplay } from './useListDisplay'
@@ -17,13 +17,13 @@ import { useAccountRowLayout } from '../../lib/rowLayout'
 import { useUserPrefsRow } from '../../lib/localData'
 import { upcomingStartsWithToday } from '../../lib/userPrefs'
 import { dayPartsOn } from '../../lib/dayParts'
-import { useClosedList } from './useClosedList'
+import { useClosedList, useWaitingNow } from './useClosedList'
 import { NO_TASKS, useLiveTasks } from '../../lib/liveTasks'
 import { LOGBOOK_PAGE, logbookGroups } from '../../lib/logbook'
 import { canEditTasks, roleOf } from '../../lib/sharing'
 import { buildTaskTree, progressMap } from '../../lib/subtasks'
 import type { Task } from '../../lib/types'
-import { inLater, inToday } from '../../lib/views'
+import { inToday } from '../../lib/views'
 import { DESKTOP_HEADER_QUERY, useMediaQuery } from '../../ui'
 import { useDateTimeFormat } from '../DateTimePrefsProvider'
 import { hasTimeColumn } from '../../lib/rowTime'
@@ -34,6 +34,7 @@ import { useToday, useViewerZone } from '../useViews'
 import { readJSON, writeJSON } from '../../lib/deviceStorage'
 import { useResetOnChange } from '../../lib/useResetOnChange'
 import { useUpcomingGroups } from './upcomingProjections'
+import { isReusable } from '../../lib/reusable'
 
 export type ListRoute = Extract<Route, ListScope>
 
@@ -171,9 +172,11 @@ export function useListModel(route: ListRoute, userId?: string) {
   const { board, sections, liveSections, collapsedSections } = layout
 
   // Project lists keep deferred and parked tasks in a Later group at the
-  // end (someday-and-evening D2); the board keeps every card in its column.
-  const laterTasks = useMemo(() => (treeView && !board ? tasks.filter((task) => inLater(task, today)) : []), [treeView, board, tasks, today])
-  const treeTasks = useMemo(() => (laterTasks.length ? tasks.filter((task) => !inLater(task, today)) : tasks), [laterTasks, tasks, today])
+  // end (someday-and-evening D2), each with its subtasks (subtasks-follow-later);
+  // the board keeps every card in its column.
+  const split = useMemo(() => (treeView && !board ? splitLater(tasks, today) : null), [treeView, board, tasks, today])
+  const laterTasks = split?.later ?? NO_TASKS
+  const treeTasks = split?.later.length ? split.active : tasks
   const tree = useMemo(() => (treeView ? buildTaskTree(treeTasks) : null), [treeView, treeTasks])
   const buckets = useMemo(() => sectionBuckets(projectId, tree, sections), [projectId, tree, sections])
   const columns = useMemo(() => boardColumns(buckets, collapsedSections), [buckets, collapsedSections])
@@ -197,11 +200,13 @@ export function useListModel(route: ListRoute, userId?: string) {
   // Upcoming's Start with Today fills them from the same Today tasks (upcoming-start-with-today D3).
   const todayTasks = useMemo(() => (upcomingToday ? viewTasks.filter((x) => inToday(x, today)) : viewTasks), [upcomingToday, viewTasks, today])
   const closed = useClosedList(route.view === 'today' || upcomingToday, todayTasks, allTasks, today, flow, blocked)
+  // The waiting tasks' times are read against the minute (today-waiting-time-passed D3).
+  const waitingNow = useWaitingNow(closed.fill.waiting.length > 0)
   const closedList = useMemo(() => {
     if (!closed.fill.limit) return undefined
     const shown = new Set(tasks.map((x) => x.id))
-    return { limit: closed.fill.limit, waiting: closed.fill.waiting.filter((id) => shown.has(id)).map((id) => taskMap.get(id)!).filter(Boolean) }
-  }, [closed.fill, tasks, taskMap])
+    return { limit: closed.fill.limit, waiting: closed.fill.waiting.filter((id) => shown.has(id)).map((id) => taskMap.get(id)!).filter(Boolean), now: waitingNow }
+  }, [closed.fill, tasks, taskMap, waitingNow])
   // Done today stays Today's own: Upcoming looks ahead (upcoming-start-with-today D3).
   const doneToday = route.view === 'today' ? closed.doneToday ?? undefined : undefined
   const groups = useMemo<ListGroup[]>(() => listGroups({
@@ -225,7 +230,9 @@ export function useListModel(route: ListRoute, userId?: string) {
   // With "Show completed tasks" on (project-completed-section), the list layout
   // keeps them in one Completed group at the end, newest first, closed by default.
   const showCompletedPref = useShowCompletedPref(projectId)
-  const showCompleted = !!projectId && showCompletedPref && !board && !layout.timeline
+  // A reusable list always ends with its ticked items, "Got it", on every device (reusable-lists D7).
+  const reusable = !!projectId && isReusable(projectMap.get(projectId))
+  const showCompleted = !!projectId && (showCompletedPref || reusable) && !board && !layout.timeline
   const completedTasks = useMemo(() => (showCompleted ? completedNewestFirst(doneBySection) : NO_TASKS), [showCompleted, doneBySection])
   const completedOpen = !!projectId && collapsed.has(completedOpenKey(projectId))
 
@@ -244,7 +251,7 @@ export function useListModel(route: ListRoute, userId?: string) {
     projectEditable: !!projectId && canEditTasks(roleOf(projectId, memberMap)),
     allTasks, taskMap, progress, blocked, flow, habits, ...filter, logbook, logbookLimit, setLogbookLimit,
     collapsed, toggleCollapsed, ...layout, tree, columns, groups: projectedGroups, rows, ownRows, siblingPos, timeColumn, doneBySection,
-    showCompleted, completedTasks, completedOpen, display, displayScope, listDisplay, dayParts, closed, upcomingToday,
+    showCompleted, reusable, completedTasks, completedOpen, display, displayScope, listDisplay, dayParts, closed, upcomingToday,
     queryFilter: route.view === 'upcoming' ? upcoming : null,
   }
 }
