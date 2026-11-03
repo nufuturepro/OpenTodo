@@ -29,13 +29,7 @@ const (
 var allowFunc = map[string]string{}
 
 // allowFile lists files that may stay longer than maxFileLines, with the reason.
-var allowFile = map[string]string{
-	// The op Schema is one declaration by design (AGENTS.md: a field is declared
-	// once); splitting it across files would spread one table for no readability
-	// gain. Upstream sits just under the limit; our additive preference fields
-	// (motion, haptics, favourites, …) take it a few lines over.
-	"sync/ops.go": "one Schema table, declared once; additive fork fields put it just over",
-}
+var allowFile = map[string]string{}
 
 func TestFunctionAndFileLength(t *testing.T) {
 	root := ".."
