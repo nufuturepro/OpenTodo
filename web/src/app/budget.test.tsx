@@ -287,7 +287,10 @@ describe('on a phone (390 px)', () => {
       const r = await render(<TaskListView route={route} />)
       await waitFor(() => r.container.querySelectorAll('[data-task-id]').length > 0)
       // Today's head (title, date, briefing) is its header, in the page on a phone (precision-phone D1).
-      const rows = chromeRows(r.container).filter((e) => !e.matches('[data-page-head="day"]'))
+      // The grip's one-time reminder is the second named exception of task-list-presentation
+      // "Nothing between the header and the list" (version-hint-motion): one card, coarse
+      // pointers, until this device dismisses it — so the remaining chrome is the quick add alone.
+      const rows = chromeRows(r.container).filter((e) => !e.matches('[data-page-head="day"]') && !e.matches('[data-grip-hint]'))
       if (route.view === 'today') expect(r.container.querySelector('[data-list-page] > [data-page-head="day"] h1')?.textContent).toBe('Today')
       expect(rows.map((e) => e.outerHTML.slice(0, 120)), route.view).toEqual([rows[0].outerHTML.slice(0, 120)])
       expect(rows[0].querySelector('[role="combobox"]'), route.view).toBeTruthy()

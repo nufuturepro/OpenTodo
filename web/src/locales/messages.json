@@ -1192,6 +1192,7 @@
     "web/src/app/palette/CommandPalette.tsx"
   ],
   "Added": [
+    "web/src/app/ChangelogDialog.tsx",
     "web/src/lib/taskSource.ts"
   ],
   "Added a next action to {name}.": [
@@ -2345,6 +2346,9 @@
   "Break this down": [
     "web/src/app/task-detail/TaskActionsMenu.tsx"
   ],
+  "Breaking": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Briefing": [
     "web/src/lib/settingsCopy.ts"
   ],
@@ -2698,6 +2702,9 @@
   "Change “{task}”": [
     "web/src/lib/rules/proposal.ts"
   ],
+  "Changed": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Changed from {date} on": [
     "web/src/lib/seriesSplitActions.ts"
   ],
@@ -2706,6 +2713,9 @@
   ],
   "Changed since, left as is: {titles}": [
     "web/src/app/reopenDay.ts"
+  ],
+  "Changelog": [
+    "web/src/app/ChangelogDialog.tsx"
   ],
   "Changes": [
     "web/src/app/HistoryPanel.tsx",
@@ -6111,6 +6121,9 @@
   "Fix {fg} on {bg}": [
     "web/src/app/themes/ContrastPanel.tsx"
   ],
+  "Fixed": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Fixed to a time zone (now):": [
     "web/src/app/task-detail/ZoneControl.tsx"
   ],
@@ -6688,6 +6701,9 @@
   "Google did not grant lasting access. Remove OpenTaskKit at myaccount.google.com/permissions and connect again.": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
+  "Got it": [
+    "web/src/app/task-list/GripHint.tsx"
+  ],
   "Graphite": [
     "web/src/lib/colourNames.ts"
   ],
@@ -6926,6 +6942,9 @@
   ],
   "Highlighted text": [
     "web/src/app/themes/tokenNames.ts"
+  ],
+  "Highlights": [
+    "web/src/app/ChangelogDialog.tsx"
   ],
   "History": [
     "web/src/app/HistoryPanel.tsx",
@@ -7884,6 +7903,9 @@
   "Kitchen plan": [
     "web/src/app/themes/previewData.ts"
   ],
+  "Known limitations and verification follow-ups": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Label": [
     "web/src/app/LabelPicker.tsx",
     "web/src/app/ParseChips.tsx",
@@ -8396,6 +8418,9 @@
   "Loading the assistant": [
     "web/src/app/assistant/AssistantPanelBody.tsx"
   ],
+  "Loading the changelog…": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Loading the editor…": [
     "web/src/app/ProjectNote.tsx"
   ],
@@ -8816,6 +8841,9 @@
   ],
   "Midnight (default)": [
     "web/src/app/DateTimeSettings.tsx"
+  ],
+  "Migrations": [
+    "web/src/app/ChangelogDialog.tsx"
   ],
   "Mind sweep": [
     "web/src/lib/review.ts"
@@ -11113,11 +11141,24 @@
   "Open {title}": [
     "web/src/app/palette/registry.ts"
   ],
+  "OpenTaskKit Dark": [
+    "web/src/app/ThemeRow.tsx"
+  ],
+  "OpenTaskKit Inter": [
+    "web/src/app/themes/EditorSections.tsx"
+  ],
+  "OpenTaskKit Light": [
+    "web/src/app/BrandingThemes.tsx",
+    "web/src/app/ThemeRow.tsx"
+  ],
   "OpenTaskKit asks the browser to recognise speech on this device when it offers that choice.": [
     "web/src/app/VoiceSettings.tsx"
   ],
   "OpenTaskKit can't reach the server.": [
     "web/src/app/App.tsx"
+  ],
+  "OpenTaskKit contributors": [
+    "web/src/app/ThemeRow.tsx"
   ],
   "OpenTaskKit export (JSON)": [
     "web/src/app/ImportScreen.tsx"
@@ -11131,6 +11172,9 @@
   "OpenTaskKit is free software (AGPL-3.0). No telemetry, no tracking, no subscription.": [
     "web/src/app/SettingsView.tsx"
   ],
+  "OpenTaskKit is not affiliated with this project": [
+    "web/src/app/ThemeAbout.tsx"
+  ],
   "OpenTaskKit reads {path}.": [
     "web/src/app/SsoPanel.tsx"
   ],
@@ -11139,6 +11183,9 @@
   ],
   "OpenTaskKit recovery key": [
     "web/src/app/EncryptionPanel.tsx"
+  ],
+  "OpenTaskKit theme template, made from {name}.": [
+    "web/src/app/themes/templateText.ts"
   ],
   "OpenTaskKit {appVersion}": [
     "web/src/app/RestoreSection.tsx"
@@ -11151,25 +11198,6 @@
   ],
   "OpenTaskKit {version} · works offline": [
     "web/src/app/help/HelpView.tsx"
-  ],
-  "OpenTaskKit Dark": [
-    "web/src/app/ThemeRow.tsx"
-  ],
-  "OpenTaskKit Inter": [
-    "web/src/app/themes/EditorSections.tsx"
-  ],
-  "OpenTaskKit Light": [
-    "web/src/app/BrandingThemes.tsx",
-    "web/src/app/ThemeRow.tsx"
-  ],
-  "OpenTaskKit contributors": [
-    "web/src/app/ThemeRow.tsx"
-  ],
-  "OpenTaskKit is not affiliated with this project": [
-    "web/src/app/ThemeAbout.tsx"
-  ],
-  "OpenTaskKit theme template, made from {name}.": [
-    "web/src/app/themes/templateText.ts"
   ],
   "Opening the shared files…": [
     "web/src/app/ShareCapture.tsx"
@@ -11856,6 +11884,9 @@
   ],
   "Press a key": [
     "web/src/app/shortcuts/Spotlight.tsx"
+  ],
+  "Press and hold a task’s grip to select it.": [
+    "web/src/app/task-list/GripHint.tsx"
   ],
   "Press {key}": [
     "web/src/ui/patterns/EmptyState.tsx"
@@ -13780,6 +13811,7 @@
     "web/src/lib/rules/sentence.ts"
   ],
   "Security": [
+    "web/src/app/ChangelogDialog.tsx",
     "web/src/app/OutgoingEmailPanel.tsx",
     "web/src/app/settingsSections.ts"
   ],
@@ -13807,6 +13839,10 @@
   ],
   "Select a task to see its details here.": [
     "web/src/app/sidePanel.tsx"
+  ],
+  "Select it to read what changed in each release.": [
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
   ],
   "Select tasks": [
     "web/src/app/task-list/ListChrome.tsx"
@@ -15839,6 +15875,9 @@
   ],
   "The change could not be saved.": [
     "web/src/app/actionError.ts"
+  ],
+  "The changelog could not be loaded.": [
+    "web/src/app/ChangelogDialog.tsx"
   ],
   "The chosen model does not read photos. Remove them to send the message.": [
     "web/src/lib/i18n/errors.ts"
@@ -18362,6 +18401,9 @@
   "Updates in {names}": [
     "web/src/app/WorkspaceControl.tsx"
   ],
+  "Upgrade notes": [
+    "web/src/app/ChangelogDialog.tsx"
+  ],
   "Upload a file": [
     "web/src/app/RestoreSection.tsx",
     "web/src/app/TemplateDialogs.tsx"
@@ -18535,6 +18577,10 @@
   ],
   "Verify your email address to use this": [
     "web/src/lib/rules/catalogue.ts"
+  ],
+  "Version": [
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
   ],
   "Version, documentation, website, feedback and support": [
     "web/src/app/settingsSections.ts"

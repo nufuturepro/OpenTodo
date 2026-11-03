@@ -6891,5 +6891,19 @@
   "Instant overlays when off": "Senza animazione, tutto è immediato",
   "Pick a date": "Scegliere una data",
   "Animate menus and dialogs": "Animare menu e finestre di dialogo",
-  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Spunta il compito e mostra tutte le caselle di controllo (toccare la maniglia sul bordo della riga fa lo stesso); Seleziona nell'intestazione dell'elenco le mostra senza spuntare, Fatto le nasconde"
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Spunta il compito e mostra tutte le caselle di controllo (toccare la maniglia sul bordo della riga fa lo stesso); Seleziona nell'intestazione dell'elenco le mostra senza spuntare, Fatto le nasconde",
+  "Changelog": "Registro delle modifiche",
+  "Loading the changelog…": "Caricamento del registro delle modifiche…",
+  "The changelog could not be loaded.": "Impossibile caricare il registro delle modifiche.",
+  "Version": "Versione",
+  "Select it to read what changed in each release.": "Selezionalo per leggere cosa è cambiato in ogni versione.",
+  "Breaking": "Incompatibilità",
+  "Changed": "Modifiche",
+  "Fixed": "Correzioni",
+  "Highlights": "Punti salienti",
+  "Known limitations and verification follow-ups": "Limiti noti e verifiche da completare",
+  "Migrations": "Migrazioni",
+  "Upgrade notes": "Note di aggiornamento",
+  "Got it": "Ho capito",
+  "Press and hold a task’s grip to select it.": "Tieni premuta la maniglia di un task per selezionarlo."
 }

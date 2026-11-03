@@ -6891,5 +6891,19 @@
   "Instant overlays when off": "Sem animação, tudo é instantâneo",
   "Pick a date": "Escolher uma data",
   "Animate menus and dialogs": "Animar menus e caixas de diálogo",
-  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Marque a tarefa e mostre todas as caixas de seleção (tocar no puxador na borda da linha faz o mesmo); Selecionar no cabeçalho da lista mostra-as sem marcar, Pronto esconde-as"
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Marque a tarefa e mostre todas as caixas de seleção (tocar no puxador na borda da linha faz o mesmo); Selecionar no cabeçalho da lista mostra-as sem marcar, Pronto esconde-as",
+  "Changelog": "Registro de alterações",
+  "Loading the changelog…": "Carregando o registro de alterações…",
+  "The changelog could not be loaded.": "Não foi possível carregar o registro de alterações.",
+  "Version": "Versão",
+  "Select it to read what changed in each release.": "Selecione-o para ler o que mudou em cada versão.",
+  "Breaking": "Incompatibilidades",
+  "Changed": "Alterações",
+  "Fixed": "Correções",
+  "Highlights": "Destaques",
+  "Known limitations and verification follow-ups": "Limitações conhecidas e pendências de verificação",
+  "Migrations": "Migrações",
+  "Upgrade notes": "Notas de atualização",
+  "Got it": "Entendi",
+  "Press and hold a task’s grip to select it.": "Pressione e segure a alça de uma tarefa para selecioná-la."
 }

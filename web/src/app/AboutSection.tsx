@@ -2,15 +2,21 @@
 // the website, the source code, where to report a problem, the Discord server
 // (discord-community), the account on X (x-account-link), Buy Me a Coffee, and the
 // owner's welcome note on demand. Every link is a plain link opening a new tab;
-// the version comes from this server's status while online.
+// the version comes from this server's status while online. The version row
+// (version-hint-motion) shows that number — this build's while offline — and opens
+// this repository's changelog.
 import { useEffect, useState } from 'react'
 import { Badge, Icon, Notice, SettingRow, SettingsSection } from '../ui'
+// Named import, so the bundle carries the version and not the whole package.json
+// (scripts, devDependencies — the workbench test would find them in the build).
+import { version as buildVersion } from '../../package.json'
 import { api } from '../lib/api'
 import { t } from '../lib/i18n'
 import { useOnline } from '../lib/online'
 import type { User } from '../lib/types'
 import { navigate } from './router'
 import { CoffeeButton, DISCORD_URL, ISSUES_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
+import { ChangelogDialog } from './ChangelogDialog'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
 import { shell, shellOutdated, type OpenTaskKitShell } from '../lib/shell'
 
@@ -58,9 +64,12 @@ export function AboutSection({ user }: { user: User }) {
   const s = shell()
   const app = s ? { platform: s.platform, version: s.app, outdated: shellOutdated() } : null
   const [note, setNote] = useState(false)
+  const [changelog, setChangelog] = useState(false)
   return (
     <>
       <SettingsSection {...cardCopy('about', { variant: version ? 'version' : 'plain', values: { version } })}>
+        <SettingRow id="about-version" {...rowCopy('about', 'version')}
+          control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => setChangelog(true)} data-about-version>{version ?? buildVersion}</button>} />
         <ShellAppRow app={app} />
         <SettingRow id="about-help" {...rowCopy('about', 'help')}
           control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => navigate({ view: 'help' })} data-about-help>{t('Open Help')}</button>} />
@@ -85,6 +94,7 @@ export function AboutSection({ user }: { user: User }) {
         <div className="pt-1"><CoffeeButton className="sm:w-64" /></div>
       </SettingsSection>
       {note && <WelcomeNote onClose={() => setNote(false)} />}
+      {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
     </>
   )
 }

@@ -69,6 +69,7 @@ import { RoutinesInboxSlot } from './routines/InboxSlot'
 import { closedListMeta } from './task-list/useClosedList'
 import { ClosedListMenuItems } from './task-list/ClosedListActions'
 import { ReplanTodayItem } from './calendar/ReplanMenuItem'
+import { GripHint } from './task-list/GripHint'
 import { closedListOffered } from '../lib/closedListPrefs'
 import { dayPartsOn, setDayParts } from '../lib/dayParts'
 import { readMethodMode } from '../lib/method/mode'
@@ -404,7 +405,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
                 {t('Columns')}
               </Button>
             </div>
-          )}
+          )}{!fine && own.length > 0 && <GripHint />}
           {own.length === 0 && !(board || m.liveSections.length > 0) && (m.duration || m.queryFilter?.query
             ? <FilteredEmpty onClear={() => { m.chooseDuration(null); m.queryFilter?.setQuery('') }} />
             : <EmptyState view={route.view} waiting={groups.find((g) => g.key === 'blocked')?.count ?? 0} readOnly={m.projectReadOnly}

@@ -6891,5 +6891,19 @@
   "Instant overlays when off": "Sans animation, tout est instantané",
   "Pick a date": "Choisir une date",
   "Animate menus and dialogs": "Animer les menus et les dialogues",
-  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Cochez la tâche et affichez toutes les cases à cocher (taper la poignée au bord de la ligne fait de même) ; Sélectionner dans l'en-tête de la liste les affiche sans cocher, Terminé les masque"
+  "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them": "Cochez la tâche et affichez toutes les cases à cocher (taper la poignée au bord de la ligne fait de même) ; Sélectionner dans l'en-tête de la liste les affiche sans cocher, Terminé les masque",
+  "Changelog": "Journal des modifications",
+  "Loading the changelog…": "Chargement du journal des modifications…",
+  "The changelog could not be loaded.": "Impossible de charger le journal des modifications.",
+  "Version": "Version",
+  "Select it to read what changed in each release.": "Sélectionnez-la pour lire ce qui a changé dans chaque version.",
+  "Breaking": "Incompatibilités",
+  "Changed": "Modifications",
+  "Fixed": "Corrections",
+  "Highlights": "Points forts",
+  "Known limitations and verification follow-ups": "Limites connues et suites de vérification",
+  "Migrations": "Migrations",
+  "Upgrade notes": "Notes de mise à jour",
+  "Got it": "Compris",
+  "Press and hold a task’s grip to select it.": "Appuyez longuement sur la poignée d’une tâche pour la sélectionner."
 }

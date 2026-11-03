@@ -1005,8 +1005,30 @@ button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hov
 .row-hover:hover { background-color: var(--ot-hover); }
 /* A touch hold armed (task-row-context-menu "Touch: hold and release"): the pressed
    row tints while the hold counts, so holding reads as feedback before the menu opens
-   on release. A plain attribute, so it survives the row's re-renders mid-hold. */
+   on release. A plain attribute, so it survives the row's re-renders mid-hold. The tint
+   fades in and out with the row's own durations (version-hint-motion): the base rule
+   adds background-color to the row's transition property — unlayered, so it wins over
+   the utility class — while that class keeps the emphasis duration and the calm easing. */
+li[data-task-id] { transition-property: opacity, transform, background-color; }
 li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--text-color-accent) 8%, transparent); }
+/* The grip presses back (version-hint-motion): a press sinks it into a tinted chip, and
+   a hold in progress keeps it pressed alongside the row's tint. Scale and colour only —
+   reduced motion keeps the colour and drops the scale; no motion drops both. */
+[data-row-grip] button {
+  transition: transform var(--duration-ui) var(--ease-calm), background-color var(--duration-ui) var(--ease-calm);
+}
+[data-row-grip] button:active,
+li[data-task-id][data-touch-hold] [data-row-grip] button {
+  transform: scale(0.88);
+  background-color: color-mix(in oklab, var(--text-color-accent) 12%, transparent);
+}
+/* The grip's reminder arrives from under the page header (version-hint-motion): a slide
+   and a fade, instant under data-motion="none" and under reduced motion, like every animation. */
+@keyframes hint-in { from { opacity: 0; transform: translateY(-6px); } }
+.hint-in { animation: hint-in var(--duration-emphasis) var(--ease-spring) both; }
+/* The selection bar rises with the first tick (bulk-actions; version-hint-motion). */
+@keyframes bar-in { from { opacity: 0; transform: translateY(6px); } }
+[data-selection-bar] { animation: bar-in var(--duration-ui) var(--ease-spring) both; }
 /* The bulk-selection box (bulk-actions): drawn by us, not by the platform, so it fills
    the same 20 px slot as the completion circle it stands in for on every device — the
    native control's size and alignment vary per browser and read as off-centre on a phone. */
@@ -1019,6 +1041,7 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   border: 2px solid var(--ot-border-input);
   border-radius: 4px;
   background: transparent;
+  transition: background-color var(--duration-ui) var(--ease-calm), border-color var(--duration-ui) var(--ease-calm);
 }
 .row-tick:checked {
   border-color: var(--ot-accent);
@@ -1028,6 +1051,11 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   background-size: 75% 75%;
   background-repeat: no-repeat;
 }
+/* The selection box pops in where the completion circle stood (bulk-actions; version-hint-motion):
+   the swap happens in the same slot, so the title never moves, and the box arrives with a small
+   spring while the row is selecting. */
+@keyframes tick-in { from { opacity: 0; transform: scale(0.6); } }
+[data-row-controls][data-selecting] .row-tick { animation: tick-in var(--duration-ui) var(--ease-spring) both; }
 /* A narrow row's line is one run of muted text (rows-v2 D4): a faint middle dot between
    adjacent items, as generated content so it is never read out. A row's line holds two
    wrappers (the column's cells, then the rest), so its dots also cross from the first
