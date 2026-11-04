@@ -55,6 +55,10 @@ const (
 	CalendarConnectionCreatedName Name = "calendar_connection.created"
 	CalendarConnectionUpdatedName Name = "calendar_connection.updated"
 	CalendarConnectionDeletedName Name = "calendar_connection.deleted"
+	// A Google account connected to the in-app assistant or removed from it
+	// (assistant-gemini-oauth): the provider only, never the address or a token.
+	AssistantConnectionCreatedName Name = "assistant_connection.created"
+	AssistantConnectionDeletedName Name = "assistant_connection.deleted"
 	// Notification delivery channels (OpenSpec change notification-channels):
 	// created, deleted, and changed settings or secrets by name.
 	NotificationChannelCreatedName Name = "notification_channel.created"
@@ -156,6 +160,7 @@ var Names = []Name{
 	EmailInboxCreatedName, EmailInboxRotatedName, EmailInboxUpdatedName,
 	IssueConnectionCreatedName, IssueConnectionUpdatedName, IssueConnectionDeletedName,
 	CalendarConnectionCreatedName, CalendarConnectionUpdatedName, CalendarConnectionDeletedName,
+	AssistantConnectionCreatedName, AssistantConnectionDeletedName,
 	NotificationChannelCreatedName, NotificationChannelUpdatedName, NotificationChannelDeletedName,
 	InvitationCreatedName, InvitationAcceptedName, InvitationRevokedName,
 	ProjectInviteCreatedName, ProjectInviteRevokedName, ProjectInviteAcceptedName,
@@ -196,6 +201,7 @@ var PersonalNames = []Name{
 	EmailInboxCreatedName, EmailInboxRotatedName, EmailInboxUpdatedName,
 	IssueConnectionCreatedName, IssueConnectionUpdatedName, IssueConnectionDeletedName,
 	CalendarConnectionCreatedName, CalendarConnectionUpdatedName, CalendarConnectionDeletedName,
+	AssistantConnectionCreatedName, AssistantConnectionDeletedName,
 	NotificationChannelCreatedName, NotificationChannelUpdatedName, NotificationChannelDeletedName,
 	IdentityLinkedName, IdentityUnlinkedName,
 	PasswordResetCompletedName, PasswordChangedName,
@@ -508,6 +514,21 @@ func CalendarConnectionUpdated(userID, connID, provider, setting string) Event {
 // CalendarConnectionDeleted records a deleted calendar connection (its secret removed).
 func CalendarConnectionDeleted(userID, connID, provider string) Event {
 	return ev(CalendarConnectionDeletedName, Success, userID, "", "connection_id", connID, "provider", provider)
+}
+
+// ---- the assistant's Google account ----
+
+// AssistantConnectionCreated records a Google account connected to the in-app
+// assistant: the user and the provider (google), never the connected address,
+// the refresh token or a project id (assistant-gemini-oauth).
+func AssistantConnectionCreated(userID, provider string) Event {
+	return ev(AssistantConnectionCreatedName, Success, userID, "", "provider", provider)
+}
+
+// AssistantConnectionDeleted records a connection removed together with its
+// stored refresh token.
+func AssistantConnectionDeleted(userID, provider string) Event {
+	return ev(AssistantConnectionDeletedName, Success, userID, "", "provider", provider)
 }
 
 // ---- notification channels ----

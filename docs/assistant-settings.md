@@ -11,9 +11,9 @@ order: 79
 
 <picture><source srcset="images/assistant-settings-dark.webp" media="(prefers-color-scheme: dark)"><img src="images/assistant-settings-light.webp" alt="Settings, Integrations, the Assistant card: the provider and model in use, this month's usage, and the switch Small changes without review."></picture>
 
-**Settings → Integrations → Assistant** holds your consent, which assistant you use, this month's usage, **Small changes without review** (this device) and **Clear conversations on this device**, which are stored only on this device. The owner's part of the card is described in [Set up the assistant](assistant-setup.md).
+**Settings → Integrations → Assistant** holds your consent, which assistant you use, this month's usage, **Small changes without review** (this device) and **Clear conversations on this device**, stored only on this device. The owner's part is in [Set up the assistant](assistant-setup.md).
 
-Your consent also covers the [AI steps of routines](routines.md#ai-steps), which send what they read to the same provider on a schedule, while you may not be looking. If you accepted before routines had AI steps, **Accept for routines** asks again; your chats keep working meanwhile. The usage counts the month's routine calls separately too.
+Your consent also covers the [AI steps of routines](routines.md#ai-steps), which send what they read to the same provider on a schedule, while you may not be looking. If you accepted before routines had AI steps, **Accept for routines** asks again; your chats keep working meanwhile. Routine calls are counted separately too.
 
 ## The complete list notice
 
@@ -24,20 +24,24 @@ The [list of what may be sent](assistant-privacy.md#before-your-first-message) o
 When the server owner turns on **Let members bring their own key**, **Settings → Integrations → Assistant** shows **Which assistant you use**:
 
 - **The server's assistant**: the provider and model the owner set up. This is the default.
-- **My own provider and key**: choose **Anthropic (Claude)**, **OpenAI** or **Google Gemini**, a model, and paste an API key from your own account, then select **Save my provider**. For Anthropic you pick one of the offered models; for OpenAI and Gemini you type the model id (up to 100 characters: letters, digits, `.`, `_`, `:` and `-`, for example `gpt-4.1-mini` or `gemini-2.5-flash`). **Test connection** sends one tiny request with the provider, model and key on screen to check them, before or after you save (up to 5 tests in 10 minutes). Testing never saves anything.
+- **My own provider and key**: choose **Anthropic (Claude)**, **OpenAI** or **Google Gemini**, a model, and paste an API key from your own account, then select **Save my provider**. For Anthropic you pick one of the offered models; for OpenAI and Gemini you type the model id (up to 100 characters, for example `gpt-4.1-mini` or `gemini-2.5-flash`). **Test connection** checks the provider, model and key on screen (up to 5 tests in 10 minutes) without saving anything.
 
-Your questions then go from this server to the provider you chose, with your key, so that provider's terms for your account apply. The assistant asks you to accept the [disclosure](assistant-privacy.md#before-your-first-message) for that provider before your next message. Your key is stored on the server, never shown again, never sent to your browser and never in backups or exports. Going back to **The server's assistant** deletes the key you stored for your provider.
+Your questions then go from this server to the provider you chose, with your key, so that provider's terms for your account apply. The assistant asks you to accept the [disclosure](assistant-privacy.md#before-your-first-message) for that provider before your next message. Your key is stored on the server, never shown again or sent to your browser, and in no backup or export. Going back to **The server's assistant** deletes the key you stored for your provider.
 
-A compatible endpoint (a model server address) is never offered here: only the server owner decides which other machines the server connects to.
+A compatible endpoint (a model server address) is never offered here: the owner decides which machines the server connects to.
 
-If the owner later stops allowing members' own keys, your choice is kept but not used: the server's assistant answers (after you accept its disclosure) until the owner allows it again. **Forget my provider and key** deletes both.
+If the owner later stops allowing members' own keys, your choice is kept but not used: the server's assistant answers (after you accept its disclosure) until it is allowed again. **Forget my provider and key** deletes both.
 
-If you saved a key in an earlier version of OpenTodo, it still works with the server's assistant; **Remove my key** deletes it.
+A key saved in an earlier version still works with the server's assistant; **Remove my key** deletes it.
 
 Answers on your own key are paid by you; how they count is explained under [Costs and limits](assistant-privacy.md#costs-and-limits).
 
+## Connect a Google account
+
+With the owner's Google client set up, **Connect Google account** uses your own Google account instead of a key; a saved key is used first, and **Disconnect Google account** removes it. The rest is in [Google accounts for the assistant](assistant-google.md).
+
 ## Apply small changes without review
 
-The switch **Settings → Integrations → Assistant → Small changes without review** (this device) is off by default. When it is on, a proposal that touches at most 3 existing tasks and only changes completion, due dates, priority or labels is applied at once, with an Undo notice. Anything else, including every new task, every move to another project or section, every deletion and every text edit, is always shown for [review](assistant-ask.md#ask-and-review).
+**Small changes without review** (this device) is off by default. When it is on, a proposal that touches at most 3 existing tasks and only changes completion, due dates, priority or labels is applied at once, with an Undo notice. Anything else, including every new task, every move to another project or section, every deletion and every text edit, is always shown for [review](assistant-ask.md#ask-and-review).
 
 To have the assistant propose improvements to each task you add, see [Suggest after adding](assistant-suggest-after-add.md).

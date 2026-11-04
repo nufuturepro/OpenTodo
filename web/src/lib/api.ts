@@ -5,7 +5,7 @@ import type { Branding } from './branding'
 import type { AssistantSkill } from './assistantSkills'
 import type { AgentAccess, ApiToken, McpStatus, TokenScope } from './assistants'
 import type { AssistantStatus } from './assistantStatus'
-import type { AssistantOwnerSettings, AssistantMemberSettings, AssistantSettingsInput, AssistantTestDraft, AssistantTestResult, MyAssistantTestDraft, AssistantUsage, MyAssistantInput } from './assistantTypes'
+import type { AssistantOwnerSettings, AssistantMemberSettings, AssistantSettingsInput, AssistantTestDraft, AssistantTestResult, MyAssistantTestDraft, AssistantUsage, MyAssistantInput, AssistantGoogleClient, AssistantGoogleClientInput, MyGoogleConnection } from './assistantTypes'
 import type { KeyRecord } from './crypto'
 import type { RelayDevice, RoutineRunRequest } from './relay'
 import type { DraftAnswer } from './rules/describe'
@@ -685,6 +685,14 @@ export const api = {
   /** Your own provider's "Test connection" (assistant-member-provider; sessions only, rate limited). */
   testMyAssistant: (draft: MyAssistantTestDraft = {}) => request<AssistantTestResult>('POST', '/api/v1/me/assistant/test', draft),
   assistantUsage: () => request<AssistantUsage>('GET', '/api/v1/me/assistant/usage'),
+  // The Gemini provider with a Google account (assistant-gemini-oauth): the
+  // owner's OAuth client, and each person's own connection.
+  getAssistantGoogleClient: () => request<AssistantGoogleClient>('GET', '/api/v1/settings/assistant/google'),
+  saveAssistantGoogleClient: (input: AssistantGoogleClientInput) => request<AssistantGoogleClient>('PUT', '/api/v1/settings/assistant/google', input),
+  /** Answers Google's consent address for this account (sessions only). */
+  startAssistantGoogle: (project = '') => request<{ url: string }>('POST', '/api/v1/me/assistant/google/start', project ? { project } : {}),
+  getMyGoogleConnection: () => request<MyGoogleConnection>('GET', '/api/v1/me/assistant/google'),
+  disconnectMyGoogle: () => request<MyGoogleConnection>('DELETE', '/api/v1/me/assistant/google'),
 }
 
 function auditQuery(f: AuditFilters): URLSearchParams {

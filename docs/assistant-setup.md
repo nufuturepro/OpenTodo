@@ -29,7 +29,11 @@ The [assistant](assistant.md) is off until the server owner turns it on here. Me
 | Google Gemini | Any Gemini model id | A Gemini API key | Google's OpenAI-compatible endpoint on `generativelanguage.googleapis.com` |
 | Compatible endpoint | The model name your server serves | Optional | Ollama, LM Studio, OpenRouter, Mistral and others; enter the base URL, for example `http://192.168.1.20:11434/v1` |
 
-The model must support tool use. **Test connection** reports an endpoint that rejects tool definitions as `no_tool_support`. A model on your own network is set up as a compatible endpoint; see [A local model](assistant-owner-options.md#a-local-model).
+The model must support tool use. A model on your own network is set up as a compatible endpoint; see [A local model](assistant-owner-options.md#a-local-model).
+
+## Google accounts instead of a key
+
+People can use **Google Gemini with their own Google account** instead of an API key: you set up one OAuth client, and everyone else just signs in. The Google steps, the fields in **Configure**, costs and how tokens are kept are in [Google accounts for the assistant](assistant-google.md).
 
 ## When Test connection fails
 
@@ -43,6 +47,6 @@ The result names the problem with a code; the provider's own error text is never
 
 A compatible base URL pasted with `/chat/completions` at the end is shortened to its base when you test or save it; OpenTodo adds that path itself. If the test says the request never reached the provider, see [Behind a reverse proxy](self-hosting/docker.md#method-not-allowed-or-unknown-api-route-from-a-test-or-save).
 
-Changing the provider asks everyone to accept the disclosure again. Where keys are stored, and the switches for members' own keys and the monthly allowance, are in [Assistant owner options](assistant-owner-options.md#other-settings).
+Changing the provider asks everyone to accept the disclosure again. Where keys are stored, and the switches for members' own keys and the allowance, are in [Assistant owner options](assistant-owner-options.md#other-settings).
 
 Network details for operators are in [Running with Docker](self-hosting/docker.md#in-app-assistant); the routes are in the [API reference](api.md#in-app-assistant).

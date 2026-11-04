@@ -44,6 +44,7 @@
   "feeds_disabled",
   "forbidden",
   "google_not_configured",
+  "google_not_connected",
   "group_exists",
   "host_managed",
   "idempotency_conflict",

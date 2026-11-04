@@ -25,6 +25,12 @@ type ChatProvider struct {
 	Name    string
 	BaseURL string
 	Key     string
+	// Token, when set, mints the bearer token of each request: the person's
+	// own Google account (assistant-gemini-oauth). Key is empty then.
+	Token TokenSource
+	// Project is sent as x-goog-user-project for a Google account connection,
+	// so the calls are billed to the Cloud project the owner or person named.
+	Project string
 	Model   string
 	HTTP    *http.Client
 	// Retries for 429 and 5xx answers before the stream starts.
@@ -267,15 +273,23 @@ func (c *chatConv) post(ctx context.Context, body []byte) (*http.Response, error
 	if backoff == 0 {
 		backoff = 500 * time.Millisecond
 	}
-	for attempt := 0; ; attempt++ {
+	retries, refreshed := 0, false
+	for {
+		token, terr := c.bearer(ctx)
+		if terr != nil {
+			return nil, terr
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return nil, &ProviderError{Code: CodeProviderError, Msg: "the provider URL is not valid"}
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
-		if c.p.Key != "" {
-			req.Header.Set("Authorization", "Bearer "+c.p.Key)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		if c.p.Project != "" && c.p.Name == Gemini {
+			req.Header.Set("x-goog-user-project", c.p.Project)
 		}
 		resp, err := c.p.HTTP.Do(req)
 		if err != nil {
@@ -292,23 +306,47 @@ func (c *chatConv) post(ctx context.Context, body []byte) (*http.Response, error
 		}
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		resp.Body.Close()
+		// A refused access token is minted once more before the person sees
+		// anything; only a second 401 means the account must be connected
+		// again (assistant-gemini-oauth D4).
+		if resp.StatusCode == http.StatusUnauthorized && c.p.Token != nil && !refreshed {
+			refreshed = true
+			if _, rerr := c.p.Token.Refresh(ctx); rerr != nil {
+				return nil, rerr
+			}
+			continue
+		}
 		retry := resp.StatusCode == 429 || resp.StatusCode >= 500
 		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 			return nil, &ProviderError{Code: CodeProviderError, Status: resp.StatusCode, Msg: "the endpoint answered with a redirect, which this server does not follow"}
 		}
-		if !retry || attempt >= c.p.Retries {
+		if !retry || retries >= c.p.Retries {
 			if c.images && imageRefusal(resp.StatusCode, string(errBody)) {
 				typ, _ := readChatError(errBody)
 				return nil, imagesUnsupported(resp.StatusCode, typ)
 			}
+			if resp.StatusCode == http.StatusUnauthorized && c.p.Token != nil {
+				typ, _ := readChatError(errBody)
+				return nil, &ProviderError{Code: CodeProviderAuth, Status: resp.StatusCode, Type: typ, Msg: ReconnectNeedsMessage}
+			}
 			return nil, chatError(c.p.Name, resp.StatusCode, errBody)
 		}
+		retries++
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(backoff << attempt):
+		case <-time.After(backoff << (retries - 1)):
 		}
 	}
+}
+
+// bearer is the request's token: the static key, or an access token minted
+// from the person's Google account connection.
+func (c *chatConv) bearer(ctx context.Context) (string, error) {
+	if c.p.Token == nil {
+		return c.p.Key, nil
+	}
+	return c.p.Token.Token(ctx)
 }
 
 // maxErrorBody bounds the part of an error answer that is read.

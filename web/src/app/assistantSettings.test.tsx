@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ComponentProps } from 'react'
 import type { AssistantStatus } from '../lib/assistantStatus'
 import type { AssistantOwnerSettings } from '../lib/assistantTypes'
-import { assistantStatusLine, draftFrom, inputFrom, ownDraftFrom, SAVE_TO_USE, testDraft, testIsUnsaved, ownInputFrom, OwnerAssistantSettings, OwnerAssistantSummary, UserAssistantSettings } from './assistant/AssistantSettings'
+import { assistantStatusLine, draftFrom, googleSignInText, inputFrom, ownDraftFrom, SAVE_TO_USE, testDraft, testIsUnsaved, ownInputFrom, OwnerAssistantSettings, OwnerAssistantSummary, UserAssistantSettings } from './assistant/AssistantSettings'
 import { formatDate } from '../lib/dates'
 import { click, render } from '../ui/test-utils'
 
@@ -28,10 +28,12 @@ describe('OwnerAssistantSettings', () => {
   it('shows providers, models (Anthropic picker), key presence never a key, base URL, private endpoint, cap and member keys', () => {
     const html = renderToStaticMarkup(<OwnerAssistantSettings saved={saved} draft={draftFrom(saved)} connected busy={false} error={null} message={null} tests={{}} onChange={noop} onSave={noop} onTest={noop} />)
     for (const s of ['Turn on the assistant', 'Anthropic (Claude)', 'OpenAI', 'Google Gemini', 'Compatible endpoint', 'claude-sonnet-5-5', 'claude-haiku-5-5',
-      'A key is saved', 'Remove saved key', 'Base URL', 'Allow private endpoints', 'Let members bring their own key', 'Monthly tokens per person', 'Test connection']) {
+      'A key is saved', 'Remove saved key', 'Base URL', 'Allow private endpoints', 'Let members bring their own key', 'Monthly tokens per person', 'Test connection',
+      'Google accounts', 'Client ID', 'Client secret', 'Save Google client']) {
       expect(html).toContain(s)
     }
-    expect((html.match(/type="password"/g) ?? []).length).toBe(4)
+    // One per provider key and the Google client's secret (assistant-gemini-oauth).
+    expect((html.match(/type="password"/g) ?? []).length).toBe(5)
     expect(html).not.toMatch(/type="password"[^>]*value="[^"]+"/)
   })
   it('reports a failed connection test with its code', () => {
@@ -51,6 +53,17 @@ describe('OwnerAssistantSettings', () => {
     expect(inputFrom(d).keys).toEqual({})
     expect(inputFrom({ ...d, keys: { anthropic: '' } }).keys).toEqual({ anthropic: '' })
     expect(inputFrom(d).providers?.compatible).toEqual({ enabled: false, model: '', base_url: '', images: false })
+  })
+})
+
+describe('the Google account sign-in result (assistant-gemini-oauth)', () => {
+  it('words every outcome and falls back to a retry', () => {
+    expect(googleSignInText('connected')).toBe('Google account connected.')
+    expect(googleSignInText('denied')).toBe('You declined at Google.')
+    expect(googleSignInText('invalid_state')).toBe('That sign-in link expired. Try again.')
+    expect(googleSignInText('not_configured')).toBe('The server owner has not set up a Google client for the assistant.')
+    expect(googleSignInText('invalid_project')).toBe('That Google Cloud project id is not valid.')
+    expect(googleSignInText('something-else')).toBe('Google did not complete the sign-in. Try again.')
   })
 })
 

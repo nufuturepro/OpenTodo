@@ -23,6 +23,10 @@ Run Ollama or LM Studio on a machine in your network, choose **Compatible endpoi
 
 **Let encrypted accounts use the assistant from their own device** (off by default) lets people with end-to-end encryption run the assistant in their browser with their own key; your keys are never used, and the server sees no content. While it is on, pages of the server may connect to the providers you allow. See [Assistant on encrypted accounts](assistant-encrypted.md#for-the-server-owner).
 
+## Google accounts
+
+The Gemini card in **Configure** also holds the server's **Google client**, which lets people use their own Google account instead of a key; the setup steps and what Google bills are in [Google accounts for the assistant](assistant-google.md). Members reach it through the same **Let members bring their own key** switch.
+
 ## Other settings
 
 - **Let members bring their own key**: each person may then choose Anthropic, OpenAI or Google Gemini with their own model and key in **Settings → Integrations → Assistant**; their turns use it instead of yours. Members are never offered the compatible endpoint, so they cannot make your server connect to an address of their choosing. Turning this off makes everyone use your provider again (each person accepts its disclosure again); their choices are kept for when you turn it back on. Settings shows how many people use their own provider and key. What members see is in [Assistant settings](assistant-settings.md#use-your-own-provider-and-key).

@@ -30,7 +30,11 @@ export function AssistantConsent({ status, connected, busy, error, onAccept, dev
     <section className="space-y-3 text-body" aria-labelledby="assistant-consent-heading" data-assistant-consent>
       <h3 id="assistant-consent-heading" className="text-body font-semibold">{t('Before you start')}</h3>
       {changed && <p className="rounded-control bg-warning-soft p-2 text-on-warning-soft">{own ? t('The model provider changed.') : t('The server owner changed the model provider.')}{' '}{t('Read what is sent now and accept again.')}</p>}
-      {device ? <DeviceDisclosure setup={device.setup} onChange={device.onChange} /> : own ? (
+      {device ? <DeviceDisclosure setup={device.setup} onChange={device.onChange} /> : own && status.google_in_use ? (
+        <p data-consent-google>
+          {t.rich('To answer, the assistant sends what you type and the task data it needs from this server to <strong>{provider}</strong>{model}, with your own Google account. You connected it in Settings → Integrations → Assistant. Nothing is sent before you accept.', { provider: status.provider_label, model: status.model ? <>{' '}{t.rich('(model <code>{model}</code>)', { model: status.model, code: (chunks) => <code className="rounded-control bg-sunken dark:bg-raised px-1">{chunks}</code> })}</> : '', strong: (chunks) => <strong>{chunks}</strong> })}
+        </p>
+      ) : own ? (
         <p data-consent-own>
           {t.rich('To answer, the assistant sends what you type and the task data it needs from this server to <strong>{provider}</strong>{model}, with your own API key. You chose it in Settings → Integrations → Assistant. Nothing is sent before you accept.', { provider: status.provider_label, model: status.model ? <>{' '}{t.rich('(model <code>{model}</code>)', { model: status.model, code: (chunks) => <code className="rounded-control bg-sunken dark:bg-raised px-1">{chunks}</code> })}</> : '', strong: (chunks) => <strong>{chunks}</strong> })}
         </p>

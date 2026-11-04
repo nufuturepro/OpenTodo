@@ -67,6 +67,8 @@ func allConstructors() []Event {
 		IssueConnectionUpdated("u", "c1", "github", "token"),
 		IssueConnectionDeleted("u", "c1", "gitlab"),
 		CalendarConnectionCreated("u", "c1", "caldav"),
+		AssistantConnectionCreated("u", "google"),
+		AssistantConnectionDeleted("u", "google"),
 		CalendarConnectionUpdated("u", "c1", "google", "password"),
 		CalendarConnectionDeleted("u", "c1", "caldav"),
 		NotificationChannelCreated("u", "n1", "ntfy"),

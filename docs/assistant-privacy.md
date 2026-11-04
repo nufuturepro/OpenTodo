@@ -23,25 +23,25 @@ The panel first shows what will be sent and to whom:
 
 In a shared project that includes text other members wrote. Select **Accept and continue** to start. If the provider changes later (also to [your own](assistant-settings.md#use-your-own-provider-and-key)), the assistant asks you again. You can withdraw consent in **Settings → Integrations → Assistant**. If you agreed to the earlier, shorter list, a [notice](assistant-settings.md#the-complete-list-notice) tells you once.
 
+## Your Google account
+
+A connected Google account keeps its **refresh token** in the server's secrets file and mints access tokens in memory; requests go to `generativelanguage.googleapis.com`. See [Google accounts for the assistant](assistant-google.md#tokens).
+
 ## Conversations stay on this device
 
-Conversations are stored only in this browser: never synced, shared, exported or backed up. The panel keeps the last 50 for up to 30 days. **History** lists them (also offline), **New** starts another, and **Clear conversations** deletes them (also in **Settings → Integrations → Assistant**). Signing out deletes them too. The server keeps nothing of a conversation after it has answered.
-
-Offline you can read earlier conversations and apply or undo a proposal that already arrived; asking needs a connection.
+Conversations are stored only in this browser: never synced, shared, exported or backed up. The panel keeps the last 50 for up to 30 days. **History** lists them (also offline), **New** starts another, and **Clear conversations** deletes them. Signing out deletes them too. An earlier conversation can be read and its proposal applied or undone offline; asking needs a connection. The server keeps nothing of a conversation after it has answered.
 
 ## Costs and limits
 
-Each answer shows how many tokens it used and how much of your monthly allowance that is ("1,240 tokens · this month 18% of your limit"); **Settings → Integrations → Assistant** shows the month so far. The owner sets the allowance (500,000 tokens per person per month by default). It resets on the first day of each month (UTC). One answer at a time per person. A [Describe it](routines.md#describe-it) draft is one answer too.
+Each answer shows how many tokens it used and how much of your monthly allowance that is; **Settings → Integrations → Assistant** shows the month so far. The owner sets the allowance (500,000 tokens per person per month by default), which resets on the first day of each month (UTC). One answer at a time per person; a [Describe it](routines.md#describe-it) draft is one answer too.
 
 Answers on your own key are paid by you and do not count toward the allowance unless the owner chooses to count them ("1,240 tokens · your key").
 
 ## End-to-end encrypted accounts
 
-If your account uses [end-to-end encryption](e2ee.md), the server never runs the assistant for you: it holds no key to your tasks.
+If your account uses [end-to-end encryption](e2ee.md), the server never runs the assistant for you: it holds no key to your tasks. When the server owner allows it, the assistant runs [on your device](assistant-encrypted.md) instead. Your device sends what you type and the task data a question needs directly to the provider you set up there, with your own key; it sends less than the server's assistant ([what it sends](assistant-encrypted.md#what-the-device-sends)). The OpenTodo server receives only your consent (which provider you accepted, not the key, the model or the address) and nothing of the conversation. The key is kept in this browser only and deleted at sign-out. Usage is shown on the device and never reported.
 
-When the server owner allows it, the assistant runs [on your device](assistant-encrypted.md) instead. Your device sends what you type and the task data a question needs directly to the provider you set up there, with your own key. It sends less than the server's assistant ([what it sends](assistant-encrypted.md#what-the-device-sends)). The OpenTodo server receives only your consent (which provider you accepted, not the key, the model or the address) and nothing of the conversation. The key is kept in this browser only and deleted at sign-out. Usage is shown on the device and never reported.
-
-When the owner does not allow it, the panel explains that the assistant cannot read encrypted tasks and links to **Settings → Account → End-to-end encryption**, where you can turn encryption off to use the server's assistant.
+When the owner does not allow it, the panel says the assistant cannot read encrypted tasks and links to **Settings → Account → End-to-end encryption**, where you can turn encryption off.
 
 ## Demo instance
 

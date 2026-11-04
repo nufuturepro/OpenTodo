@@ -153,25 +153,31 @@ func (st *Store) CountMemberKeyUsers(ctx context.Context) (int, error) {
 	return n, rows.Err()
 }
 
-// Route is what a turn of one user uses: the provider, model and key, and
-// whether the key is the user's own. The key is unexported so a Route never
-// reaches JSON or logs.
+// Route is what a turn of one user uses: the provider, model and credential,
+// and whether the credential is the user's own. The credential is unexported
+// so a Route never reaches JSON or logs.
 type Route struct {
 	Provider string
 	Model    string
-	// Own is true when the turn runs on the user's own key (their own
-	// provider, or the owner's provider with a key they stored before).
+	// Own is true when the turn runs on the user's own credential (their own
+	// provider, or a key or Google account of theirs for the owner's provider).
 	Own bool
 	// Member is true when the provider and model are the user's own choice.
 	Member bool
 	key    string
-	base   ProviderSettings
+	// token is the Google account's bearer-token source; when set, key is empty
+	// (assistant-gemini-oauth D1).
+	token TokenSource
+	// project is the Google Cloud project sent as x-goog-user-project.
+	project string
+	base    ProviderSettings
 }
 
-// Resolve decides the provider, model and key of a turn of userID (design
-// D3): the member's own provider when member keys are allowed, a choice is
-// stored and its key is set; otherwise the owner's default provider with the
-// operator's key, or the user's own key for that provider as before.
+// Resolve decides the provider, model and credential of a turn of userID
+// (design D3): the member's own provider when member keys are allowed and one
+// is in effect, otherwise the owner's default provider. In both cases the
+// person's own API key wins over their Google account (assistant-gemini-oauth
+// D1), and the operator's key is the last resort.
 func (st *Store) Resolve(ctx context.Context, userID string, set Settings) (Route, error) {
 	sec, err := st.secrets.Load()
 	if err != nil {
@@ -182,25 +188,46 @@ func (st *Store) Resolve(ctx context.Context, userID string, set Settings) (Rout
 		if err != nil {
 			return Route{}, err
 		}
-		if choice != nil && IsMemberProvider(choice.Provider) && sec.Has(UserKey(userID, choice.Provider)) {
-			return Route{Provider: choice.Provider, Model: choice.Model, Own: true, Member: true,
-				key: sec.Value(UserKey(userID, choice.Provider)), base: ProviderSettings{Enabled: true, Model: choice.Model}}, nil
+		if choice != nil && IsMemberProvider(choice.Provider) {
+			r := Route{Provider: choice.Provider, Model: choice.Model, Own: true, Member: true,
+				base: ProviderSettings{Enabled: true, Model: choice.Model}}
+			if sec.Has(UserKey(userID, choice.Provider)) {
+				r.key = sec.Value(UserKey(userID, choice.Provider))
+				return r, nil
+			}
+			if tok, project, ok, err := st.googleFor(ctx, userID, choice.Provider); err != nil {
+				return Route{}, err
+			} else if ok {
+				r.token, r.project = tok, project
+				return r, nil
+			}
 		}
 	}
 	name := set.DefaultProvider
 	p := set.Providers[name]
 	r := Route{Provider: name, Model: p.Model, base: p}
-	if set.AllowMemberKeys && sec.Has(UserKey(userID, name)) {
-		r.key, r.Own = sec.Value(UserKey(userID, name)), true
-	} else {
-		r.key = sec.Value(OperatorKey(name))
+	if set.AllowMemberKeys {
+		if sec.Has(UserKey(userID, name)) {
+			r.key, r.Own = sec.Value(UserKey(userID, name)), true
+			return r, nil
+		}
+		if tok, project, ok, err := st.googleFor(ctx, userID, name); err != nil {
+			return Route{}, err
+		} else if ok {
+			r.token, r.project, r.Own = tok, project, true
+			return r, nil
+		}
 	}
+	r.key = sec.Value(OperatorKey(name))
 	return r, nil
 }
 
-// HasKey reports whether the route has a key (the compatible provider may
-// run without one).
-func (r Route) HasKey() bool { return r.key != "" }
+// HasKey reports whether the route has a credential of its own (the
+// compatible provider may run without one).
+func (r Route) HasKey() bool { return r.key != "" || r.token != nil }
+
+// OnGoogleAccount reports a turn that runs on the person's Google account.
+func (r Route) OnGoogleAccount() bool { return r.token != nil }
 
 // String, GoString and LogValue keep the key out of fmt and slog output.
 func (r Route) String() string {
@@ -264,5 +291,17 @@ func (st *Store) MemberTestRoute(ctx context.Context, userID string, d MemberDra
 		}
 		key = sec.Value(UserKey(userID, provider))
 	}
-	return Route{Provider: provider, Model: model, Own: true, Member: true, key: key, base: ProviderSettings{Enabled: true, Model: model}}, nil
+	r := Route{Provider: provider, Model: model, Own: true, Member: true, key: key, base: ProviderSettings{Enabled: true, Model: model}}
+	// Testing a provider with no key on screen tests the person's Google
+	// account, when they connected one (assistant-gemini-oauth).
+	if key == "" {
+		tok, project, ok, err := st.googleFor(ctx, userID, provider)
+		if err != nil {
+			return Route{}, err
+		}
+		if ok {
+			r.token, r.project = tok, project
+		}
+	}
+	return r, nil
 }

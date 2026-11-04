@@ -235,6 +235,9 @@ type Store struct {
 	set     *settings.Store
 	secrets *settings.SecretsFile
 	now     func() time.Time
+	// google mints the access tokens of connected Google accounts
+	// (assistant-gemini-oauth), keeping them in memory only.
+	google *GoogleAuth
 }
 
 // NewStore wires the store over the database and <dataDir>/secrets/assistant.json.
@@ -242,7 +245,9 @@ func NewStore(db *sql.DB, dataDir string, now func() time.Time) *Store {
 	if now == nil {
 		now = time.Now
 	}
-	return &Store{db: db, set: settings.New(db), secrets: settings.NewSecretsFile(dataDir, SecretsName), now: now}
+	st := &Store{db: db, set: settings.New(db), secrets: settings.NewSecretsFile(dataDir, SecretsName), now: now}
+	st.google = &GoogleAuth{Store: st}
+	return st
 }
 
 // SecretsPath is the secrets file location (docs and tests).

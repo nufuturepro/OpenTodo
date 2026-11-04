@@ -92,7 +92,7 @@ func (s *Service) ProviderFor(r Route, set Settings) (Provider, error) {
 	if s.stub != nil {
 		return s.stub, nil
 	}
-	return s.provider(r.Provider, r.base, r.key, set.AllowPrivateEndpoint)
+	return s.provider(r.Provider, r.base, r.key, r.token, r.project, set.AllowPrivateEndpoint)
 }
 
 func (s *Service) fixed() *http.Client {
@@ -102,8 +102,8 @@ func (s *Service) fixed() *http.Client {
 	return FixedClient()
 }
 
-func (s *Service) provider(name string, p ProviderSettings, key string, allowPrivate bool) (Provider, error) {
-	if name != Compatible && key == "" {
+func (s *Service) provider(name string, p ProviderSettings, key string, token TokenSource, project string, allowPrivate bool) (Provider, error) {
+	if name != Compatible && key == "" && token == nil {
 		return nil, ErrNoKey
 	}
 	switch name {
@@ -112,7 +112,9 @@ func (s *Service) provider(name string, p ProviderSettings, key string, allowPri
 	case OpenAI:
 		return &ChatProvider{Name: OpenAI, BaseURL: or(s.OpenAIBaseURL, OpenAIBaseURL), Key: key, Model: p.Model, HTTP: s.fixed(), Retries: 2, Backoff: s.Backoff}, nil
 	case Gemini:
-		return &ChatProvider{Name: Gemini, BaseURL: or(s.GeminiBaseURL, GeminiBaseURL), Key: key, Model: p.Model, HTTP: s.fixed(), Retries: 2, Backoff: s.Backoff}, nil
+		// A Google account connection mints a bearer token per request and
+		// names the project the calls are billed to (assistant-gemini-oauth).
+		return &ChatProvider{Name: Gemini, BaseURL: or(s.GeminiBaseURL, GeminiBaseURL), Key: key, Token: token, Project: project, Model: p.Model, HTTP: s.fixed(), Retries: 2, Backoff: s.Backoff}, nil
 	case Compatible:
 		// Trimmed here too, for a URL saved before the trim existed.
 		return &ChatProvider{Name: Compatible, BaseURL: TrimBaseURL(p.BaseURL), Key: key, Model: p.Model, HTTP: s.Net.CompatibleClient(allowPrivate), Retries: 2, Backoff: s.Backoff}, nil
@@ -152,6 +154,9 @@ type Draft struct {
 	AllowPrivateEndpoint *bool
 	// Images is the compatible endpoint's "This model reads images" mark.
 	Images *bool
+	// Actor is the person asking (the owner); their Google account is tested
+	// for the Gemini provider when no key is on screen (assistant-gemini-oauth).
+	Actor string
 }
 
 // TestConnection sends a minimal request with one tool to the named provider
@@ -205,8 +210,22 @@ func (s *Service) TestConnection(ctx context.Context, name string, set Settings,
 		}
 		key = saved
 	}
-	prov, err := s.provider(name, p, key, allowPrivate)
+	var token TokenSource
+	var project string
+	if key == "" && name == Gemini {
+		tok, proj, ok, gerr := s.Store.googleFor(ctx, d.Actor, name)
+		if gerr != nil {
+			return TestResult{Code: "internal", Message: gerr.Error()}
+		}
+		if ok {
+			token, project = tok, proj
+		}
+	}
+	prov, err := s.provider(name, p, key, token, project, allowPrivate)
 	if errors.Is(err, ErrNoKey) {
+		if name == Gemini {
+			return TestResult{Code: "no_key", Message: "enter an API key, or connect a Google account, for this provider first"}
+		}
 		return TestResult{Code: "no_key", Message: "enter an API key for this provider first"}
 	}
 	if err != nil {
@@ -257,7 +276,11 @@ func (s *Service) TestMember(ctx context.Context, r Route, set Settings) TestRes
 	}
 	res := s.test(ctx, prov)
 	if res.Code == CodeProviderAuth {
-		res.Message = ownKeyRejected
+		if r.OnGoogleAccount() {
+			res.Message = ReconnectNeedsMessage
+		} else {
+			res.Message = ownKeyRejected
+		}
 	}
 	return res
 }

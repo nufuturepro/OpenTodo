@@ -12,6 +12,7 @@ import { refreshAssistantStatus, setAssistantStatus, type AssistantStatus } from
 import {
   isOwnerSettings, MEMBER_MODEL_RE, MEMBER_PROVIDERS, PROVIDERS, type AssistantMemberSettings, type AssistantOwnerSettings, type AssistantSettingsInput,
   type AssistantTestDraft, type AssistantTestResult, type AssistantUsage, type MyAssistantInput, type MyAssistantTestDraft, type ProviderName,
+  type AssistantGoogleClient, type MyGoogleConnection,
 } from '../../lib/assistantTypes'
 import { useOnline } from '../../lib/online'
 import { Button, Dialog, StatusIndicator, toneForHue } from '../../ui'
@@ -109,6 +110,132 @@ function TestResult({ test }: { test: AssistantTestResult | 'running' | undefine
   if (!test) return null
   if (test === 'running') return <Notice>{t('Testing…')}</Notice>
   return <Notice tone={test.ok ? 'success' : 'danger'}>{test.ok ? test.message : `${test.message}${test.code ? ` (${test.code})` : ''}`}</Notice>
+}
+
+/**
+ * The owner's OAuth client for Google accounts (assistant-gemini-oauth), saved on
+ * its own: it is a credential setting, not part of the assistant's provider
+ * settings, and the secret is only ever reported as set.
+ */
+export function GoogleClientFields({ connected, initial = null }: { connected: boolean; initial?: AssistantGoogleClient | null }) {
+  const [saved, setSaved] = useState<AssistantGoogleClient | null>(initial)
+  const [clientId, setClientId] = useState(initial?.client_id ?? '')
+  const [secret, setSecret] = useState('')
+  const [project, setProject] = useState(initial?.project ?? '')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    api.getAssistantGoogleClient().then((c) => { if (live) { setSaved(c); setClientId(c.client_id); setProject(c.project) } }).catch(() => undefined)
+    return () => { live = false }
+  }, [])
+  const save = async () => {
+    setBusy(true)
+    setProblem(null)
+    setNote(null)
+    try {
+      const c = await api.saveAssistantGoogleClient({ client_id: clientId, project, ...(secret ? { client_secret: secret } : {}) })
+      setSaved(c)
+      setSecret('')
+      setNote(t('Saved.'))
+    } catch (err) {
+      setProblem(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-3 rounded-control bg-sunken p-3" data-assistant-google-client>
+      <p className="text-body font-medium text-default">{t('Google accounts')}</p>
+      <p className="text-meta text-muted">{t('Let people use Google Gemini with their own Google account instead of an API key.')}</p>
+      {saved && (
+        <p className="text-meta text-muted">
+          {t('In Google Cloud, enable the Generative Language API, create an OAuth client and add this redirect address at Google:')}
+          <code className="mt-1 block break-all rounded-control bg-raised px-1 py-0.5 text-default" data-assistant-google-redirect>{saved.redirect_uri}</code>
+        </p>
+      )}
+      <Field label={t('Client ID')}>
+        <Input value={clientId} disabled={!connected} spellCheck={false} autoComplete="off" onChange={(e) => setClientId(e.target.value)} />
+      </Field>
+      <Field label={t('Client secret')} description={t('Stored in the server’s secrets file, never shown again, never in backups or exports.')}>
+        <Input type="password" autoComplete="off" value={secret} disabled={!connected}
+          placeholder={saved?.secret_set ? t('A key is saved; type to replace it') : t('Paste the key')} onChange={(e) => setSecret(e.target.value)} />
+      </Field>
+      <Field label={t('Google Cloud project (optional)')} description={t('The project the Gemini calls are billed to. Empty uses the client’s own project.')}>
+        <Input value={project} disabled={!connected} spellCheck={false} autoComplete="off" placeholder={t('my-project-123456')} onChange={(e) => setProject(e.target.value)} />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={!connected} busy={busy} onClick={() => void save()}>{t('Save Google client')}</Button>
+        <StatusIndicator tone={toneForHue(saved?.complete ? 'green' : 'slate')}>{saved?.complete ? t('Set up') : t('Not set up')}</StatusIndicator>
+      </div>
+      {problem && <Notice tone="danger">{problem}</Notice>}
+      {note && <Notice tone="success">{note}</Notice>}
+    </div>
+  )
+}
+
+/**
+ * One person's Google account for the Gemini provider: connect, see which
+ * account is connected, reconnect when Google refused it, and disconnect.
+ */
+function GoogleAccountRow({ status, connected }: { status: AssistantStatus; connected: boolean }) {
+  const [conn, setConn] = useState<MyGoogleConnection | null>(null)
+  const [project, setProject] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    api.getMyGoogleConnection().then((c) => { if (live) setConn(c) }).catch(() => undefined)
+    return () => { live = false }
+  }, [])
+  const connect = async () => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      const { url } = await api.startAssistantGoogle(project.trim())
+      window.location.assign(url)
+    } catch (err) {
+      setProblem(message(err))
+      setBusy(false)
+    }
+  }
+  const disconnect = async () => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      setConn(await api.disconnectMyGoogle())
+    } catch (err) {
+      setProblem(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!conn) return null
+  if (conn.connected) {
+    return (
+      <div className="space-y-2 rounded-control bg-sunken p-3" data-assistant-google-connection>
+        <p className="text-body text-default">{t('Connected as {account}', { account: conn.account || 'Google' })}</p>
+        <p className="text-meta text-muted">{t('Your Google account is used for your turns. An API key, if you saved one, is used instead.')}</p>
+        {conn.needs_reconnect && <Notice tone="warning">{t('Google refused this connection; connect again.')}</Notice>}
+        <Button size="sm" variant="ghost" disabled={!connected || busy} busy={busy} onClick={() => void disconnect()}>{t('Disconnect Google account')}</Button>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2 rounded-control bg-sunken p-3" data-assistant-google-connect>
+      <p className="text-meta text-muted">{t('Or sign in with your Google account, without an API key.')}</p>
+      <Field label={t('Google Cloud project (optional)')}>
+        <Input className="max-w-sm" value={project} disabled={!connected} spellCheck={false} autoComplete="off" placeholder={t('my-project-123456')}
+          onChange={(e) => setProject(e.target.value)} />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={!connected || busy} busy={busy} onClick={() => void connect()}>{t('Connect Google account')}</Button>
+        {status.google_needs_reconnect && <span className="text-meta text-muted">{t('Google refused this connection; connect again.')}</span>}
+      </div>
+      {problem && <Notice tone="danger">{problem}</Notice>}
+    </div>
+  )
 }
 
 /** The owner's configuration, shown in the Configure dialog: providers, keys, models, base URL, network, caps. */
@@ -212,6 +339,7 @@ export function OwnerAssistantSettings(p: OwnerViewProps & { onCancel?: () => vo
               {keySet && <Button size="sm" variant="ghost" disabled={off} onClick={() => set({ keys: { ...d.keys, [n]: '' } })}>{t('Remove saved key')}</Button>}
               {noModel && !off && <span className="text-meta text-muted" data-test-needs-model>{t('Enter a model id to test')}</span>}
             </div>
+            {n === 'gemini' && <GoogleClientFields connected={p.connected} />}
             <TestResult test={test} />
           </fieldset>
         )
@@ -434,6 +562,7 @@ export function OwnProviderForm(p: UserViewProps & { status: AssistantStatus }) 
             <Input className="max-w-sm" type="password" autoComplete="off" value={d.key} disabled={off} onChange={(e) => set({ key: e.target.value })}
               placeholder={savedSame ? t('Your key is saved; type to replace it') : t('Paste your key')} />
           </Field>
+          {d.provider === 'gemini' && s.google_available && <GoogleAccountRow status={s} connected={p.connected} />}
         </div>
       )}
       {problem && <Notice tone="danger">{problem}</Notice>}
@@ -543,6 +672,18 @@ export function UserAssistantSettings(p: UserViewProps) {
   )
 }
 
+/** What a finished Google sign-in says (assistant-gemini-oauth). */
+export function googleSignInText(result: string): string {
+  switch (result) {
+    case 'connected': return t('Google account connected.')
+    case 'denied': return t('You declined at Google.')
+    case 'invalid_state': return t('That sign-in link expired. Try again.')
+    case 'not_configured': return t('The server owner has not set up a Google client for the assistant.')
+    case 'invalid_project': return t('That Google Cloud project id is not valid.')
+    default: return t('Google did not complete the sign-in. Try again.')
+  }
+}
+
 function message(err: unknown): string {
   return errorText(err, { offline: t('The server is unreachable. These settings live on the server and need a connection.') })
 }
@@ -568,6 +709,18 @@ export default function AssistantSettingsSection({ isOwner }: { isOwner: boolean
   const [ownTest, setOwnTest] = useState<AssistantTestResult | 'running' | undefined>(undefined)
   const [configuring, setConfiguring] = useState(false)
   const [clearing, setClearing] = useState(false)
+  // The outcome a finished Google sign-in left in the address
+  // (assistant-gemini-oauth): read once and removed so a reload does not
+  // repeat it.
+  const [signIn] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    const url = new URL(window.location.href)
+    const result = url.searchParams.get('assistant-google')
+    if (!result) return null
+    url.searchParams.delete('assistant-google')
+    window.history.replaceState(null, '', url.toString())
+    return result
+  })
 
   const load = useCallback(async () => {
     try {
@@ -657,6 +810,7 @@ export default function AssistantSettingsSection({ isOwner }: { isOwner: boolean
   return (
     <SettingsSection {...cardCopy('assistant-settings')} testId="assistant-settings">
       {!connected && <div className="pb-3"><Notice>{noticeCopy('assistant-settings', 'offline')}</Notice></div>}
+      {signIn && <div className="pb-3" data-assistant-google-result><Notice tone={signIn === 'connected' ? 'success' : signIn === 'denied' ? 'warning' : 'danger'}>{googleSignInText(signIn)}</Notice></div>}
       {error && !configuring && <div className="py-3"><Notice tone="danger">{error}</Notice></div>}
       {msg && !configuring && <div className="py-3"><Notice tone="success">{msg}</Notice></div>}
       {assistantStatusLine(status) && <p className="pb-1 text-body font-medium text-default" data-assistant-status-line>{assistantStatusLine(status)}</p>}

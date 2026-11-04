@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { AssistantStatus } from '../lib/assistantStatus'
-import type { AssistantOwnerSettings } from '../lib/assistantTypes'
+import type { AssistantGoogleClient, AssistantOwnerSettings } from '../lib/assistantTypes'
 import { AssistantsView, type AssistantsViewProps } from './AssistantsPanel'
 import { RelayConfirmView } from './RelayConfirm'
 import { RelayIndicatorView, RelayView, type RelayViewProps } from './RelaySettings'
-import { draftFrom, OwnerAssistantSettings, OwnerAssistantSummary, UserAssistantSettings } from './assistant/AssistantSettings'
+import { draftFrom, GoogleClientFields, OwnerAssistantSettings, OwnerAssistantSummary, UserAssistantSettings } from './assistant/AssistantSettings'
 
 const noop = () => {}
 const endpoint = 'https://todo.example.com/mcp'
@@ -31,6 +31,10 @@ const user = (over: Partial<Parameters<typeof UserAssistantSettings>[0]> = {}) =
     onSaveOwn={async () => true} onTestOwn={noop} {...over} />
 )
 const card = (children: React.ReactNode) => <section className="rounded-card border border-default bg-surface p-4 shadow-1 sm:p-6">{children}</section>
+const googleClient: AssistantGoogleClient = {
+  client_id: '1234-abcd.apps.googleusercontent.com', secret_set: true, project: 'acme-todo-123456', complete: true,
+  redirect_uri: 'https://todo.example.com/api/v1/assistant/google/callback',
+}
 
 const assistants = (over: Partial<AssistantsViewProps> = {}) => (
   <AssistantsView isOwner connected status={{ enabled: true, writes_enabled: true, endpoint }} access={{ allow_writes: true, owner_allows_writes: true }}
@@ -46,6 +50,10 @@ export const AssistantConfigure: StoryObj = {
   render: () => card(<OwnerAssistantSettings saved={saved} draft={draftFrom(saved)} connected busy={false} error="The compatible endpoint is a private address." message={null}
     tests={{ anthropic: { ok: true, message: 'Connected: claude-opus-5-5 answered.' }, openai: { ok: false, code: 'no_key', message: 'No API key is saved' } }}
     onChange={noop} onSave={noop} onTest={noop} onCancel={noop} />),
+}
+export const AssistantGoogleClientSetUp: StoryObj = { render: () => card(<GoogleClientFields connected initial={googleClient} />) }
+export const AssistantGoogleClientNotSetUp: StoryObj = {
+  render: () => card(<GoogleClientFields connected initial={{ ...googleClient, client_id: '', secret_set: false, project: '', complete: false }} />),
 }
 export const AssistantMemberOwnKey: StoryObj = {
   render: () => card(user({ status: { ...status, source: 'own', provider: 'openai', provider_label: 'OpenAI', model: 'gpt-member-1', own_key_set: true, own_key_in_use: true,

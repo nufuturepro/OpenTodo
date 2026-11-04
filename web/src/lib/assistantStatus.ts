@@ -55,6 +55,19 @@ export interface AssistantStatus {
   device?: DeviceAllowance | null
   /** voice-ramble D5: the provider of the next turn reads photos (absent on older servers: no photos). */
   images?: boolean
+  // assistant-gemini-oauth (absent on older servers):
+  /** Connecting a Google account is offered to this account. */
+  google_available?: boolean
+  /** The person's own Google account is connected. */
+  google_connected?: boolean
+  /** The connected Google address, for display. */
+  google_account?: string
+  /** The Cloud project the connection bills to. */
+  google_project?: string
+  /** Google refused the grant: the connection must be made again. */
+  google_needs_reconnect?: boolean
+  /** Turns run on the person's Google account. */
+  google_in_use?: boolean
 }
 
 /** What the owner allows an encrypted account's devices (assistant-on-device D2, D6). */

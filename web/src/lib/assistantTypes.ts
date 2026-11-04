@@ -77,6 +77,38 @@ export interface AssistantTestDraft {
   images?: boolean
 }
 
+/**
+ * The owner's Google OAuth client for the Gemini provider (assistant-gemini-oauth):
+ * the secret is only ever reported as set, and the redirect address is the one
+ * to register at Google.
+ */
+export interface AssistantGoogleClient {
+  client_id: string
+  secret_set: boolean
+  project: string
+  complete: boolean
+  redirect_uri: string
+}
+
+/** A save keeps a field it does not carry; the secret is replaced only when sent. */
+export interface AssistantGoogleClientInput {
+  client_id?: string
+  client_secret?: string
+  project?: string
+}
+
+/** One person's Google account connection: never a token. */
+export interface MyGoogleConnection {
+  /** Connecting is offered (the owner allows it and set up a client). */
+  available: boolean
+  connected: boolean
+  /** The connected Google address. */
+  account: string
+  project: string
+  /** Google refused the grant; reconnect. */
+  needs_reconnect: boolean
+}
+
 /** A member's on-screen provider, model and key sent with "Test connection". */
 export interface MyAssistantTestDraft {
   provider?: string

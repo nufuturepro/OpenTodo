@@ -57,6 +57,7 @@ func (s *Server) registerAssistantRoutes(mux *routes) {
 	mux.handle("POST /api/v1/me/assistant/test", signedIn.SessionOnly().DemoDenied(), s.handleTestMyAssistant)
 	mux.handle("POST /api/v1/assistant/turn", signedIn.SessionOnly().DemoDenied(), s.handleAssistantTurn)
 	mux.handle("GET /api/v1/assistant/skills", signedIn.DemoDenied(), s.handleAssistantSkills)
+	s.registerAssistantGoogleRoutes(mux)
 	s.registerRoutineDraft(mux)
 }
 
@@ -205,7 +206,8 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := s.assistant.TestConnection(r.Context(), in.Provider, s.assistantSettings(r.Context()),
-		assistant.Draft{Model: in.Model, BaseURL: in.BaseURL, Key: in.Key, AllowPrivateEndpoint: in.AllowPrivateEndpoint, Images: in.Images})
+		assistant.Draft{Model: in.Model, BaseURL: in.BaseURL, Key: in.Key, AllowPrivateEndpoint: in.AllowPrivateEndpoint, Images: in.Images,
+			Actor: userFrom(r.Context()).ID})
 	if res.Code == "invalid_input" {
 		writeError(w, http.StatusBadRequest, "invalid_input", res.Message)
 		return
@@ -276,6 +278,17 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
+	// The person's own Google account, when they connected one
+	// (assistant-gemini-oauth). The client is the owner's, and only its
+	// presence is reported.
+	conn, err := s.assistant.Store.GoogleConnection(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	googleClient, err := s.assistant.Store.GoogleClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	reason := ""
 	mode := "server"
 	switch {
@@ -321,6 +334,14 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 		// images: whether the provider of the next turn reads photos
 		// (voice-ramble D5); on a device the device's own provider decides.
 		"images": mode == "device" || (reason == "" && assistant.ReadsImages(route, set)),
+		// The person's Google account: whether connecting is offered, whether
+		// one is connected, and whether a turn runs on it (assistant-gemini-oauth).
+		"google_available":       set.AllowMemberKeys && googleClient.Complete(),
+		"google_connected":       conn != nil,
+		"google_account":         googleAccount(conn),
+		"google_project":         googleProject(conn),
+		"google_needs_reconnect": conn.NeedsReconnect(),
+		"google_in_use":          route.OnGoogleAccount(),
 	}
 	if choice != nil {
 		out["own_provider"] = map[string]any{"provider": choice.Provider, "provider_label": assistant.ProviderLabel(choice.Provider),
@@ -333,6 +354,22 @@ func (s *Server) myAssistant(ctx context.Context, u *auth.User) (map[string]any,
 		out["device"] = deviceView(set, consent)
 	}
 	return out, nil
+}
+
+// googleAccount is the connected address, or "" without a connection.
+func googleAccount(c *assistant.GoogleConnection) string {
+	if c == nil {
+		return ""
+	}
+	return c.Account
+}
+
+// googleProject is the project the connection bills to, or "".
+func googleProject(c *assistant.GoogleConnection) string {
+	if c == nil {
+		return ""
+	}
+	return c.Project
 }
 
 func (s *Server) handleGetMyAssistant(w http.ResponseWriter, r *http.Request) {
@@ -457,8 +494,20 @@ func (s *Server) handlePutMyAssistant(w http.ResponseWriter, r *http.Request) {
 		next = nil
 	}
 	if next != nil && !addsKey && !sec.Has(assistant.UserKey(u.ID, next.Provider)) {
-		writeError(w, http.StatusBadRequest, "invalid_input", "own_key: enter your API key for "+assistant.ProviderLabel(next.Provider))
-		return
+		// A connected Google account is a credential too (assistant-gemini-oauth).
+		conn, cerr := s.assistant.Store.GoogleConnection(ctx, u.ID)
+		if cerr != nil {
+			s.internal(w, cerr)
+			return
+		}
+		if next.Provider != assistant.Gemini || conn == nil {
+			msg := "own_key: enter your API key for " + assistant.ProviderLabel(next.Provider)
+			if next.Provider == assistant.Gemini {
+				msg += ", or connect your Google account"
+			}
+			writeError(w, http.StatusBadRequest, "invalid_input", msg)
+			return
+		}
 	}
 	// The provider a turn will use once this request is applied.
 	effective := set.DefaultProvider
@@ -699,6 +748,13 @@ func (s *Server) handleAssistantTurn(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	prov, err := s.assistant.ProviderFor(route, set)
 	if errors.Is(err, assistant.ErrNoKey) {
+		// Gemini may be reached with a Google account instead of a key
+		// (assistant-gemini-oauth).
+		client, cerr := s.assistant.Store.GoogleClient(ctx)
+		if route.Provider == assistant.Gemini && cerr == nil && client.Complete() && set.AllowMemberKeys {
+			writeError(w, http.StatusConflict, "google_not_connected", "connect your Google account in Settings → Integrations → Assistant, or ask the server owner for an API key")
+			return
+		}
 		writeError(w, http.StatusConflict, "no_key", "no API key is configured for "+assistant.ProviderLabel(route.Provider)+"; ask the server owner")
 		return
 	}

@@ -190,7 +190,7 @@ func TestCompatiblePastedEndpoint(t *testing.T) {
 		t.Fatalf("%v %q", err, plain.Providers[Compatible].BaseURL)
 	}
 	// A URL saved before the trim existed is trimmed where the provider is built.
-	p, err := svc.provider(Compatible, ProviderSettings{Model: "m", BaseURL: pasted}, "", true)
+	p, err := svc.provider(Compatible, ProviderSettings{Model: "m", BaseURL: pasted}, "", nil, "", true)
 	if err != nil || p.(*ChatProvider).BaseURL != srv.URL+"/v1" {
 		t.Fatalf("%v %+v", err, p)
 	}
