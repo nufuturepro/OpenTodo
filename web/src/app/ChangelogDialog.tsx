@@ -46,8 +46,11 @@ function Inline({ text }: { text: string }): ReactNode {
   return <>{parts}</>
 }
 
-/** Opens from the About section's version row; the compiled changelog arrives as its own lazy chunk. */
-export function ChangelogDialog({ onClose }: { onClose: () => void }): ReactNode {
+/**
+ * The compiled changelog itself: the body of the dialog, and what the About page shows
+ * embedded (notesView) under the version row. Arrives as its own lazy chunk.
+ */
+export function ChangelogView(): ReactNode {
   const [data, setData] = useState<Changelog | null>(null)
   useEffect(() => {
     let alive = true
@@ -57,7 +60,7 @@ export function ChangelogDialog({ onClose }: { onClose: () => void }): ReactNode
     return () => { alive = false }
   }, [])
   return (
-    <Dialog title={t('Changelog')} onClose={onClose} size="md" testId="changelog">
+    <>
       {data === null ? (
         <p className="py-6 text-center text-meta text-muted">{t('Loading the changelog…')}</p>
       ) : data.releases.length === 0 ? (
@@ -82,6 +85,15 @@ export function ChangelogDialog({ onClose }: { onClose: () => void }): ReactNode
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+/** Opens from the About section's version row; the compiled changelog arrives as its own lazy chunk. */
+export function ChangelogDialog({ onClose }: { onClose: () => void }): ReactNode {
+  return (
+    <Dialog title={t('Changelog')} onClose={onClose} size="md" testId="changelog">
+      <ChangelogView />
     </Dialog>
   )
 }

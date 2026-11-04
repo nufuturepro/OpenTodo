@@ -7079,5 +7079,9 @@
   "“{name}” would go over your {quota} of attachments.": "«{name}» superaría tus {quota} de adjuntos.",
   "“{title}” already waits for this task, so it cannot block it": "«{title}» ya espera a esta tarea, así que no puede bloquearla",
   "“{title}” is in a project shared differently; a task can only wait for tasks shared the same way": "«{title}» está en un proyecto compartido de otra forma; una tarea solo puede esperar a tareas compartidas igual",
-  "⤼ Skip": "⤼ Omitir"
+  "⤼ Skip": "⤼ Omitir",
+  "Release notes": "Novedades",
+  "The changelog opens as a dialog, or embedded under the version on this device.": "Las novedades se abren como diálogo o integradas bajo la versión en este dispositivo.",
+  "Pop up": "Diálogo",
+  "Embedded": "Integrado"
 }

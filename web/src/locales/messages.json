@@ -23681,5 +23681,17 @@
   ],
   "⤼ Skip": [
     "web/src/app/RecurrenceField.tsx"
+  ],
+  "Release notes": [
+    "web/src/app/AppearanceSection.tsx"
+  ],
+  "The changelog opens as a dialog, or embedded under the version on this device.": [
+    "web/src/lib/settingsCopy.ts"
+  ],
+  "Pop up": [
+    "web/src/app/AppearanceSection.tsx"
+  ],
+  "Embedded": [
+    "web/src/app/AppearanceSection.tsx"
   ]
 }

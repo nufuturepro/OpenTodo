@@ -197,6 +197,7 @@ export const SETTINGS_COPY = {
       density: { label: msg('Density'), description: msg('Compact tightens rows, headers and the sidebar; touch targets stay full size.') },
       rows: { label: msg('Task rows'), description: msg('Detailed adds the parent task and a line of dates, priority and labels.') },
       motion: { label: msg('Motion'), description: msg('Off makes menus, dialogs and changes instant.') },
+      notes: { label: msg('Release notes'), description: msg('The changelog opens as a dialog, or embedded under the version on this device.') },
       haptics: { label: msg('Haptic feedback'), description: msg('A short vibration when you complete a task or pick one up with a long press.') },
     },
   },

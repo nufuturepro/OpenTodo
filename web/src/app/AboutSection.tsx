@@ -16,7 +16,8 @@ import { useOnline } from '../lib/online'
 import type { User } from '../lib/types'
 import { navigate } from './router'
 import { CoffeeButton, DISCORD_URL, ISSUES_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
-import { ChangelogDialog } from './ChangelogDialog'
+import { ChangelogDialog, ChangelogView } from './ChangelogDialog'
+import { useNotesView } from '../lib/notesView'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
 import { shell, shellOutdated, type OpenTodoShell } from '../lib/shell'
 
@@ -65,11 +66,18 @@ export function AboutSection({ user }: { user: User }) {
   const app = s ? { platform: s.platform, version: s.app, outdated: shellOutdated() } : null
   const [note, setNote] = useState(false)
   const [changelog, setChangelog] = useState(false)
+  // Appearance → Release notes decides whether the version row opens a dialog or
+  // unfolds the same changelog under it (notesView).
+  const notesView = useNotesView()
   return (
     <>
       <SettingsSection {...cardCopy('about', { variant: version ? 'version' : 'plain', values: { version } })}>
         <SettingRow id="about-version" {...rowCopy('about', 'version')}
-          control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => setChangelog(true)} data-about-version>{version ?? buildVersion}</button>} />
+          control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => setChangelog(!changelog)}
+            aria-expanded={notesView === 'embed' ? changelog : undefined} data-about-version>{version ?? buildVersion}</button>} />
+        {notesView === 'embed' && changelog && (
+          <div className="border-t border-default pt-3 pb-1" data-changelog-embed><ChangelogView /></div>
+        )}
         <ShellAppRow app={app} />
         <SettingRow id="about-help" {...rowCopy('about', 'help')}
           control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => navigate({ view: 'help' })} data-about-help>{t('Open Help')}</button>} />
@@ -94,7 +102,7 @@ export function AboutSection({ user }: { user: User }) {
         <div className="pt-1"><CoffeeButton className="sm:w-64" /></div>
       </SettingsSection>
       {note && <WelcomeNote onClose={() => setNote(false)} />}
-      {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
+      {notesView === 'popup' && changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
     </>
   )
 }
