@@ -7103,5 +7103,14 @@
   "Your Google account is used for your turns. An API key, if you saved one, is used instead.": "Dein Google-Konto wird für deine Antworten genutzt. Ein API-Schlüssel, falls du einen gespeichert hast, wird stattdessen genutzt.",
   "The server owner has not set up a Google client.": "Der Server-Eigentümer hat keinen Google-Client eingerichtet.",
   "Connect your Google account in Settings → Integrations → Assistant, or ask the server owner for an API key.": "Verbinde dein Google-Konto unter Einstellungen → Integrationen → Assistent oder bitte den Server-Eigentümer um einen API-Schlüssel.",
-  "my-project-123456": "my-project-123456"
+  "my-project-123456": "my-project-123456",
+  "Apps that sign in with OAuth": "Apps, die sich per OAuth anmelden",
+  "Client name": "Name des Clients",
+  "Create client": "Client erstellen",
+  "Delete client": "Client löschen",
+  "No OAuth clients yet.": "Noch keine OAuth-Clients.",
+  "Registered by the app": "Von der App registriert",
+  "Some apps, such as Google Gemini, cannot take a pasted token. They sign in with OAuth instead: create a client here and paste its client ID and secret into the app.": "Manche Apps wie Google Gemini können keinen eingefügten Token verwenden. Sie melden sich stattdessen per OAuth an: Erstelle hier einen Client und füge seine Client-ID und sein Secret in die App ein.",
+  "The secret is shown only now, next to the client ID.": "Das Secret wird nur jetzt angezeigt, neben der Client-ID.",
+  "client secret": "Client-Secret"
 }

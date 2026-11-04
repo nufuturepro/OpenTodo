@@ -59,6 +59,12 @@ const (
 	// (assistant-gemini-oauth): the provider only, never the address or a token.
 	AssistantConnectionCreatedName Name = "assistant_connection.created"
 	AssistantConnectionDeletedName Name = "assistant_connection.deleted"
+	// OAuth clients for the MCP endpoint (mcp-oauth): the client id and scope
+	// only, never its secret, a code or a refresh token.
+	MCPOAuthClientCreatedName Name = "mcp_oauth.client_created"
+	MCPOAuthClientDeletedName Name = "mcp_oauth.client_deleted"
+	MCPOAuthGrantedName       Name = "mcp_oauth.granted"
+	MCPOAuthRevokedName       Name = "mcp_oauth.revoked"
 	// Notification delivery channels (OpenSpec change notification-channels):
 	// created, deleted, and changed settings or secrets by name.
 	NotificationChannelCreatedName Name = "notification_channel.created"
@@ -161,6 +167,7 @@ var Names = []Name{
 	IssueConnectionCreatedName, IssueConnectionUpdatedName, IssueConnectionDeletedName,
 	CalendarConnectionCreatedName, CalendarConnectionUpdatedName, CalendarConnectionDeletedName,
 	AssistantConnectionCreatedName, AssistantConnectionDeletedName,
+	MCPOAuthClientCreatedName, MCPOAuthClientDeletedName, MCPOAuthGrantedName, MCPOAuthRevokedName,
 	NotificationChannelCreatedName, NotificationChannelUpdatedName, NotificationChannelDeletedName,
 	InvitationCreatedName, InvitationAcceptedName, InvitationRevokedName,
 	ProjectInviteCreatedName, ProjectInviteRevokedName, ProjectInviteAcceptedName,
@@ -292,6 +299,9 @@ var allowedDetailKeys = map[string]bool{
 	// Not "device_id", which is an op field name.
 	"relay_device_id":    true,
 	"relay_device_label": true,
+	// OAuth clients (mcp-oauth): the client's id, never its name if the name is
+	// an address, and never its secret or a token it was given.
+	"oauth_client_id": true,
 	// Workspaces (OpenSpec change workspaces): ids and roles only. Not
 	// "workspace_id", which is an op field name.
 	"workspace":           true,
@@ -529,6 +539,30 @@ func AssistantConnectionCreated(userID, provider string) Event {
 // stored refresh token.
 func AssistantConnectionDeleted(userID, provider string) Event {
 	return ev(AssistantConnectionDeletedName, Success, userID, "", "provider", provider)
+}
+
+// ---- OAuth clients for the MCP endpoint ----
+
+// MCPOAuthClientCreated records a registered client: its id, its scope and how
+// it came to exist (manual by the owner, or dynamic registration).
+func MCPOAuthClientCreated(userID, clientID, scope, method string) Event {
+	return ev(MCPOAuthClientCreatedName, Success, userID, "", "oauth_client_id", clientID, "token_scope", scope, "method", method)
+}
+
+// MCPOAuthClientDeleted records a client removed with its grants.
+func MCPOAuthClientDeleted(userID, clientID string) Event {
+	return ev(MCPOAuthClientDeletedName, Success, userID, "", "oauth_client_id", clientID)
+}
+
+// MCPOAuthGranted records a person authorizing a client: who, which client and
+// the scope granted, never a code or token.
+func MCPOAuthGranted(userID, clientID, scope string) Event {
+	return ev(MCPOAuthGrantedName, Success, userID, "", "oauth_client_id", clientID, "token_scope", scope)
+}
+
+// MCPOAuthRevoked records a grant ended through the revocation endpoint.
+func MCPOAuthRevoked(userID, clientID string) Event {
+	return ev(MCPOAuthRevokedName, Success, userID, "", "oauth_client_id", clientID)
 }
 
 // ---- notification channels ----
