@@ -13,7 +13,8 @@ interface OpenMenu {
   y: number
   /** The row the menu was opened from: focus returns there when it closes. */
   row: Element | null
-  /** Passed to the menu: it is on screen while this element is mounted. */
+  /** False once the menu closed but the element is still mounted — a review it
+   * opened keeps it alive until `onAllClosed` (task-menu-refinement D1). */
   open: boolean
 }
 
@@ -67,9 +68,11 @@ export function useRowMenu(ticked: ReadonlySet<string>, order: readonly string[]
 
   const element = menu ? (
     <BulkActionsMenu ids={menu.ids} open={menu.open}
-      // A choice that opens a review or a date asks the Shell's host for it (BulkDialogHost),
-      // so the menu unmounts here as it closes (issue 839).
-      onOpenChange={(v) => { if (!v) close() }}
+      onOpenChange={(v) => { if (!v) setMenu((m) => (m && m.open ? { ...m, open: false } : m)) }}
+      // The menu's own close only dims it: the element stays mounted while a
+      // review the choice opened is up, and unmounts here when it is gone too
+      // (D1 — "the review must still mount").
+      onAllClosed={() => { returnTo.current = latest.current?.row ?? null; setMenu(null) }}
       trigger={<span className="sr-only" />} triggerClassName="sr-only"
       triggerProps={{ style: { position: 'fixed', left: menu.x, top: menu.y } }} />
   ) : null

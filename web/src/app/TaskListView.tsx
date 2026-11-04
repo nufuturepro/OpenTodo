@@ -118,17 +118,18 @@ function useListUi(ticked: ReadonlySet<string>, order: readonly string[]) {
   /** The one row whose details are shown under it (row-expand D4): this list's state only, never stored. */
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const openActions = useCallback((picker: string | null = null, from: HTMLElement | null = null) => { actionsFrom.current = from; setActionsPicker(picker); setActionsOpen(true) }, [])
-  // A choice that opens a review or a date asks the Shell's host for it (BulkDialogHost),
-  // so the `.`-cursor menu unmounts as it closes (issue 839).
+  /** Keeps the `.`-cursor menu mounted while a review it opened is on screen (task-menu-refinement D1). */
+  const [actionsHold, setActionsHold] = useState(false)
+  const releaseActions = useCallback(() => { setActionsOpen(false); setActionsHold(false); setActionsPicker(null) }, [])
   const onActionsOpen = useCallback((v: boolean) => {
     setActionsOpen(v)
-    if (!v) setActionsPicker(null)
+    if (!v) { setActionsPicker(null); setActionsHold(true) }
   }, [])
   // The row's menu at the pointer (task-row-context-menu): one state, one selection
   // rule and one focus restore, shared with the filter, saved-view and method lists.
   const rowMenu = useRowMenu(ticked, order)
   const ui: ListUi = { pickerFor, setPickerFor, assignFor, setAssignFor, prompt, setPrompt, addingUnder, setAddingUnder, setAddingTo, openActions }
-  return { ui, actionsOpen, actionsPicker, onActionsOpen, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
+  return { ui, actionsOpen, actionsHold, actionsPicker, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
 }
 
 /**
@@ -207,7 +208,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   const collapsedGroups = useCollapsedGroups()
   // Bulk selection (bulk-edit D1): ticked rows, separate from the cursor row.
   const { tickRows, selection, ticked } = useTickedRows(rows, taskMap, isReadOnly)
-  const { ui, actionsOpen, actionsPicker, onActionsOpen, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
+  const { ui, actionsOpen, actionsHold, actionsPicker, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
   // The open task lives in the shell's panel slot (app-shell D1); the Inbox (inbox-split D1), and every list with the
   // side panel (task-side-panel D2, D7), keep it there beside the list, set up before the bindings' route reset.
   const openId = usePanelTaskId()
@@ -397,9 +398,9 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
 
           <SelectionBar ids={ticked} onClear={selection.clear} menuOpen={actionsOpen && ticked.length > 0}
             onMenuOpenChange={onActionsOpen} startPicker={actionsPicker} onDone={selectMode ? () => setSelectMode(false) : undefined} />
-          {actionsOpen && ticked.length === 0 && selectedId ? (
-            // `.` with nothing ticked: the same menu for the cursor task.
-            <BulkActionsMenu ids={[selectedId]} open={actionsOpen} onOpenChange={onActionsOpen} startPicker={actionsPicker} anchor={actionsFrom}
+          {(actionsOpen || actionsHold) && ticked.length === 0 && selectedId ? (
+            // `.` with nothing ticked: the same menu for the cursor task; held mounted until its review closes (D1).
+            <BulkActionsMenu ids={[selectedId]} open={actionsOpen} onOpenChange={onActionsOpen} onAllClosed={releaseActions} startPicker={actionsPicker} anchor={actionsFrom}
               trigger={<span className="sr-only">{t('Actions')}</span>} triggerClassName="sr-only" />
           ) : null}
           {rowMenu.element}{queryHost}

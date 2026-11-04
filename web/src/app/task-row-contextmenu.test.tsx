@@ -234,7 +234,8 @@ describe('right-click in a list', () => {
   it('a move chosen from the right-click menu still shows its review dialog', async () => {
     await createProject({ name: 'Travel' })
     await createTask({ title: 'Call mum' })
-    const r = await render(<TaskListView route={{ view: 'inbox' }} />)
+    // The Shell's feedback hosts sit beside the list, as in the app.
+    const r = await render(<><TaskListView route={{ view: 'inbox' }} /><ActionToasts /></>)
     await waitFor(() => r.container.textContent!.includes('Call mum'))
     await rightClickUntilMenu(() => r.container.querySelector('[data-task-id]'), r.container, 90, 150)
     await act(async () => {

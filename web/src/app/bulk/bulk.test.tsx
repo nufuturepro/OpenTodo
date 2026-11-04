@@ -13,7 +13,7 @@ import { PanelHost } from '../PanelHost'
 import { resetPanel } from '../panel'
 import { TaskListView } from '../TaskListView'
 import { hideBulkToast } from './toastStore'
-import { UndoToast } from './UndoToast'
+import { ActionToasts } from '../ActionToasts'
 
 let n = 0
 beforeEach(() => {
@@ -41,7 +41,7 @@ const bar = () => document.querySelector('[data-selection-bar] [role="status"]')
 async function inbox(...titles: string[]) {
   const ids: string[] = []
   for (const t of titles) ids.push(await createTask({ title: t }))
-  const r = await render(<><TaskListView route={{ view: 'inbox' }} /><PanelHost /><UndoToast /></>)
+  const r = await render(<><TaskListView route={{ view: 'inbox' }} /><PanelHost /><ActionToasts /></>)
   mounted.push(r)
   await waitFor(() => document.body.textContent!.includes(titles[titles.length - 1]))
   return { r, ids }

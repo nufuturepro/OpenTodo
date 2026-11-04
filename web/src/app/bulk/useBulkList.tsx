@@ -34,14 +34,15 @@ export function useBulkList(tasks: readonly Task[]): BulkList {
   const selection = useSelection(order, () => false)
   const ticked = useMemo(() => order.filter((id) => selection.ticked.has(id)), [order, selection.ticked])
   const [open, setOpen] = useState(false)
+  // A review the menu opened keeps it mounted until that review closes (D1).
+  const [hold, setHold] = useState(false)
   /** Keeps the cursor menu mounted while a review it opened is on screen (task-menu-refinement D1). */
   const [picker, setPicker] = useState<string | null>(null)
   const from = useRef<HTMLElement | null>(null)
   // The row's menu at the pointer, owned once with the task lists (task-row-context-menu).
   const rowMenu = useRowMenu(selection.ticked, ticked)
-  // A choice that opens a review or a date asks the Shell's host for it (BulkDialogHost),
-  // so the menu unmounts as it closes (issue 839).
-  const onOpenChange = (v: boolean) => { setOpen(v); if (!v) setPicker(null) }
+  const onOpenChange = (v: boolean) => { setOpen(v); if (!v) { setPicker(null); setHold(true) } }
+  const release = () => { setOpen(false); setHold(false); setPicker(null) }
   return {
     selection, ticked, order,
     openActions: (p = null, el = null) => { from.current = el; setPicker(p); setOpen(true) },
@@ -49,8 +50,8 @@ export function useBulkList(tasks: readonly Task[]): BulkList {
       <>
         <SelectionBar ids={ticked} onClear={selection.clear} menuOpen={open && ticked.length > 0} onMenuOpenChange={onOpenChange} startPicker={picker} />
         <RowScheduleHost />
-        {open && ticked.length === 0 && cursor && (
-          <BulkActionsMenu ids={[cursor]} open={open} onOpenChange={onOpenChange} startPicker={picker} anchor={from} trigger={<span className="sr-only">{t('Actions')}</span>} triggerClassName="sr-only" />
+        {(open || hold) && ticked.length === 0 && cursor && (
+          <BulkActionsMenu ids={[cursor]} open={open} onOpenChange={onOpenChange} onAllClosed={release} startPicker={picker} anchor={from} trigger={<span className="sr-only">{t('Actions')}</span>} triggerClassName="sr-only" />
         )}
         {rowMenu.element}
       </>
