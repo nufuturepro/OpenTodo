@@ -38,11 +38,19 @@ test('headings become releases, sections and joined bullet items', () => {
   assert.ok(out.releases[0].sections[0].items[0].includes('[link](https://example.com)'))
 })
 
+test('an empty release carries nothing to show and is dropped', () => {
+  const out = parseChangelog('## [Unreleased]\n\n## [0.9.0] - 2026-01-02\n\n### Fixed\n\n- One line.\n')
+  assert.deepEqual(out.releases.map((r) => r.version), ['0.9.0'])
+})
+
 test('the repository CHANGELOG.md parses into releases with items', () => {
   const md = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8')
   const out = parseChangelog(md)
-  assert.equal(out.releases[0].version, 'Unreleased')
   assert.ok(out.releases.length > 10, `only ${out.releases.length} releases`)
+  // Between releases upstream keeps an empty "## [Unreleased]" heading, which the
+  // parser drops, so every release in the module is a dated one (or a pending
+  // Unreleased that has items).
+  assert.ok(out.releases.every((r) => r.date || r.version === 'Unreleased'))
   const first = out.releases.find((r) => r.version !== 'Unreleased')
   assert.ok(first.date, 'a release carries its date')
   assert.ok(first.sections.length > 0 && first.sections[0].items.length > 0)
