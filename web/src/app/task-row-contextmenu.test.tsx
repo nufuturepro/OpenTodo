@@ -11,7 +11,8 @@ import { db } from '../lib/db'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
 import { TOUCH_HOLD_MS } from '../lib/dnd'
 import type { Task } from '../lib/types'
-import { mockFetch, noPublicLinks, render, waitFor } from '../ui/test-utils'
+import { click, mockFetch, noPublicLinks, render, waitFor } from '../ui/test-utils'
+import { ActionToasts } from './ActionToasts'
 import { TaskListView } from './TaskListView'
 import { TaskRow } from './TaskRow'
 import { useBulkList } from './bulk/useBulkList'
@@ -39,6 +40,8 @@ function touchContextMenu(el: Element, x: number, y: number): MouseEvent {
   act(() => { el.dispatchEvent(e) })
   return e
 }
+
+const menuItem = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((m) => m.textContent?.includes(label)) ?? null
 
 function escape() {
   act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
@@ -244,6 +247,29 @@ describe('right-click in a list', () => {
     // The menu closes, but the review must still mount (it was the casualty).
     await waitFor(() => !!document.querySelector('[data-testid="bulk-review"]'))
     expect(document.body.textContent).toContain('Travel')
+    await r.unmount()
+  })
+})
+
+describe('moving from the right-click menu', () => {
+  it('Move to project, a project, then Apply moves the task and it leaves the list (issue #839)', async () => {
+    const home = await createProject({ name: 'Project 4' })
+    const target = await createProject({ name: 'Project8' })
+    const id = await createTask({ title: 'Call mum', project_id: home })
+    // The Shell's feedback hosts sit beside the list, as in the app.
+    const r = await render(<><TaskListView route={{ view: 'project', id: home }} /><ActionToasts /></>)
+    await waitFor(() => r.container.textContent!.includes('Call mum'))
+    await rightClickUntilMenu(() => r.container.querySelector(`[data-task-id="${id}"]`), r.container, 120, 200)
+    await waitFor(() => !!menuItem('Move to project'), 'the Move to project item')
+    await click(menuItem('Move to project')!)
+    const option = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.includes('Project8'))
+    await waitFor(() => !!option(), 'the project options')
+    await act(async () => { option()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); option()!.click() })
+    // The menu closes and the move is reviewed before it is applied (bulk-edit D6).
+    await waitFor(() => !!document.querySelector('[data-assistant-apply]:not([disabled])'), 'the move review')
+    await click(document.querySelector('[data-assistant-apply]')!)
+    await waitFor(async () => (await db.tasks.get(id))?.project_id === target, 'the task in Project8')
+    await waitFor(() => !r.container.querySelector(`[data-task-id="${id}"]`), 'the row leaving the list')
     await r.unmount()
   })
 })

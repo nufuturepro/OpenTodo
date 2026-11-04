@@ -36,6 +36,10 @@
   }
 }
 
+/* `pins`: from 768 px, except on a phone held in landscape (coarse pointer, under 500 px
+   tall), where a pinned row would cover the top of the list (stickyQuickAdd.ts). */
+@custom-variant pins (@media (width >= 48rem) and (not ((pointer: coarse) and (height < 500px))));
+
 @theme inline {
   /* A theme may set --ot-font (theme-engine D1: a system, serif, monospace or installed
      font, never one from another host); without it the bundled Inter applies. */
@@ -992,6 +996,22 @@ button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hov
    preference", precision-tokens D5): comfortable rows are 36 px, compact 32 px. Touch
    targets keep 44 px on coarse pointers through the rules further down. */
 .row-pad { padding-block: 0.5rem; }
+/* A list row far from the viewport costs no layout or paint (list-rendering-at-scale
+   D1): the browser skips it while it stays in the document, so focus, find in page,
+   drag and drop and screen readers reach every row. Its last drawn height holds its
+   place. A dragged or dropped-on row, a row edited in place and an expanded row draw
+   normally, so nothing they show is clipped to the row; the row the cursor is on
+   draws nothing outside itself and keeps the rule, so a cursor move does not change
+   what the browser skips (D6). A row not drawn yet holds the average height of the
+   rows drawn first (RowEstimate; a one-line row until then), so the scroll height is
+   close before every row has been drawn once. */
+.row-offscreen { content-visibility: auto; contain-intrinsic-size: auto var(--row-estimate, 2.375rem); overflow-clip-margin: 0.25rem; }
+/* Not in WebKit (only it supports hanging-punctuation): its layout check twice found rows
+   on screen left skipped, the list drawn blank and a tap on the checkbox landing on the
+   row (release 0.22.0). Safari draws every row, as before list-rendering-at-scale. */
+@supports (hanging-punctuation: first) {
+  .row-offscreen { content-visibility: visible; }
+}
 /* The page (precision-shell D3, app-shell "Page template"): content uses the whole
    content surface, the header included, so every title, first row and last action
    share the surface's padding. Only a form page keeps its fields at 42 rem from the
@@ -1140,6 +1160,7 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
 :root[data-density="compact"] [data-group-header] { min-height: 2rem; }
 @media (pointer: coarse) {
   :root[data-density="compact"] .row-pad { padding-block: 0.5rem; }
+  .row-offscreen { contain-intrinsic-size: auto var(--row-estimate, 2.625rem); }
   :root[data-density="compact"] [data-sidebar-item] { min-height: 2.75rem; }
 }
 /* User-written text wraps instead of pushing the page sideways. */
@@ -1261,11 +1282,11 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
   --fade: linear-gradient(to bottom, transparent, black var(--fade-top), black calc(100% - var(--fade-bottom)), transparent);
 }
 .ui-scroller:hover, .ui-scroller:focus-within { scrollbar-color: var(--ot-border-input) transparent; }
-/* A tab row's baseline (tab-row-scrollbar D1): an inset box-shadow, not a border, so the
-   selected tab's underline covers it without overflowing the row; the row scrolls
-   sideways only and never shows a vertical scrollbar (GitHub issue 445). Forced
-   colours drop box-shadows, so the border comes back there (D3). */
-.ui-tab-row { overflow-y: hidden; box-shadow: inset 0 -1px 0 var(--tab-row-line, var(--ot-border)); }
+/* A tab row's baseline (tab-row-scrollbar D1): an inset box-shadow on the bar around the
+   row, not a border, so the selected tab's underline covers it without overflowing the
+   row; the row inside scrolls sideways only and never shows a vertical scrollbar (GitHub
+   issue 445). Forced colours drop box-shadows, so the border comes back there (D3). */
+.ui-tab-row { box-shadow: inset 0 -1px 0 var(--tab-row-line, var(--ot-border)); }
 .ui-tab-row-soft { --tab-row-line: var(--ot-border-soft); }
 @media (forced-colors: active) { .ui-tab-row { border-bottom: 1px solid CanvasText; } }
 .ui-scroller::-webkit-scrollbar { width: 6px; }
@@ -1273,6 +1294,10 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
 .ui-scroller:hover::-webkit-scrollbar-thumb { background: var(--ot-border-input); }
 .ui-scroller[data-fade-top] { --fade-top: 0.75rem; }
 .ui-scroller[data-fade-bottom] { --fade-bottom: 1rem; }
+/* Sideways (a tab row wider than the screen in a long translation): the tabs fade out at
+   the edge where more of them are hidden, so the row reads as one that scrolls. */
+.ui-scroller[data-fade-left] { --fade-left: 1.5rem; }
+.ui-scroller[data-fade-right] { --fade-right: 1.5rem; }
 /* Shown on hover or focus (quiet-sidebar D1, sidebar-v2 D5): a row's count, a group
    header's actions. Opacity, not display, so it keeps its width, stays in the Tab order
    and the accessibility tree, and nothing moves; always shown where there is no hover. */
@@ -1297,6 +1322,9 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
   mask-size: calc(100% - 10px) 100%, 10px 100%;
   mask-position: 0 0, 100% 0;
   mask-repeat: no-repeat;
+}
+.ui-scroller:is([data-fade-left], [data-fade-right]) {
+  mask-image: linear-gradient(to right, transparent, black var(--fade-left, 0px), black calc(100% - var(--fade-right, 0px)), transparent);
 }
 }
 /* Touch screens: an icon control is at least 44 x 44 px (the rule below already

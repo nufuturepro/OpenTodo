@@ -1,4 +1,4 @@
-import { DESKTOP_HEADER_QUERY, IconButton, setSidebarToggle, PageActions, PageBarTitle, Skeleton, TruncatedText, useMediaQuery, usePageBar, useOverlayDepth } from '../ui'
+import { DESKTOP_HEADER_QUERY, IconButton, setSidebarToggle, PageActions, PageBarTitle, Skeleton, TruncatedText, trapTab, useMediaQuery, useOverlay, usePageBar, useOverlayDepth } from '../ui'
 import { useCommandBar } from './palette/useCommandBar'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { User } from '../lib/types'
@@ -6,7 +6,7 @@ import { resolveStartView } from '../lib/views'
 import { describeRejected } from '../lib/sharing'
 import { keysOf } from '../lib/shortcuts'
 import { dismissRejected, useSyncStatus } from '../lib/sync'
-import { canonicalPath, navigate, parseRoute, useRoute } from './router'
+import { canonicalPath, navigate, offersQuickAdd, parseRoute, useRoute } from './router'
 import { SIDEBAR_COLLAPSED_REM, SIDEBAR_MAX_REM, SIDEBAR_MIN_REM, setSidebarCollapsed, setSidebarWidth, toggleSidebarCollapsed, useSidebarLayout } from './sidebarLayout'
 import { FilterView } from './FilterView'
 import { LabelsView } from './LabelsView'
@@ -76,6 +76,8 @@ const HelpPanel = lazy(() => import('./help/HelpBundle').then((m) => ({ default:
 const AssistantRoot = lazy(() => import('./assistant/AssistantRoot'))
 // Command palette (search-and-command-palette D1): its own chunk, fetched on first open.
 const CommandPalette = lazy(() => import('./palette/CommandPalette'))
+// Its search index, prepared in idle moments before the first open (list-rendering-at-scale D6).
+const PaletteWarmer = lazy(() => import('./palette/PaletteWarmer'))
 // Weekly review and Statistics (stats-and-review D8): one chunk, fetched on first open.
 const ReviewView = lazy(() => import('./review/ReviewBundle').then((m) => ({ default: m.ReviewView })))
 const StatsView = lazy(() => import('./review/ReviewBundle').then((m) => ({ default: m.StatsView })))
@@ -107,9 +109,34 @@ function useSidebarRequests(setSidebarOpen: (open: boolean) => void) {
   useEffect(() => notificationsOpen.subscribe(() => { if (!window.matchMedia?.('(min-width: 48rem)').matches) setSidebarOpen(true) }), [setSidebarOpen])
 }
 
+/** The phone drawer (phone-v2): below 768 px it is an overlay when open and inert when closed; from there the sidebar is a column. */
+function usePhoneDrawer(sidebarOpen: boolean) {
+  const column = useMediaQuery(DESKTOP_HEADER_QUERY)
+  const drawer = useRef<HTMLElement>(null)
+  const open = sidebarOpen && !column, closed = !column && !sidebarOpen
+  // The aside's own props: aria-hidden next to inert on purpose, so assistive technology without inert support
+  // still skips the closed drawer; open, Tab stays inside it.
+  const aside = {
+    ref: drawer, inert: closed || undefined, 'aria-hidden': closed || undefined,
+    onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => { if (open) trapTab(e, e.currentTarget) },
+  }
+  return { drawer, open, closed, aside }
+}
+
+/** The command bar when open, and its search index prepared before (list-rendering-at-scale D6). */
+function CommandBar({ palette, user, showShortcuts }: { palette: ReturnType<typeof useCommandBar>; user: User; showShortcuts: () => void }) {
+  return (
+    <>
+      {palette.warm && <PanelBoundary><Suspense fallback={null}><PaletteWarmer user={user} onDone={palette.warmed} /></Suspense></PanelBoundary>}
+      {palette.loaded && palette.open && <PanelBoundary resetKey={palette.open}><Suspense fallback={null}><CommandPalette user={user} initialMode={palette.mode} logWin={palette.win} onClose={palette.close} showShortcuts={showShortcuts} /></Suspense></PanelBoundary>}
+    </>
+  )
+}
+
 export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const route = useRoute()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const drawer = usePhoneDrawer(sidebarOpen)
   useSidebarRequests(setSidebarOpen)
   const [notice, setNotice] = useState<string | null>(null)
   // Changes the server refused after a role change (project-sharing).
@@ -233,10 +260,9 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
   return (
     <div className="flex h-full bg-canvas">
       <SkipLink frame={frame} content={content} />
-      {/* touch-none: a swipe on the scrim does not scroll the page behind the open drawer (sidebar-drawer-scroll). */}
-      {sidebarOpen && <div className="fixed inset-0 z-[45] touch-none bg-scrim md:hidden" onClick={() => setSidebarOpen(false)} />}
       {/* The sidebar column: a drawer below 768 px, a column from there, resizable and collapsible from 1024 px (app-shell); its colour, shared by the sticky group headers, is --sidebar-bg: the surface in the drawer, the canvas as a column (precision-tokens D1), where it sits beside the inset content surface without an edge (precision-shell D1). */}
-      <aside data-sidebar data-sidebar-width={sidebar.collapsed ? 'collapsed' : sidebar.width}
+      {drawer.open && <DrawerOverlay panel={drawer.drawer} onClose={() => setSidebarOpen(false)} />}
+      <aside {...drawer.aside} data-sidebar data-sidebar-width={sidebar.collapsed ? 'collapsed' : sidebar.width}
         style={{ '--sidebar-w': `${sidebar.collapsed ? SIDEBAR_COLLAPSED_REM : sidebar.width}rem` } as React.CSSProperties}
         className={`fixed inset-y-0 left-0 z-[45] flex w-80 max-w-[85vw] max-md:[&_[data-sidebar-item]]:min-h-12 transform max-md:border-r max-md:border-default bg-(--sidebar-bg) [--sidebar-bg:var(--color-surface)] md:[--sidebar-bg:var(--color-canvas)] md:pointer-fine:[--sidebar-bg:var(--color-sidebar)] pl-[env(safe-area-inset-left)] transition-transform md:static md:w-(--sidebar-w) md:max-w-none md:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
@@ -246,7 +272,7 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
         {!sidebar.collapsed && <SidebarResizer width={sidebar.width} />}
       </aside>
       {/* From 768 px the page is one inset content surface on the canvas: 8 px from the window, the surface radius, one hairline (precision-shell D1). */}
-      <main ref={frame} className="flex min-w-0 flex-1 flex-col md:!pb-0 md:my-2 md:mr-2 md:overflow-hidden md:rounded-surface md:border md:border-default md:bg-surface" data-app-frame data-phone-chrome={phoneChrome || undefined}
+      <main ref={frame} className="flex min-w-0 flex-1 flex-col md:!pb-0 md:my-2 md:mr-2 md:overflow-hidden md:rounded-surface md:border md:border-default md:bg-surface" data-app-frame data-phone-chrome={phoneChrome || undefined} inert={drawer.open || undefined}
         style={phoneChrome ? { paddingBottom: `calc(${TAB_BAR_HEIGHT_REM}rem + env(safe-area-inset-bottom))` } : undefined}>
         {/* Below 768 px: the bar with the menu button, the page's title and its actions (app-shell "No desktop top bar"). */}
         <PhoneBar onMenu={() => setSidebarOpen(true)} />
@@ -334,13 +360,13 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
       </main>
       <PanelBoundary><PanelHost user={user} /></PanelBoundary>
       {phoneChrome && <TabBar route={route} onSearch={openPalette} minimised={minimised} />}
-      {((phoneChrome && route.view !== 'settings') || addOpen) && <AddButton ref={addButton} open={addOpen} away={minimised && !addOpen} onClick={() => setAddOpen((v) => !v)} />}
+      {((phoneChrome && offersQuickAdd(route)) || addOpen) && <AddButton ref={addButton} open={addOpen} away={minimised && !addOpen} onClick={() => setAddOpen((v) => !v)} />}
       <QuickAddSheet open={addOpen} onClose={() => setAddOpen(false)} anchor={addButton} route={route} userId={user.id} />
       {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} vim={vim} extraSections={vim && vimHelp ? [vimHelp] : []}
         context={{ view: route.view, board: hasScope('board') || hasScope('timeline'), panelOpen: hasScope('panel') || !!panelTaskId() }} />}
       {helpRequest && <PanelBoundary><Suspense fallback={null}><HelpPanel key={helpRequest.screen} screen={helpRequest.screen} trigger={helpRequest.trigger} onClose={closeHelp} /></Suspense></PanelBoundary>}
       {assistantLoaded && <PanelBoundary><Suspense fallback={null}><AssistantRoot name={user.name} onPage={route.view === 'ask'} context={() => ({ view: route.view, projectId: route.view === 'project' ? route.id : undefined })} /></Suspense></PanelBoundary>}
-      {palette.loaded && palette.open && <PanelBoundary resetKey={palette.open}><Suspense fallback={null}><CommandPalette user={user} initialMode={palette.mode} logWin={palette.win} onClose={palette.close} showShortcuts={() => setShowHelp(true)} /></Suspense></PanelBoundary>}
+      <CommandBar palette={palette} user={user} showShortcuts={() => setShowHelp(true)} />
       {/* The owner's one-time thank-you on a new server (welcome-note). */}
       <WelcomeDialog user={user} />
       {/* The start guide after it (first-run "Three-step first run"); never a row of the list. */}
@@ -356,6 +382,12 @@ export function Shell({ user, onLogout }: { user: User; onLogout: () => void }) 
       <FramesHost /><FocusPickerHost />
     </div>
   )
+}
+
+/** The open phone drawer as an overlay: its scrim (a swipe on it does not scroll the page behind, sidebar-drawer-scroll), Escape and Back through the stack, focus moved in and back to the menu button on close, and the tab bar and add button out of the page (they hide while an overlay is open). */
+function DrawerOverlay({ panel, onClose }: { panel: React.RefObject<HTMLElement | null>; onClose: () => void }) {
+  useOverlay({ panel, onClose })
+  return <div className="fixed inset-0 z-[45] touch-none bg-scrim md:hidden" onClick={onClose} />
 }
 
 /** The sidebar's drag edge (app-shell "Resizable sidebar"): 15 to 22.5 rem, per device; arrows resize it from the keyboard. */

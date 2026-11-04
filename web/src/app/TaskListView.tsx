@@ -17,6 +17,7 @@ import type { ViewPlacement } from '../lib/viewOrder'
 import type { OrderHost } from '../lib/viewOrderMove'
 import { reorderInView, stepInView } from './viewOrderActions'
 import { LOGBOOK_PAGE } from '../lib/logbook'
+import { createTaskThenSuggest } from '../lib/assistantSuggest'
 import { getPlace, locationFromPlace } from '../lib/locations'
 import { dayTotalsText } from '../lib/time'
 import { useDayTotals } from '../lib/timeEntries'
@@ -51,7 +52,7 @@ import { SubProjects } from './SubProjects'
 import { TimelineView } from './TimelineView'
 import { completeWithUndo } from './undoable'
 import { CompleteParentPrompt, EmptyState, FilteredEmpty, HiddenNote, LayoutSwitch, ListPageActions, MissingTarget, type PhoneItem, PhoneMenuItems, phoneGroups, placeholderFor, ReadOnlyQuickAdd, usePhoneListActions, RowPickerDialogs } from './task-list/ListChrome'
-import { GroupedList, LogbookMore, rowRenderer, useListMotion } from './task-list/ListGroups'
+import { GroupedList, LogbookMore, useListMotion, useRowRenderer } from './task-list/ListGroups'
 import { ProjectionsMenuItem } from './calendar/projectionSwitches'
 import { useListSplit } from './task-list/useInboxSplit'
 import { STICKY_QUICK_ADD, useStickyQuickAdd } from './task-list/stickyQuickAdd'
@@ -61,6 +62,7 @@ import { useListBindings } from './task-list/useListBindings'
 import { useListDrag } from './task-list/useListDrag'
 import { useListModel, type ListRoute } from './task-list/useListModel'
 import { LIST_READY, perfMark } from '../lib/perfMarks'
+import { markPendingDone } from '../lib/pendingDone'
 import { useListShortcuts, type ListUi } from './task-list/useListShortcuts'
 import { noteTodayOpened } from '../lib/firstDay'
 import { InboxMenu } from './SampleNotice'
@@ -116,18 +118,17 @@ function useListUi(ticked: ReadonlySet<string>, order: readonly string[]) {
   /** The one row whose details are shown under it (row-expand D4): this list's state only, never stored. */
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const openActions = useCallback((picker: string | null = null, from: HTMLElement | null = null) => { actionsFrom.current = from; setActionsPicker(picker); setActionsOpen(true) }, [])
-  /** Keeps the `.`-cursor menu mounted while a review it opened is on screen (task-menu-refinement D1). */
-  const [actionsHold, setActionsHold] = useState(false)
-  const releaseActions = useCallback(() => { setActionsOpen(false); setActionsHold(false); setActionsPicker(null) }, [])
+  // A choice that opens a review or a date asks the Shell's host for it (BulkDialogHost),
+  // so the `.`-cursor menu unmounts as it closes (issue 839).
   const onActionsOpen = useCallback((v: boolean) => {
     setActionsOpen(v)
-    if (!v) { setActionsPicker(null); setActionsHold(true) }
+    if (!v) setActionsPicker(null)
   }, [])
   // The row's menu at the pointer (task-row-context-menu): one state, one selection
   // rule and one focus restore, shared with the filter, saved-view and method lists.
   const rowMenu = useRowMenu(ticked, order)
   const ui: ListUi = { pickerFor, setPickerFor, assignFor, setAssignFor, prompt, setPrompt, addingUnder, setAddingUnder, setAddingTo, openActions }
-  return { ui, actionsOpen, actionsHold, actionsPicker, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
+  return { ui, actionsOpen, actionsPicker, onActionsOpen, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
 }
 
 /**
@@ -206,7 +207,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   const collapsedGroups = useCollapsedGroups()
   // Bulk selection (bulk-edit D1): ticked rows, separate from the cursor row.
   const { tickRows, selection, ticked } = useTickedRows(rows, taskMap, isReadOnly)
-  const { ui, actionsOpen, actionsHold, actionsPicker, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
+  const { ui, actionsOpen, actionsPicker, onActionsOpen, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
   // The open task lives in the shell's panel slot (app-shell D1); the Inbox (inbox-split D1), and every list with the
   // side panel (task-side-panel D2, D7), keep it there beside the list, set up before the bindings' route reset.
   const openId = usePanelTaskId()
@@ -289,7 +290,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
     // Top or bottom (add-position D3); `o` keeps its anchor, so that entry appends before it moves.
     const placement = insertAfter.current ? 'bottom' : await preferredPlacement()
     const [task] = await withDefaults([input])
-    const id = await createUnlessReused({ placement, ...task }) // null: a reusable list reused an item (reusable-lists D3)
+    const id = await createUnlessReused({ placement, ...task }, createTaskThenSuggest) // null: a reusable list reused an item (reusable-lists D3)
     // The `o` move, the Inbox's note, or the note for a row out of sight (add-position D5).
     const list = listTitle(route.view, m.currentProject?.name, m.currentLabel?.name, m.currentPlace?.name)
     if (id) await afterListAdd(id, { route, today, insertAfter, sectionMap: latestSectionMap, list, placement: projectManual ? placement : undefined, root: listRoot.current, select: setSelectedId })
@@ -301,13 +302,13 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   }, [withDefaults, route, today, latestSectionMap])
 
   const { setPrompt } = ui
+  const rowsById = useRef(taskMap)
+  rowsById.current = taskMap
   /** Complete or reopen; after completing the last open subtask, offer the parent (design D5). */
   const toggleComplete = useCallback(async (id: string, completed: boolean) => {
+    markPendingDone(rowsById.current.get(id), completed)
     await completeWithUndo(id, completed)
-    if (!completed) {
-      setPrompt((p) => (p?.id === id ? null : p))
-      return
-    }
+    if (!completed) return setPrompt((p) => (p?.id === id ? null : p))
     const parent = await parentReadyToComplete(id)
     setPrompt(parent)
     // The last open task of a project: offer one-key archiving (trash-and-history).
@@ -329,10 +330,10 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   const rowActions = useListBindings({ ...shared, manual: projectManual, setSelectMode, startDrag: drag.startDrag, insertAfter, listRoot, projectReadOnly: m.projectReadOnly, startInline, setExpandedId, openRowMenu: rowMenu.open, draggingId: drag.draggingId })
 
   const { edgeOf, boardGroups, queryControl: queryFilter, queryHost, cardNotes } = useListExtras(board, m.queryFilter, projectId ? { mode: viewMode, onChoose: chooseViewMode } : null, projectId) // Colour by on boards, Upcoming's query filter (calendar-clarity)
-  const renderRow = rowRenderer({
+  const renderRow = useRowRenderer({
     view: route.view, labelId: route.view === 'label' ? route.id : undefined, userId, projectMap: m.projectMap, labelMap: m.labelMap, memberMap: m.memberMap, selectedId, progress: m.progress, blocked: m.blocked, flow: m.flow,
     habits: m.habits, isReadOnly, board, manual, ownOrder: !!ownOrder, treeView: m.treeView, dropAt: drag.dropAt, draggingId: drag.draggingId, ticked: selection.ticked,
-    showCheckbox: selectMode || (fine && selection.ticked.size > 0), fieldColumns: m.fieldColumns, projectFieldDefs: m.projectFieldDefs, siblingPos: m.siblingPos,
+    showCheckbox: selectMode || (fine && selection.ticked.size > 0), selectMode, fieldColumns: m.fieldColumns, projectFieldDefs: m.projectFieldDefs, siblingPos: m.siblingPos,
     timeColumn: m.timeColumn, rowLayout: m.display?.rowLayout, actions: rowActions, addingUnder: ui.addingUnder, onCloseSubtask: () => ui.setAddingUnder(null), edgeOf, cardNotes,
     inlineId: inline?.id ?? null, renderInline, departures, expandedId, swipe: useListSwipe(listRoot, !fine && selection.ticked.size === 0 && !selectMode && !board, rows.length),
   })
@@ -396,9 +397,9 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
 
           <SelectionBar ids={ticked} onClear={selection.clear} menuOpen={actionsOpen && ticked.length > 0}
             onMenuOpenChange={onActionsOpen} startPicker={actionsPicker} onDone={selectMode ? () => setSelectMode(false) : undefined} />
-          {(actionsOpen || actionsHold) && ticked.length === 0 && selectedId ? (
-            // `.` with nothing ticked: the same menu for the cursor task; held mounted until its review closes (D1).
-            <BulkActionsMenu ids={[selectedId]} open={actionsOpen} onOpenChange={onActionsOpen} onAllClosed={releaseActions} startPicker={actionsPicker} anchor={actionsFrom}
+          {actionsOpen && ticked.length === 0 && selectedId ? (
+            // `.` with nothing ticked: the same menu for the cursor task.
+            <BulkActionsMenu ids={[selectedId]} open={actionsOpen} onOpenChange={onActionsOpen} startPicker={actionsPicker} anchor={actionsFrom}
               trigger={<span className="sr-only">{t('Actions')}</span>} triggerClassName="sr-only" />
           ) : null}
           {rowMenu.element}{queryHost}
@@ -427,7 +428,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
             <TimelineView groups={dataGroups} today={today} zone={m.zone} editable={m.projectEditable} selectedId={selectedId}
               onSelect={setSelectedId} onOpen={(id) => { setSelectedId(id); setOpenId(id) }} byId={taskMap} hue={hueFor(currentProject.color)} />
           ) : (
-            <GroupedList groups={groups} view={route.view} project={currentProject} fieldColumns={m.fieldColumns} projectFieldDefs={m.projectFieldDefs}
+            <GroupedList groups={groups} view={route.view} project={currentProject} fieldColumns={m.fieldColumns} projectFieldDefs={m.projectFieldDefs} siblingPos={m.treeView && !board ? m.siblingPos : undefined} reveal={selectedId}
               editable={m.projectEditable} renderRow={renderRow} addingTo={addingTo} setAddingTo={ui.setAddingTo} onToggleSection={toggleSection}
               doneBySection={m.showCompleted ? NO_DONE : m.doneBySection} revealed={revealed}
               completed={m.showCompleted && projectId ? { tasks: m.completedTasks, open: m.completedOpen, onToggle: () => m.toggleCollapsed(completedOpenKey(projectId)), gotIt: m.reusable } : undefined} toggleCollapsed={m.toggleCollapsed} collapsedGroups={collapsedGroups} projects={m.projects} labels={m.labels}

@@ -7,7 +7,6 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDatabase } from '../../lib/db'
-import { currentDateTime } from '../../lib/dates'
 import { readFocus } from '../../lib/focus/state'
 import { createTask, resetDeviceId } from '../../lib/ops'
 import { setCurrentUserId } from '../../lib/sharing'
@@ -27,7 +26,7 @@ beforeEach(async () => {
 afterEach(() => { hideBulkToast(); vi.unstubAllGlobals() })
 
 const task = (over: Partial<Task> = {}) => ({ id: 't1', title: 'Write the report', project_id: null, labels: [], completed_at: null, deleted_at: null, ...over }) as unknown as Task
-const handlers = { review: () => {}, prefs: currentDateTime(), schedule: () => {} }
+const handlers = { review: () => {}, pickDate: () => {}, schedule: () => {} }
 const data = (tasks: Task[], memberships = new Map<string, Membership>()) => ({ tasks, labels: [], projects: [], sections: [], memberships, runningTask: null })
 const ids = (tasks: Task[], m?: Map<string, Membership>) => flatItems(bulkMenuGroups(tasks.map((x) => x.id), data(tasks, m), handlers)).map((i) => i.id)
 

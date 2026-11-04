@@ -15,7 +15,7 @@ import { byPosition, compareByPosition, compareDueThenPriority } from './orderin
 import { effectiveSection, groupBySection } from './sections'
 import { breadcrumbOf, buildTaskTree } from './subtasks'
 import { effectiveParents, flattenTree, type Tree, type TreeNode } from './tree'
-import type { Label, Project, Section, Task } from './types'
+import { fieldSortId, type FieldDef, type Label, type Project, type Section, type Task } from './types'
 import { compareTasks, groupTasks, inAnytime, inLater, inToday, isSomeday } from './views'
 import { compareManual } from './viewOrder'
 import type { ListDisplay } from './listDisplay'
@@ -232,6 +232,7 @@ export interface GroupInput {
   taskMap: Map<string, Task>
   projects: readonly Project[]
   projectMap: Map<string, Project>
+  fields?: readonly FieldDef[]
   board: boolean
   columns: ListColumn[]
   buckets: SectionBucket[] | null
@@ -262,12 +263,16 @@ export interface GroupInput {
  * The comparator of a display's order, or null for manual order as stored (list-display-options D3).
  * A label page's manual order is its own (view-manual-order): `rank` of the label's placed tasks.
  */
-function displayOrder(d: ListDisplay | undefined, rank?: ReadonlyMap<string, number>): ((a: Task, b: Task) => number) | null {
+function displayOrder(d: ListDisplay | undefined, rank?: ReadonlyMap<string, number>, projects: readonly Project[] = [], fields: readonly FieldDef[] = []): ((a: Task, b: Task) => number) | null {
+  const selectedId = fieldSortId(d?.sortBy)
+  if (selectedId && !fields.some((field) => field.id === selectedId && !field.deleted_at && (field.type === 'number' || field.type === 'date'))) {
+    return rank ? compareManual(rank) : null
+  }
   if (rank && d?.sortBy === 'position') {
     const asc = compareManual(rank)
     return d.sortDir === 'desc' ? (a, b) => asc(b, a) : asc
   }
-  return d && !(d.sortBy === 'position' && d.sortDir === 'asc') ? compareTasks(d.sortBy, d.sortDir) : null
+  return d && !(d.sortBy === 'position' && d.sortDir === 'asc') ? compareTasks(d.sortBy, d.sortDir, { projects, fields }) : null
 }
 
 /** Top-level nodes in the display's order; subtasks keep their manual order under their parent. */
@@ -293,7 +298,7 @@ export function listGroups(p: GroupInput): ListGroup[] {
     : []
   // Board: cards are top-level tasks, column by column (keyboard order); a folded column has none on screen (board-polish D1).
   if (p.board) return p.columns.map((c) => ({ key: c.key, heading: null, rows: c.folded ? [] : c.cards.map((task) => flatRow(task)) }))
-  const order = displayOrder(p.display, p.manualOrder)
+  const order = displayOrder(p.display, p.manualOrder, p.projects, p.fields)
   const groupByKey = p.display?.groupBy
   if (p.tree && p.view === 'project' && groupByKey && groupByKey !== 'section' && groupByKey !== 'none' && groupByKey !== 'project') {
     // Grouped by a property of the top-level tasks (list-display-options D3); each brings its subtasks.
@@ -342,7 +347,7 @@ function flatGroups(p: GroupInput): ListGroup[] {
   }
   if (p.view === 'label' && p.display && p.display.groupBy !== 'project') {
     // A label page with its own grouping (list-display-options D3): in its order, each task once.
-    const order = displayOrder(p.display, p.manualOrder)
+    const order = displayOrder(p.display, p.manualOrder, p.projects, p.fields)
     const tasks = order ? [...p.tasks].sort(order) : p.tasks
     if (p.display.groupBy === 'none' || p.display.groupBy === 'section') return [{ key: 'all', heading: null, rows: tasks.map(row) }]
     return groupTasks(tasks, p.display.groupBy, { today: p.today, labels: p.labels ?? [], projects: p.projects }, true)
@@ -350,7 +355,7 @@ function flatGroups(p: GroupInput): ListGroup[] {
   }
   if (p.view === 'label' || p.view === 'assigned' || p.view === 'someday' || p.view === 'anytime') {
     // Grouped by project: Inbox first, then projects in sidebar order; flat rows with breadcrumbs.
-    const sort = p.view === 'label' ? displayOrder(p.display, p.manualOrder) : null
+    const sort = p.view === 'label' ? displayOrder(p.display, p.manualOrder, p.projects, p.fields) : null
     const byProject = groupBy(sort ? [...p.tasks].sort(sort) : p.tasks, (tk) => tk.project_id ?? '')
     const order = ['', ...p.projects.slice().sort(compareByPosition).map((pr) => pr.id)]
     const implied: RowImplied | undefined = p.view === 'someday' ? { someday: true } : undefined
@@ -428,6 +433,52 @@ export function nextDetail(soon: readonly WaitingSoon[], resolved?: ResolvedDate
   if (next) return next.time ? t('next: {title}, {time}', { title: title(next), time: formatTime(next.time, resolved) }) : t('next: {title}, deadline today', { title: title(next) })
   if (soon.length === 1) return t('time passed: {title}, {time}', { title: title(soon[0]), time: formatTime(soon[0].time ?? '', resolved) })
   return t('{n, plural, one {# past its time} other {# past their time}}', { n: soon.length })
+}
+
+const sameImplied = (a: RowImplied | undefined, b: RowImplied | undefined): boolean =>
+  a === b || (!!a && !!b && a.date === b.date && a.evening === b.evening && a.part === b.part && a.someday === b.someday)
+
+/** Two rows show the same thing: the same task object in the same place. */
+export const sameRow = (a: ListRow, b: ListRow): boolean =>
+  a.task === b.task && a.depth === b.depth && a.parent === b.parent && a.hasChildren === b.hasChildren
+  && a.collapsed === b.collapsed && a.breadcrumb === b.breadcrumb && sameImplied(a.implied, b.implied)
+
+const sameValue = (a: unknown, b: unknown): boolean =>
+  Object.is(a, b) || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Object.is(v, b[i])))
+
+/**
+ * The groups of a new derivation with everything that did not change kept from the
+ * previous one (OpenSpec change list-rendering-at-scale, D6): a row equal to its
+ * previous row is that object, a group whose rows and heading did not change is
+ * that object, and when no group changed the previous list itself. One completion
+ * in a 2,000-row list then gives new objects to its own row's group only, so the
+ * list draws again only the rows that changed, and whatever is derived from the
+ * groups (rows, sibling positions, the time column) is kept when nothing moved.
+ */
+export function keepGroups(prev: readonly ListGroup[] | null, next: ListGroup[]): ListGroup[] {
+  if (!prev?.length) return next
+  const before = new Map(prev.map((g) => [g.key, g]))
+  let changed = prev.length !== next.length
+  const out = next.map((g, i) => {
+    const old = before.get(g.key)
+    if (!old) { changed = true; return g }
+    const oldRows = new Map(old.rows.map((r) => [r.task.id, r]))
+    let rowsChanged = old.rows.length !== g.rows.length
+    const rows = g.rows.map((r, j) => {
+      const was = oldRows.get(r.task.id)
+      const kept = was && sameRow(was, r) ? was : r
+      if (kept !== old.rows[j]) rowsChanged = true
+      return kept
+    })
+    const fieldsSame = (Object.keys(g) as (keyof ListGroup)[]).every((k) => k === 'rows' || sameValue(g[k], old[k])) && Object.keys(old).length === Object.keys(g).length
+    if (!rowsChanged && fieldsSame) {
+      if (prev[i] !== old) changed = true
+      return old
+    }
+    changed = true
+    return { ...g, rows: rowsChanged ? rows : old.rows }
+  })
+  return changed ? out : (prev as ListGroup[])
 }
 
 /**
