@@ -698,6 +698,8 @@ html {
   font-synthesis: style;
   /* Inter's optical-size axis picks its Display cut at large sizes (tokens-v2 D7). */
   font-optical-sizing: auto;
+  /* Closing punctuation stays with the previous character (simplified-chinese D5). Latin wrapping is unchanged. */
+  line-break: strict;
 }
 
 body {
@@ -1059,7 +1061,7 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
   flex-shrink: 0;
   cursor: pointer;
   border: 2px solid var(--ot-border-input);
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   background: transparent;
   transition: background-color var(--duration-ui) var(--ease-calm), border-color var(--duration-ui) var(--ease-calm);
 }
@@ -1183,6 +1185,11 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
 @container row (width < 40rem) {
   [data-row-props] :is([data-date], [data-estimate], [data-progress]) > svg { display: none; }
 }
+/* The title keeps a very narrow row's width (row-title-first-on-phones): the origin at its
+   end is its icon, the words stay in the link's name and the task's details. */
+@container row (width < 30rem) {
+  [data-row-trailing] [data-origin-text] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 @container row (width >= 40rem) {
   /* align-content: on touch the open control is at least 44 px tall (the coarse-pointer
      button rule); the lines stay at its top, on the circle's line, not in its middle. */
@@ -1250,6 +1257,11 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
     [data-row-props] { grid-area: 1 / 2; display: flex; align-items: center; white-space: nowrap; }
     [data-row-props] > [data-row-cell]:not([data-row-phone]), [data-row-rest] { display: none; }
     [data-row-meta="row"] > [data-row-props] > [data-row-item]::before { content: none; }
+    /* The title comes first (row-title-first-on-phones): the origin is left to the row's
+       details and the task page, and the Inbox's source line is the second line, never a
+       second column beside the title. */
+    [data-row-trailing] { display: none; }
+    [data-row-source] { grid-area: 2 / 1 / 3 / 3; }
     /* The project as its dot, the assignee as the avatar; both names stay in the accessible text. */
     [data-row-cell="project"][data-dot] > :last-child,
     [data-row-cell="assignee"] [data-assignee] > :last-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1345,10 +1357,14 @@ li[data-task-id][data-touch-hold] [data-row-grip] button {
 }
 }
 @media (pointer: coarse) {
-  /* A held row is the menu's gesture, never a text selection (task-row-context-menu):
-     a long press on a phone must not select words under the finger. Editing controls
-     keep text selection — the inline editor still selects its text. */
+  /* A held row is the menu's gesture, never a text selection (task-row-context-menu
+     follow-up): a long press on a phone must not select words under the finger.
+     Editing controls keep text selection — the inline editor still selects its text. */
   li[data-task-id] { -webkit-user-select: none; user-select: none; }
+  /* The expanded row's notes and its detailed facts line are reading text, not part of
+     the gesture: the whole `li` is unselectable on a phone so a hold cannot hand words to
+     the browser, but `RowDetails` and that facts line must stay selectable and copyable. */
+  li[data-task-id] [data-row-details] { -webkit-user-select: text; user-select: text; }
   li[data-task-id] :is(input, textarea, [contenteditable="true"]) { -webkit-user-select: text; user-select: text; }
   :where(button, [role="button"], summary, select, a.ui-btn) { min-height: 44px; min-width: 44px; }
   :where(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="range"], [type="color"]), textarea) { min-height: 44px; }

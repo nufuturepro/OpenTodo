@@ -124,7 +124,7 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
         const { rows: rs, sectionOfRow: secs, board: b, ticked, reorder, readOnly } = dragState.current
         if (target.startsWith('drop:')) {
           if (readOnly?.(task)) return
-          const ids = wasTicked && ticked?.has(task.id) ? [...ticked] : [task.id]
+          const ids = ticked?.has(task.id) ? [...ticked] : [task.id]
           act(withListTransition(ids.length, () => dropTasks(target.slice('drop:'.length), ids)))
           return
         }

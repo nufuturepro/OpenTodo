@@ -193,9 +193,9 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'list.move-down', keys: ['Alt+↓'], description: 'Move it one place down', section: 'tasks', scope: 'list' },
   { id: 'list.move-top', keys: ['Alt+Shift+↑'], description: 'Move it to the top of its list', section: 'tasks', scope: 'list' },
   { id: 'list.move-bottom', keys: ['Alt+Shift+↓'], description: 'Move it to the bottom of its list', section: 'tasks', scope: 'list' },
-  { id: 'note.drag', keys: ["Drag (touch: drag the row's grip, or press and hold)"], description: 'Reorder tasks in project lists, boards and the Inbox, and projects in the sidebar; drop on the middle of a row to nest it; Esc cancels', section: 'tasks', scope: 'list', note: true },
+  { id: 'note.drag', keys: ["Drag (touch: drag the row's grip, or press and hold the row, then move)"], description: 'Reorder tasks in project lists, boards and the Inbox, and projects in the sidebar; drop on the middle of a row to nest it; Esc cancels', section: 'tasks', scope: 'list', note: true },
   { id: 'note.swipe', keys: ['Swipe a task (touch)'], description: 'Right completes, left schedules; the same two actions start the task\'s menu', section: 'tasks', scope: 'list', note: true },
-  { id: 'note.hold', keys: ['Press and hold the grip (touch)'], description: "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select in the list header shows them without ticking, Done hides them", section: 'tasks', scope: 'list', note: true },
+  { id: 'note.hold', keys: ['Press and hold the grip (touch)'], description: "Tick the task and show every checkbox (a tap on the grip at the row's edge does the same); Select tasks in the page menu does the same, Close hides them", section: 'tasks', scope: 'list', note: true },
   { id: 'note.sorted-views', keys: ['Today, Upcoming, Assigned, Completed, labels, filters'], description: 'Sorted by date (or their own rule): no drag or Alt moves there', section: 'tasks', scope: 'list', note: true },
   // Expanded rows (row-expand D1): → shows more, ← shows less; the details open after folded subtasks unfold and close before they fold.
   { id: 'list.expand', keys: ['→'], label: 'Show details', description: 'Show the details of the selected task under its row (unfold its subtasks first when they are folded), or the sub-projects of the focused sidebar project', section: 'tasks', scope: 'list' },
@@ -236,11 +236,13 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'panel.priority', keys: ['1', '2', '3', '4'], description: 'Set the priority of the open task while the panel has focus', section: 'tasks', scope: 'panel', hidden: true, overrides: ['list.priority'] },
   { id: 'panel.track', keys: ['y'], description: 'Start or stop tracking time on the open task while the panel has focus', section: 'tasks', scope: 'panel', hidden: true, overrides: ['list.track'] },
   { id: 'panel.skip', keys: ['Shift+K'], description: 'Skip the current occurrence of the open recurring task', section: 'tasks', scope: 'panel', hidden: true, overrides: ['list.skip'] },
+  { id: 'panel.parent', keys: ['u'], description: 'Open the parent of the task in the panel', section: 'tasks', scope: 'panel', when: 'task panel open', overrides: ['task.parent', 'calendar.unschedule'] },
   { id: 'panel.escape', keys: ['Esc'], description: 'Close the panel', section: 'tasks', scope: 'panel', hidden: true, overrides: ['list.escape', 'calendar.escape', 'task.escape'] },
   // The task page (task-full-page): step through the list it was opened from, and back to it.
   { id: 'task.next', keys: ['j'], description: 'On a task page: open the next task of the list it was opened from', section: 'tasks', scope: 'view', views: ['task'] },
   { id: 'task.prev', keys: ['k'], description: 'On a task page: open the previous task of that list', section: 'tasks', scope: 'view', views: ['task'] },
   { id: 'task.escape', keys: ['Esc'], description: 'On a task page: back to the list, with the task selected where it was', section: 'tasks', scope: 'view', views: ['task'] },
+  { id: 'task.parent', keys: ['u'], description: 'On a task page: open the parent task', section: 'tasks', scope: 'view', views: ['task'] },
   { id: 'list.archive-offer', keys: ['Enter'], description: 'Archive the project after completing its last task; any other key dismisses the offer', section: 'trash', scope: 'list', when: 'archive offered', overrides: ['list.open'] },
 
   // ---- board
@@ -377,6 +379,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'triage.skip', keys: ['j', 'Space'], description: 'Skip to the next task', section: 'triage', scope: 'view', views: ['triage'] },
   { id: 'triage.back', keys: ['k'], description: 'Back to the previous task', section: 'triage', scope: 'view', views: ['triage'] },
   { id: 'triage.open', keys: ['Enter'], description: 'Open the task’s panel to edit anything else', section: 'triage', scope: 'view', views: ['triage'] },
+  { id: 'triage.title', keys: ['Tab'], description: 'Edit the title. Tab, Enter or a click away saves it and the decision keys work again. Esc restores it', section: 'triage', scope: 'view', views: ['triage'], local: true },
   { id: 'triage.escape', keys: ['Esc'], description: 'Close the panel, else back to the Inbox with this task selected', section: 'triage', scope: 'view', views: ['triage'] },
   // ---- the reviews (open-loops-method D6): the weekly review's project walk and the Daily check
   { id: 'review.prev-step', keys: ['['], description: 'Weekly review: the previous step', section: 'review', scope: 'view', views: ['review'], overrides: ['global.sidebar'] },

@@ -78,6 +78,8 @@ async function rightClickUntilMenu(row: () => Element | null, container: HTMLEle
   // One more, on a settled row: this dispatch goes through the real handler.
   e = rightClick(row()!, x, y)
   expect(e.defaultPrevented).toBe(true)
+  // The panel shows once the reads its items depend on have landed (issue 840).
+  await waitFor(() => !!document.querySelector('[data-overlay-root]'), 'the menu panel')
   return e
 }
 
@@ -333,9 +335,9 @@ describe('the list bindings', () => {
 })
 
 // Touch: hold and release (task-row-context-menu). A mouse never sends this gesture:
-// the hold arms the row (tint feedback), a release opens the menu at the finger on a
-// fine pointer, a move ends the hold — a scroll on a plain row, the drag itself on a
-// draggable one. On a coarse pointer (a phone) the hold never opens a menu at all.
+// the hold arms the row (tint feedback), a release opens the menu at the finger, a
+// move ends the hold — a scroll on a plain row, the drag itself on a draggable one —
+// on every pointer, coarse included: the row's grip took selection (bulk-actions).
 describe('touch hold', () => {
   const TOUCH_ID = 3
   const touch = (target: EventTarget, type: string, x: number, y: number) => act(() => {
@@ -384,6 +386,7 @@ describe('touch hold', () => {
     expect(trigger.style.position).toBe('fixed')
     expect(trigger.style.left).toBe('120px')
     expect(trigger.style.top).toBe('200px')
+    await waitFor(() => !!document.querySelector('[data-overlay-root]'), 'the menu panel')
     escape()
     await waitFor(() => !menuButton(r.container), 'the menu to close')
     await r.unmount()
@@ -406,7 +409,7 @@ describe('touch hold', () => {
     await r.unmount()
   })
 
-  it('on a coarse pointer (a phone) the hold never arms and never opens a menu', async () => {
+  it('on a coarse pointer (a phone) the hold arms and opens the menu — selection is the grip\'s', async () => {
     const spy = vi.fn()
     const restore = coarsePointer()
     try {
@@ -416,16 +419,40 @@ describe('touch hold', () => {
       try {
         touch(li, 'pointerdown', 40, 60)
         await vi.advanceTimersByTimeAsync(TOUCH_HOLD_MS + 50)
-        // The long press keeps bulk-actions' meaning on a phone: no arm, no menu.
-        expect(li.hasAttribute('data-touch-hold')).toBe(false)
+        // One rule on every device: the held row tints, and a release opens its menu.
+        expect(li.hasAttribute('data-touch-hold')).toBe(true)
         release(40, 60)
       } finally {
         vi.useRealTimers()
       }
-      expect(spy).not.toHaveBeenCalled()
+      expect(spy).toHaveBeenCalledTimes(1)
       await r.unmount()
     } finally {
       restore()
     }
+  })
+})
+
+describe('the menu opens complete (issue 840)', () => {
+  it('its first painted panel already holds every item, so it is placed once', async () => {
+    await createTask({ title: 'Call mum' })
+    const r = await render(<TaskListView route={{ view: 'inbox' }} />)
+    await waitFor(() => r.container.textContent!.includes('Call mum'))
+    // Every committed state of the panel's item list, from the first one on.
+    const seen: string[] = []
+    const items = () => [...document.querySelectorAll('[data-overlay-root] [data-action]')].map((el) => el.getAttribute('data-action')).join(',')
+    const observer = new MutationObserver(() => {
+      const now = items()
+      if (now && now !== seen[seen.length - 1]) seen.push(now)
+    })
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true })
+    await rightClickUntilMenu(() => r.container.querySelector('[data-task-id]'), r.container, 120, 200)
+    // The one task's own items (read after the menu mounted) are there in the end…
+    await waitFor(() => items().includes('track'), 'the one task’s Start tracking')
+    observer.disconnect()
+    // …and were there from the first paint: the list never grew under the pointer.
+    expect(seen).toEqual([items()])
+    escape()
+    await r.unmount()
   })
 })

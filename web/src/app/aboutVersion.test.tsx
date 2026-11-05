@@ -31,10 +31,11 @@ describe('the Version row', () => {
     await waitFor(() => !!document.querySelector('[data-changelog]'), 'the changelog to load')
     const dialog = document.querySelector('[data-testid="changelog"]')!
     expect(dialog.getAttribute('aria-labelledby') || dialog.textContent).toBeTruthy()
-    // The newest release of this repository's own changelog, with its section headings.
-    // Between releases upstream's file has an empty "Unreleased" heading, which the
-    // compiled module leaves out, so the first entry is this build's version.
-    expect(document.querySelector('[data-changelog-version]')!.textContent).toContain(buildVersion)
+    // The newest release of this repository's own changelog, with its section headings:
+    // the version this build is, or the pending "Unreleased" entries above it (an empty
+    // Unreleased heading carries nothing and the compiled module leaves it out).
+    const newest = document.querySelector('[data-changelog-version]')!.textContent!
+    expect(newest === 'Unreleased' || newest.includes(buildVersion)).toBe(true)
     expect(dialog.textContent).toContain('The version opens the changelog.')
     expect(dialog.textContent).toContain('Added')
     expect(dialog.textContent).toContain('Security')

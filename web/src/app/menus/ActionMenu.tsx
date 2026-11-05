@@ -237,7 +237,7 @@ export function Confirmation({ spec, onClose }: { spec: ConfirmSpec; onClose: ()
  * Renders a menu from groups. `picker` (with `open`) starts directly in that
  * picker step, as the project menu's `m` shortcut does.
  */
-export function ActionMenu({ label, title, groups, header, trigger, triggerClassName, triggerProps, align = 'end', width = 'sm:w-64', open: openProp, onOpenChange, startPicker, anchor }: {
+export function ActionMenu({ label, title, groups, header, trigger, triggerClassName, triggerProps, align = 'end', width = 'sm:w-64', open: openProp, onOpenChange, startPicker, anchor, pending = false }: {
   label: string
   /** Content above the first group (the project colour swatches). */
   header?: ReactNode
@@ -255,6 +255,11 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
   startPicker?: string | null
   /** Places the menu at this element instead of its trigger. */
   anchor?: RefObject<HTMLElement | null>
+  /**
+   * The groups still wait for data: an open menu is held back until they are final, so
+   * it is placed once, complete, instead of growing and moving after its first paint (issue 840).
+   */
+  pending?: boolean
 }) {
   const [ownOpen, setOwnOpen] = useState(false)
   const open = openProp ?? ownOpen
@@ -335,7 +340,7 @@ export function ActionMenu({ label, title, groups, header, trigger, triggerClass
         trigger={trigger ?? <Icon name="ellipsis" />}
         triggerClassName={triggerClassName ?? 'ui-btn ui-btn--ghost ui-btn--sm touch-target px-1.5 py-0.5 text-faint'}
         triggerProps={triggerProps}
-        open={open} anchor={anchor}
+        open={open && !pending} anchor={anchor}
         onOpenChange={(v) => {
           // The first Escape (or outside tap) in a picker step, a panel or a submenu goes back to the items.
           if (!v && (current || step || panel || subItems)) { setPicker(null); setStep(null); clearPanel(); setSubmenu(null); return }

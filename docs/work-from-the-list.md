@@ -22,13 +22,13 @@ Fill in details as you type:
 Order new taps friday #Home @errand p2 +20m
 ```
 
-This creates "Order new taps", due Friday, in Home, with the label errand, priority 2 and a 20-minute estimate. Chips under the box show what was understood. The [quick add reference](quick-add.md) has every word and symbol it knows.
+This creates "Order new taps", due Friday, in Home, with label errand, priority 2 and a 20-minute estimate. Chips under the box show what was understood; the [quick add reference](quick-add.md) lists every word and symbol.
 
-New tasks without a project land in the **Inbox**. Tasks added inside a project go into that project, and tasks added in **Today** are due today.
+New tasks without a project land in the **Inbox**; tasks added in a project go there, and in **Today** they are due today.
 
 ## Complete, reopen and delete
 
-Click a task's circle or press <kbd>c</kbd>. On a phone, swipe right to complete, left to schedule; hold to select. Completed tasks move to **Completed**, where you can reopen them.
+Click a task's circle or press <kbd>c</kbd>. On a phone, swipe right to complete, left to schedule, or tap its grip to select. Completed tasks move to **Completed**, where you can reopen them.
 
 Deleting a task (the **Delete** button in the panel, or <kbd>Delete</kbd> in the list) moves it to the Trash, along with its subtasks, where you can restore it. See [Trash and history](trash-and-history.md).
 
@@ -36,9 +36,9 @@ Most changes show a toast with **Undo** for a few seconds (<kbd>Ctrl</kbd>+<kbd>
 
 ## What a row shows
 
-With **Calm** rows (the default) a row leaves out what the view already says: no "Today" in Today (the time stays), no date under an Upcoming day, no project inside that project, no chip for the open label. Dates are grey unless overdue (red) or timed for today; only P1 and P2 colour the circle. Labels are dots with the first name and "+2"; hover or focus to see all. Progress, comments and attachments sit at the row's end, faint until hovered. **Detailed** rows in Settings → Appearance show every chip.
+A row leaves out what the view already says: no "Today" in Today, no date under an Upcoming day, no project inside that project. Times stand in a column before the titles (a deadline's countdown when there is no time). Dates are grey for later, darker for tomorrow, the accent for today and red when past; only P1 and P2 colour the circle. Labels are small chips, two at most and "+2". The project and counts end the row, faint until hovered.
 
-Hover a row for **Show details**, **Schedule**, **Priority** and **More**; <kbd>Tab</kbd> reaches them. On a touch screen, long-press a row to select it, or swipe it.
+With a mouse on a wide screen, hovering a row shows **Show details**, **Schedule**, **Priority** and **More**; <kbd>Tab</kbd> reaches them. On a touch screen, swipe a row or hold for its menu.
 
 ## Quick changes from the list
 
@@ -58,10 +58,10 @@ You don't have to open a task to change it. Select it and press:
 | <kbd>s</kbd> | Schedule it on the Day calendar |
 | <kbd>Delete</kbd> | Move it to the Trash |
 
-Right-click or hold a row: its menu opens at the pointer; tap its grip to tick several at once.
+Right-click or hold a row: its menu opens at the pointer and acts on all ticked rows; tap its grip to tick several at once.
 
 ## Put things in order
 
-In the Inbox and in projects, you decide the order. Drag a task to a new place (on a touch screen, drag it by its grip), or select it and press <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd>. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> sends it to the top. Dropping a task on the middle of another one makes it a subtask. Projects in the sidebar reorder the same way.
+In the Inbox and in projects, you decide the order. Drag a task to a new place (on a touch screen, drag it by its grip), or select it and press <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>Alt</kbd>+<kbd>↓</kbd>. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> sends it to the top. Dropping a task on the middle of another one makes it a subtask. Projects in the sidebar can be reordered the same way.
 
 Today, Upcoming, labels and filters sort themselves by date and priority; there a drag only goes to the sidebar (see [Drop on the sidebar](bulk-actions.md#drop-on-the-sidebar)).

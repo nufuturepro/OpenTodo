@@ -80,22 +80,13 @@ describe('touch: hold, swipe and drag', () => {
   it('a held release opens the row menu on any pointer, a coarse (phone) one included', () => {
     // The grip took selection, so the row body's hold is only ever the menu's — on a
     // phone as on a desktop (task-row-context-menu, revised by the touch rework).
-    const original = window.matchMedia
-    window.matchMedia = ((q: string) => ({
-      matches: false, media: q, onchange: null,
-      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
-    })) as typeof window.matchMedia
-    try {
-      const release = vi.fn()
-      beginDrag(press, { label: 'Task', onDrop: vi.fn(), onEnd: vi.fn(), onHoldRelease: release })
-      vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
-      up(50, 50)
-      expect(release).toHaveBeenCalledWith(50, 50)
-      // The held press swallowed its click — consume it so a later test keeps its own.
-      window.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    } finally {
-      window.matchMedia = original
-    }
+    const release = vi.fn()
+    beginDrag(press, { label: 'Task', onDrop: vi.fn(), onEnd: vi.fn(), onHoldRelease: release })
+    vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
+    up(50, 50)
+    expect(release).toHaveBeenCalledWith(50, 50)
+    // The held press swallowed its click — consume it so a later test keeps its own.
+    window.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   })
 })
 
@@ -147,45 +138,6 @@ describe('the grip (bulk-actions on touch)', () => {
     up(60)
     expect(s.onHold).not.toHaveBeenCalled()
     expect(s.onStart).toHaveBeenCalledTimes(1)
-  })
-
-  it('a grip hold that becomes a drag gives its tick back — once, and only for a grip', () => {
-    const undo = vi.fn()
-    const s = spies()
-    beginDrag(press, { label: 'Task', grip: true, onHoldUndo: undo, ...s })
-    vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
-    expect(s.onHold).toHaveBeenCalledTimes(1)
-    expect(undo).not.toHaveBeenCalled()
-    move(120) // the press becomes a drag
-    expect(undo).toHaveBeenCalledTimes(1)
-    up(120)
-    expect(undo).toHaveBeenCalledTimes(1) // not again on release
-
-    // A held release that never moves keeps the tick: selection is the still gesture.
-    const still = vi.fn()
-    const s2 = spies()
-    beginDrag(press, { label: 'Task', grip: true, onHoldUndo: still, ...s2 })
-    vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
-    up(50, 50)
-    expect(still).not.toHaveBeenCalled()
-
-    // Abandoning after the hold gives the tick back too.
-    const abandoned = vi.fn()
-    const s3 = spies()
-    beginDrag(press, { label: 'Task', grip: true, onHoldUndo: abandoned, ...s3 })
-    vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(abandoned).toHaveBeenCalledTimes(1)
-
-    // The row body never selects through the grip, so its drag gives nothing back.
-    const body = vi.fn()
-    const s4 = spies()
-    beginDrag(press, { label: 'Task', onHoldUndo: body, ...s4 })
-    vi.advanceTimersByTime(TOUCH_HOLD_MS + 10)
-    move(120)
-    expect(body).not.toHaveBeenCalled()
-    up(120)
-    expect(s4.onEnd).toHaveBeenCalledTimes(1)
   })
 })
 

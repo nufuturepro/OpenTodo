@@ -9,9 +9,9 @@ import { db } from '../lib/db'
 import { createProject, createTask, resetDeviceId } from '../lib/ops'
 import type { Label, Project, Task } from '../lib/types'
 import { render, mockFetch, noPublicLinks, spokenText, visibleText, waitFor } from '../ui/test-utils'
-import css from '../index.css?raw'
 import { TaskListView } from './TaskListView'
 import { TaskRow, type TaskRowProps } from './TaskRow'
+import css from '../index.css?raw'
 
 // The project header asks the server for its public links.
 beforeEach(() => mockFetch(noPublicLinks))
@@ -563,9 +563,8 @@ describe('completion feedback (8.2) and the shared checkbox slot (8.3)', () => {
   })
 })
 
-// Task origins (OpenSpec change task-origin, task-list-presentation "Metadata language").
 // The touch grip and the rules that keep a held row from selecting words
-// (bulk-actions on touch, OpenSpec change touch-row-grip).
+// (task-row-context-menu follow-up, bulk-actions on touch).
 describe('the touch grip', () => {
   it('renders for a selectable row only, coarse-hidden, and owns its own press', async () => {
     const rowDown = vi.fn()
@@ -577,12 +576,12 @@ describe('the touch grip', () => {
     expect(grip.className).toMatch(/\bhidden\b/)
     expect(grip.className).toMatch(/pointer-coarse:flex/)
     const button = grip.querySelector('button')!
-    expect(button.className).toMatch(/touch-action-none/)
+    expect(button.className).toMatch(/\btouch-none\b/)
     expect(button.className).toMatch(/select-none/)
     expect(button.className).toMatch(/touch-target/)
     expect(button.getAttribute('aria-label')).toBe('Select Task')
     expect(button.getAttribute('aria-pressed')).toBe('false')
-    // The press stops at the grip: the row's own drag/hold handler never sees it.
+    // The press stops at the grip: the row's own swipe/drag/hold handler never sees it.
     await act(async () => { button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 })) })
     expect(gripDown).toHaveBeenCalledTimes(1)
     expect(rowDown).not.toHaveBeenCalled()
@@ -593,7 +592,7 @@ describe('the touch grip', () => {
     await r.unmount()
   })
 
-  it('is absent where there is nothing to select: no onTick, or read-only', async () => {
+  it('is absent where there is nothing to select: no onTick, no drag, or read-only', async () => {
     const down = vi.fn()
     const bare = await render(<ul><TaskRow task={task({})} selected={false} showProject={false} onToggle={() => {}} onOpen={() => {}} onGripDown={down} onGripClick={() => {}} /></ul>)
     expect(bare.container.querySelector('[data-row-grip]')).toBeNull()
@@ -604,6 +603,7 @@ describe('the touch grip', () => {
   })
 
   it('a held row never selects words, and the selection box is ours on every device', async () => {
+    const css = (await import('../index.css?raw')).default
     // The row body is unselectable on a coarse pointer — the source of the Android
     // word-selection — with form controls exempt so the inline editor still selects.
     expect(css).toMatch(/li\[data-task-id\] \{ -webkit-user-select: none; user-select: none; \}/)
@@ -620,6 +620,7 @@ describe('the touch grip', () => {
   })
 })
 
+// Task origins (OpenSpec change task-origin, task-list-presentation "Metadata language").
 describe('origin chip', () => {
   const issue = { kind: 'issue' as const, provider: 'github', id: 'o/r#7', url: 'https://github.com/o/r/issues/7' }
   const row = (over: Partial<Task>, extra: Partial<TaskRowProps> = {}) =>
@@ -681,6 +682,66 @@ describe('origin chip', () => {
     const r = await row({ origin: '[Cannot decrypt]' })
     expect(r.container.querySelector('[data-origin]')).toBeNull()
     await r.unmount()
+  })
+})
+
+// The title comes first on a phone (row-title-first-on-phones, GitHub issue 844): an
+// imported task's id never takes the row, and nothing at the row's end or beside the
+// title squeezes it. happy-dom does not lay out container queries, so the phone rules
+// are read from index.css; the story Screens/Task row ImportedOrigins shows them at 375 px.
+describe('a narrow row keeps its title (issue 844)', () => {
+  const title = 'Küche aufräumen und den Kühlschrank abtauen, bevor die Familie kommt'
+  const todoist = { kind: 'import' as const, provider: 'todoist', id: 'dfc92cb10aed05a4:1' }
+  const row = (over: Partial<Task>, extra: Partial<TaskRowProps> = {}) =>
+    render(<ul><TaskRow task={task({ title, ...over })} selected={false} showProject={false} onToggle={() => {}} onOpen={() => {}} onExpand={() => {}} {...extra} /></ul>)
+  /** The rules of the phone's one-line row: under 48 rem of screen and 40 rem of row. */
+  const phoneRules = () => {
+    const start = css.indexOf('@media (width < 48rem) {\n  .row-pad')
+    const block = css.slice(start, css.indexOf('\n}\n', start))
+    return block.slice(block.indexOf('@container row (width < 40rem)'))
+  }
+
+  it('an imported origin without a link shows nothing in the row: the whole title, no raw id', async () => {
+    const r = await row({ origin: todoist, due: { date: '2026-11-04' }, recurrence: 'every week' })
+    const li = r.container.querySelector('[data-task-id]')!
+    expect(li.querySelector('[data-row-title]')!.textContent).toBe(title)
+    expect(li.querySelector('[data-origin]')).toBeNull()
+    expect(li.textContent).not.toContain('dfc92cb10aed05a4')
+    await r.unmount()
+    // A card neither.
+    const card = await row({ origin: todoist }, { shape: 'card' })
+    expect(card.container.querySelector('[data-origin]')).toBeNull()
+    expect(card.container.textContent).not.toContain('dfc92cb10aed05a4')
+    await card.unmount()
+  })
+
+  it('an imported origin with a link is its icon only; the id stays in the link\'s name', async () => {
+    const trello = { kind: 'import' as const, provider: 'trello', id: '5f3a9c1e2b7d4a00', url: 'https://trello.com/c/AbCd1234' }
+    const r = await row({ origin: trello })
+    const chip = r.container.querySelector<HTMLAnchorElement>('li > [data-row-trailing] a[data-origin="import"]')!
+    expect(chip.getAttribute('href')).toBe(trello.url)
+    expect(visibleText(chip)).toBe('')
+    expect(chip.getAttribute('aria-label')).toBe('Opens the source 5f3a9c1e2b7d4a00')
+    await r.unmount()
+  })
+
+  it('the Inbox\'s import line names the app, never the id, under the title', async () => {
+    const r = await row({ origin: todoist, created_at: Date.now() - 19 * 3600_000 }, { source: true })
+    const li = r.container.querySelector('[data-task-id]')!
+    const line = li.querySelector('[data-row-source="import"]')!
+    expect(line.textContent).toMatch(/^Imported from todoist · /)
+    expect(li.querySelector('[data-row-title]')!.textContent).toBe(title)
+    expect(li.textContent).not.toContain('dfc92cb10aed05a4')
+    // In the open control, after the title's line: the phone rules give it the second grid row.
+    expect(line.closest('[data-row-open]')).toBeTruthy()
+    expect(phoneRules()).toMatch(/\[data-row-source\] \{ grid-area: 2 \/ 1 \/ 3 \/ 3; \}/)
+    await r.unmount()
+  })
+
+  it('on a phone the row\'s trailing origin gives way; under 30 rem of row any origin is its icon', () => {
+    expect(phoneRules()).toMatch(/\[data-row-trailing\] \{ display: none; \}/)
+    const narrow = css.slice(css.indexOf('@container row (width < 30rem) {'))
+    expect(narrow.slice(0, narrow.indexOf('\n}\n'))).toMatch(/\[data-row-trailing\] \[data-origin-text\] \{ position: absolute; width: 1px;/)
   })
 })
 
@@ -800,6 +861,31 @@ describe('title width (task-list-width)', () => {
     try {
       const cut = await mountRow()
       await waitFor(() => cut.container.querySelector('[data-row-title]')!.getAttribute('data-tip') === long, 'the tip on the cut title')
+      await cut.unmount()
+    } finally {
+      const own = proto as unknown as Record<string, unknown>
+      if (sh) Object.defineProperty(proto, 'scrollHeight', sh); else delete own.scrollHeight
+      if (ch) Object.defineProperty(proto, 'clientHeight', ch); else delete own.clientHeight
+    }
+  })
+
+  it('a Chinese title with no spaces still ends in an ellipsis and tips the whole title while cut', async () => {
+    const chinese = '整理车库里的家具并列出待售的物品从最大的柜子开始'
+    const r = await render(<ul><TaskRow task={task({ title: chinese })} selected={false} showProject={false} onToggle={() => {}} onOpen={() => {}} onMore={() => {}} /></ul>)
+    const title = r.container.querySelector<HTMLElement>('[data-row-title]')!
+    expect(title.className).toContain('line-clamp-2')
+    expect(title.textContent).toBe(chinese)
+    expect(title.hasAttribute('data-tip')).toBe(false)
+    await r.unmount()
+    const proto = HTMLElement.prototype
+    const sh = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
+    const ch = Object.getOwnPropertyDescriptor(proto, 'clientHeight')
+    const titleOr = (el: HTMLElement, cut: number) => el.hasAttribute('data-row-title') ? cut : 0
+    Object.defineProperty(proto, 'scrollHeight', { configurable: true, get() { return titleOr(this as HTMLElement, 60) } })
+    Object.defineProperty(proto, 'clientHeight', { configurable: true, get() { return titleOr(this as HTMLElement, 40) } })
+    try {
+      const cut = await render(<ul><TaskRow task={task({ title: chinese })} selected={false} showProject={false} onToggle={() => {}} onOpen={() => {}} onMore={() => {}} /></ul>)
+      await waitFor(() => cut.container.querySelector('[data-row-title]')!.getAttribute('data-tip') === chinese, 'the tip on the cut Chinese title')
       await cut.unmount()
     } finally {
       const own = proto as unknown as Record<string, unknown>

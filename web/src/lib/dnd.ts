@@ -26,7 +26,7 @@ export interface DragOptions {
    * becoming a drag (false, from cleanup) — the pressed element's held feedback.
    */
   onHoldChange?: (held: boolean) => void
-  /** Touch only: a hold completed and the finger lifted without moving: open the row's menu here (task-row-context-menu). Fires for every pointer now — selection lives on the grip, so the row body's hold is only ever the menu. */
+  /** A touch hold completed and the finger lifted without moving: open the row's menu here, on a fine or a coarse primary pointer alike (task-row-context-menu; the grip owns selection, so the body's hold is only ever the menu). */
   onHoldRelease?: (x: number, y: number) => void
   /**
    * Also resolve `data-task-drop` targets (OpenSpec change ux-feedback-2, D4: a
@@ -61,15 +61,6 @@ export interface DragOptions {
 export const DRAG_THRESHOLD = 5
 /** Milliseconds a touch must rest before it becomes a drag. */
 export const TOUCH_HOLD_MS = 350
-
-/**
- * True when the primary pointer is a fine one (a mouse, a trackpad, a precise pen).
- * The row's hold menu is for a fine pointer only: a coarse one (a phone) keeps its
- * own long-press meaning — tick the row, or scroll (task-row-context-menu).
- */
-export function finePointer(): boolean {
-  return typeof window === 'undefined' || window.matchMedia?.('(pointer: fine)').matches !== false
-}
 
 /** The press a shared hold follows (task-row-context-menu). */
 export interface HoldPress {
@@ -194,14 +185,6 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   let lifted = false
   /** phone-v2's hold selected this press: it belongs to the selection, not to the menu. */
   let heldSelected = false
-  // The grip's own hold ticked a row this press did not find ticked; the press
-  // became a drag (or was abandoned), so that tick goes back at once — only a
-  // release that never moved keeps it (bulk-actions on touch).
-  const giveBackHold = () => {
-    if (!opts.grip || !heldSelected) return
-    heldSelected = false
-    opts.onHoldUndo?.()
-  }
   let ghost: HTMLElement | null = null
   let target: string | null = null
   // The shared hold (task-row-context-menu): it arms the drag instead of lifting it.
@@ -222,10 +205,10 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   const lift = () => {
     if (lifted) return
     lifted = true
-    // A grip's own hold selected the row; the press became a drag, so that tick goes
-    // back at once (only a release that never moved keeps it).
-    giveBackHold()
     hold.stop()
+    // A hold that selected and then moved is a drag, not a selection: hand its tick
+    // back (a hold that only ever dragged never ticked, so `heldSelected` is false).
+    if (heldSelected) opts.onHoldUndo?.()
     ghost = makeGhost(opts.label)
     document.body.style.userSelect = 'none'
     opts.onStart?.()
@@ -304,7 +287,6 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
   }
   const cancel = () => {
     const wasLifted = lifted
-    giveBackHold()
     cleanup()
     if (wasLifted) opts.onEnd?.()
   }
