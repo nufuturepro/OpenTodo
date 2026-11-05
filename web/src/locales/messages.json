@@ -799,6 +799,9 @@
   "Accounts": [
     "web/src/lib/settingsCopy.ts"
   ],
+  "Accounts and pending invitations.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "Accounts, passwords, sessions and tokens go back to the state in the backup. Anyone whose session started after it, possibly you, signs in again.": [
     "web/src/app/RestoreSection.tsx"
   ],
@@ -1756,6 +1759,10 @@
   "Applied without asking": [
     "web/src/app/routines/RunHistory.tsx"
   ],
+  "Applies to everyone on this server": [
+    "web/src/app/SettingsView.tsx",
+    "web/src/ui/patterns/SettingsSection.tsx"
+  ],
   "Apply": [
     "web/src/app/RelayConfirm.tsx",
     "web/src/app/calendar/ReplanPreview.tsx"
@@ -1990,6 +1997,8 @@
     "web/src/app/NotificationChannelEditor.tsx",
     "web/src/app/Sidebar.tsx",
     "web/src/app/TaskListView.tsx",
+    "web/src/app/filter/ConditionEditor.tsx",
+    "web/src/app/filter/conditionText.ts",
     "web/src/app/rules/RuleFields.tsx",
     "web/src/lib/shortcuts.ts"
   ],
@@ -2007,7 +2016,8 @@
     "web/src/app/IssueEditor.tsx"
   ],
   "Assigned to {name}": [
-    "web/src/app/AssigneePicker.tsx"
+    "web/src/app/AssigneePicker.tsx",
+    "web/src/app/filter/conditionText.ts"
   ],
   "Assigned to {name}, taking turns": [
     "web/src/app/AssigneePicker.tsx"
@@ -2017,6 +2027,7 @@
   ],
   "Assignee": [
     "web/src/app/AssigneePicker.tsx",
+    "web/src/app/filter/ConditionEditor.tsx",
     "web/src/app/rules/RuleFields.tsx",
     "web/src/app/task-detail/AssigneeEditor.tsx",
     "web/src/app/task-detail/Facets.tsx",
@@ -2328,6 +2339,12 @@
   ],
   "Between 7 and 3650 days. Older events are deleted.": [
     "web/src/lib/settingsCopy.ts"
+  ],
+  "Between {min} and {max}": [
+    "web/src/ui/NumberInput.tsx"
+  ],
+  "Between {min} and {max} {unit}": [
+    "web/src/ui/NumberInput.tsx"
   ],
   "Bind the link to one address.": [
     "web/src/app/WorkspaceInvites.tsx"
@@ -3730,6 +3747,9 @@
   "Copied. Create a bookmark and paste it as the address.": [
     "web/src/lib/settingsCopy.ts"
   ],
+  "Copies of the whole server, where they go, and how to restore one.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "Copy": [
     "web/src/app/NotificationChannels.tsx",
     "web/src/app/OAuthClients.tsx",
@@ -4792,7 +4812,8 @@
   "Discard": [
     "web/src/app/assistant/ChangeSetReview.tsx",
     "web/src/app/routines/RoutineEditor.tsx",
-    "web/src/app/themes/ThemeEditor.tsx"
+    "web/src/app/themes/ThemeEditor.tsx",
+    "web/src/ui/patterns/SaveBar.tsx"
   ],
   "Discard your changes?": [
     "web/src/app/routines/RoutineEditor.tsx"
@@ -5896,6 +5917,9 @@
   "Expected a label name after \"{after}\" at position {pos}": [
     "web/src/lib/filter/parse.ts"
   ],
+  "Expected a name after \"assigned:\" at position {pos}": [
+    "web/src/lib/filter/parse.ts"
+  ],
   "Expected a project name after \"{after}\" at position {pos}": [
     "web/src/lib/filter/parse.ts"
   ],
@@ -6290,6 +6314,9 @@
   ],
   "Fix step {n} first": [
     "web/src/app/routines/RoutineEditor.tsx"
+  ],
+  "Fix the highlighted fields to save.": [
+    "web/src/ui/patterns/SaveBar.tsx"
   ],
   "Fix to another time zone": [
     "web/src/app/task-detail/ZoneControl.tsx"
@@ -6999,6 +7026,9 @@
   "Has a time sector": [
     "web/src/app/filter/conditionText.ts"
   ],
+  "Has an assignee": [
+    "web/src/app/filter/conditionText.ts"
+  ],
   "Has an energy": [
     "web/src/app/filter/conditionText.ts"
   ],
@@ -7114,6 +7144,9 @@
   ],
   "Hide table": [
     "web/src/app/review/charts.tsx"
+  ],
+  "Hide tasks assigned to others": [
+    "web/src/app/TaskListView.tsx"
   ],
   "Hide text": [
     "web/src/app/task-detail/HistoryTab.tsx"
@@ -7237,6 +7270,9 @@
   ],
   "How people who share a project with you see you.": [
     "web/src/lib/settingsCopy.ts"
+  ],
+  "How quick add reads what you type, and where new tasks go.": [
+    "web/src/app/SettingsView.tsx"
   ],
   "How quick add reads what you type, on this device.": [
     "web/src/lib/settingsCopy.ts"
@@ -10051,6 +10087,9 @@
   "No lightness of these colours reaches AA at their hue.": [
     "web/src/app/themes/ContrastPanel.tsx"
   ],
+  "No limit": [
+    "web/src/ui/NumberInput.tsx"
+  ],
   "No longer a subtask": [
     "web/src/lib/assistant.ts"
   ],
@@ -10071,6 +10110,9 @@
     "web/src/app/AssigneePicker.tsx",
     "web/src/app/WorkspaceGroups.tsx",
     "web/src/app/task-detail/RotationEditor.tsx"
+  ],
+  "No member named \"{name}\"": [
+    "web/src/lib/filter/evaluate.ts"
   ],
   "No members": [
     "web/src/app/WorkspaceGroups.tsx"
@@ -13124,6 +13166,9 @@
   "Reminders delivered to this device, and a test": [
     "web/src/app/settingsIndex.ts"
   ],
+  "Reminders on this device and how notifications reach it.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "Reminders when you arrive at or leave a place. Your position stays on the phone.": [
     "web/src/app/settingsIndex.ts",
     "web/src/lib/settingsCopy.ts"
@@ -13816,6 +13861,9 @@
   "Rule not found": [
     "web/src/lib/rules/store.ts"
   ],
+  "Rules for signing in and inviting people that apply to every account.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "Run": [
     "web/src/app/palette/BarParts.tsx",
     "web/src/app/routines/RunHistory.tsx"
@@ -13973,7 +14021,8 @@
     "web/src/app/task-detail/CommentsTab.tsx",
     "web/src/app/task-detail/TimeTab.tsx",
     "web/src/app/themes/ThemeEditor.tsx",
-    "web/src/app/themes/ThemePreview.tsx"
+    "web/src/app/themes/ThemePreview.tsx",
+    "web/src/ui/patterns/SaveBar.tsx"
   ],
   "Save as template": [
     "web/src/app/TemplateDialogs.tsx"
@@ -14870,6 +14919,9 @@
   ],
   "Show successful runs": [
     "web/src/app/routines/RoutinesInboxCard.tsx"
+  ],
+  "Show tasks assigned to others": [
+    "web/src/app/TaskListView.tsx"
   ],
   "Show text": [
     "web/src/app/task-detail/HistoryTab.tsx"
@@ -16361,6 +16413,9 @@
   "The assistant did not draft a routine. Try saying what should happen, and when.": [
     "web/src/app/routines/DescribeIt.tsx"
   ],
+  "The assistant inside OpenTodo: its provider, your consent and what it may do.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "The assistant is busy on this server. Try again in a few seconds.": [
     "web/src/lib/assistant.ts",
     "web/src/lib/i18n/errors.ts"
@@ -17512,6 +17567,9 @@
   "This device now opens on the Loop home.": [
     "web/src/app/method/MethodModeChooser.tsx"
   ],
+  "This device only": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "This device only.": [
     "web/src/lib/settingsCopy.ts"
   ],
@@ -17838,6 +17896,9 @@
   ],
   "This saved location no longer exists.": [
     "web/src/app/task-list/ListChrome.tsx"
+  ],
+  "This server": [
+    "web/src/ui/patterns/SettingsSection.tsx"
   ],
   "This server asks for the token its operator configured. Find it in your hosting panel, for example Coolify, this service, Environment Variables, {variable}.": [
     "web/src/app/AuthScreen.tsx"
@@ -18721,6 +18782,8 @@
   "Unassigned": [
     "web/src/app/AssigneePicker.tsx",
     "web/src/app/bulk/BulkActions.tsx",
+    "web/src/app/filter/ConditionEditor.tsx",
+    "web/src/app/filter/conditionText.ts",
     "web/src/app/rules/RuleFields.tsx",
     "web/src/app/task-detail/HistoryTab.tsx",
     "web/src/lib/facets.ts"
@@ -18906,7 +18969,8 @@
     "web/src/app/ViewsView.tsx"
   ],
   "Unsaved changes": [
-    "web/src/app/routines/RoutineEditor.tsx"
+    "web/src/app/routines/RoutineEditor.tsx",
+    "web/src/ui/patterns/SaveBar.tsx"
   ],
   "Unschedule the selected task (keep the date)": [
     "web/src/lib/shortcuts.ts"
@@ -19608,6 +19672,9 @@
   "Where the Week view and calendars start": [
     "web/src/app/settingsIndex.ts"
   ],
+  "Where the app opens, the briefing, and how Today fills up.": [
+    "web/src/app/SettingsView.tsx"
+  ],
   "Where the palette comes from, as text; never opened.": [
     "web/src/app/themes/templateText.ts"
   ],
@@ -19656,6 +19723,9 @@
   ],
   "Who turns your speech into text; each choice shows what it means first.": [
     "web/src/lib/settingsCopy.ts"
+  ],
+  "Who you are on this server, and how much of the method the app shows.": [
+    "web/src/app/SettingsView.tsx"
   ],
   "Windows PC": [
     "web/src/app/SecurityPanel.tsx"
@@ -20179,6 +20249,9 @@
   ],
   "Your password was changed. Sign in with the new one.": [
     "web/src/app/App.tsx"
+  ],
+  "Your password, second factor and passkeys, and where you are signed in.": [
+    "web/src/app/SettingsView.tsx"
   ],
   "Your picture, name and email": [
     "web/src/app/settingsIndex.ts"
