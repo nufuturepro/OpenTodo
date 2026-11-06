@@ -171,7 +171,7 @@ Settings SHALL offer a switch that turns natural-language parsing off for the cu
 - **THEN** the title ends with "tomorrow" and the due date is unchanged
 
 ### Requirement: Deadline phrases
-The parser SHALL recognise the word `deadline`, or its bundled equivalent in each active language, directly before a date phrase, and SHALL set the task's deadline to that date instead of its due date. The date SHALL resolve by the existing rules (today or later), a time after it SHALL stay in the title, and the deadline SHALL get its own chip. `on`, `by` and `due` SHALL keep setting the due date. Only the first deadline phrase in a line SHALL count.
+The parser SHALL recognise the word `deadline`, or its bundled equivalent in each active language, directly before a date phrase, and SHALL set the task's deadline to that date instead of its due date. The date SHALL resolve by the existing rules (today or later), a time after it SHALL stay in the title, and the deadline SHALL get its own chip. The parser SHALL also recognise a `by` word (English `by`, German `bis`, Italian `entro`, Portuguese `até`) directly before a date phrase that has no time after it, and SHALL set the deadline the same way. A `by` word before a time, or before a date followed by a time, SHALL set the due date and time and be removed with them. `on` and `due` (and French `pour`, Spanish `para`) SHALL keep setting the due date. A rule's end date (`bis Juni` in `jeden Montag bis Juni`) SHALL stay part of the rule. Only the first deadline phrase in a line SHALL count. The web parser and the CLI's parser SHALL give the same result for every shared vector.
 
 #### Scenario: Deadline only
 - **WHEN** today is Wednesday 2026-10-14 and the user enters `Send report deadline friday`
@@ -188,6 +188,38 @@ The parser SHALL recognise the word `deadline`, or its bundled equivalent in eac
 #### Scenario: Dismissed chip
 - **WHEN** the user dismisses the deadline chip of `Review deadline policy tomorrow`
 - **THEN** the title keeps `deadline policy` and the task is due tomorrow with no deadline
+
+#### Scenario: By sets the deadline
+- **WHEN** today is 2026-10-09 and the user enters `Install winter tires by March 31`
+- **THEN** the task is titled `Install winter tires`, has no due date and the deadline `2027-03-31`, and the deadline chip and the palette's Deadline row are shown
+
+#### Scenario: On and due keep the due date
+- **WHEN** the user enters `Install winter tires on March 31` or `Install winter tires due March 31` on 2026-10-09
+- **THEN** the task is due `2027-03-31` with no deadline
+
+#### Scenario: By before a time
+- **WHEN** the user enters `call back by 5pm` on 2026-10-09
+- **THEN** the task is titled `call back`, due 2026-10-09 at 17:00, with no deadline
+
+#### Scenario: By before a date with a time
+- **WHEN** the user enters `Pay tax by friday 5pm` on Friday 2026-10-09
+- **THEN** the task is titled `Pay tax`, due 2026-10-16 at 17:00, with no deadline
+
+#### Scenario: Due date and by deadline
+- **WHEN** the user enters `Pay tax tomorrow by friday` on Friday 2026-10-09
+- **THEN** the task is due 2026-10-10 with the deadline 2026-10-16, the same as `Pay tax tomorrow deadline friday`
+
+#### Scenario: Rules are unchanged
+- **WHEN** the user enters `Water plants every monday`, or with German active `Gießen jeden Montag bis Juni`
+- **THEN** the rule is `every monday` (with its end in June for the German line) and the task has no deadline
+
+#### Scenario: By in other languages
+- **WHEN** the user enters `Cambiare gomme entro il 31 marzo` (Italian), `Reifen wechseln bis Freitag` (German) or `Trocar pneus até sexta` (Portuguese) on 2026-10-09
+- **THEN** each task has the deadline and no due date, while `Rapport pour vendredi` (French) and `Informe para viernes` (Spanish) are due 2026-10-16 with no deadline
+
+#### Scenario: By without a date
+- **WHEN** the user enters `Book by Stephen King`
+- **THEN** the title is unchanged and the task has no due date and no deadline
 
 ### Requirement: Someday and evening phrases
 The parser SHALL recognise `someday` and `tonight` / `this evening`, each with its bundled equivalent in every active language. `someday` SHALL park the task (start `someday`, no due date) and SHALL stay in the title when the line also has a date phrase. `tonight` and `this evening` SHALL make the task due today with the evening flag; a time still sets the due time. Each SHALL show a dismissable chip. The Someday view SHALL park a captured task unless the line sets a date.
@@ -213,7 +245,7 @@ The parser SHALL recognise `someday` and `tonight` / `this evening`, each with i
 - **THEN** the first task is parked and the second is due tomorrow and not parked
 
 ### Requirement: Recurrence phrases
-The parser SHALL recognise a recurrence phrase in the quick-add line and SHALL store it as the canonical English rule of the recurring-tasks grammar. Phrases SHALL cover every pattern of that grammar, including `after completion`, `until <date phrase>` and `for N times`, plus one-word forms (`daily`, `weekly`, `monthly`, `yearly`). After a monthly pattern (an ordinal weekday, a day of the month, `last day`, `last weekday`) the parser SHALL also swallow the bundled "of the month" phrase (`of the month`, `im Monat`, `du mois`, `del mese`, `del mes`, `do mês`), which changes nothing in the stored rule. An ordinal SHALL be an ordinal word or a number with an ordinal suffix; a bare number between the "every" word and a weekday SHALL be read as a count, which the grammar cannot express, so the whole phrase SHALL stay in the title and set neither a rule nor a date. The phrase SHALL be removed from the title; a phrase the grammar cannot express SHALL stay in it.
+The parser SHALL recognise a recurrence phrase in the quick-add line and SHALL store it as the canonical English rule of the recurring-tasks grammar. Phrases SHALL cover every pattern of that grammar, including `after completion`, `until <date phrase>` and `for N times`, plus one-word forms (`daily`, `weekly`, `monthly`, `yearly`). After a monthly pattern (an ordinal weekday, a day of the month, `last day`, an ordinal weekday of the month such as `first weekday` or `last weekday`) the parser SHALL also swallow the bundled "of the month" phrase (`of the month`, `im Monat`, `du mois`, `del mese`, `del mes`, `do mês`), which changes nothing in the stored rule. An ordinal SHALL be an ordinal word or a number with an ordinal suffix; a bare number between the "every" word and a weekday SHALL be read as a count, which the grammar cannot express, so the whole phrase SHALL stay in the title and set neither a rule nor a date. The phrase SHALL be removed from the title; a phrase the grammar cannot express SHALL stay in it.
 
 #### Scenario: Weekday rule
 - **WHEN** the user enters `Water plants every Monday`
@@ -254,6 +286,10 @@ The parser SHALL recognise a recurrence phrase in the quick-add line and SHALL s
 #### Scenario: Only the first rule counts
 - **WHEN** the user enters `Pay rent every month every 1st`
 - **THEN** the rule is `every month` and the title is `Pay rent every 1st`
+
+#### Scenario: Ordinal weekday of the month in each language
+- **WHEN** today is 2026-10-09 and the user enters, with that language active, `Pay rent every first weekday`, `Miete jeden ersten Werktag`, `Loyer chaque premier jour ouvré`, `Affitto ogni primo giorno feriale`, `Alquiler cada primer día laborable` or `Aluguel todo primeiro dia útil`
+- **THEN** the rule is `every 1st weekday`, nothing of the phrase remains in the title and the task is due `2026-11-02`
 
 ### Requirement: Recurrence sets the first occurrence
 When the line carries a rule and no date phrase, the task's due date SHALL be the rule's first occurrence on or after today, computed locally, and the recurrence chip SHALL show that date. When the line carries a date, that date SHALL be the due date and the rule applies from it; a time in the line SHALL be the series' due time. The rule and the due date SHALL be written in the same operation set as the task.

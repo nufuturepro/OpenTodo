@@ -504,7 +504,7 @@ A recurrence becomes a rule of the [recurrence grammar](recurrence.md), stored i
 
 1. The grammar itself: `every day`, `every 2 weeks`, `every monday, friday`, `every 15th`, `every last friday`, `every 3 days after completion`, `… until 2027-01-01`, `… for 10 times`.
 2. An iCalendar RRULE, with or without the `RRULE:` prefix (`FREQ=WEEKLY;INTERVAL=2`, `FREQ=MONTHLY;BYDAY=-1FR`), when it maps exactly onto a rule (as for [CalDAV](caldav.md)).
-3. Common spellings: `daily`, `weekly`, `monthly`, `yearly`, `annually`, `biweekly`, `fortnightly`, `every other day|week|month|year`, `weekdays`, `every workday`, `every weekend`, `each …` and `ev …` for `every …`, and `every! …` for "after completion" (`every! 3 days` → `every 3 days after completion`). A trailing time of day (`every tue 4pm`, `every day at 09:00`) is removed: the due time carries it.
+3. Common spellings: `daily`, `weekly`, `monthly`, `yearly`, `annually`, `biweekly`, `fortnightly`, `every other day|week|month|year`, `weekdays`, `every workday`, `every first workday` … `every last workday` (`every 1st weekday` … `every last weekday`), `every weekend`, `each …` and `ev …` for `every …`, and `every! …` for "after completion" (`every! 3 days` → `every 3 days after completion`). A trailing time of day (`every tue 4pm`, `every day at 09:00`) is removed: the due time carries it.
 4. A structured object `{frequency|freq|type|unit, interval, days|daysOfWeek|byday}` (also under `pattern`), e.g. `{"frequency": "weekly", "days": ["MO", "TH"]}` → `every monday, thursday`, and an array of RRULE strings.
 
 Anything else (hourly rules, `starting …`, `every other monday`, an interval combined with weekdays, free text) is shown in the preview as a warning on the row, `recurrence "every 3 hours" not supported; imported without a rule`, and the task is imported without a rule. A recurring task without a due date gets the rule's first date from today in the chosen time zone, as in the app. Imported recurring tasks are series of their own (no `series_id`).
@@ -527,7 +527,7 @@ A relative reminder fires at the due time plus its offset, with a date-only due 
 
 ### Origins
 
-Tasks from Todoist, TickTick, Things, Linear, Google Tasks, Trello, Asana, Microsoft To Do, Apple Reminders and Any.do keep where they came from as their [origin](capture.md#where-a-task-came-from), written in the import's operations like every other field and shown as a chip on the row. Tasks from a generic CSV or JSON file get none, and the preview has no origin column. Duplicate detection still uses the importer's own memory (below), not the origin.
+Tasks from Todoist, TickTick, Things, Linear, Google Tasks, Trello, Asana, Microsoft To Do, Apple Reminders and Any.do keep where they came from as their [origin](capture.md#where-a-task-came-from), written in the import's operations like every other field. The task panel, its history and the command palette read it as **Imported from Todoist** (or the app it came from), and `ot list` as `Todoist`; the source id is the importer's key for duplicates and is never shown. A row shows no origin for an import, except a Trello card's link as its icon. Tasks from a generic CSV or JSON file get none, and the preview has no origin column. Duplicate detection still uses the importer's own memory (below), not the origin.
 
 ## Duplicates
 
@@ -565,6 +565,7 @@ An id that is not one of your workspaces (it does not exist, or you are not a me
 
 - One import job per account runs at a time; starting a second one answers `409 conflict` naming the running job.
 - Files may be at most `OPENTODO_IMPORT_MAX_MB` megabytes (default 20, allowed 1–200) and 50,000 rows; larger files answer `413 too_large`.
+- In a CSV file one field may hold at most 1 MiB, one record 4 MiB and 1,000 fields; a JSON file may be nested at most 256 levels deep. A file over one of these answers `413 too_large` with a message naming the limit (and, for CSV, the line), and nothing is imported. Exports from the apps listed here stay far below them.
 - Ops are written in batches of at most 1,000 and progress is saved after each batch. If the server restarts mid-import, the job shows `failed` with the counts of what was written, and undo removes it.
 - **Undo** tombstones every project, task, label, section, reminder and saved view the job created, through the op log: they disappear from every view and from other devices after their next sync, and stay in the export with `deleted_at`. Entities the job only updated are left alone. As when deleting in the app, open tasks you later added to an undone project move to the Inbox, open tasks you later put into an undone section move to "No section", and undone labels are removed from your other tasks. Undo is idempotent. After an undo the same file can be imported again.
 - **Webhooks** see an import as one `import.completed` delivery per finished job and one `import.undone` per undo, not one event per task. See [Webhooks → Imports](webhooks.md#imports).

@@ -650,6 +650,9 @@
   "AI app disconnected": [
     "web/src/app/auditFormat.ts"
   ],
+  "AI app disconnected: an old token was reused": [
+    "web/src/app/auditFormat.ts"
+  ],
   "AI app sign-in client created": [
     "web/src/app/auditFormat.ts"
   ],
@@ -779,6 +782,9 @@
   ],
   "Access token": [
     "web/src/app/NotificationChannelEditor.tsx"
+  ],
+  "Accessibility": [
+    "web/src/app/help/HelpView.tsx"
   ],
   "Account": [
     "web/src/app/AuditPanel.tsx",
@@ -1432,6 +1438,7 @@
   "Allow": [
     "web/src/app/AgentAccessRow.tsx",
     "web/src/app/OAuthConsent.tsx",
+    "web/src/app/RelayConfirm.tsx",
     "web/src/app/palette/registry.ts"
   ],
   "Allow AI assistants": [
@@ -1507,7 +1514,9 @@
     "web/src/app/LabelsView.tsx",
     "web/src/app/ProjectRowMenu.tsx",
     "web/src/app/Sections.tsx",
-    "web/src/app/ViewsView.tsx"
+    "web/src/app/ViewsView.tsx",
+    "web/src/app/bulk/BulkActions.tsx",
+    "web/src/ui/MoveHandle.tsx"
   ],
   "Already has {label}": [
     "web/src/lib/undoActions.ts"
@@ -1523,7 +1532,9 @@
     "web/src/app/LabelsView.tsx",
     "web/src/app/ProjectRowMenu.tsx",
     "web/src/app/Sections.tsx",
-    "web/src/app/ViewsView.tsx"
+    "web/src/app/ViewsView.tsx",
+    "web/src/app/bulk/BulkActions.tsx",
+    "web/src/ui/MoveHandle.tsx"
   ],
   "Also past ones": [
     "web/src/app/task-detail/OccurrenceScope.tsx"
@@ -1564,6 +1575,9 @@
   "An AI connector wants to make a change": [
     "web/src/app/RelayConfirm.tsx"
   ],
+  "An AI connector wants to read your text": [
+    "web/src/app/RelayConfirm.tsx"
+  ],
   "An AI step that would use more today does not run. Default {n}.": [
     "web/src/app/routines/AISettings.tsx"
   ],
@@ -1590,6 +1604,9 @@
   ],
   "An archive made by OpenTodo ({name}, optionally {suffix}), for example from another server.": [
     "web/src/app/RestoreSection.tsx"
+  ],
+  "An assistant asks to read this with {tool}:": [
+    "web/src/app/RelayConfirm.tsx"
   ],
   "An assistant asks to run {tool} with this text:": [
     "web/src/app/RelayConfirm.tsx"
@@ -1655,11 +1672,17 @@
   "Answering an AI connector": [
     "web/src/app/RelaySettings.tsx"
   ],
+  "Answering an AI connector: {tool}": [
+    "web/src/app/RelaySettings.tsx"
+  ],
   "Answering an invitation needs a connection.": [
     "web/src/lib/settingsCopy.ts"
   ],
   "Answering needs a connection to your server.": [
     "web/src/app/MemberInvitations.tsx"
+  ],
+  "Answering {token}: {tool}": [
+    "web/src/app/RelaySettings.tsx"
   ],
   "Answers on your key do not count toward the server’s monthly limit.": [
     "web/src/app/assistant/AssistantSettings.tsx"
@@ -1910,10 +1933,12 @@
     "web/src/app/ImportScreen.tsx"
   ],
   "Ascending": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Ascending (p4 first)": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Ask": [
     "web/src/app/assistant/AskEntry.tsx",
@@ -3610,6 +3635,9 @@
   "Confirm permanent deletion": [
     "web/src/app/TrashView.tsx"
   ],
+  "Confirm reads first": [
+    "web/src/lib/settingsCopy.ts"
+  ],
   "Confirm with {provider} instead": [
     "web/src/app/ReauthDialog.tsx"
   ],
@@ -4048,7 +4076,8 @@
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/activity.ts",
     "web/src/lib/feed.ts",
-    "web/src/lib/historyVersions.ts"
+    "web/src/lib/historyVersions.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Created by {name}": [
     "web/src/app/WorkspaceInvites.tsx"
@@ -4352,7 +4381,8 @@
     "web/src/app/task-list/WaitingSoon.tsx",
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/facets.ts",
-    "web/src/lib/rules/proposal.ts"
+    "web/src/lib/rules/proposal.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Deadline reminders fire once the task has a deadline.": [
     "web/src/app/RemindersField.tsx"
@@ -4679,10 +4709,12 @@
     "web/src/app/EncryptionPanel.tsx"
   ],
   "Descending": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Descending (p1 first)": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Describe a routine": [
     "web/src/app/palette/registry.ts",
@@ -4845,6 +4877,7 @@
   ],
   "Display options": [
     "web/src/app/display/DisplayScreen.tsx",
+    "web/src/app/shortcuts/Spotlight.tsx",
     "web/src/app/views/DisplayPanel.tsx"
   ],
   "Display pinned on this device": [
@@ -5042,7 +5075,8 @@
     "web/src/app/task-detail/WhenControl.tsx",
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/rules/proposal.ts",
-    "web/src/lib/rules/sentence.ts"
+    "web/src/lib/rules/sentence.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Due date and time (6 languages)": [
     "web/src/lib/shortcuts.ts"
@@ -5129,6 +5163,9 @@
   ],
   "Each phrase is recorded in this browser while the microphone is on, then sent once to your OpenTodo server.": [
     "web/src/app/VoiceSettings.tsx"
+  ],
+  "Each request to read your text shows here before this device sends it.": [
+    "web/src/lib/settingsCopy.ts"
   ],
   "Each restore keeps the database it replaced. Delete old ones to free space.": [
     "web/src/app/RestoreSection.tsx"
@@ -5268,10 +5305,9 @@
   "Email": [
     "web/src/app/AuthScreen.tsx",
     "web/src/app/EmailScreens.tsx",
-    "web/src/app/OriginChip.tsx",
     "web/src/app/ShareDialog.tsx",
     "web/src/app/WorkspaceInviteScreen.tsx",
-    "web/src/lib/history.ts",
+    "web/src/lib/originText.ts",
     "web/src/lib/settingsCopy.ts"
   ],
   "Email (optional)": [
@@ -6951,14 +6987,37 @@
   "Group Today by part of the day": [
     "web/src/app/PreferencesPanels.tsx"
   ],
+  "Group and order": [
+    "web/src/lib/shortcuts.ts"
+  ],
   "Group by": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/shortcuts/Spotlight.tsx",
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/lib/shortcuts.ts"
   ],
   "Group by day part": [
     "web/src/lib/settingsCopy.ts"
   ],
+  "Group by due date": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Group by label (in a project or a saved view)": [
+    "web/src/lib/shortcuts.ts"
+  ],
   "Group by part of the day": [
     "web/src/app/TaskListView.tsx"
+  ],
+  "Group by priority": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Group by project (on a label page or in a saved view)": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Group by section (in a project)": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Group by: {name}": [
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Group chat": [
     "web/src/app/PublicLinksSection.tsx"
@@ -7416,13 +7475,14 @@
     "web/src/lib/boardTemplates.ts"
   ],
   "Imported": [
+    "web/src/lib/originText.ts",
     "web/src/lib/taskSource.ts"
   ],
   "Imported from a VS Code colour theme. Check the theme's licence before you share this file.": [
     "web/src/lib/theme/vscode.ts"
   ],
   "Imported from {app}": [
-    "web/src/lib/taskSource.ts"
+    "web/src/lib/originText.ts"
   ],
   "Imported theme": [
     "web/src/lib/theme/vscode.ts"
@@ -8176,7 +8236,8 @@
     "web/src/app/quickadd/FieldRows.tsx",
     "web/src/app/routines/Starters.tsx",
     "web/src/app/rules/RuleFields.tsx",
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/lib/shortcuts.ts"
   ],
   "Label (optional)": [
     "web/src/app/task-detail/TaskPageDialog.tsx"
@@ -8951,7 +9012,8 @@
     "web/src/app/WorkspaceControl.tsx"
   ],
   "Manual order": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/lib/shortcuts.ts"
   ],
   "Map of your locations": [
     "web/src/app/locations/PlacesView.tsx"
@@ -9280,7 +9342,8 @@
   ],
   "Move": [
     "web/src/app/TriageView.tsx",
-    "web/src/app/calendar/occurrenceMenu.tsx"
+    "web/src/app/calendar/occurrenceMenu.tsx",
+    "web/src/ui/MoveHandle.tsx"
   ],
   "Move all to today": [
     "web/src/app/task-list/EarlierActions.tsx"
@@ -9291,9 +9354,11 @@
     "web/src/app/ProjectRowMenu.tsx",
     "web/src/app/Sections.tsx",
     "web/src/app/ViewsView.tsx",
+    "web/src/app/bulk/BulkActions.tsx",
     "web/src/app/locations/PlacesView.tsx",
     "web/src/app/routines/RoutinesView.tsx",
-    "web/src/app/routines/StepCard.tsx"
+    "web/src/app/routines/StepCard.tsx",
+    "web/src/ui/MoveHandle.tsx"
   ],
   "Move earlier tasks to today": [
     "web/src/app/palette/registry.ts"
@@ -9379,6 +9444,9 @@
   "Move to a project, then the next task": [
     "web/src/lib/shortcuts.ts"
   ],
+  "Move to bottom": [
+    "web/src/app/bulk/BulkActions.tsx"
+  ],
   "Move to project": [
     "web/src/app/bulk/BulkActions.tsx"
   ],
@@ -9393,6 +9461,9 @@
   ],
   "Move to tomorrow": [
     "web/src/app/calendar/ReplanPreview.tsx"
+  ],
+  "Move to top": [
+    "web/src/app/bulk/BulkActions.tsx"
   ],
   "Move to workspace": [
     "web/src/app/ProjectHeader.tsx"
@@ -9413,15 +9484,21 @@
     "web/src/app/ProjectRowMenu.tsx",
     "web/src/app/Sections.tsx",
     "web/src/app/ViewsView.tsx",
+    "web/src/app/bulk/BulkActions.tsx",
     "web/src/app/locations/PlacesView.tsx",
     "web/src/app/routines/RoutinesView.tsx",
-    "web/src/app/routines/StepCard.tsx"
+    "web/src/app/routines/StepCard.tsx",
+    "web/src/ui/MoveHandle.tsx"
   ],
   "Move {nameOf} earlier": [
     "web/src/app/DashboardView.tsx"
   ],
   "Move {nameOf} later": [
     "web/src/app/DashboardView.tsx"
+  ],
+  "Move {name}": [
+    "web/src/app/calendar/FramesDialog.tsx",
+    "web/src/app/objectives/ObjectiveCards.tsx"
   ],
   "Move {name} (Alt+Up or Alt+Down)": [
     "web/src/app/AppearanceSection.tsx",
@@ -10031,6 +10108,9 @@
   "No further occurrences: the next completion ends the series.": [
     "web/src/app/RecurrenceField.tsx"
   ],
+  "No grouping": [
+    "web/src/lib/shortcuts.ts"
+  ],
   "No groups yet.": [
     "web/src/app/WorkspaceGroups.tsx"
   ],
@@ -10403,7 +10483,8 @@
     "web/src/app/review/ProjectWalk.tsx",
     "web/src/app/rules/RuleFields.tsx",
     "web/src/app/settingsStatus.ts",
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/lib/shortcuts.ts"
   ],
   "None (plain)": [
     "web/src/app/OutgoingEmailPanel.tsx"
@@ -10695,6 +10776,9 @@
     "web/src/app/AssistantsPanel.tsx",
     "web/src/app/MembersPanel.tsx",
     "web/src/app/WebhooksPanel.tsx"
+  ],
+  "Nothing from this share was kept: the browser did not say where it came from. Update the browser, then share again.": [
+    "web/src/app/ShareCapture.tsx"
   ],
   "Nothing is assigned to you.": [
     "web/src/app/task-list/ListChrome.tsx"
@@ -11698,7 +11782,30 @@
     "web/src/lib/rules/sentence.ts"
   ],
   "Order by": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/shortcuts/Spotlight.tsx",
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by creation date": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by deadline": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by due date": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by manual order": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by priority": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by title": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Order by: {name} · {direction}": [
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Order changed": [
     "web/src/lib/viewOrderMove.ts"
@@ -12425,7 +12532,8 @@
     "web/src/app/task-list/RowActionCluster.tsx",
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/rules/proposal.ts",
-    "web/src/lib/rules/sentence.ts"
+    "web/src/lib/rules/sentence.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Priority 1": [
     "web/src/app/themes/ThemePreview.tsx",
@@ -12550,6 +12658,7 @@
     "web/src/lib/listGroups.ts",
     "web/src/lib/rules/proposal.ts",
     "web/src/lib/rules/sentence.ts",
+    "web/src/lib/shortcuts.ts",
     "web/src/lib/stats.ts"
   ],
   "Project archived": [
@@ -12839,7 +12948,7 @@
     "web/src/lib/rules/proposal.ts"
   ],
   "QR code to scan with your authenticator app": [
-    "web/src/app/TwoFactorPanel.tsx"
+    "web/src/app/QrCode.tsx"
   ],
   "Quarter": [
     "web/src/app/task-detail/SectorChoice.tsx"
@@ -13372,6 +13481,9 @@
   "Reopened on the list": [
     "web/src/lib/reuseAdd.ts"
   ],
+  "Reorder": [
+    "web/src/app/bulk/BulkActions.tsx"
+  ],
   "Reorder tasks in project lists, boards and the Inbox, and projects in the sidebar; drop on the middle of a row to nest it; Esc cancels": [
     "web/src/lib/shortcuts.ts"
   ],
@@ -13648,6 +13760,12 @@
   "Reusable list": [
     "web/src/app/menus/ListModeStep.tsx",
     "web/src/app/menus/listMenu.tsx"
+  ],
+  "Reverse order": [
+    "web/src/lib/shortcuts.ts"
+  ],
+  "Reverse the order: ascending or descending": [
+    "web/src/lib/shortcuts.ts"
   ],
   "Review": [
     "web/src/app/Sidebar.tsx",
@@ -14298,7 +14416,8 @@
     "web/src/app/task-detail/TaskFacts.tsx",
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/rules/proposal.ts",
-    "web/src/lib/rules/sentence.ts"
+    "web/src/lib/rules/sentence.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Section flow changed": [
     "web/src/app/menus/flowMenu.ts"
@@ -14712,10 +14831,10 @@
   "Settings → People → Users and invitations: copy the invite link created in this session": [
     "web/src/lib/shortcuts.ts"
   ],
-  "Settings → People → Users and invitations: revoke the focused pending invitation": [
+  "Settings → People → Users and invitations: deactivate or reactivate, create a reset link, delete the focused user (each confirms)": [
     "web/src/lib/shortcuts.ts"
   ],
-  "Settings → People → Users: deactivate or reactivate, create a reset link, delete the focused user (each confirms)": [
+  "Settings → People → Users and invitations: revoke the focused pending invitation": [
     "web/src/lib/shortcuts.ts"
   ],
   "Settings → Server → Audit log: export with the current filters while the table has focus": [
@@ -16279,6 +16398,9 @@
   "Text on soft warning": [
     "web/src/app/themes/tokenNames.ts"
   ],
+  "Text to send": [
+    "web/src/app/RelayConfirm.tsx"
+  ],
   "Text to write": [
     "web/src/app/RelayConfirm.tsx"
   ],
@@ -17807,6 +17929,9 @@
   "This page reloads when the server is back, usually within a few seconds.": [
     "web/src/app/RestoreSection.tsx"
   ],
+  "This page was opened under a domain name and the server has no {variable} yet, so it asks for the one-time code it printed in its log. Run {command} on the server, or open the server by its IP address, or set {variable} to this address and restart it.": [
+    "web/src/app/AuthScreen.tsx"
+  ],
   "This part of the app could not be shown.": [
     "web/src/app/PanelBoundary.tsx"
   ],
@@ -18229,7 +18354,8 @@
     "web/src/app/task-list/InlineEditor.tsx",
     "web/src/app/views/DisplayPanel.tsx",
     "web/src/lib/rules/proposal.ts",
-    "web/src/lib/rules/sentence.ts"
+    "web/src/lib/rules/sentence.ts",
+    "web/src/lib/shortcuts.ts"
   ],
   "Title or notes": [
     "web/src/app/filter/ConditionEditor.tsx"
@@ -18789,7 +18915,8 @@
     "web/src/lib/facets.ts"
   ],
   "Unavailable custom field": [
-    "web/src/app/views/DisplayPanel.tsx"
+    "web/src/app/views/DisplayPanel.tsx",
+    "web/src/app/views/useDisplayKeys.ts"
   ],
   "Unavailable offline": [
     "web/src/app/rules/RuleFields.tsx"
@@ -23352,6 +23479,9 @@
   "{n, plural, one {You have worked # minute without a break.} other {You have worked # minutes without a break.}}": [
     "web/src/app/focus/BreakReminder.tsx"
   ],
+  "{n, plural, one {and # more value} other {and # more values}}": [
+    "web/src/app/RelayConfirm.tsx"
+  ],
   "{n, plural, one {and # more} other {and # more}}": [
     "web/src/app/quickadd/PasteOffer.tsx"
   ],
@@ -23877,6 +24007,9 @@
   ],
   "{title}, waits for {blockers}": [
     "web/src/app/TimelineView.tsx"
+  ],
+  "{token} asks to read this with {tool}:": [
+    "web/src/app/RelayConfirm.tsx"
   ],
   "{token} asks to run {tool} with this text:": [
     "web/src/app/RelayConfirm.tsx"

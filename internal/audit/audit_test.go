@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenTodoApp/opentodo/internal/store"
+	"github.com/OpenTodoApp/opentodo/internal/store/storetest"
 	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 )
 
 func newRecorder(t *testing.T) (*Recorder, *sql.DB) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := storetest.OpenDir(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +44,7 @@ func allConstructors() []Event {
 		MCPOAuthClientDeleted("u", "c"),
 		MCPOAuthGranted("u", "c", "agent"),
 		MCPOAuthRevoked("u", "c"),
+		MCPOAuthRefreshReused("u", "c"),
 		AgentWrite("u", "complete_tasks", "t", "Desk assistant", 3),
 		AgentWrite("u", "create_tasks", "t", "Desk assistant", 0).Failed("writes_disabled_by_user"),
 		RelayEnabled("u", "device-1", "Laptop"),

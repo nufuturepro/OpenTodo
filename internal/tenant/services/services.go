@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/OpenTodoApp/opentodo/internal/assistant"
 	"github.com/OpenTodoApp/opentodo/internal/auth"
 	"github.com/OpenTodoApp/opentodo/internal/backup"
 	"github.com/OpenTodoApp/opentodo/internal/blobs"
@@ -73,6 +74,10 @@ type Hosted struct {
 	MaxMembers int
 	// Workspaces lowers the workspace limits for this tenant (workspaces "Limits").
 	Workspaces opsync.WorkspaceLimits
+	// AssistantSlots is the host's one cap on running assistant turns, shared
+	// by all its tenants (host-assistant-concurrency); nil gives the tenant
+	// its own.
+	AssistantSlots *assistant.Slots
 	// Changed is called after every committed write and every wake-up of one
 	// of the tenant's jobs, so the host can refresh the tenant's entries in the
 	// "next due" index (D3).
@@ -153,6 +158,10 @@ func Build(ctx context.Context, cfg config.Config, db, reader *sql.DB, o Options
 	s.Auth = auth.NewService(db, cfg.SessionTTL, cfg.AllowSignup)
 	s.Auth.SetSetupToken(cfg.SetupToken)
 	s.Auth.SetSetupCodeRequired(cfg.SetupCodeRequired)
+	// Without a base URL nothing pins the host a page was opened under, so a
+	// first visit under a domain name needs the setup code
+	// (host-check-without-base-url).
+	s.Auth.SetSetupHostCheck(cfg.Origin() == "")
 	s.Sync = opsync.NewService(db)
 	if reader != nil {
 		s.Sync.SetReader(reader)

@@ -11,7 +11,7 @@ import { type FormEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect
 import { orderDestinations, readAppearance, readSidebarCounts, type DestinationId, type Promotable } from '../lib/appearance'
 import { useAssistantStatus } from '../lib/assistantStatus'
 import { readCalendarMode } from '../lib/calendarMode'
-import { allProjectRows, useLiveSections, useMembershipMap, useProjects, useReviewRow, useSidebarRowsLoaded, useUserPrefsRow } from '../lib/localData'
+import { allProjectRows, useFieldDefs, useLiveSections, useMembershipMap, useProjects, useReviewRow, useSidebarRowsLoaded, useUserPrefsRow } from '../lib/localData'
 import { createProject } from '../lib/ops'
 import { dailyDue, dayClosed, monthlyDue, reviewAgo, reviewDue } from '../lib/review'
 import { formatInstant } from '../lib/dates'
@@ -110,7 +110,7 @@ export const openTasksLabel = (n: number | undefined): string | undefined => (n 
 
 /**
  * Every saved view with its live open-task count over the sidebar's open tasks, in
- * one pass; tracked time is part of the context so `tracked` views count too
+ * one pass; tracked time and custom fields are part of the context so `tracked` and field views count too
  * (time-tracking D4).
  */
 function useViewCounts(views: View[], today: string, labels: Label[], projects: Project[], tasks: Task[]) {
@@ -119,11 +119,13 @@ function useViewCounts(views: View[], today: string, labels: Label[], projects: 
   // A view that names a workspace counts every workspace's tasks (group-mentions D6).
   const live = useWorkspaceFilter()
   const sections = useLiveSections()
+  // Custom field definitions, so a view on a field counts what it lists (issue 901).
+  const fields = useFieldDefs()
   // Counted once the writes stop (list-rendering-at-scale D6): evaluating every saved
   // view over 10,000 tasks ran after each completion, in front of the next one. The
   // workspace context is made again with every write too (its partition reads the tasks).
   const { counted, ws } = useSettledValue(useMemo(() => ({ counted: tasks, ws: live }), [tasks, live]))
-  return useMemo(() => evaluateViews(views, { today, labels, projects, tasks: counted, sections, tracked, ...directory, ...ws }, 0), [views, today, labels, projects, counted, sections, tracked, directory, ws])
+  return useMemo(() => evaluateViews(views, { today, labels, projects, tasks: counted, sections, fields, tracked, ...directory, ...ws }, 0), [views, today, labels, projects, counted, sections, fields, tracked, directory, ws])
 }
 
 /** The due-review marker on the closed More heading (quiet-sidebar): nothing when the method shows Review up front. */
@@ -478,7 +480,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onAssistant, onSig
             const count = counts.byProject.get(n.id)
             const drop = dropAt?.id === n.id ? dropAt.zone : null
             return (
-              <li key={n.id} role="treeitem" aria-level={n.depth + 1} aria-expanded={has ? !isCollapsed : undefined}
+              <li data-drag-id="sidebar-project" key={n.id} role="treeitem" aria-level={n.depth + 1} aria-expanded={has ? !isCollapsed : undefined}
                 data-project-row={n.id} data-drop-target={`project:${n.id}`} data-task-drop={canEditTasks(roleOf(n.id, memberMap)) ? taskDrop.project(n.id) : undefined}
                 onPointerDown={movable(n.id) ? (e) => startDrag(e, n) : undefined}
                 className={`group relative flex items-center rounded-control ${countsAll ? 'ui-swap-row ' : ''}${movingProject ? '' : 'data-drop-active:ring-2 data-drop-active:ring-accent'} ${rowGap(shownRows, i)} ${drop === 'inside' ? feedback.inside : ''}`} style={{ paddingLeft: collapsed ? 0 : `${levels * INDENT_REM}rem` }}>

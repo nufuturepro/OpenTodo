@@ -26,11 +26,11 @@ Other `OPENTODO_*` variables are in the [configuration table](https://github.com
 
 ## Updates
 
-The `stable` tag moves with every release. To update, pull the image again (redeploy or restart the app so Caliber Node pulls `stable`). Migrations run on start and there are no down-migrations, so back up first. To stay on one release line, use `ghcr.io/opentodoapp/opentodo:0.22` (or one version, `0.22.0`) instead of `stable`.
+The `stable` tag moves with every release. To update, pull the image again (redeploy or restart the app so Caliber Node pulls `stable`). Migrations run on start and there are no down-migrations, so back up first. To stay on one release line, use `ghcr.io/opentodoapp/opentodo:0.23` (or one version, `0.23.0`) instead of `stable`.
 
 ## Data and backups
 
-Everything OpenTodo stores (the database, attachments and its own backups) is on the `/data` volume. For backups off Caliber Node, turn on scheduled backups in OpenTodo's **Settings → Server** with an S3 or WebDAV destination; backups written only to `backups/` stay on the same volume. See [Backups](../backups.md).
+Everything OpenTodo stores (the database, attachments and its own backups) is on the `/data` volume. For backups off Caliber Node, turn on scheduled backups in OpenTodo's **Settings → Server → Backups** with an S3 or WebDAV destination; backups written only to `backups/` stay on the same volume. See [Backups](../backups.md).
 
 ## Troubleshooting
 

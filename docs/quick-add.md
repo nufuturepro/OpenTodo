@@ -27,7 +27,7 @@ As you type, each thing OpenTodo recognises shows up as a chip under the input a
 | --- | --- |
 | Keep a word literally ("may" is not May 1st) | Click the `×` on its chip, **or** press Backspace at the end of the line: the first press highlights the last chip, the second dismisses it. The text itself is not changed. |
 | Never parse some text | Put it in double quotes: `Watch "Next Friday" tomorrow` → title *Watch Next Friday*, due tomorrow. The quotes are removed from the title. |
-| Turn parsing off on this device | Settings → Capture → Quick add → *Parse natural language in quick add*. Quick add then saves the line exactly as typed. |
+| Turn parsing off on this device | Settings → Capture → Quick add → **Parse natural language**. Quick add then saves the line exactly as typed. |
 
 A dismissed chip stays dismissed while you keep typing; it comes back only if you edit that word. Backspace only highlights a chip when that chip's text ends the line; otherwise Backspace deletes text as usual.
 
@@ -75,18 +75,20 @@ Without the `+`, `45min` and `2h` also work, except that `2h` is left alone when
 | `at 3pm`, `3:30 pm`, `16:30`, `at 9`, `noon`, `midnight` | that time today, unless a date is also given. A time on its own always means today, even if it has passed. Without `am`/`pm`, hours are 24-hour (`at 3` is 03:00). |
 | `in 3 hours` | that clock time, rolling to tomorrow past midnight |
 
-Words like `on`, `by` and `due` in front of a date are removed with it (`Pay bill by Friday` → *Pay bill*). `last Friday` always means the last Friday of the month, never the one that has passed: in `Review notes from last Friday`, dismiss the chip (or quote the words) to keep them in the title. Bare numbers are never times (`Buy 3 apples` stays as typed): write `at 3`, `3pm` or `15:00`.
+Words like `on` and `due` in front of a date are removed with it (`Pay bill on Friday` → *Pay bill*); `by` in front of a date sets the deadline instead (see **Deadlines** below). `last Friday` always means the last Friday of the month, never the one that has passed: in `Review notes from last Friday`, dismiss the chip (or quote the words) to keep them in the title. Bare numbers are never times (`Buy 3 apples` stays as typed): write `at 3`, `3pm` or `15:00`.
 
-**Deadlines.** Put `deadline` right before a date to set the task's [deadline](tasks-and-projects.md#deadlines) instead of its due date: `Send report deadline friday` → *Send report*, no due date, deadline Friday, shown as its own chip with an hourglass. Combine both: `Send report tomorrow deadline friday` is planned for tomorrow and due by Friday. A deadline has no time, so a time right after it stays in the title. Without a date after it the word is just text (`Review deadline policy`). `on`, `by` and `due` still set the due date. Each language has its own word:
+**Deadlines.** Put `deadline` right before a date to set the task's [deadline](tasks-and-projects.md#deadlines) instead of its due date: `Send report deadline friday` → *Send report*, no due date, deadline Friday, shown as its own chip with an hourglass. Combine both: `Send report tomorrow deadline friday` is planned for tomorrow and due by Friday. A deadline has no time, so a time right after it stays in the title. Without a date after it the word is just text (`Review deadline policy`).
 
-| Language | Deadline word |
-| --- | --- |
-| English | `deadline` |
-| German | `Frist`, `Deadline` |
-| French | `échéance`, `deadline` |
-| Italian | `scadenza` |
-| Spanish | `fecha límite`, `plazo` |
-| Portuguese | `prazo` |
+`by` before a date sets the deadline too: `Install winter tires by March 31` → *Install winter tires*, no due date, deadline 31 March, and `Pay tax tomorrow by friday` is planned for tomorrow with a deadline on Friday. `on` and `due` still set the due date. `by` before a time is a due time (`Call back by 5pm` → today at 17:00), and so is `by` before a date with a time (`Pay tax by friday 5pm` is due Friday at 17:00), since a deadline has no time. A [repeating](recurrence.md) line keeps its rule (`Water plants every monday by friday` repeats every Monday, with a deadline on Friday). German, Italian and Portuguese have a `by` word as well; French and Spanish `pour` and `para` mean "for" and still set the due date. Each language has its own words:
+
+| Language | Deadline word | `by` word |
+| --- | --- | --- |
+| English | `deadline` | `by` |
+| German | `Frist`, `Deadline` | `bis` |
+| French | `échéance`, `deadline` | |
+| Italian | `scadenza` | `entro` |
+| Spanish | `fecha límite`, `plazo` | |
+| Portuguese | `prazo` | `até` |
 
 **Someday and tonight.** `someday` parks the task in [Someday](tasks-and-projects.md#when-a-task-starts): `Learn to sail someday @hobby` → *Learn to sail*, parked. If the line also has a date, the word stays in the title (`Plan someday trip friday` is due Friday). `tonight` and `this evening` make the task due today and mark it for **This Evening**, a group below the day's tasks in Today; a time still sets the due time (`Call Ana tonight at 8pm`). Before this, `tonight` only meant today; the date is the same, the task now also shows the moon. Each gets its own chip.
 
@@ -101,7 +103,7 @@ Words like `on`, `by` and `due` in front of a date are removed with it (`Pay bil
 
 **Energy.** With **Energy levels** on ([Set up](method/set-up.md#energy-levels)), `~deep`, `~medium` and `~low`, or any start of them (`~d`, `~me`, `~L`), set the task's energy, in every language and in any letter case: `Draft the strategy #Work ~deep +2h` → *Draft the strategy*, in Work, 2 hours, Deep. The chip reads "Deep energy"; typing `~` suggests the three, and on a phone the lightning tool under the line starts one. The last one on the line wins. `~` followed by anything else stays in the title (`Dinner for ~6 people`), and with Energy levels off the token is not read.
 
-**Time sectors.** With **Time sectors** on (Settings → Account → How you work), a phrase for a period plans the task for that week, month or quarter instead of a date: `Draft the budget this week #Work` → *Draft the budget*, in Work, This week. `next week` and `next month` alone keep their date meaning; say `sometime next week` for the sector. A line that also has a date takes the date and keeps the phrase in the title (`Review this week plan friday` is due Friday), and with the switch off no phrase is read. A deadline stays beside the sector. See [Time sectors](time-sectors.md).
+**Time sectors.** With **Time sectors** on (Settings → Account → Profile → How you work), a phrase for a period plans the task for that week, month or quarter instead of a date: `Draft the budget this week #Work` → *Draft the budget*, in Work, This week. `next week` and `next month` alone keep their date meaning; say `sometime next week` for the sector. A line that also has a date takes the date and keeps the phrase in the title (`Review this week plan friday` is due Friday), and with the switch off no phrase is read. A deadline stays beside the sector. See [Time sectors](time-sectors.md).
 
 | Language | This week | Next week | This month | Next month | This quarter | Next quarter |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -239,7 +241,7 @@ A rule and reminders can be typed in the same line. Each gets its own chip and i
 | `remind me 30 min before` | `erinnere mich 30 Minuten vorher` | `rappelle-moi 30 min avant` | `ricordamelo 30 minuti prima` | `recuérdame 30 minutos antes` | `lembre-me 30 minutos antes` |
 | `remind me at 9` | `erinnere mich um 9 Uhr` | `rappelle-moi à 9h` | `ricordamelo alle 9` | `recuérdame a las 9` | `lembre-me às 9` |
 
-Rules cover the whole [rule grammar](recurrence.md): weekday lists (`every mon, wed and fri`), `every weekday`, `every 15th`, `every 2nd Tuesday`, `every last Friday`, `every last day`, with `after completion`, `until 31 Dec` or `for 10 times` at the end. The stored rule is always the English canonical form, whatever language you typed. A phrase the grammar cannot express, such as `every 3 hours`, stays in the title; only the first rule of a line counts. After a monthly rule, `of the month` is accepted and changes nothing (`every 2nd monday of the month`, `jeden zweiten Montag im Monat`, `tous les 2e lundis du mois`, `ogni secondo lunedì del mese`, `cada segundo lunes del mes`, `toda segunda segunda-feira do mês` are all `every 2nd monday`). A bare number before a weekday is a count, not an ordinal: `every 2 Mondays` (`alle 2 Montage`, `cada 2 lunes`) is not a rule and stays as typed, with no date.
+Rules cover the whole [rule grammar](recurrence.md): weekday lists (`every mon, wed and fri`), `every weekday`, `every 15th`, `every 2nd Tuesday`, `every last Friday`, `every last day`, `every first weekday` (`jeden ersten Werktag`, `chaque premier jour ouvré`, `ogni primo giorno feriale`, `cada primer día laborable`, `todo primeiro dia útil`), with `after completion`, `until 31 Dec` or `for 10 times` at the end. The stored rule is always the English canonical form, whatever language you typed. A phrase the grammar cannot express, such as `every 3 hours`, stays in the title; only the first rule of a line counts. After a monthly rule, `of the month` is accepted and changes nothing (`every 2nd monday of the month`, `jeden zweiten Montag im Monat`, `tous les 2e lundis du mois`, `ogni secondo lunedì del mese`, `cada segundo lunes del mes`, `toda segunda segunda-feira do mês` are all `every 2nd monday`). A bare number before a weekday is a count, not an ordinal: `every 2 Mondays` (`alle 2 Montage`, `cada 2 lunes`) is not a rule and stays as typed, with no date.
 
 **Every other.** `every other day`, `week`, `month` or `year` repeats every 2 of them. `every other Friday` is `every 2 weeks`, starting on the next Friday (today when it is Friday), the same as `every 2 weeks on Friday`. In German, `jeden zweiten Freitag` is every other Friday, while `jeden zweiten Freitag im Monat` stays the second Friday of each month; in the other languages `every second Friday` (`ogni secondo venerdì`, `cada segundo viernes`) is the second Friday of the month.
 

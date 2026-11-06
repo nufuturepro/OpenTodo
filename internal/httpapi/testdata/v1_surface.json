@@ -37,6 +37,11 @@
           "(type)": "ref:task"
         }
       },
+      "audit verify": {
+        "output": {
+          "(type)": "ref:audit_verification"
+        }
+      },
       "auth logout": {
         "flags": {
           "yes": "bool"
@@ -904,6 +909,7 @@
       }
     },
     "error_codes": {
+      "audit_chain_broken": "1",
       "auth": "3",
       "body_changed": "1",
       "confirmation_required": "2",
@@ -951,6 +957,21 @@
     },
     "output_version": "1",
     "schemas": {
+      "audit_verification": {
+        "(type)": "object",
+        "break": "any",
+        "break.id": "integer",
+        "break.reason": "any",
+        "checked": "integer",
+        "checkpoint": "object",
+        "checkpoint.hash": "string",
+        "checkpoint.id": "integer",
+        "head": "object",
+        "head.hash": "string",
+        "head.id": "integer",
+        "ok": "boolean",
+        "uncovered": "integer"
+      },
       "auth_result": {
         "(type)": "object",
         "profile": "string",
@@ -2365,8 +2386,8 @@
         "theme_mode": "string",
         "time_format": "string",
         "time_sectors": "string",
-        "today_done": "string",
         "today_assignees": "string",
+        "today_done": "string",
         "today_events": "string",
         "today_limit": "number",
         "upcoming_events": "string",
@@ -3356,8 +3377,8 @@
       "theme_mode": "string",
       "time_format": "string",
       "time_sectors": "string",
-      "today_done": "string",
       "today_assignees": "string",
+      "today_done": "string",
       "today_events": "string",
       "today_limit": "number",
       "upcoming_events": "string",
@@ -3879,6 +3900,7 @@
         "events[].actorEmail": "string|null",
         "events[].actorId": "string|null",
         "events[].details": "object",
+        "events[].hash": "string|null",
         "events[].id": "number",
         "events[].ip": "string|null",
         "events[].name": "string",
@@ -3894,6 +3916,26 @@
     },
     "GET /api/v1/audit/export": {
       "policy": "owner-only"
+    },
+    "GET /api/v1/audit/verify": {
+      "policy": "owner-only",
+      "response": {
+        "break": "object|null",
+        "break.id": "number",
+        "break.reason": "string",
+        "checked": "number",
+        "checkpoint": "object",
+        "checkpoint.hash": "string",
+        "checkpoint.id": "number",
+        "head": "object",
+        "head.hash": "string",
+        "head.id": "number",
+        "ok": "boolean",
+        "uncovered": "number"
+      },
+      "statuses": [
+        "200"
+      ]
     },
     "GET /api/v1/auth/oidc/callback": {
       "policy": "public"
@@ -3933,6 +3975,7 @@
         "outgoingEmail.enabled": "boolean",
         "passkeyDomain": "string",
         "passkeysAvailable": "boolean",
+        "setupCodeForHost": "boolean",
         "setupCodeRequired": "boolean",
         "setupRequired": "boolean",
         "setupTokenRequired": "boolean",
@@ -4652,6 +4695,7 @@
         "events[].actorEmail": "string|null",
         "events[].actorId": "string|null",
         "events[].details": "object",
+        "events[].hash": "string|null",
         "events[].id": "number",
         "events[].ip": "string|null",
         "events[].name": "string",

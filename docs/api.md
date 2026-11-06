@@ -9,7 +9,7 @@ order: 10
 ---
 # HTTP API
 
-Base path: `/api/v1`. All requests and responses are JSON. Within 1.x the API only grows: routes, fields and error codes are added, never removed or changed ([stability and compatibility](stability.md)); ignore fields you do not know. Errors look like:
+Base path: `/api/v1`. All requests and responses are JSON. Within 1.x the API only grows: routes, fields and error codes are added, never removed or changed ([stability and compatibility](stability.md)); ignore fields you do not know. How the routes are protected, and how that is tested, is in [How we verify security](security/how-we-verify.md). Errors look like:
 
 ```json
 { "error": { "code": "invalid_input", "message": "task.priority must be an integer from 1 (highest) to 4 (lowest)" } }
@@ -46,7 +46,7 @@ If you would rather not hand-write requests, the [`ot` command-line client](cli.
 Bearer tokens are minted by a signed-in user, so a client that only has an email and a password goes through a short session, which is what `ot login` does:
 
 1. `POST /api/v1/auth/login` with `{email, password}` → the `opentodo_session` cookie.
-2. `POST /api/v1/tokens` with that cookie and `{"name":"cli@<hostname>"}` → `{token, secret}`. Send **no `Origin` header**: cookie-authenticated writes are refused when `Origin` is present and does not match the server, and accepted without it (browsers always send one, non-browser clients normally do not).
+2. `POST /api/v1/tokens` with that cookie and `{"name":"cli@<hostname>"}` → `{token, secret}`. Send **no `Origin` header** and `Content-Type: application/json`: cookie-authenticated writes are refused when `Origin` is present and does not match the server. Without `Origin`, a cookie write is accepted only when its `Sec-Fetch-Site` is `same-origin` or, when it has no `Sec-Fetch-Site` either, when it declares a JSON body; a form, multipart or bodiless cookie write naming neither is refused with 403 `bad_origin`.
 3. `POST /api/v1/auth/logout` with the cookie, then keep only the `secret` and use it as a bearer token. Bearer requests are not subject to the Origin check.
 
 Login is rate limited (10 attempts per minute per address); a token created in Settings and passed to `ot auth set-token` skips the session entirely.
@@ -62,8 +62,9 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/healthz` | none | `{"status":"ok","version":"…"}` |
-| GET | `/api/v1/auth/status` | none | `{setupRequired, setupTokenRequired, setupCodeRequired, signupAllowed, authenticated, user, version, passkeysAvailable, oidc, outgoingEmail, mfa?, encryption?, minClientVersion?, demo?}`; `outgoingEmail` is `{enabled}`, true when [outgoing email](#outgoing-email) is configured (never on a demo instance); `mfa`, `encryption` and `minClientVersion` only when signed in; `setupCodeRequired` is true only with `OPENTODO_SETUP_CODE=required`, while no account exists, no setup token is configured and the request does not come over a direct loopback connection without forwarding headers; `demo` (`{token, sandboxHours: {idle, max}, resetsAt}`: a fresh single-use sandbox-creation token valid for 10 minutes, the sandbox lifetimes in hours and the next nightly reset; no credentials) only on a [demo instance](self-hosting/demo.md) (see [Two-factor authentication](#two-factor-authentication), [Single sign-on](#single-sign-on), [End-to-end encryption](#end-to-end-encryption)) |
-| POST | `/api/v1/auth/register` | none | `{email, name?, password, invitation?, projectInvite?, setupToken?}` → 201 `{user}` + cookie. The first account becomes owner; when `OPENTODO_SETUP_TOKEN` is set (`setupTokenRequired` in the status), it needs `setupToken` with that value, otherwise 403 `setup_token_invalid`; without a token and with `OPENTODO_SETUP_CODE=required`, a client from another machine (`setupCodeRequired`) sends the one-time setup code from the server log as `setupToken` (case and dashes ignored), otherwise 403 `setup_code_invalid`; afterwards an `invitation` secret admits one member while sign-up is closed, and a `projectInvite` secret creates a member who joins that project (201 `{user, projectId, role}`, see [Project invite links](#project-invite-links)). With open sign-up and [outgoing email](#outgoing-email), a registration without an invitation answers 202 `{verificationRequired: true}` and mails a link instead of creating the account |
+| GET | `/.well-known/security.txt` | none | [RFC 9116](https://www.rfc-editor.org/rfc/rfc9116) text: the OpenTodo project's reporting channels (`Contact`), `Expires` 180 days ahead, `Policy` (SECURITY.md), `Canonical` when `OPENTODO_BASE_URL` is set; see [Security](security/README.md) |
+| GET | `/api/v1/auth/status` | none | `{setupRequired, setupTokenRequired, setupCodeRequired, setupCodeForHost, signupAllowed, authenticated, user, version, passkeysAvailable, oidc, outgoingEmail, mfa?, encryption?, minClientVersion?, demo?}`; `outgoingEmail` is `{enabled}`, true when [outgoing email](#outgoing-email) is configured (never on a demo instance); `mfa`, `encryption` and `minClientVersion` only when signed in; `setupCodeRequired` is true while no account exists and no setup token is configured, when either `OPENTODO_SETUP_CODE=required` and the request does not come over a direct loopback connection without forwarding headers, or no `OPENTODO_BASE_URL` is set and the request is addressed to a domain name (not an IP address, a name without a dot or a local-only name such as `*.local`, `*.lan` or `*.home.arpa`); `setupCodeForHost` is true when the second reason alone asks for the code; `demo` (`{token, sandboxHours: {idle, max}, resetsAt}`: a fresh single-use sandbox-creation token valid for 10 minutes, the sandbox lifetimes in hours and the next nightly reset; no credentials) only on a [demo instance](self-hosting/demo.md) (see [Two-factor authentication](#two-factor-authentication), [Single sign-on](#single-sign-on), [End-to-end encryption](#end-to-end-encryption)) |
+| POST | `/api/v1/auth/register` | none | `{email, name?, password, invitation?, projectInvite?, setupToken?}` → 201 `{user}` + cookie. The first account becomes owner; when `OPENTODO_SETUP_TOKEN` is set (`setupTokenRequired` in the status), it needs `setupToken` with that value, otherwise 403 `setup_token_invalid`; without a token, a client the status asks for the code (`setupCodeRequired`: from another machine with `OPENTODO_SETUP_CODE=required`, or under a domain name while no `OPENTODO_BASE_URL` is set) sends the one-time setup code from the server log as `setupToken` (case and dashes ignored), otherwise 403 `setup_code_invalid`; afterwards an `invitation` secret admits one member while sign-up is closed, and a `projectInvite` secret creates a member who joins that project (201 `{user, projectId, role}`, see [Project invite links](#project-invite-links)). With open sign-up and [outgoing email](#outgoing-email), a registration without an invitation answers 202 `{verificationRequired: true}` and mails a link instead of creating the account |
 | POST | `/api/v1/auth/login` | none | `{email, password}` → `{user}` + cookie, or `{mfaRequired:true, challenge, expiresAt}` and no cookie when the account has a second factor. A password over 1,024 bytes is refused with 401 `invalid_credentials` without being checked |
 | POST | `/api/v1/auth/mfa` | none | `{challenge, code}` or `{challenge, recoveryCode}`, optional `remember` → `{user}` + cookie (+ `ot_trust` cookie when `remember`) |
 | POST | `/api/v1/auth/reauth` | cookie | `{password}` or `{code}` → `{reauthAt, validForMs}`; unlocks *fresh* routes for 10 minutes |
@@ -233,7 +234,7 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | GET | `/oauth/authorize` | signed-in session | `response_type=code`, `code_challenge` with `code_challenge_method=S256`; 302 to `/?oauth_consent=<query>` (the consent dialog), never a code; a browser without a session is sent to `/?oauth=<address>`; 400 without redirecting when the client or address is wrong |
 | GET | `/api/v1/me/mcp-consent` | session only | `?<authorize query>`: the consent dialog's request → `{client:{id, name, dynamic}, scope, redirectHost}`; 400 with the OAuth error shape when the request is invalid |
 | POST | `/api/v1/me/mcp-consent` | session only | `{query, allow}` → `{redirect}`: the registered address with `code` and `state` on allow, with `error=access_denied` otherwise |
-| POST | `/oauth/token` | client secret + PKCE | `authorization_code` (`code`, `redirect_uri`, `code_verifier`) or `refresh_token`; `client_secret_post` or Basic → `{access_token, token_type, expires_in, refresh_token, scope}`; the access token stops working after `expires_in` seconds (3600); the refresh token never rotates |
+| POST | `/oauth/token` | client secret + PKCE | `authorization_code` (`code`, `redirect_uri`, `code_verifier`) or `refresh_token`; `client_secret_post` or Basic → `{access_token, token_type, expires_in, refresh_token, scope}`; the access token stops working after `expires_in` seconds (3600); a refresh returns a new refresh token and retires the one sent, and an already-used refresh token revokes the grant (`400 invalid_grant`, audited as `mcp_oauth.refresh_reused`); a client registered only for Google's connector addresses gets the same refresh token back |
 | POST | `/oauth/revoke` | client secret | RFC 7009: the client's own refresh token, or the access token one of its grants holds, revokes that grant; any other token is left alone and answered 200; 401 `invalid_client` without the client's credentials |
 
 #### Administration (owner and admins)
@@ -269,7 +270,8 @@ Auth column: **none** = public; **yes** = any session or token (a `read` token o
 | GET | `/api/v1/settings/webhooks` | owner | `{allowPrivate}` |
 | PUT | `/api/v1/settings/webhooks` | owner, credential | `{allowPrivate}` → `{allowPrivate}` |
 | GET | `/api/v1/audit` | owner | `{events:[…], cursor}` newest first; filters `name`, `actor`, `target`, `outcome`, `from`, `to`, `cursor`, `limit≤200`, see [Audit log](#audit-log) |
-| GET | `/api/v1/audit/export` | owner | the filtered log as `application/x-ndjson` download; records `audit.exported` |
+| GET | `/api/v1/audit/export` | owner | the filtered log as `application/x-ndjson` download, ending with the chain head line; records `audit.exported` |
+| GET | `/api/v1/audit/verify` | owner | `{ok, checked, uncovered, checkpoint, head, break}`: the hash chain recomputed, see [Audit log](#audit-log) |
 | GET | `/api/v1/settings/audit` | owner | `{retentionDays, logIp}` |
 | PUT | `/api/v1/settings/audit` | owner, credential | `{retentionDays?: 7–3650, logIp?}` → settings; disabling `logIp` erases stored addresses |
 | GET | `/api/v1/backups` | owner | backup status, see [Backups](#backups) |
@@ -386,7 +388,7 @@ The identity is matched by issuer and subject first; a first-time identity whose
 | --- | --- |
 | `oidc_failed` | the provider refused, the code exchange failed or the identity token failed a check (details only in the server log) |
 | `oidc_email_unverified` | a first-time identity without an email marked verified |
-| `oidc_link_required` | a first-time identity whose email belongs to the owner, an admin or an account with a second factor or passkey: sign in locally and link it from Settings → Account first |
+| `oidc_link_required` | a first-time identity whose email belongs to the owner, an admin or an account with a second factor or passkey: sign in locally and link it from Settings → Account → Security → Linked accounts first |
 | `signup_closed` | no matching account and provisioning is not allowed |
 
 `start` while signed in **links** the provider identity to the current account instead (Settings → Account → Security → Linked accounts) and returns to `/settings/account/security?linked=1`. If that identity is already linked to the same account, the flow is a fresh proof of identity for the session (the *fresh* routes work for ten minutes) and returns to `/settings/account/security?reauthenticated=1`.
@@ -1197,7 +1199,7 @@ The owner's view of the database file and of the notes compaction job (see [sync
 
 ### Audit log
 
-The server records security-relevant events in its own database (never synced to devices, never part of `/api/v1/export`). The owner reads, filters and exports the log; every user reads their own access events. There is no route to modify or delete an event: `PATCH`/`DELETE /api/v1/audit/{id}` answer 404 `not_found`. Events are removed only by retention pruning (and addresses only by disabling address logging).
+The server records security-relevant events in its own database (never synced to devices, never part of `/api/v1/export`). The owner reads, filters and exports the log; every user reads their own access events. There is no route to modify or delete an event: `PATCH`/`DELETE /api/v1/audit/{id}` answer 404 `not_found`. Events are removed only by retention pruning (and addresses only by disabling address logging). The log is a hash chain, so a change made to the database outside OpenTodo shows up when it is verified (below).
 
 **Event shape** (list, export and activity):
 
@@ -1207,11 +1209,12 @@ The server records security-relevant events in its own database (never synced to
   "actorId": "<user id>", "actorEmail": "owner@example.com",
   "targetId": null, "targetEmail": null,
   "ip": null, "userAgent": "Mozilla/5.0 …",
-  "details": { "token_id": "…", "token_name": "laptop script" }
+  "details": { "token_id": "…", "token_name": "laptop script" },
+  "hash": "9f2c…"
 }
 ```
 
-`actorId` is the account that acted (null for a failed sign-in); `targetId` is the account acted upon when different. `actorEmail` / `targetEmail` come from the live account, or from the email snapshot in `details.email` when the account no longer exists. `ip` is null unless the owner enabled address logging. `userAgent` is truncated to 200 bytes. `details` only ever carries the keys below: never task or project content, passwords, token or invitation secrets, one-time or recovery codes.
+`actorId` is the account that acted (null for a failed sign-in); `targetId` is the account acted upon when different. `actorEmail` / `targetEmail` come from the live account, or from the email snapshot in `details.email` when the account no longer exists. `ip` is null unless the owner enabled address logging. `userAgent` is truncated to 200 bytes. `details` only ever carries the keys below: never task or project content, passwords, token or invitation secrets, one-time or recovery codes. `hash` is the event's link in the hash chain (64 hex characters), or null for an event recorded before the server had the chain.
 
 | Event | Outcome | Actor / target | `details` keys |
 | --- | --- | --- | --- |
@@ -1254,6 +1257,7 @@ The server records security-relevant events in its own database (never synced to
 | `mcp_oauth.client_deleted` | success | actor = owner | `oauth_client_id`; its grants and access tokens are gone with it |
 | `mcp_oauth.granted` | success | actor = the user | `oauth_client_id`, `token_scope`; one per authorization, never a code or token |
 | `mcp_oauth.revoked` | success | actor = the user | `oauth_client_id`; the grant was ended through `/oauth/revoke` |
+| `mcp_oauth.refresh_reused` | failure | actor = the user | `oauth_client_id`; a refresh token the grant had already exchanged was presented again, so the grant and its access token were revoked |
 | `settings.changed` | success | actor = owner (the user for `encryption*`) | `setting` (`audit.retention_days`, `audit.log_ip`, `webhooks_allow_private`, `mfa.required`, `mcp.enabled`, `mcp.writes`, `agent.writes` (actor = the user), `caldav.enabled`, `integrations.issues`, `project_invites.members_create_accounts`, `oidc.*`, `smtp.*` (`smtp.password` only as `set` or empty), `encryption`, `encryption.keys`), `from`, `to` |
 | `export.requested` | success | actor = user | `format` (`json`) |
 | `audit.exported` | success | actor = owner | `format` (`ndjson`), `count` |
@@ -1304,9 +1308,22 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
   "$OT/api/v1/audit?name=login.failed&from=$(( ($(date +%s) - 86400) * 1000 ))"
 ```
 
-**Export** — `GET /api/v1/audit/export` (owner) with the same filters except `cursor` and `limit` → every matching event as newline-delimited JSON (`application/x-ndjson`, `Content-Disposition: attachment; filename="opentodo-audit-YYYYMMDD.ndjson"`), one event object per line, newest first. The export records an `audit.exported` event.
+**Export** — `GET /api/v1/audit/export` (owner) with the same filters except `cursor` and `limit` → every matching event as newline-delimited JSON (`application/x-ndjson`, `Content-Disposition: attachment; filename="opentodo-audit-YYYYMMDD.ndjson"`), one event object per line, newest first. The last line is not an event but the chain head, the newest event of the whole log whatever the filters: `{"chain": {"id": 418, "hash": "…"}}`. The export records an `audit.exported` event.
 
-**Settings** — `GET /api/v1/settings/audit` (owner) → `{"retentionDays": 90, "logIp": false}`. `PUT` the same object, both fields optional: `retentionDays` is an integer 7–3650 (otherwise 400 `invalid_input`), `logIp` turns client address logging on or off. Turning it off erases every stored address in the same transaction. Each changed value is recorded as `settings.changed`; lowering retention prunes expired events immediately, and the server also prunes at startup and whenever the oldest event passes the retention.
+**Verify** — `GET /api/v1/audit/verify` (owner) recomputes the hash chain and answers 200 whether or not it holds:
+
+```json
+{
+  "ok": false, "checked": 1203, "uncovered": 0,
+  "checkpoint": { "id": 7310, "hash": "…" },
+  "head": { "id": 8512, "hash": "…" },
+  "break": { "id": 8514, "reason": "mismatch" }
+}
+```
+
+Each event's `hash` is the SHA-256, in hex, of the previous event's hash, a newline and the JSON array `[1, id, ts, name, outcome, actorId, targetId, userAgent, details]` (`details` as the stored JSON text, `null` for a missing account id). The client address is left out, so erasing addresses does not break the chain. `checkpoint` is where checking starts: the last event pruned by retention (or the newest event from before the chain), whose hash the next event chains from. `checked` counts the events checked after it, `uncovered` the kept events from before the chain, and `head` is the newest checked event. `break` is null, or the first event whose hash does not follow: `missing_hash`, or `mismatch` when the event was changed or an event before it was removed or moved. The server also checks the chain at startup and hourly after changes, and logs a broken link at error level. Removing the newest events leaves a shorter chain that still verifies; compare with a chain head kept from an earlier export to see that ([Audit log](self-hosting/docker.md#checking-the-log-for-tampering)).
+
+**Settings** — `GET /api/v1/settings/audit` (owner) → `{"retentionDays": 90, "logIp": false}`. `PUT` the same object, both fields optional: `retentionDays` is an integer 7–3650 (otherwise 400 `invalid_input`), `logIp` turns client address logging on or off. Turning it off erases every stored address in the same transaction. Each changed value is recorded as `settings.changed`; lowering retention prunes expired events immediately, and the server also prunes at startup and whenever the oldest event passes the retention. Pruning removes events from the start of the log, in order, and stops at the first one still within the retention.
 
 **Personal activity** — `GET /api/v1/me/activity` (any signed-in user) → `{events: [...]}`: the caller's own sign-ins, failed sign-ins against their account, sign-outs and credential and token events from the last 90 days, at most 100, newest first. Events about other accounts never appear.
 
@@ -2099,7 +2116,7 @@ Choosing a provider or storing a key needs the owner's "Let members bring their 
 
 Photos (change `voice-ramble`): the last message may carry `"images": [{"media_type": "image/jpeg", "data": "<base64>"}]`, at most 4, each at most 3.75 MB after decoding, `media_type` one of `image/jpeg`, `image/png`, `image/webp` and `image/gif`, with bytes that match it. With photos the body may be up to 16 MB; the conversation's text keeps its 256 KB limit. The provider receives them with that message, marked as material, not instructions. The server holds them in memory for the turn only: never on disk, in the database, logs, the audit log or the usage record. An earlier message with `images` is refused, so photos are never resent.
 
-Checks, in order, before any provider request: 404 `not_found` while the assistant is off; 403 `session_required` for API tokens; 409 `encryption_enabled`; 403 `consent_required`; 413 `too_large` (also a photo over 3.75 MB, more than 4 photos or a body over 16 MB); 400 `invalid_input` (naming `images[i]` for a wrong type or data that is not that image, `messages[i]` for photos on an earlier message); 400 `unknown_skill`; 422 `images_unsupported` when the provider of the turn does not read photos (a compatible endpoint without `images`); 429 `assistant_quota` (with `resets_at`; not for a turn on your own key unless the owner turned on `cap_member_keys`); 409 `turn_in_progress` (one turn per person); 503 `assistant_busy` with `Retry-After` (8 turns server-wide); 409 `no_key`. Cookie requests from another origin get 403 `bad_origin`.
+Checks, in order, before any provider request: 404 `not_found` while the assistant is off; 403 `session_required` for API tokens; 409 `encryption_enabled`; 403 `consent_required`; 413 `too_large` (also a photo over 3.75 MB, more than 4 photos or a body over 16 MB); 400 `invalid_input` (naming `images[i]` for a wrong type or data that is not that image, `messages[i]` for photos on an earlier message); 400 `unknown_skill`; 422 `images_unsupported` when the provider of the turn does not read photos (a compatible endpoint without `images`); 429 `assistant_quota` (with `resets_at`; not for a turn on your own key unless the owner turned on `cap_member_keys`); 409 `turn_in_progress` (one turn per person); 503 `assistant_busy` with `Retry-After` (8 turns server-wide; on a host, 8 for all its tenants together); 409 `no_key`. Cookie requests from another origin get 403 `bad_origin`.
 
 The answer is a `text/event-stream`:
 
@@ -2129,6 +2146,15 @@ In `usage`, `month_total` is what counts toward the cap and `cap` is `0` for a t
 A tenant of a host (see [host mode](self-hosting/host-mode.md)) answers like any server, with these differences. `GET /api/v1/auth/status` adds `"hosted": true`. Settings that belong to the operator answer `403 host_managed` before authentication: `/api/v1/settings/smtp*`, `/api/v1/settings/oidc*` and `/api/v1/backups*` for every method, and writes to `/api/v1/settings/mcp`, `/api/v1/settings/assistant*`, `/api/v1/settings/webhooks` and `/api/v1/settings/attachments`.
 
 `GET /api/v1/export/archive` (owner, a session or an `admin` token, since the archive holds every account's credentials; a stale session gets `403 reauth_required`, a `full` token `403 insufficient_scope`) streams the whole server as a backup archive (`application/gzip`, the format `opentodo restore` reads) and records `export.requested` with format `archive`. Read and agent tokens get `403 insufficient_scope`. The route does not exist on a self-hosted server.
+
+The host answers these codes itself, before the tenant's server sees the request:
+
+| Code | Status | Where |
+| --- | --- | --- |
+| `limit_storage`, `limit_ops_hour`, `limit_ops_total` | 403 | hosted server: a REST write over the tenant's storage, changes per hour or stored changes; on `/sync` the same codes are per-op `rejected` reasons |
+| `limit_import` | 413 | hosted server: an import file over the tenant's import size |
+| `limit_requests` | 429 | hosted server: more requests per minute than the tenant's limit |
+| `suspended` | 503 | hosted server: the operator suspended this tenant; its data is kept |
 
 A tenant's limits refuse changes one at a time. On `/api/v1/sync` a refused op appears in `rejected` with reason `limit_storage`, `limit_ops_hour` or `limit_ops_total`; the rest of the batch is applied, and the server does not send its own value back for it, so the device keeps the change and sends it again later. A REST write answers `403` with the reason as code.
 
@@ -2223,6 +2249,150 @@ One task published as a page people without an account open at `/t/<secret>[/<la
 **Guests** — replies (`{name, body}`, 1–40 and 1–4000 characters) become comments by the publisher from the device `page:<page-id>` with `guest_name` and `page_id`; on an encrypted page they are `{ciphertext}` (16 KB at most) kept until a device imports and confirms them. Ticks complete or reopen the task or a subtask; reopening only within 24 hours. Limits per page: 120 reads and 60 ticks a minute, 20 replies an hour; 120 requests a minute per address; unknown secrets count against the address's sign-in limit. Responses carry `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, and the request log redacts the secret.
 
 ## Examples
+
+### Checked examples
+
+Each request below runs, in this order, against a test server on every change (`go test ./internal/httpapi -run APIExamples`): an owner signed in with a `full` token (`$TOKEN`), one project and one task in it. The status and the top-level fields shown are checked; the values in your answers differ.
+
+A request without credentials:
+
+<!-- run -->
+```http
+GET /api/v1/tasks
+```
+
+```json
+// 401
+{"error": {"code": "unauthorized", "message": "authentication required"}}
+```
+
+An invalid request:
+
+<!-- run -->
+```http
+POST /api/v1/tasks
+Authorization: Bearer $TOKEN
+Content-Type: application/json
+
+{"title": "Call the plumber", "priority": 9}
+```
+
+```json
+// 400
+{"error": {"code": "invalid_input", "message": "invalid op: task.priority must be an integer from 1 (highest) to 4 (lowest)"}}
+```
+
+Create a task in a project, then list the project's tasks:
+
+<!-- run -->
+```http
+POST /api/v1/tasks
+Authorization: Bearer $TOKEN
+Content-Type: application/json
+
+{"title": "Call the plumber", "priority": 2, "project_id": "<project-id>", "due": {"date": "2026-10-11", "time": "09:00"}}
+```
+
+```json
+// 201
+{"id": "0d6c…", "title": "Call the plumber", "priority": 2, "project_id": "<project-id>", "due": {"date": "2026-10-11", "time": "09:00"}}
+```
+
+<!-- run -->
+```http
+GET /api/v1/tasks?project_id=<project-id>
+Authorization: Bearer $TOKEN
+```
+
+```json
+// 200
+{"tasks": [{"id": "…", "title": "Buy milk"}, {"id": "0d6c…", "title": "Call the plumber"}]}
+```
+
+Complete a task:
+
+<!-- run -->
+```http
+PATCH /api/v1/tasks/<task-id>
+Authorization: Bearer $TOKEN
+Content-Type: application/json
+
+{"completed_at": 1760090000000}
+```
+
+```json
+// 200
+{"id": "<task-id>", "title": "Buy milk", "completed_at": 1760090000000}
+```
+
+Create a project:
+
+<!-- run -->
+```http
+POST /api/v1/projects
+Authorization: Bearer $TOKEN
+Content-Type: application/json
+
+{"name": "Garden", "color": "green"}
+```
+
+```json
+// 201
+{"id": "6a1f…", "name": "Garden", "color": "green"}
+```
+
+A first sync exchange of a new device:
+
+<!-- run -->
+```http
+POST /api/v1/sync
+Authorization: Bearer $TOKEN
+Content-Type: application/json
+
+{"device": "docs-example", "cursor": 0, "ops": []}
+```
+
+```json
+// 200
+{"ops": ["…"], "cursor": 12, "hasMore": false, "serverTime": 1760060001000, "generation": "4f1c…"}
+```
+
+List your imports, your API tokens and the MCP setting:
+
+<!-- run -->
+```http
+GET /api/v1/import/jobs
+Authorization: Bearer $TOKEN
+```
+
+```json
+// 200
+{"jobs": []}
+```
+
+<!-- run -->
+```http
+GET /api/v1/tokens
+Authorization: Bearer $TOKEN
+```
+
+```json
+// 200
+{"tokens": [{"id": "…", "name": "docs", "scope": "full", "createdAt": 1760000000000, "lastUsedAt": 1760060001000}]}
+```
+
+<!-- run -->
+```http
+GET /api/v1/settings/mcp
+Authorization: Bearer $TOKEN
+```
+
+```json
+// 200
+{"enabled": false, "writes_enabled": false, "endpoint": "https://todo.example.com/mcp"}
+```
+
+### More examples
 
 Create a task due tomorrow at 9:00 in a project:
 
@@ -2351,12 +2521,12 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | Code | Status | Where |
 | --- | --- | --- |
 | `bad_request` | 400 | malformed JSON, an unknown field, data after the JSON value, or a missing required parameter (for example `device` on `/sync` or `/sync/events`); an import upload that is not multipart or has no `file` part |
-| `invalid_input` | 400 | validation failure naming the field or parameter (422 on `/api/v1/frames` and `/api/v1/slots`) |
+| `invalid_input` | 400/422 | validation failure naming the field or parameter (422 on `/api/v1/frames` and `/api/v1/slots`) |
 | `invalid_op` | 400 | `/api/v1/sync` batch with an op that fails schema validation (unknown entity or field, wrong type, an `entityId` outside the allowed characters), or a device id starting with the reserved `agent:`, `caldav:`, `issues:` or `rule:` (`assistant:` is a device prefix and is accepted); nothing in the batch is applied |
 | `unauthorized` | 401 | any protected route without a valid session or token |
 | `demo_expired` | 401 | demo instance: a session cookie that no longer resolves, because its sandbox was deleted (inactivity, maximum age or the nightly reset). Clients drop their local data and offer a new sandbox |
 | `forbidden` | 403 | an action your account role or project role does not allow: invitation management or user administration by a member, an admin acting on an admin or the owner, a role change or transfer by a non-owner; owner settings (backups, audit, webhook policy, two-factor policy, single sign-on, MCP, CalDAV) or a member reset by a non-owner; a write, purge or membership change your project role does not allow; editing someone else's comment |
-| `bad_origin` | 403 | cookie-authenticated write from another origin; any `/mcp` request whose `Origin` is not this server |
+| `bad_origin` | 403 | cookie-authenticated write from another origin, or one naming neither `Origin` nor `Sec-Fetch-Site: same-origin` that is not a JSON body; any `/mcp` request whose `Origin` is not this server |
 | `session_required` | 403 | `POST /api/v1/assistant/turn` with an API token: the assistant is used from the app while signed in; confirming a restore or deleting a safety copy with an API token |
 | `unknown_skill` | 400 | `POST /api/v1/assistant/turn` naming a skill id the server does not have |
 | `insufficient_scope` | 403 | a write route or `/api/v1/sync` called with a `read` API token, or with an `agent` token outside the [agent content routes](#agent-tokens); `/api/v1/me/agent-access` with either |
@@ -2364,30 +2534,32 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `demo_restricted` | 403 | a feature a demo instance (`OPENTODO_DEMO=true`) refuses, before authentication: sign-up, invitations, user administration, password change and resets, tokens, app passwords, CalDAV, passkeys, two-factor, settings writes, backups, webhooks, email inbox, import, encryption, push, membership changes, project invite links (every method), `/mcp`, the assistant (`/api/v1/assistant/*`, `/api/v1/me/assistant*`), automation rules (`/api/v1/rules*`, `/api/v1/me/rules*`, `/api/v1/settings/automations`). See [demo instance](self-hosting/demo.md#what-is-switched-off) |
 | `not_found` | 404 | unknown id, including another account's items, webhooks and deliveries, and items you cannot read; `/api/v1/push/*` with `OPENTODO_PUSH=off` |
 | `conflict` | 409 | starting or undoing an import while another import of yours runs; `POST /backups/run` while a backup is running, or after a restore was confirmed; confirming a restore while a backup runs |
-| `timer_running` | 409 | an `agent` token starts a timer while another of the user's entries runs, without `stopRunning: true` |
-| `too_large` | 413 | a JSON request body over its limit (4 MB unless the route says otherwise); `/mcp` body over 1 MB; an assistant turn over 256 KB or 40 messages; import file over `OPENTODO_IMPORT_MAX_MB` or 50,000 rows |
+| `too_large` | 413 | a JSON request body over its limit (4 MB unless the route says otherwise); `/mcp` body over 1 MB; an assistant turn over 256 KB or 40 messages; import file over `OPENTODO_IMPORT_MAX_MB` or 50,000 rows, a CSV field over 1 MiB, a CSV record over 4 MiB or 1,000 fields, or JSON nested over 256 levels |
 | `rate_limited` | 429 | too many attempts in the window, see [Behaviour notes](#behaviour-notes) |
 | `demo_limit` | 429 | demo instance: the sandbox used its write budget (600 ops per hour, 5,000 ops and 2 MB of values in total), or the database is above its size limit, on `/sync` or a REST write; nothing of the batch is applied. Demo instances also cap values at 4 KB (32 KB for task notes) with `invalid_input` / `invalid_op` |
 | `internal` | 500 | unexpected server error (details only in the server log) |
-| `unavailable` | 503 | backups or webhooks are not available on this server |
 | `demo_busy` | 503 | demo instance: no new sandbox now (live cap reached with none idle for 15 minutes, or the database is above its size limit) |
 | `host_managed` | 403 | hosted server: a setting the operator owns, see [Hosted servers](#hosted-servers) |
-| `limit_storage`, `limit_ops_hour`, `limit_ops_total` | 403 | hosted server: a REST write over the tenant's storage, changes per hour or stored changes; on `/sync` the same codes are per-op `rejected` reasons |
 | `limit_members` | 403 | hosted server: a new account (registration, sign-up confirmation, project invite link, single sign-on) over the tenant's member limit |
-| `limit_import` | 413 | hosted server: an import file over the tenant's import size |
-| `limit_requests` | 429 | hosted server: more requests per minute than the tenant's limit |
-| `suspended` | 503 | hosted server: the operator suspended this tenant; its data is kept |
 | `busy` | 503 | every password-check slot is in use (sign-in, registration, password change or reset); `/sync/events` over 20 streams from one address or 2,000 on the server; hosted server: every open tenant is in use. Try again after `Retry-After` |
+| `unhealthy` | 503 | `GET /healthz` while the database does not answer |
+| `idempotency_conflict` | 409 | a create repeated with the same `Idempotency-Key` and different content, see [Idempotency keys](#idempotency-keys) |
+| `set_by_environment` | 409 | changing an owner switch that an environment variable fixes (`OPENTODO_AUTOMATIONS`, `OPENTODO_DEMO`) |
 
 **Sign-in, accounts and credentials**
 
 | Code | Status | Where |
 | --- | --- | --- |
 | `invalid_credentials` | 401/403 | 401 for a wrong sign-in or passkey; 403 for a wrong current password at `/me/password` or `transfer-ownership` |
+| `account_locked` | 429 | 10 failed passwords, codes or re-authentications for one account within 15 minutes; `Retry-After` says when to try again |
+| `setup_token_invalid` | 403 | creating the first account without the `OPENTODO_SETUP_TOKEN` value |
+| `setup_code_invalid` | 403 | creating the first account without the setup code from another machine (`OPENTODO_SETUP_CODE=required`), or under a domain name while no `OPENTODO_BASE_URL` is set |
+| `invalid_token` | 400 | an email change link that is unknown, used or expired |
 | `signup_closed` | 403 | registration without an invitation while sign-up is closed; first sign-in through the provider when provisioning is not allowed |
 | `email_taken` | 409 | registration with an existing email |
 | `invitation_email_mismatch` | 403 | registration email differs from the invitation's bound email |
 | `invitation_invalid` | 404 | unknown, expired, revoked or already accepted invitation or project invite link; a project link whose project was deleted or whose creator can no longer grant its role |
+| `invitation_stale` | 410 | accepting a membership invitation whose inviter can no longer add you; ask them to add you again |
 | `project_invite_not_allowed` | 403 | registering through a project invite link that may not create accounts (see [Project invite links](#project-invite-links)) |
 | `invitation_spent` | 409 | revoking an accepted invitation or project invite link |
 | `reset_invalid` | 404 | unknown, used, expired or revoked password reset link |
@@ -2406,6 +2578,9 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `sso_required` | 403 | password or passkey sign-in (or password registration) by a non-owner while SSO-only mode is on |
 | `oidc_disabled` | 404 | single sign-on routes while no provider is configured |
 | `oidc_state_invalid` | 400 | provider callback with a missing, forged, expired or reused state |
+| `oidc_failed` | redirect | single sign-on failed at the provider or while checking its answer; the browser returns to the app with `?error=oidc_failed` |
+| `oidc_link_required` | redirect | the provider's email belongs to an account that must link single sign-on from Settings while signed in (the owner, admins, or an account with a second factor or passkeys) |
+| `oidc_email_unverified` | redirect | the provider did not mark the email as verified |
 | `identity_taken` | 409 | linking a provider identity that belongs to another account |
 | `last_credential` | 409 | unlinking the last way to sign in to the account |
 | `verification_invalid` | 404 | unknown, expired, replaced or used sign-up confirmation link |
@@ -2433,14 +2608,26 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `group_exists` | 409 | a group name already used in the workspace (ignoring case) |
 | `project_id_conflict` | 409 | sharing a project for the first time while another account has a project with the same id |
 | `not_deleted` | 409 | purging a task or project that is not in the Trash |
+| `invalid_aisle` | 400 | a section's `aisle` that is not one of the listed aisles, see [Sections](#sections) |
+| `too_many_objectives` | 409 | a sixth open objective for the same week or quarter, see [Objectives](#objectives) |
+| `body_changed` | 409 | a note edit whose base no longer matches the stored note: read it again and retry |
+| `too_many_appends` | 409 | appending to a note that already holds 100 appends no device has merged yet |
+| `not_recurring` | 400 | an occurrence route on a task that is not an open recurring task |
+| `not_an_occurrence` | 400 | an occurrence route with a date that is not an occurrence of the task from its current one on |
 | `unsupported_format` | 400 | import file in no supported format |
 | `invalid_file` | 400 | import file recognised but unreadable |
+| `attachments_disabled` | 403 | uploading an attachment while the owner has turned attachments off |
+| `attachment_too_large` | 413 | an attachment over the server's per-file limit |
+| `quota_exceeded` | 403 | an attachment upload that would go over your attachment quota |
+| `attachment_mismatch` | 400 | uploaded bytes that do not match the attachment's declared size or SHA-256 |
+| `already_uploaded` | 409 | uploading the file of an attachment that already has one |
+| `attachments_unavailable` | 503 | the server has no file store for attachments |
 | `private_target` | 400 | webhook URL on a private, loopback or link-local network while the owner has not allowed private targets |
 | `task_required` | 400 | a routine run by hand whose steps read the trigger's task, without `task_id` |
 | `already_undone` | 409 | the routine run was undone before |
 | `paused` | 409 | a routine the server paused (`paused_reason: "runaway"`) was run by hand; turn it on again first |
 | `automations_off` | 409 | a routine was run by hand while the owner has automations off |
-| `limit_reached` | 409 | more than 20 webhooks, 5 issue connections or 50 automation rules on one account; a workspace limit (20 owned workspaces, 200 members, 50 groups, 100 per group); 422 for a 51st calendar frame |
+| `limit_reached` | 400/409/422 | 400 for an eleventh calendar feed subscription; 409 for more than 20 webhooks, 5 issue connections or 50 automation rules on one account; a workspace limit (20 owned workspaces, 200 members, 50 groups, 100 per group); 422 for a 51st calendar frame |
 | `destination_error` | 502 | `POST /backups/test`, the archive list or preparing a restore when the destination refuses or cannot be reached |
 | `passphrase_required` | 422 | preparing an encrypted archive without a passphrase when the stored one is missing |
 | `passphrase_invalid` | 422 | preparing an encrypted archive with a passphrase that does not open it |
@@ -2455,6 +2642,27 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `not_acceptable` | 406 | `/mcp` with an `Accept` header that admits only `text/event-stream` |
 | `unsupported_protocol_version` | 400 | `/mcp` with an `MCP-Protocol-Version` header naming an unsupported version |
 | `issues_disabled` | 404 | any `/api/v1/issues` route while the owner has not enabled [issue connections](#issue-connections) |
+| `mcp_disabled` | 409 | opting a device in to the [device relay](#device-relay) while the owner has AI assistants (MCP) off |
+| `invalid_redirect_uri` | 400 | registering an OAuth client without a redirect address, or with one this server does not register automatically |
+| `invalid_scope` | 400 | an OAuth client or token request for a scope other than `read` or `agent` |
+| `feeds_disabled` | 404 | the [calendar feed](#calendar-feeds) routes while the owner has calendar feeds off |
+| `channels_disabled` | 404 | the [notification channel](#notification-channels) routes while the owner has them off |
+| `maps_disabled` | 404 | the [map](#maps) routes while the owner has maps off |
+| `maps_unavailable` | 502 | the map provider did not answer |
+| `stt_not_configured` | 409 | dictation while no [speech-to-text](#speech-to-text) service is connected |
+| `stt_unavailable` | 502 | the speech-to-text service did not answer or refused the audio |
+| `page_invalid` | 404 | an unknown, expired or revoked [task page](#task-pages) |
+| `page_not_encrypted` | 409 | sending a snapshot for a task page that is served live |
+| `not_encrypted` | 409 | the [device relay](#device-relay) or a device-run routine on an account without end-to-end encryption |
+| `not_opted_in` | 403 | a relay or routine request from a device that has not opted in from this session |
+| `session_only` | 403 | running a routine on a device with an API token instead of a signed-in session |
+| `run_closed` | 409 | a device reporting on a routine run that is not waiting for a device |
+| `routine_changed` | 409 | a device reporting on a run of a routine that was edited meanwhile |
+| `fallback` | 409 | a device-run result that the routine's apply-without-asking setting does not allow; send it as a proposal |
+| `write_limit` | 400 | a device-run routine result that would write more than 500 items |
+| `plaintext` | 400 | a device-run routine of an encrypted account sending a value that is not encrypted |
+| `proposal_closed` | 409 | applying or dismissing a routine's AI proposal that was already applied, dismissed or expired |
+| `encrypted` | 409 | applying a routine's AI proposal of an end-to-end encrypted account through the API; apply it in the app |
 | `calendar_sync_disabled` | 404 | any `/api/v1/calendar-sync` route while the owner has not enabled [calendar sync](#calendar-sync) |
 | `unauthorized_remote` | 400 | creating a calendar connection or entering a new password the calendar server refuses |
 | `no_calendars` | 400 | a calendar account without a calendar that holds events |
@@ -2470,7 +2678,7 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 
 | Code | Status | Where |
 | --- | --- | --- |
-| `consent_required` | 403 | an assistant turn before you accepted the disclosure for the current provider |
+| `consent_required` | 403/409 | 403 for an assistant turn or a routine description before you accepted the disclosure for the current provider; 409 marking the disclosure seen while no consent is on record |
 | `encryption_enabled` | 409 | an assistant turn or consent for an end-to-end encrypted account |
 | `turn_in_progress` | 409 | a second assistant turn while your first is still answering |
 | `images_unsupported` | 422 | an assistant turn with photos while the model in use does not read them (also a stream error when the provider refuses them) |
@@ -2478,7 +2686,7 @@ Every error answers `{"error":{"code","message"}}`; some validation errors add `
 | `provider_changed` | 409 | accepting a disclosure that named a provider no longer in effect |
 | `assistant_disabled` | 409 | accepting the disclosure while the assistant is off |
 | `assistant_quota` | 429 | an assistant turn at your monthly token allowance; `resets_at` names the reset date |
-| `assistant_busy` | 503 | 8 assistant turns already running on the server; retry after `Retry-After` |
+| `assistant_busy` | 503 | 8 assistant turns already running on the server (on a host: across all its tenants); retry after `Retry-After` |
 | `private_target` | 400 | the compatible endpoint's base URL resolves only to private addresses and private endpoints are not allowed |
 
 CalDAV (`/dav/`) answers with WebDAV status codes and precondition elements instead of this envelope; MCP tool errors are JSON-RPC errors (see [mcp.md](mcp.md#protocol-details)).
