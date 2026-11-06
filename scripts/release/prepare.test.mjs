@@ -393,7 +393,10 @@ function deviceRecord(dir) {
   mkdirSync(join(dir, 'docs/performance'), { recursive: true })
   writeFileSync(join(dir, `docs/performance/results-${NEXT_MAJOR}.md`), '| Metric | Android | iPhone | Raspberry Pi 4 |\n| --- | --- | --- | --- |\n| `cold-start` (ms) | 1,000 | 1,000 | — |\n')
 }
-const fragmentFiles = (dir) => readdirSync(join(dir, 'changelog.d'), { recursive: true }).filter((f) => f.endsWith('.md')).sort()
+// Compared against forward-slash names on every platform: readdirSync(recursive) answers
+// with the platform's separator, so a Windows run would see Added\\a-feature.md.
+const fragmentFiles = (dir) => readdirSync(join(dir, 'changelog.d'), { recursive: true })
+  .filter((f) => f.endsWith('.md')).map((f) => f.split('\\').join('/')).sort()
 
 test('release-prepare: a release candidate only adds its CHANGELOG.md section, keeps the fragments and warns about what the owner has pending', async () => {
   const dir = candidateRepo()

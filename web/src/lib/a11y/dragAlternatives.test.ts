@@ -76,7 +76,9 @@ function dragSources(): Found[] {
   const out: Found[] = []
   for (const path of files(src)) {
     const text = readFileSync(path, 'utf8')
-    const file = relative(root, path)
+    // Compared against the map's forward-slash paths on every platform: relative() answers
+    // with the platform's separator, so a Windows run would read web\\src\\app\\...
+    const file = relative(root, path).replaceAll('\\', '/')
     for (const [tag, line] of intrinsicTags(text)) {
       const draggable = attr(tag, 'draggable')
       const handlers = [attr(tag, 'onDragStart'), attr(tag, 'onDrag'), attr(tag, 'onPointerDown')].filter((h): h is string => h !== null && !STOP_ONLY.test(h))
