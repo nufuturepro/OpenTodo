@@ -197,7 +197,6 @@ export const SETTINGS_COPY = {
       density: { label: msg('Density'), description: msg('Compact tightens rows, headers and the sidebar; touch targets stay full size.') },
       rows: { label: msg('Task rows'), description: msg('Detailed adds the parent task and a line of dates, priority and labels.') },
       motion: { label: msg('Motion'), description: msg('Off makes menus, dialogs and changes instant.') },
-      notes: { label: msg('Release notes'), description: msg('The changelog opens as a dialog, or embedded under the version on this device.') },
       haptics: { label: msg('Haptic feedback'), description: msg('A short vibration when you complete a task or pick one up with a long press.') },
     },
   },
@@ -499,7 +498,7 @@ export const SETTINGS_COPY = {
       plain: msg('Free and open source · no tracking, no telemetry.'),
     },
     rows: {
-      version: { label: msg('Version'), description: msg('Select it to read what changed in each release.') },
+      version: { label: msg('Version'), description: msg('Opens the changelog on the website, at this release.') },
       help: { label: msg('Help'), description: msg('The guides of this version, inside the app and offline.') },
       docs: { label: msg('Documentation'), description: msg('The same guides on the website, with setup and self-hosting.') },
       website: { label: msg('Website'), description: msg('News, guides, comparisons and what is new in each release.') },

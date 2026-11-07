@@ -1,12 +1,12 @@
 # Design
 
-## D1 — The changelog is a build artifact, not an API
+## D1 — The changelog stays the website's
 
-`scripts/changelog-build.mjs` parses CHANGELOG.md (Keep a Changelog: `## [version]` releases with an optional date, `### Kind` sections, `- ` items) into `web/src/generated/changelog.json`, keeping the items' **bold**, `code` and `[label](url)` markdown for the dialog's small renderer. It follows the repository's existing compiled-module pattern (`templates.json`, `help.json`): `make changelog` refreshes it, `changelog-check` runs the parser under `node --test` and fails on a stale committed file, and both `make check` and `make ci-checks` run that target. The app loads the JSON through one lazy `import()` (the template bundle's cast), so no list or settings page pays for it up front, and opening the dialog makes no request — it works offline by construction.
+The published changelog renders every release with its summary, its section headings and its own resolution of the `docs/…` links that CHANGELOG.md writes relative to the repository; the app has none of that, and a copy of it would drift the moment a release is cut — `make release-prepare` rewrites CHANGELOG.md, so a compiled copy is stale after every release. So the row links out: `changelogUrl()` builds `https://open-todo.app/changelog/#v1-0-0` from the version it shows (dots to dashes, the anchor the site publishes for each release). A build without a release number or a release candidate has no anchor and opens the page's newest release, which is the release it is closest to. The cost is a document that used to open offline: it now needs a connection, like every other link on the page, and in exchange nothing is generated, committed, checked on every release or paid for in the bundle.
 
 ## D2 — Version: the server's word, the build's fallback
 
-The row shows `useServerVersion()`'s value — the same one the About card's description already prints while online — and falls back to `web/package.json`'s version offline, so the number is never absent. One row, one control: the number itself is the button. Nothing new is fetched; the row reuses the About section's existing status call.
+The row shows `useServerVersion()`'s value — the same one the About card's description already prints while online — and falls back to `web/package.json`'s version offline, so the number is never absent and the link always has an anchor to build. One row, one control: the number itself is the link. Nothing new is fetched; the row reuses the About section's existing status call.
 
 ## D3 — The reminder is device state
 

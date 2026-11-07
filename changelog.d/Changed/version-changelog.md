@@ -1,0 +1,1 @@
+- **The version in Settings → About opens the published changelog (Fork).** Selecting the number opens open-todo.app at the release you run, with every earlier release below it; the in-app copy and its Release notes switch are gone.

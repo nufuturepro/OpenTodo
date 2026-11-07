@@ -1,15 +1,14 @@
 # Tasks
 
-## 1. The changelog is compiled from this repository's CHANGELOG.md
+## 1. The changelog stays the website's
 
-- [x] 1.1 `scripts/changelog-build.mjs` parses releases, sections and items into `web/src/generated/changelog.json`, newest first, `--check` for a stale file — verified by `node scripts/changelog-build.test.mjs` (kinds, links, staleness).
-- [x] 1.2 The `changelog-check` Makefile target runs the parser test and `--check`, and is part of `make check` and `make ci-checks` — verified by `make changelog-check`.
-- [x] 1.3 `node scripts/changelog-build.mjs` regenerated the committed module (27 releases).
+- [x] 1.1 No compiled copy: the row links to the published changelog, whose every release has an anchor (`#v1-0-0`) — verified by 7.2.
+- [x] 1.2 No build step and no Makefile target, so `make release-prepare` rewriting CHANGELOG.md cannot leave a stale module or fail a check.
 
-## 2. Settings → About: the version row opens the changelog
+## 2. Settings → About: the version row links to the changelog
 
-- [x] 2.1 `web/src/app/ChangelogDialog.tsx`: the lazy module, translated section headings, the inline subset (**bold**, `code`, [links](url)), the loading and failure lines, dialog entrance as every dialog's — observable through the About test (7.2).
-- [x] 2.2 `AboutSection` gains the Version row: the server's version online, this build's otherwise, the number as the button (`data-about-version`) — verified by 7.2.
+- [x] 2.1 `changelogUrl(version)` in `AboutSection.tsx`: the release's anchor from a plain `x.y.z`, the page itself for a dev build or a release candidate — verified by 7.2.
+- [x] 2.2 `AboutSection` gains the Version row: the server's version online, this build's otherwise, the number as a link opening in a new tab (`data-about-version`) — verified by 7.2.
 - [x] 2.3 The row's copy in `settingsCopy.ts` and its settings-search entry under "version" and "changelog" — verified by `node scripts/i18n-check.mjs` and 7.2.
 
 ## 3. The grip's one-time reminder
@@ -36,8 +35,7 @@
 ## 7. Tests
 
 - [ ] 7.1 The grip reminder: shown above a touch list that holds tasks, **Got it** persists across a remount, a fine pointer never sees it.
-- [ ] 7.2 The About version row opens the changelog dialog with this release first and the row findable in the settings search.
-- [ ] 7.3 The changelog parser test covers section kinds, inline links and staleness (done in 1.1).
+- [ ] 7.2 The About version row links to the changelog at the release it shows — the server's once known, this build's before that — falling back to the page for a version without an anchor, and the row is findable in the settings search.
 
 ## 8. The gates
 

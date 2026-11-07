@@ -3,26 +3,36 @@
 // (discord-community), the account on X (x-account-link), Buy Me a Coffee, and the
 // owner's welcome note on demand. Every link is a plain link opening a new tab;
 // the version comes from this server's status while online. The version row
-// (version-hint-motion) shows that number — this build's while offline — and opens
-// this repository's changelog.
+// (version-hint-motion) shows that number — this build's while offline — and links to
+// the published changelog, at the release this client runs.
 import { useEffect, useState } from 'react'
 import { Badge, Icon, Notice, SettingRow, SettingsSection } from '../ui'
-// Named import, so the bundle carries the version and not the whole package.json
-// (scripts, devDependencies — the workbench test would find them in the build).
-import { version as buildVersion } from '../../package.json'
+// The build's version, inlined by vite.config.ts's `define` (see globals.d.ts), so the
+// bundle carries the number and not package.json's scripts and devDependencies.
+const buildVersion = __APP_VERSION__
 import { api } from '../lib/api'
 import { t } from '../lib/i18n'
 import { useOnline } from '../lib/online'
 import type { User } from '../lib/types'
 import { navigate } from './router'
 import { CoffeeButton, DISCORD_URL, ISSUES_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
-import { ChangelogDialog, ChangelogView } from './ChangelogDialog'
-import { useNotesView } from '../lib/notesView'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
 import { shell, shellOutdated, type OpenTodoShell } from '../lib/shell'
 
 export const WEBSITE_URL = 'https://open-todo.app'
 export const DOCS_URL = 'https://open-todo.app/docs/'
+export const CHANGELOG_URL = `${WEBSITE_URL}/changelog/`
+
+/**
+ * The changelog at the release this client runs: the website gives every release an
+ * anchor (`#v1-0-0`), so the row opens what changed in this version and the whole
+ * history under it. A build without a release number (`dev+abc1234`) or a pre-release
+ * suffix has no anchor of its own and opens the page's newest release instead.
+ */
+export function changelogUrl(version: string): string {
+  const release = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
+  return release ? `${CHANGELOG_URL}#v${release[1]}-${release[2]}-${release[3]}` : CHANGELOG_URL
+}
 
 function ExternalLink({ href, label, testId }: { href: string; label: string; testId: string }) {
   return (
@@ -65,19 +75,13 @@ export function AboutSection({ user }: { user: User }) {
   const s = shell()
   const app = s ? { platform: s.platform, version: s.app, outdated: shellOutdated() } : null
   const [note, setNote] = useState(false)
-  const [changelog, setChangelog] = useState(false)
-  // Appearance → Release notes decides whether the version row opens a dialog or
-  // unfolds the same changelog under it (notesView).
-  const notesView = useNotesView()
   return (
     <>
       <SettingsSection {...cardCopy('about', { variant: version ? 'version' : 'plain', values: { version } })}>
         <SettingRow id="about-version" {...rowCopy('about', 'version')}
-          control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => setChangelog(!changelog)}
-            aria-expanded={notesView === 'embed' ? changelog : undefined} data-about-version>{version ?? buildVersion}</button>} />
-        {notesView === 'embed' && changelog && (
-          <div className="border-t border-default pt-3 pb-1" data-changelog-embed><ChangelogView /></div>
-        )}
+          control={<a href={changelogUrl(version ?? buildVersion)} target="_blank" rel="noopener noreferrer"
+            className="ui-btn ui-btn--secondary ui-btn--sm inline-flex items-center gap-1.5 whitespace-nowrap"
+            data-about-version>{version ?? buildVersion}<Icon name="external-link" size="xs" /></a>} />
         <ShellAppRow app={app} />
         <SettingRow id="about-help" {...rowCopy('about', 'help')}
           control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => navigate({ view: 'help' })} data-about-help>{t('Open Help')}</button>} />
@@ -102,7 +106,6 @@ export function AboutSection({ user }: { user: User }) {
         <div className="pt-1"><CoffeeButton className="sm:w-64" /></div>
       </SettingsSection>
       {note && <WelcomeNote onClose={() => setNote(false)} />}
-      {notesView === 'popup' && changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
     </>
   )
 }

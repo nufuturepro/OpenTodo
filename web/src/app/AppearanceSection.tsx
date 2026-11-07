@@ -25,7 +25,6 @@ import { accentName } from '../lib/colourNames'
 import { act } from './actionError'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
 import { hapticsPrefOn, setHapticsPref } from '../lib/haptics'
-import { NOTES_VIEWS, setNotesView, useNotesView, type NotesView } from '../lib/notesView'
 import { canVibrate } from './motion'
 import { readTaskOpen, setTaskOpen, type TaskOpenPref } from '../lib/userPrefs'
 import { accountRowLayout, ROW_LAYOUTS, setAccountRowLayout, type RowLayout } from '../lib/rowLayout'
@@ -39,7 +38,6 @@ import { effectiveSide } from '../lib/appearance'
 
 const MODE_LABEL = translatedMap<ThemeModePref>({ system: msg('System'), light: msg('Light'), dark: msg('Dark') })
 const DENSITY_LABEL = translatedMap<Density>({ comfortable: msg('Comfortable'), compact: msg('Compact') })
-const NOTES_VIEW_LABEL = translatedMap<NotesView>({ popup: msg('Pop up'), embed: msg('Embedded') })
 const TASK_OPEN: readonly TaskOpenPref[] = ['page', 'panel']
 const TASK_OPEN_LABEL = translatedMap<TaskOpenPref>({ page: msg('As a page'), panel: msg('In a side panel') })
 
@@ -125,8 +123,6 @@ export function AppearanceView({ value, onMode, onAccent, custom, onDensity, row
   // Arrows select a built-in theme; on the Custom tile they select the stored colour, or only move there.
   const choose = (a: ThemeAccent) => { if (a !== CUSTOM_ACCENT || value.custom) onAccent(a) }
   const customOn = value.accent === CUSTOM_ACCENT
-  // The changelog's presentation is this device's (notesView): the About page reads the same value.
-  const notesView = useNotesView()
   const swatch = custom?.values && value.custom ? custom.values : null
   return (
     <SettingsSection {...cardCopy('appearance')}>
@@ -190,8 +186,6 @@ export function AppearanceView({ value, onMode, onAccent, custom, onDensity, row
         <SettingRow id="appearance-haptics" {...rowCopy('appearance', 'haptics')} htmlFor="appearance-haptics-switch"
           control={<Switch id="appearance-haptics-switch" checked={haptics.on} onChange={haptics.onChange} label={t('Haptic feedback')} hideLabel />} />
       )}
-      <SettingRow id="appearance-notes" {...rowCopy('appearance', 'notes')}
-        control={<Segmented label={t('Release notes')} items={NOTES_VIEWS} labels={NOTES_VIEW_LABEL} value={notesView} onChange={setNotesView} testId="appearance-notes" />} />
       {onMotion && (
         <SettingRow id="appearance-motion" {...rowCopy('appearance', 'motion')} htmlFor="appearance-motion-switch"
           control={<Switch id="appearance-motion-switch" checked={(value.motion ?? 'on') !== 'off'}

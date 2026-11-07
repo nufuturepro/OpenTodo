@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: About section
-Settings SHALL have an About section, visible to every account, that shows the server's version while online and a link to the in-app Help, the documentation on the website, the website, the issue tracker on GitHub, the OpenTodo Discord server, the OpenTodo account on X and the source code, and a Buy Me a Coffee button. It SHALL also show a Version row whose value is the server's version while online and this client build's version otherwise; activating that value SHALL open this repository's changelog in a dialog — every release newest first with its date, its section headings in the app's language and its items' text with their emphasis, code and links intact — read from a module compiled into the client at build time, so the dialog opens offline and makes no request of its own. External links SHALL open in a new tab and load nothing into the app; they SHALL be shown offline too, since they are part of the client. The Discord row SHALL be found by the settings search under "discord", "community" and "chat", the X row under "x", "twitter" and "news", and the Version row under "version" and "changelog". For the owner it SHALL also offer to show the welcome note again.
+Settings SHALL have an About section, visible to every account, that shows the server's version while online and a link to the in-app Help, the documentation on the website, the website, the issue tracker on GitHub, the OpenTodo Discord server, the OpenTodo account on X and the source code, and a Buy Me a Coffee button. It SHALL also show a Version row whose value is the server's version while online and this client build's version otherwise; activating that value SHALL open the published changelog on the website in a new tab, at the release it shows — the site anchors every release — with the releases before it below, and a value without an anchor, such as a development build or a release candidate, SHALL open the page's newest release. External links SHALL open in a new tab and load nothing into the app; they SHALL be shown offline too, since they are part of the client. The Discord row SHALL be found by the settings search under "discord", "community" and "chat", the X row under "x", "twitter" and "news", and the Version row under "version" and "changelog". For the owner it SHALL also offer to show the welcome note again.
 
 #### Scenario: Member opens About
 - **WHEN** a member opens `/settings/about` while online
@@ -24,8 +24,8 @@ Settings SHALL have an About section, visible to every account, that shows the s
 - **THEN** the welcome note opens, and closing it leaves Settings as it was
 
 #### Scenario: Reading the changelog
-- **WHEN** anyone activates the version number in the Version row of Settings → About, online or offline
-- **THEN** the changelog dialog opens with the releases newest first, their section headings in the app's language, and no request leaves the app to show it
+- **WHEN** anyone activates the version number in the Version row of Settings → About
+- **THEN** the published changelog opens in a new tab at that release's anchor, with every earlier release listed below it
 
 #### Scenario: Searching for the version
 - **WHEN** anyone types "version" or "changelog" in the settings search

@@ -22,14 +22,8 @@ describe('production build', () => {
     expect(Object.keys(built).length, 'internal/web/dist: run npm run build first').toBeGreaterThan(0)
   })
   it.skipIf(Object.keys(built).length === 0)('contains no workbench code', () => {
-    // Since version-hint-motion the app ships this repository's changelog, whose prose
-    // names the workbench ("a component workbench (Storybook, development only)"), so the
-    // bare word is no longer proof of code; Storybook's own markers still are: its module
-    // specifiers, its globals and its config paths — package.json's devDependencies carry
-    // `@storybook/…` and fail this too.
-    const CODE = /@storybook\/|__STORYBOOK|\.storybook\//
     const offenders = Object.entries(built)
-      .filter(([, text]) => CODE.test(text))
+      .filter(([, text]) => /storybook/i.test(text))
       .map(([path]) => path)
     expect(offenders).toEqual([])
   })

@@ -234,9 +234,9 @@ openspec-validate:
 
 ## Everything CI runs.
 ## Documentation (user-documentation): build the docs site into dist/docs-site, regenerate the in-app help
-## bundle web/src/generated/help.json (not committed; `npm run help` builds only that), the keyboard
-## and roadmap guides' tables from docs/, and the changelog module the site bundle embeds.
-docs: templates changelog
+## bundle web/src/generated/help.json (not committed; `npm run help` builds only that) and the keyboard
+## and roadmap guides' tables from docs/.
+docs: templates
 	cd web && npm run docs:build
 
 ## The template library (template-library): templates/ compiled into
@@ -249,16 +249,6 @@ templates-check:
 	node --test scripts/templates-check.test.mjs
 	node scripts/templates-check.mjs
 	node scripts/templates-build.mjs --check
-
-## The changelog module (version-and-grip-hint): CHANGELOG.md compiled into
-## web/src/generated/changelog.json, the lazy release-notes module of the app.
-changelog:
-	node scripts/changelog-build.mjs
-
-## The changelog parser tests and the committed module current.
-changelog-check:
-	node --test scripts/changelog-build.test.mjs
-	node scripts/changelog-build.mjs --check
 
 ## Front matter, links, anchors, images, spec coverage, help ids, generated files.
 docs-check:
@@ -336,11 +326,11 @@ bundle-budget:
 brand-icons:
 	node scripts/brand-icons.mjs
 
-check: lint web-lint staticcheck test fmt-check ui-lint i18n-check docs-check templates-check changelog-check openspec-validate deploy-check repo-check
+check: lint web-lint staticcheck test fmt-check ui-lint i18n-check docs-check templates-check openspec-validate deploy-check repo-check
 
 ## The parts of `make check` that CI runs in its Checks job (the others run in the web,
 ## server and extension jobs; scripts/repo-checks.test.mjs keeps the two lists whole).
-ci-checks: fmt-check ui-lint i18n-check templates-check changelog-check openspec-validate deploy-check repo-check
+ci-checks: fmt-check ui-lint i18n-check templates-check openspec-validate deploy-check repo-check
 
 ## gofmt gate: no Go file may need formatting.
 fmt-check:
