@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { run as deployCheck } from '../deploy-check.mjs'
-import { laterRelease, loadFacts, readText, releaseVersion, ROOT } from '../deploy/common.mjs'
+import { compareVersions, laterRelease, loadFacts, readText, releaseVersion, ROOT } from '../deploy/common.mjs'
 import { staleCopies } from '../deploy/mirror.mjs'
 import { bumpLine, bumpText, candidateChangelogText, candidates, casaosText, changelogText, easypanelText, haChangelogText, prepare, truenasText, withoutCandidates } from './prepare.mjs'
 import { checkUpgradeFixture, fixtureDir, isNewMinor } from './upgradeFixture.mjs'
@@ -18,6 +18,12 @@ const facts = loadFacts()
 const CURRENT = releaseVersion(readText('CHANGELOG.md'))
 const [maj, min, patch] = CURRENT.split('.').map(Number)
 const NEXT_PATCH = `${maj}.${min}.${patch + 1}`
+/** This tree's CHANGELOG.md without the sections of a release candidate it has open (newer than CURRENT). */
+const BASE_CHANGELOG = (() => {
+  const text = readText('CHANGELOG.md')
+  const open = new Set(candidates(text).filter((c) => compareVersions(c.base, CURRENT) > 0).map((c) => c.base))
+  return [...open].reduce(withoutCandidates, text)
+})()
 
 /**
  * The files a hand-made patch release changed ("Prepare 0.14.2", 3e5dfcb0), without the deploy
@@ -79,13 +85,22 @@ const PATCH_RELEASE_FILES = [
 /** A copy of what prepare and the deploy checks read, in a temporary directory. */
 function copyRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'release-prepare-'))
-  for (const p of ['.github', 'deploy', 'docs/self-hosting', 'internal', 'scripts', 'skills', 'web/public', 'CHANGELOG.md', 'LICENSE', 'README.md',
+  for (const p of ['.github', 'deploy', 'docs/self-hosting', 'docs/accessibility', 'internal', 'scripts', 'skills', 'web/public', 'CHANGELOG.md', 'LICENSE', 'README.md',
     'web/package.json', 'web/package-lock.json']) {
     mkdirSync(dirname(join(dir, p)), { recursive: true })
     cpSync(join(ROOT, p), join(dir, p), { recursive: true, filter: (src) => !src.includes('node_modules') })
   }
   // The changelog fragments of this tree are left out: each test writes the ones it needs.
   mkdirSync(join(dir, 'changelog.d'))
+  // So are the sections of a release candidate this tree has open (between 1.0.0-rc.1 and 1.0.0):
+  // the tests prepare the next patch, minor or candidate after the latest release.
+  writeFileSync(join(dir, 'CHANGELOG.md'), BASE_CHANGELOG)
+  // The tests release on dates in 2030: the audit this tree carries is dated just before them, so
+  // its age (tested on its own in accessibilityAudit.test.mjs) never decides a test here.
+  for (const f of readdirSync(join(dir, 'docs/accessibility')).filter((n) => /^audit-.*\.md$/.test(n))) {
+    const p = join(dir, 'docs/accessibility', f)
+    writeFileSync(p, readFileSync(p, 'utf8').replace(/^Date: \d{4}-\d{2}-\d{2}$/m, 'Date: 2030-01-01'))
+  }
   return dir
 }
 
@@ -373,7 +388,7 @@ const reV = (v) => v.replaceAll('.', '\\.')
 /**
  * A copy of the tree ready for NEXT_MAJOR but for what needs the owner's devices: its upgrade
  * fixture, one core screen whose keyboard and zoom passes are done and whose screen-reader passes
- * are pending, and no reference-device record.
+ * are pending, and no reference-device record (optional until real devices are measured, #990).
  */
 function candidateRepo() {
   const dir = copyRepo()
@@ -389,9 +404,9 @@ function audit(dir, cells) {
   mkdirSync(join(dir, 'docs/accessibility'), { recursive: true })
   writeFileSync(join(dir, `docs/accessibility/audit-${NEXT_MAJOR}.md`), `Date: 2030-01-01\n\n| \`inbox\` | ${cells.join(' | ')} |\n`)
 }
-function deviceRecord(dir) {
+function deviceRecord(dir, coldStart = '1,000') {
   mkdirSync(join(dir, 'docs/performance'), { recursive: true })
-  writeFileSync(join(dir, `docs/performance/results-${NEXT_MAJOR}.md`), '| Metric | Android | iPhone | Raspberry Pi 4 |\n| --- | --- | --- | --- |\n| `cold-start` (ms) | 1,000 | 1,000 | — |\n')
+  writeFileSync(join(dir, `docs/performance/results-${NEXT_MAJOR}.md`), `| Metric | Android | iPhone | Raspberry Pi 4 |\n| --- | --- | --- | --- |\n| \`cold-start\` (ms) | ${coldStart} | 1,000 | — |\n`)
 }
 // Compared against forward-slash names on every platform: readdirSync(recursive) answers
 // with the platform's separator, so a Windows run would see Added\\a-feature.md.
@@ -406,11 +421,11 @@ test('release-prepare: a release candidate only adds its CHANGELOG.md section, k
     const { from, changed, warnings } = prepare(rcOf(1), { root: dir, date: '2030-01-02' })
     assert.equal(from, CURRENT)
     assert.deepEqual(changed, ['CHANGELOG.md'])
-    // The owner-dependent gates name what is pending; the release itself would refuse both.
-    assert.equal(warnings.length, 2, warnings.join('\n'))
-    assert.match(warnings[0], new RegExp(`^reference-device record pending, required for ${reV(NEXT_MAJOR)}: .*docs/performance/results-${reV(NEXT_MAJOR)}\\.md`))
-    assert.equal(warnings[1], `accessibility audit: 4 screen-reader passes pending on 1 core screens in docs/accessibility/audit-${NEXT_MAJOR}.md ` +
-      `(NVDA + Firefox, VoiceOver + Safari (macOS), VoiceOver (iOS shell), TalkBack (Android shell)), required for ${NEXT_MAJOR}`)
+    // The pending screen-reader passes are one line for the release notes, for any release. No
+    // reference-device record is no warning: it is optional until real devices are measured (#990).
+    assert.equal(warnings.length, 1, warnings.join('\n'))
+    assert.equal(warnings[0], `accessibility audit: 4 screen-reader passes pending on 1 core screens in docs/accessibility/audit-${NEXT_MAJOR}.md ` +
+      `(NVDA + Firefox, VoiceOver + Safari (macOS), VoiceOver (iOS shell), TalkBack (Android shell)), recorded when someone runs them (#9)`)
     // No template, doc, store field or web app version moves to a candidate; the deploy checks still pass on the latest release.
     for (const rel of PATCH_RELEASE_FILES.filter((f) => f !== 'CHANGELOG.md')) assert.equal(readFileSync(join(dir, rel), 'utf8'), readFileSync(join(ROOT, rel), 'utf8'), rel)
     const problems = (await deployCheck(dir)).flatMap((r) => r.errors.map((e) => `${r.name}: ${e}`))
@@ -438,13 +453,14 @@ test('release-prepare: a release candidate only adds its CHANGELOG.md section, k
     assert.throws(() => prepare(`${maj + 1}.1.0-rc.1`, { root: dir, date: '2030-01-04' }), new RegExp(`release candidate sections for ${reV(NEXT_MAJOR)} \\(${reV(rcOf(3))}, ${reV(rcOf(1))}\\)`))
     assert.throws(() => prepare(NEXT_PATCH, { root: dir, date: '2030-01-04' }), /release candidate sections for/)
 
-    // The release is strict: the device record and every screen-reader pass first.
-    assert.throws(() => prepare(NEXT_MAJOR, { root: dir, date: '2030-01-05' }), /reference-device record docs\/performance/)
+    // The release is strict about a device record, when there is one, being within budget; screen-reader passes may stay pending.
+    deviceRecord(dir, '9,000')
+    assert.match(prepare(rcOf(4), { root: dir, date: '2030-01-04' }).warnings[0], new RegExp(`^reference-device record to fix before ${reV(NEXT_MAJOR)}: docs\\/performance\\/results-${reV(NEXT_MAJOR)}\\.md:\\n  cold-start, Android: 9000 ms`))
+    assert.throws(() => prepare(NEXT_MAJOR, { root: dir, date: '2030-01-05' }), /results-[\d.]+\.md:\n {2}cold-start, Android: 9000 ms is over the budget of 3000 ms and links no issue/)
     deviceRecord(dir)
-    assert.throws(() => prepare(NEXT_MAJOR, { root: dir, date: '2030-01-05' }), /inbox, NVDA \+ Firefox is still pending/)
-    audit(dir, ['pass', 'pass', 'pass', 'pass', 'pass', 'pass'])
     const final = prepare(NEXT_MAJOR, { root: dir, date: '2030-01-05' })
-    assert.deepEqual(final.warnings, [])
+    assert.equal(final.warnings.length, 1, final.warnings.join('\n'))
+    assert.match(final.warnings[0], /^accessibility audit: 4 screen-reader passes pending on 1 core screens/)
     assert.ok(final.changed.includes('web/package.json') && final.changed.includes('deploy/helm/opentodo/Chart.yaml'))
     // One section with every fragment replaces the candidates' sections and links; the fragments are gone.
     assert.deepEqual(fragmentFiles(dir), [])
@@ -453,7 +469,7 @@ test('release-prepare: a release candidate only adds its CHANGELOG.md section, k
     assert.ok(out.includes(`## [${NEXT_MAJOR}] - 2030-01-05\n\n### Added\n\n- **A feature.**\n\n### Fixed\n\n- **A fix.**\n- **Another fix.**\n\n## [${CURRENT}] - `))
     assert.match(out, new RegExp(`^\\[Unreleased\\]: (\\S+)/compare/v${reV(NEXT_MAJOR)}\\.\\.\\.HEAD\\n\\[${reV(NEXT_MAJOR)}\\]: \\1/compare/v${reV(CURRENT)}\\.\\.\\.v${reV(NEXT_MAJOR)}\\n\\[${reV(CURRENT)}\\]: `, 'm'))
     // A candidate of an earlier release (0.3.1-rc.1) is history and stays.
-    assert.equal(out.includes('## [0.3.1-rc.1]'), readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8').includes('## [0.3.1-rc.1]'))
+    assert.equal(out.includes('## [0.3.1-rc.1]'), BASE_CHANGELOG.includes('## [0.3.1-rc.1]'))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -474,7 +490,7 @@ test('release-prepare: on a release candidate the other gates stay strict', () =
     // A version that is neither x.y.z nor x.y.z-rc.N, or a candidate of a release that is not newer.
     for (const v of [`${NEXT_MAJOR}-rc.0`, `${NEXT_MAJOR}-beta.1`, `${NEXT_MAJOR}-rc1`]) assert.throws(() => prepare(v, { root: dir }), /must be x\.y\.z or x\.y\.z-rc\.N/, v)
     assert.throws(() => prepare(`${CURRENT}-rc.1`, { root: dir }), /is not newer than the latest release/)
-    assert.equal(readFileSync(join(dir, 'CHANGELOG.md'), 'utf8'), readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'))
+    assert.equal(readFileSync(join(dir, 'CHANGELOG.md'), 'utf8'), BASE_CHANGELOG)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

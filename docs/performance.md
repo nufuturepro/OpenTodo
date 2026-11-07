@@ -14,6 +14,17 @@ thousands of open tasks and tens of thousands done. These pages give the
 numbers it is held to with a 10,000-task account, on a computer, in a phone
 profile and on a small server, and how they are checked.
 
+**1.0 was measured in CI only.** Every budget 1.0 promises is timed every night
+on a GitHub Actions runner: in desktop Chromium, in a phone profile that
+emulates a phone in that same Chromium, and on the server binary. No real phone,
+iPhone or Raspberry Pi was measured for 1.0, because the project has none of
+the reference devices. The phone profile slows the runner's CPU four times and
+uses a phone's screen and touch input; it talks to a server on the same machine,
+so it does not emulate a mobile network, a phone's memory limits or its
+WebView. The Android, iPhone and Raspberry Pi 4 columns below are the targets
+for real devices, measured after 1.0
+([#990](https://github.com/OpenTodoApp/OpenTodo/issues/990)).
+
 - [The test account](#the-test-account)
 - [Budgets](#budgets)
 - [How the budgets are checked](#how-the-budgets-are-checked)
@@ -65,15 +76,26 @@ of the benchmark's choosing, which could wait behind other work after the tick w
 shown, rather than the paint itself. The nightly report still gives that number,
 without a limit (`complete-task-frame`), so the two can be compared.
 
+What a slow completion waits for is the work left over from the one before it. Since
+November 2026 that work follows the rows a write changed (OpenSpec change
+`incremental-list-updates`): the lists, their groups, the row details, the sidebar's
+counts and the app badge are worked out from those rows instead of from all 10,000
+tasks, and checked against a full recomputation by a test that applies random
+writes; the list is drawn once per completion; and a long list lets the browser skip
+blocks of about 25 rows far from the screen instead of deciding for every row on
+every frame and every tap.
+
 The settings:
 
 - **Desktop**: Chromium on the CI runner.
 - **Phone profile**: the same runner with the CPU slowed four times and a
   412 × 915 screen.
 - **Android, iPhone**: a 2022 mid-range Android phone in the Android app and an
-  iPhone 12 in the iOS app, measured by hand before each minor release.
+  iPhone 12 in the iOS app, to be measured by hand. Not measured yet: real
+  devices come after 1.0 ([#990](https://github.com/OpenTodoApp/OpenTodo/issues/990)).
 - **Server**: the server binary on the CI runner; **Raspberry Pi 4** (4 GB,
-  arm64 image) is measured by hand, with four times the server's limits.
+  arm64 image), with four times the server's limits, to be measured by hand
+  after 1.0 like the phones.
 
 ### The app
 
@@ -145,6 +167,23 @@ phone profile and left 17 MB on the device, after compaction (2.65 GB to 238 MB
 in 50 s, no write waiting more than 35 ms) and with the first copy downloading
 43 MB instead of 2 GB.
 
+The note search is timed in the same session: the Notes page opens a second
+after the first sync ends, the search field is tapped and "kitchen" typed, one
+key at a time, each timed from the key to the updated results. Until November
+2026 one of those keys took 110 to 270 ms in the phone profile (the other keys
+20 to 50 ms), from work the first sync left for just after it: the activity log
+of the whole sync written in one go (half a second of the page's time), and the
+screen catching up with every list only after that; a key typed then waited
+for it, and for the search index the page had had no spare moment to build, so
+that key prepared most of 2,500 notes itself. Now every list catches up as soon
+as the last page is pulled, the activity log is written in slices of 500 entries
+the page can answer a key between, the index is built in slices of 8 ms right
+after the page opens instead of only in idle moments, preparing a note is about
+twice as fast (no pattern walks a 10 KB note to find nothing to do), and a row
+lays out a preview of at most 300 characters, not the whole note, and none while
+it shows a search snippet. On the same machine the phone profile's slowest key
+went from 233 ms (median of five runs) to 63 ms.
+
 `NOTES=1 make perf` runs it (`NOTES_SEED_FLAGS="--notes 50"` for a quick look).
 
 ## How the budgets are checked
@@ -171,9 +210,12 @@ metric five times and fails when a median is over its limit; the nightly alert
 names the metric, the median and the limit ("first sync, desktop, 41 s,
 budget 30 s").
 
-**Before each minor release** the device budgets are measured on the reference
-phones and a Raspberry Pi 4 ([scripts/perf/device.md](../scripts/perf/device.md))
-and recorded in `docs/performance/results-<version>.md`.
+**On real devices, after 1.0.** The device budgets are to be measured on the
+reference phones and a Raspberry Pi 4 ([scripts/perf/device.md](../scripts/perf/device.md))
+and recorded in `docs/performance/results-<version>.md`. No release requires
+that record yet ([#990](https://github.com/OpenTodoApp/OpenTodo/issues/990));
+when a release has one, `make release-prepare` checks its values against the
+budgets.
 
 The app marks a few moments in the browser's own performance timeline
 (`ot:list-ready`, `ot:search-results`, `ot:sync-idle`, `ot:remote-applied`). The
@@ -192,5 +234,7 @@ and Linux for the server's memory figures. The report is written to
 
 ## Latest results
 
-Reference-device results are recorded per release in `docs/performance/`. No
-release has a record yet; the first is due before 1.0.
+Reference-device results are to be recorded per release in `docs/performance/`.
+No release has a record yet, 1.0 included: its budgets were measured in CI only,
+and the first real-device record comes after 1.0
+([#990](https://github.com/OpenTodoApp/OpenTodo/issues/990)).

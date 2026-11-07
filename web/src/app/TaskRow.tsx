@@ -25,7 +25,8 @@
 import { isSample } from '../lib/sampleTasks'
 import { hueFor, Icon, LabelChips, ReadAs, ToneText, Tooltip, TruncatedText, useOverflowing, type HueName, type IconName, type Tone } from '../ui'
 import { slotName, useSlotOf } from '../lib/slots'
-import { lazy, memo, type ReactNode, Suspense, useLayoutEffect, useRef } from 'react'
+import { lazy, memo, type ReactNode, Suspense, use, useLayoutEffect, useRef } from 'react'
+import { RowBlockContext } from './task-list/rowBlockContext'
 import type { RowImplied } from '../lib/listGroups'
 import { describeDeadline, describeDue, formatDate, formatTime, localDueOf, logicalToday, zoneHint, type ResolvedDateTime } from '../lib/dates'
 import { formatMinutes } from '../lib/duration'
@@ -775,6 +776,8 @@ function FullRow({ task, project, labels = [], assignee, assignedToMe = false, s
   // The tick the user just gave shows before the write comes back (list-rendering-at-scale D3).
   const checked = usePendingDone(task) || departing
   const rowRef = useRowHeight(departing)
+  // In a long list's block (incremental-list-updates D5) the lists around the row are presentational: it says it is an item.
+  const inBlock = use(RowBlockContext)
   // Swipe right completes, left schedules, on touch rows the user may edit (phone-v2 D3).
   const swiping = useRowSwipe({ task, enabled: swipe && !card && !readOnly && !inline && !departing, onComplete: onToggle, force: forceSwipe, rowEl: rowRef })
   const feedback = dragFeedback(prefersReducedMotion())
@@ -796,6 +799,7 @@ function FullRow({ task, project, labels = [], assignee, assignedToMe = false, s
   return (
     <li data-drag-id="task-row"
       ref={rowRef}
+      role={inBlock ? 'listitem' : undefined}
       // A departing row is not a row of the list: no id for the cursor, drops or tests.
       data-task-id={departing ? undefined : task.id}
       data-departing={departing ? task.id : undefined}
@@ -964,15 +968,22 @@ function RowGrip({ name, ticked, showCheckbox, onDown, onClick }: { name: string
   )
 }
 
-/** Measures a departing row so its collapse starts from its own height (motion-v2 D3). */
+/**
+ * Measures a departing row so its collapse starts from its own height (motion-v2 D3),
+ * where the browser cannot animate from `auto` itself (`interpolate-size`): measuring
+ * laid out the list in the commit that drew the ghost (about 15 ms in the phone profile
+ * of the 2,000-row list, incremental-list-updates).
+ */
 function useRowHeight(departing: boolean) {
   const ref = useRef<HTMLLIElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
-    if (departing && el) el.style.setProperty('--row-h', `${el.offsetHeight}px`)
+    if (departing && el && !animatesAuto()) el.style.setProperty('--row-h', `${el.offsetHeight}px`)
   }, [departing])
   return ref
 }
+
+const animatesAuto = (): boolean => typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('interpolate-size', 'allow-keywords')
 
 /** The board card: the same row data as a card (sections-and-boards "Card content"). */
 export function TaskCard(props: Omit<TaskRowProps, 'shape'>) {

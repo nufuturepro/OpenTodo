@@ -27,7 +27,9 @@
 // release, as the release workflow moves no `stable` or line tag, publishes no chart and submits
 // to no store for it. The final x.y.z then replaces its candidates' sections with one section
 // from the fragments, which it deletes. The release gates run for x.y.z; on a candidate the ones
-// that need the owner's devices (the reference-device record, the screen-reader passes) are warnings.
+// that need the owner's devices (an over-budget reference-device record) are warnings. The
+// reference-device record itself is optional until real devices can be measured (#990), and
+// pending screen-reader passes are a warning for any release (screen-reader-passes-optional).
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -53,6 +55,8 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 const FIXED = ['.github/ISSUE_TEMPLATE/bug_report.yml']
 /** Files in which every occurrence of the release is the release (a store's own test fixture). */
 const WHOLE = new Set(['deploy/runtipi/upstream/scripts/__tests__/update-config.test.ts'])
+/** Files whose version is another project's (the Runtipi store repo's own package): never edited. */
+const FOREIGN = new Set(['deploy/runtipi/upstream/package.json'])
 const HA_CHANGELOG = 'deploy/homeassistant/upstream/opentodo/CHANGELOG.md'
 const HA_DOCKERFILE = 'deploy/homeassistant/upstream/opentodo/Dockerfile'
 const RUNTIPI_CONFIG = 'deploy/runtipi/config.json'
@@ -69,7 +73,7 @@ export function scannedFiles(root = ROOT) {
     return statSync(join(root, rel)).isDirectory() ? walk(rel) : [rel]
   })
   return [...walk('deploy'), ...walk('docs/self-hosting'), ...FIXED]
-    .filter((rel) => !copies.has(rel))
+    .filter((rel) => !copies.has(rel) && !FOREIGN.has(rel))
     .filter((rel) => !readFileSync(join(root, rel)).includes(0))
 }
 
@@ -207,18 +211,19 @@ export function truenasText(text) {
 
 /**
  * The release gates for `base` (x.y.z) after `from`: throws on the first that refuses it, and
- * returns the warnings. For a release candidate (`candidate`), what only the owner's devices can
- * provide, the reference-device record and the screen-reader passes of the accessibility audit,
- * is a warning that names what is still pending; everything else is as strict as for the release.
+ * returns the warnings. For a release candidate (`candidate`), a reference-device record over budget
+ * is a warning that names it; pending screen-reader passes are a warning for any release; everything
+ * else is as strict as for the release.
  */
 export function runGates(root, { base, from, date, candidate = false, fromDate = '' }) {
   const warnings = []
-  // A minor release carries its reference-device record (performance-10k D5).
+  // A minor release's reference-device record, when it has one, is within budget or links issues
+  // (performance-10k D5). No record passes: real devices are measured after 1.0 (#990).
   try {
     checkDeviceRecord(root, base, from)
   } catch (e) {
     if (!candidate) throw e
-    warnings.push(`reference-device record pending, required for ${base}: ${e.message}`)
+    warnings.push(`reference-device record to fix before ${base}: ${e.message}`)
   }
   // Every import of the migration matrix was checked against a real export lately (migration-everywhere D6).
   checkMatrixFreshness(root, base, date)
@@ -229,9 +234,9 @@ export function runGates(root, { base, from, date, candidate = false, fromDate =
   checkSecurityReviews(root, base, from, date, fromDate)
   // From 1.0.0, the guide's screenshots are newer than the last change to the app (docs-1-0 D7).
   checkScreenshotFreshness(root, base)
-  // A manual accessibility audit at most 12 months old, every core pass done from 1.0.0 on (accessibility-aa D4);
-  // a candidate may still have screen-reader passes pending (DECISIONS 2026-11-06).
-  warnings.push(...checkAccessibilityAudit(root, base, date, { candidate }))
+  // A manual accessibility audit at most 12 months old, every core keyboard and zoom pass done from 1.0.0 on
+  // (accessibility-aa D4); screen-reader passes may be pending on any release (screen-reader-passes-optional).
+  warnings.push(...checkAccessibilityAudit(root, base, date))
   return warnings
 }
 
