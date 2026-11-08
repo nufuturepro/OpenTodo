@@ -48,7 +48,7 @@ To add more people, keep sign-up closed and create single-use invitation links i
 - Data lives in the named volume `opentodo-data`, mounted at `/data`.
 - Change the host port with `OPENTODO_PORT` in `.env`, and the host address it is published on with `OPENTODO_BIND` (default `0.0.0.0`, every interface, so other devices on your network reach it). Behind a reverse proxy on the same machine, `OPENTODO_BIND=127.0.0.1` is the safer choice: only the proxy reaches the server. That `.env` value is not passed into the container, so the process keeps listening on 8080 and the mapping stays `host:8080`. To move the process, set `OPENTODO_PORT` in the container's own environment and publish that container port (`-p 7610:7610 -e OPENTODO_PORT=7610`). An invalid port stops startup with a message naming the variable. The health check probes the port the process is using.
 - Every variable in the [configuration reference](configuration.md) can be set in `.env`; the compose file passes them to the container. With `docker run`, pass them with `-e`.
-- The compose file pulls `ghcr.io/opentodoapp/opentodo:stable`, which every release moves. To stay on one release line use `:1.0` (its fixes only), to pin one version `:1.0.0`; `:latest` follows the main branch and carries unreleased changes; it reports its version as `dev+<commit>`, the commit it was built from. The running version is shown in **Settings → About**, at the bottom of the sign-in screen, at `/healthz` and in the startup log line `opentodo listening`.
+- The compose file pulls `ghcr.io/opentodoapp/opentodo:stable`, which every release moves. To stay on one release line use `:1.1` (its fixes only), to pin one version `:1.1.1`; `:latest` follows the main branch and carries unreleased changes; it reports its version as `dev+<commit>`, the commit it was built from. The running version is shown in **Settings → About**, at the bottom of the sign-in screen, at `/healthz` and in the startup log line `opentodo listening`.
 - To build locally instead of pulling: replace `image: ghcr.io/opentodoapp/opentodo:stable` with `build: .`.
 
 ## Plain `docker run`
@@ -90,6 +90,10 @@ The owner also sees a **Server configuration warning** at the top of **Settings*
 ### Behind a login wall (Pangolin, Authelia, Authentik, Cloudflare Access, oauth2-proxy)
 
 OpenTodo has its own sign-in (password, passkeys, two-factor, [single sign-on](sso.md)), so a login wall in front of it is optional. If you keep one, browsers and the installed web app pass it like any other site, and the [Android app](../android-app.md#behind-a-login-page-pangolin-authelia-and-others) signs in to it inside the app. Give the wall a long session, or let it bypass the paths the app fetches without a page (`/healthz`, `/api/*`, the service worker and manifest files); the Android guide lists them. Calendar apps, AI assistants and calendar feeds can't pass a login page at all: bypass `/dav/`, `/.well-known/caldav`, `/mcp` and `/feeds/*` if you use them.
+
+### Proxies that answer `/healthz` themselves (Pomerium, Cloud Run)
+
+Some proxies and platforms keep `/healthz` for themselves: Pomerium answers it with a plain `OK` before the request reaches OpenTodo, and Google Cloud Run's front end answers paths ending in `z` with its own 404. The same health answer is also served at `/api/v1/health`, which they pass through. Point an external uptime monitor there; the mobile apps (from 1.0.1) check a server at `/api/v1/health` first and only then at `/healthz`. The container's own health check (`/opentodo healthcheck`) talks to the server directly and is not affected.
 
 ### Calendar apps (CalDAV) through the proxy
 
@@ -311,7 +315,7 @@ Before an image is published, CI starts it the way Coolify does (health check, o
 
 ## Health
 
-`GET /healthz` returns `{"status":"ok","version":"..."}`. The image defines a `HEALTHCHECK` that runs `/opentodo healthcheck`, which works without curl or a shell.
+`GET /healthz` returns `{"status":"ok","version":"..."}`, and so does `GET /api/v1/health` for proxies that keep `/healthz` for themselves ([Pomerium, Cloud Run](#proxies-that-answer-healthz-themselves-pomerium-cloud-run)). The image defines a `HEALTHCHECK` that runs `/opentodo healthcheck`, which works without curl or a shell.
 
 ## Resource usage
 

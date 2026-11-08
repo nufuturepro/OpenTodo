@@ -1,6 +1,7 @@
 {
   "\"after completion\" only applies to day, week, month and year intervals": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "(10+ characters)": [
     "web/src/app/AuthScreen.tsx"
@@ -1402,6 +1403,7 @@
     "web/src/app/notes/NoteFilters.tsx"
   ],
   "All occurrences": [
+    "web/src/app/filter/ConditionEditor.tsx",
     "web/src/app/task-detail/OccurrenceScope.tsx"
   ],
   "All occurrences {duration}": [
@@ -5743,7 +5745,7 @@
   "Every day still has room.": [
     "web/src/app/Briefing.tsx"
   ],
-  "Every device and browser signed in to your account is signed out, remembered browsers must enter a code again, and your API tokens and app passwords stop working at once. Scripts, calendar apps and assistants need new ones. Changes another device has not synced yet are lost. Your data stays on your server.": [
+  "Every device and browser signed in to your account is signed out, remembered browsers must enter a code again, and your API tokens and app passwords stop working at once. Scripts, calendar apps and assistants need new ones. Other devices remove their copy of your data when they next connect, and changes they have not synced yet are lost. Your data stays on your server.": [
     "web/src/app/AccountSettings.tsx"
   ],
   "Every device, plus your API tokens and app passwords.": [
@@ -7105,6 +7107,9 @@
     "web/src/app/TaskRow.tsx"
   ],
   "Has tracked time": [
+    "web/src/app/filter/conditionText.ts"
+  ],
+  "Has tracked time in this occurrence": [
     "web/src/app/filter/conditionText.ts"
   ],
   "Have an account? Sign in": [
@@ -8888,6 +8893,9 @@
     "web/src/lib/settingsCopy.ts"
   ],
   "Long break after": [
+    "web/src/lib/settingsCopy.ts"
+  ],
+  "Long titles wrap in lists, boards and Today instead of ending with an ellipsis.": [
     "web/src/lib/settingsCopy.ts"
   ],
   "Look ahead": [
@@ -14984,6 +14992,11 @@
     "web/src/app/task-list/ClosedListActions.tsx",
     "web/src/lib/settingsCopy.ts"
   ],
+  "Show full task titles": [
+    "web/src/app/AppearanceSection.tsx",
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
+  ],
   "Show in Assigned to me": [
     "web/src/app/task-detail/AssigneeEditor.tsx",
     "web/src/app/task-detail/Facets.tsx"
@@ -17484,7 +17497,7 @@
   "These tasks already have {label}": [
     "web/src/lib/undoActions.ts"
   ],
-  "They are signed out everywhere, their API tokens and pending invitations are revoked, and they cannot sign in until reactivated. Their data is kept.": [
+  "They are signed out everywhere, their API tokens and pending invitations are revoked, and they cannot sign in until reactivated. Their devices remove their copy when they next connect, and changes not synced yet are lost. Their data on the server is kept.": [
     "web/src/app/UsersPanel.tsx"
   ],
   "They can no longer invite people or manage members.": [
@@ -17711,6 +17724,9 @@
   ],
   "This device only. The count matches Today in the sidebar.": [
     "web/src/lib/settingsCopy.ts"
+  ],
+  "This device was signed out and its data was removed.": [
+    "web/src/lib/revocation.ts"
   ],
   "This device: after an add, the assistant proposes a title, project, subtasks. You review.": [
     "web/src/lib/settingsCopy.ts"
@@ -18634,6 +18650,9 @@
     "web/src/app/filter/ConditionEditor.tsx",
     "web/src/app/filter/conditionText.ts",
     "web/src/lib/rules/sentence.ts"
+  ],
+  "Tracked time in this occurrence": [
+    "web/src/app/filter/conditionText.ts"
   ],
   "Tracked time per project: {values}.": [
     "web/src/app/review/StatsView.tsx"
@@ -20018,6 +20037,9 @@
   "Wrap in {step}": [
     "web/src/lib/rules/fixes.ts"
   ],
+  "Wrap long task titles instead of cutting them off": [
+    "web/src/app/settingsIndex.ts"
+  ],
   "Write a comment": [
     "web/src/app/task-detail/CommentsTab.tsx"
   ],
@@ -21092,22 +21114,28 @@
     "web/src/app/filter/ConditionEditor.tsx"
   ],
   "expected \"completion\" after \"after\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expected \"for N times\" with N from 1 to {n}": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expected a weekday after \"{word}\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expected a weekday after the list separator": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expected a weekday, got \"{word}\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expected day(s), week(s), month(s) or year(s) after {word}": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "expires {date}": [
     "web/src/app/WorkspaceInvites.tsx"
@@ -21264,7 +21292,8 @@
     "web/src/lib/colourNames.ts"
   ],
   "interval must be from 1 to {n}": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "is": [
     "web/src/app/routines/words.tsx"
@@ -21366,7 +21395,8 @@
     "web/src/app/settingsSections.ts"
   ],
   "longer than {n} characters": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "loop, each, every, for each, iterate": [
     "web/src/lib/rules/sentence.ts"
@@ -21400,7 +21430,8 @@
     "web/src/app/HabitHistory.tsx"
   ],
   "missing pattern after \"every\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "month {n}": [
     "web/src/lib/templateLibrary.ts"
@@ -21430,7 +21461,8 @@
     "web/src/app/calendar/DayColumn.tsx"
   ],
   "must start with \"every\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "names of members and groups of shared projects and workspaces": [
     "web/src/lib/assistantDisclosure.ts"
@@ -22392,7 +22424,8 @@
     "web/src/lib/facets.ts"
   ],
   "unexpected \"{word}\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "unknown": [
     "web/src/app/RestoreSection.tsx",
@@ -22418,7 +22451,8 @@
     "web/src/app/auditFormat.ts"
   ],
   "unknown pattern \"{word}\"": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "unread changes": [
     "web/src/app/Sidebar.tsx"
@@ -22433,7 +22467,8 @@
     "web/src/lib/crypto.ts"
   ],
   "until needs a date YYYY-MM-DD": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "until {date}": [
     "web/src/app/TaskRow.tsx"
@@ -22513,7 +22548,8 @@
     "web/src/lib/templateLibrary.ts"
   ],
   "weekday ordinal must be 1st to 4th or last": [
-    "web/src/lib/recurrence.ts"
+    "web/src/lib/recurrence.ts",
+    "web/src/lib/testdata/recurrence-1.0.ts"
   ],
   "when a task is assigned to me": [
     "web/src/lib/rules/summary.ts"
