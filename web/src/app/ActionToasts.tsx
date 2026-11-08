@@ -1,3 +1,4 @@
+import { BulkDialogHost } from './bulk/BulkActions'
 import { BulkConfirmHost } from './bulk/BulkConfirmHost'
 import { UndoToast } from './bulk/UndoToast'
 import { ToastActionHost } from './ToastActionHost'
@@ -13,6 +14,7 @@ export function ActionToasts() {
       <UndoToast />
       <ToastActionHost />
       <BulkConfirmHost />
+      <BulkDialogHost />
     </>
   )
 }

@@ -17,12 +17,9 @@ import { roleOf } from '../../lib/sharing'
 import { toggleTracking, useRunningEntry } from '../../lib/timeEntries'
 import { act } from '../actionError'
 import type { Label, Membership, Priority, Project, Section, Task } from '../../lib/types'
-import { Icon, Input, useFinePointer } from '../../ui'
+import { Icon, Dialog, useFinePointer } from '../../ui'
 import { Tooltip } from '../../ui'
-import { CalendarGrid, inputLanguages } from '../datetime/DateField'
-import { parseDateInput } from '../datetime/parse'
-import { formatDate, logicalToday, type ResolvedDateTime } from '../../lib/dates'
-import { useDateTimeFormat } from '../DateTimePrefsProvider'
+import { DateField } from '../datetime/DateField'
 import { ActionMenu, type ActionGroup, type ActionItem, type ConfirmSpec } from '../menus/ActionMenu'
 import { openRowSchedule } from '../task-list/RowSwipe'
 import { BulkReview } from './BulkReview'
@@ -213,7 +210,7 @@ export function reorderItem(id: string | undefined, r: ListReorder | null | unde
 }
 
 /** The menu's groups for the given tasks (exported for the palette and tests). */
-export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (title: string, plan: Promise<ReviewPlan>) => void; prefs: ResolvedDateTime; schedule?: () => void; reorder?: ListReorder | null }, besideRow = false): ActionGroup[] {
+export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (title: string, plan: Promise<ReviewPlan>) => void; pickDate: () => void; schedule?: () => void; reorder?: ListReorder | null }, besideRow = false): ActionGroup[] {
   const n = d.tasks.length
   const reopen = allCompleted(d.tasks)
   const live = d.labels.filter((l) => !l.deleted_at)
@@ -223,9 +220,6 @@ export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (ti
   const shared = commonSharedProject(d.tasks, d.memberships)
   const members = shared ? d.memberships.get(shared)?.members ?? [] : []
   const run = (action: BulkAction) => () => runBulk(ids, action)
-  /** The priority every ticked task shares, shown checked in the digit row. */
-  const sharedPriority = d.tasks.length > 0 && d.tasks.every((tk) => tk.priority === d.tasks[0]?.priority) ? d.tasks[0]?.priority ?? null : null
-  const commonDue = d.tasks.length > 0 && d.tasks.every((tk) => tk.due?.date === d.tasks[0]?.due?.date) ? d.tasks[0]?.due?.date ?? null : null
   const complete: ActionItem = { kind: 'action', id: 'complete', label: reopen ? t('Reopen') : t('Complete'), icon: 'check', shortcut: keysOf('list.complete'), onSelect: run({ kind: 'complete' }) }
   // On touch, one task's menu starts with the two swipe actions (phone-v2 D3, WCAG 2.2 2.5.7).
   const swipeTwins = n === 1 && a.schedule
@@ -233,29 +227,20 @@ export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (ti
     ...(swipeTwins ? [{ items: [complete, { kind: 'action', id: 'schedule', label: t('Schedule…'), icon: 'calendar-days', onSelect: a.schedule } as ActionItem] }] : []),
     ...(n === 1 ? [{ items: [...slotItem(d.tasks[0], d.slot), ...todayFocusItem(d.tasks[0], d.focus), ...trackingItem(d.tasks[0], d.runningTask, d.memberships), ...focusItem(d.tasks[0], d.memberships)] }] : []),
     ...(swipeTwins ? [] : [{ items: [complete] }]),
-    // One strip of digits instead of four rows (task-menu-refinement: cuts three rows);
-    // the accessible names stay "Priority N", the shared one is checked. Beside a row
-    // its own Priority and Schedule buttons already offer both.
-    ...(besideRow ? [] : [
-      { label: t('Priority'), layout: 'row', items: ([1, 2, 3, 4] as Priority[]).map((p) => ({
-        kind: 'check', id: `p${p}`, label: t('Priority {p}', { p }),
-        compact: { glyph: String(p), tint: `p${p}` }, checked: sharedPriority === p,
-        onSelect: run({ kind: 'priority', priority: p }),
-      })) },
-      { label: t('Date'), items: [
-        { kind: 'action', id: 'today', label: t('Today'), icon: 'calendar-check', onSelect: run({ kind: 'due', pick: 'today' }) },
-        { kind: 'action', id: 'tomorrow', label: t('Tomorrow'), icon: 'calendar-days', onSelect: run({ kind: 'due', pick: 'tomorrow' }) },
-        { kind: 'action', id: 'next-week', label: t('Next week'), icon: 'calendar-range', onSelect: run({ kind: 'due', pick: 'next-week' }) },
-        { kind: 'action', id: 'no-date', label: t('No date'), icon: 'x', onSelect: run({ kind: 'due', pick: null }) },
-        // The panel extends this overlay beside the items (task-menu-refinement D2):
-        // Escape steps back to the items; a picked day applies and closes the menu.
-        { kind: 'panel', id: 'pick-date', label: t('Pick a date…'), icon: 'calendar-days', panel: {
-          title: t('Pick a date'),
-          render: (close) => <DatePanel ids={ids} value={commonDue} prefs={a.prefs} onDone={close} />,
-        } },
-      ] },
-    ] as ActionGroup[]),
+    // Beside a row its own Priority and Schedule buttons already offer these.
+    // Priority and Date are one row each (a submenu), so the menu fits on the screen;
+    // beside a row its own Priority and Schedule buttons already offer them.
     { items: [
+      ...(besideRow ? [] : [
+        { kind: 'submenu', id: 'priority', label: t('Priority'), icon: 'flag', items: ([1, 2, 3, 4] as Priority[]).map((p) => ({ kind: 'action' as const, id: `p${p}`, label: t('Priority {p}', { p }), icon: 'flag' as const, shortcut: String(p), onSelect: run({ kind: 'priority', priority: p }) })) },
+        { kind: 'submenu', id: 'date', label: t('Date'), icon: 'calendar-days', items: [
+          { kind: 'action', id: 'today', label: t('Today'), icon: 'calendar-check', onSelect: run({ kind: 'due', pick: 'today' }) },
+          { kind: 'action', id: 'tomorrow', label: t('Tomorrow'), icon: 'calendar-days', onSelect: run({ kind: 'due', pick: 'tomorrow' }) },
+          { kind: 'action', id: 'next-week', label: t('Next week'), icon: 'calendar-range', onSelect: run({ kind: 'due', pick: 'next-week' }) },
+          { kind: 'action', id: 'no-date', label: t('No date'), icon: 'x', onSelect: run({ kind: 'due', pick: null }) },
+          { kind: 'action', id: 'pick-date', label: t('Pick a date…'), icon: 'calendar-days', onSelect: a.pickDate },
+        ] },
+      ] as ActionItem[]),
       ...energyItem(ids, d),
       ...dayPartItem(ids, d),
       { kind: 'picker', id: 'labels', label: t('Labels'), icon: 'tag', shortcut: keysOf('list.labels'), disabled: live.length === 0, reason: t('There are no labels yet'), picker: {
@@ -267,7 +252,6 @@ export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (ti
         onPick: (l: Label) => { void labelToggle(ids, l.id) },
       } },
     ] },
-
     { items: [
       ...(n === 1 ? reorderItem(ids[0], a.reorder, d.edges) : []),
       { kind: 'picker', id: 'move', label: t('Move to project'), icon: 'folder-input', picker: {
@@ -295,44 +279,6 @@ async function labelToggle(ids: readonly string[], labelId: string) {
   const { tasks } = await readTicked(ids)
   const all = tasks.length > 0 && tasks.every((task) => task.labels.includes(labelId))
   await runBulk(ids, { kind: 'label', labelId, add: !all })
-}
-
-/**
- * The date panel (task-menu-refinement "Date picker alongside the menu"): a phrase
- * typed on top (commit on Enter or blur, like the date field) over the month grid,
- * rendered beside the menu's items — not in a dialog on top of them. Picking closes
- * the menu and reschedules every id, with the Undo toast.
- */
-function DatePanel({ ids, value, prefs, onDone }: { ids: readonly string[]; value: string | null; prefs: ResolvedDateTime; onDone: () => void }) {
-  const [draft, setDraft] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const apply = (iso: string | null) => { onDone(); if (iso) void runBulk(ids, { kind: 'due', pick: iso }) }
-  const commit = () => {
-    const text = draft.trim()
-    if (!text) { setError(null); return }
-    const iso = parseDateInput(text, { today: logicalToday(), prefs, languages: inputLanguages() })
-    if (!iso) {
-      setError(t('Not a valid date. Try {example}, {iso} or “tomorrow”.', { example: formatDate(logicalToday(), 'numeric', prefs), iso: logicalToday() }))
-      return
-    }
-    setDraft('')
-    setError(null)
-    apply(iso)
-  }
-  return (
-    <div className="space-y-2" data-date-panel>
-      <Input value={draft} autoFocus autoComplete="off" spellCheck={false} aria-label={t('Date')}
-        placeholder={formatDate(logicalToday(), 'numeric', prefs)}
-        onChange={(e) => setDraft(e.target.value)} onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit() }
-          // First Escape clears the draft (the date field's rule); the next reaches the panel.
-          else if (e.key === 'Escape' && draft !== '') { e.stopPropagation(); setDraft(''); setError(null) }
-        }} />
-      {error && <p role="alert" className="text-meta text-danger">{error}</p>}
-      <CalendarGrid value={value} prefs={prefs} onPick={apply} compact />
-    </div>
-  )
 }
 
 /** A task's edges in its list while the menu is open, for the Reorder items; null outside a manual order. */
@@ -377,14 +323,8 @@ function useBulkData(ids: readonly string[]): Data {
 /**
  * The Actions menu for `ids`. `startPicker` opens it straight into a picker
  * ("labels" for `L`, "assign" for Shift+A on a selection).
- *
- * `onAllClosed` (task-menu-refinement D1): a host that renders this menu
- * conditionally — the right-click and `.`-cursor menus — must keep it mounted
- * until both the menu and every dialog it opened are gone, or the review
- * dialog dies with the component whose state holds it. The host clears its
- * entry when this fires.
  */
-export function BulkActionsMenu({ ids, open, onOpenChange, trigger, triggerClassName, triggerProps, startPicker = null, onApplied, onAllClosed, anchor }: {
+export function BulkActionsMenu({ ids, open, onOpenChange, trigger, triggerClassName, triggerProps, startPicker = null, anchor }: {
   ids: readonly string[]
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -393,9 +333,6 @@ export function BulkActionsMenu({ ids, open, onOpenChange, trigger, triggerClass
   /** Extra attributes on the trigger button (the pointer position of a right-click menu). */
   triggerProps?: React.ComponentProps<typeof ActionMenu>['triggerProps']
   startPicker?: string | null
-  onApplied?: () => void
-  /** The menu and everything it opened are closed: the host may unmount it now. */
-  onAllClosed?: () => void
   /** Opened from a row's More button: placed there, without the groups the row's own buttons offer. */
   anchor?: RefObject<HTMLElement | null>
 }) {
@@ -403,35 +340,42 @@ export function BulkActionsMenu({ ids, open, onOpenChange, trigger, triggerClass
   const edges = useReorderEdges(ids.length === 1 ? ids[0] : '', reorder)
   const bulk = useBulkData(ids)
   const data = useMemo(() => ({ ...bulk, edges }), [bulk, edges])
-  const [review, setReview] = useState<{ title: string; plan: ReviewPlan } | null>(null)
-  /** A review's plan resolves asynchronously after the menu already closed; hold until it lands. */
-  const [reviewing, setReviewing] = useState(false)
-  const { resolved } = useDateTimeFormat()
   // Held back only until the first full read: a later selection's read must not close an open menu.
   const [settled, setSettled] = useState(false)
   if (data.ready && !settled) setSettled(true)
   const besideRow = !!anchor?.current
   const touch = !useFinePointer()
+  const n = data.tasks.length || ids.length
   const groups = useMemo(() => bulkMenuGroups(ids, data, {
-    review: (title, plan) => {
-      setReviewing(true)
-      void plan.then((p) => { setReview({ title, plan: p }); setReviewing(false) }, () => setReviewing(false))
-    },
-    prefs: resolved,
+    review: (title, plan) => { void plan.then((p) => bulkDialog.set({ kind: 'review', title, plan: p })) },
+    pickDate: () => bulkDialog.set({ kind: 'date', ids, n }),
     schedule: touch && ids.length === 1 ? () => openRowSchedule(ids[0]) : undefined,
     reorder,
-  }, besideRow), [ids, data, besideRow, touch, resolved, reorder])
-  // D1: only report "all closed" when nothing this menu opened is still on screen.
-  // The date panel lives inside the menu itself, so an open menu already covers it.
-  const allClosed = open === false && !review && !reviewing
-  useEffect(() => { if (allClosed) onAllClosed?.() }, [allClosed, onAllClosed])
-  const n = data.tasks.length || ids.length
+  }, besideRow), [ids, data, besideRow, touch, n, reorder])
   return (
-    <>
-      <ActionMenu label={t('Actions for {tasks}', { tasks: tasksWord(n) })} title={tasksWord(n)} groups={groups} open={open} pending={!settled && !data.ready} onOpenChange={onOpenChange}
-        trigger={trigger} triggerClassName={triggerClassName} triggerProps={triggerProps} startPicker={startPicker} width="sm:w-72" anchor={anchor} />
-      {review && <BulkReview title={review.title} plan={review.plan} onClose={() => setReview(null)} onApplied={onApplied} />}
-    </>
+    <ActionMenu label={t('Actions for {tasks}', { tasks: tasksWord(n) })} title={tasksWord(n)} groups={groups} open={open} pending={!settled && !data.ready} onOpenChange={onOpenChange}
+      trigger={trigger} triggerClassName={triggerClassName} triggerProps={triggerProps} startPicker={startPicker} width="sm:w-72" anchor={anchor} />
+  )
+}
+
+/**
+ * The step a menu item leads to once the menu has closed: the move or assign review,
+ * or the date for "Pick a date…". Held here and rendered by the Shell's host, not
+ * by the menu, because a row's menu unmounts as it closes (issue 839).
+ */
+type BulkDialog = { kind: 'review'; title: string; plan: ReviewPlan } | { kind: 'date'; ids: readonly string[]; n: number }
+const bulkDialog = createStore<BulkDialog | null>('bulkDialog', null)
+
+/** Renders the menu's follow-up dialog when one is asked. Mounted once by the Shell. */
+export function BulkDialogHost() {
+  const d = bulkDialog.use()
+  const close = () => bulkDialog.set(null)
+  if (!d) return null
+  if (d.kind === 'review') return <BulkReview title={d.title} plan={d.plan} onClose={close} />
+  return (
+    <Dialog title={t('Date for {tasks}', { tasks: tasksWord(d.n) })} onClose={close}>
+      <DateField label={t('Date')} autoFocus value={null} onChange={(iso) => { close(); if (iso) void runBulk(d.ids, { kind: 'due', pick: iso }) }} />
+    </Dialog>
   )
 }
 

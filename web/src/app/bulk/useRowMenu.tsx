@@ -13,9 +13,6 @@ interface OpenMenu {
   y: number
   /** The row the menu was opened from: focus returns there when it closes. */
   row: Element | null
-  /** False once the menu closed but the element is still mounted — a review it
-   * opened keeps it alive until `onAllClosed` (task-menu-refinement D1). */
-  open: boolean
 }
 
 export interface RowMenu {
@@ -41,7 +38,7 @@ export function useRowMenu(ticked: ReadonlySet<string>, order: readonly string[]
   const returnTo = useRef<Element | null>(null)
 
   const openIds = useCallback((ids: string[], x: number, y: number, row: Element | null = null) => {
-    setMenu({ ids, x, y, row, open: true })
+    setMenu({ ids, x, y, row })
   }, [])
   const open = useCallback((task: Task, x: number, y: number, row: Element | null = null) => {
     openIds(rowMenuIds(task, ticked, order), x, y, row)
@@ -67,12 +64,7 @@ export function useRowMenu(ticked: ReadonlySet<string>, order: readonly string[]
   }, [menu])
 
   const element = menu ? (
-    <BulkActionsMenu ids={menu.ids} open={menu.open}
-      onOpenChange={(v) => { if (!v) setMenu((m) => (m && m.open ? { ...m, open: false } : m)) }}
-      // The menu's own close only dims it: the element stays mounted while a
-      // review the choice opened is up, and unmounts here when it is gone too
-      // (D1 — "the review must still mount").
-      onAllClosed={() => { returnTo.current = latest.current?.row ?? null; setMenu(null) }}
+    <BulkActionsMenu ids={menu.ids} open onOpenChange={(v) => { if (!v) close() }}
       trigger={<span className="sr-only" />} triggerClassName="sr-only"
       triggerProps={{ style: { position: 'fixed', left: menu.x, top: menu.y } }} />
   ) : null

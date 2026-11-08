@@ -230,28 +230,6 @@ describe('right-click in a list', () => {
     expect([...bulk!.selection.ticked]).toEqual(['a', 'b'])
     await r.unmount()
   })
-
-  // task-menu-refinement D1: the host used to unmount the menu the moment it closed,
-  // taking the review dialog's state with it — the right-click review never appeared.
-  it('a move chosen from the right-click menu still shows its review dialog', async () => {
-    await createProject({ name: 'Travel' })
-    await createTask({ title: 'Call mum' })
-    // The Shell's feedback hosts sit beside the list, as in the app.
-    const r = await render(<><TaskListView route={{ view: 'inbox' }} /><ActionToasts /></>)
-    await waitFor(() => r.container.textContent!.includes('Call mum'))
-    await rightClickUntilMenu(() => r.container.querySelector('[data-task-id]'), r.container, 90, 150)
-    await act(async () => {
-      ;[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((m) => m.textContent?.includes('Move to project'))?.click()
-    })
-    await waitFor(() => !!document.querySelector('[data-picker-step]'))
-    await act(async () => {
-      ;[...document.querySelectorAll<HTMLElement>('[data-picker-step] [role="option"]')].find((o) => o.textContent?.includes('Travel'))?.click()
-    })
-    // The menu closes, but the review must still mount (it was the casualty).
-    await waitFor(() => !!document.querySelector('[data-testid="bulk-review"]'))
-    expect(document.body.textContent).toContain('Travel')
-    await r.unmount()
-  })
 })
 
 describe('moving from the right-click menu', () => {

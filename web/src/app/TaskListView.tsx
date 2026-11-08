@@ -120,17 +120,13 @@ function useListUi(ticked: ReadonlySet<string>, order: readonly string[]) {
   const actionsFrom = useRef<HTMLElement | null>(null)
   /** The one row whose details are shown under it (row-expand D4): this list's state only, never stored. */
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const { open: openActionsMenu, onOpenChange: onMenuOpenChange } = actions
+  const { open: openActionsMenu } = actions
   const openActions = useCallback((picker: string | null = null, from: HTMLElement | null = null) => { actionsFrom.current = from; openActionsMenu(picker) }, [openActionsMenu])
-  /** Keeps the `.`-cursor menu mounted while a review it opened is on screen (task-menu-refinement D1). */
-  const [actionsHold, setActionsHold] = useState(false)
-  const releaseActions = useCallback(() => { setActionsHold(false); onMenuOpenChange(false) }, [onMenuOpenChange])
-  const onActionsOpen = useCallback((v: boolean) => { onMenuOpenChange(v); if (!v) setActionsHold(true) }, [onMenuOpenChange])
   // The row's menu at the pointer (task-row-context-menu): one state, one selection
   // rule and one focus restore, shared with the filter, saved-view and method lists.
   const rowMenu = useRowMenu(ticked, order)
   const ui: ListUi = { pickerFor, setPickerFor, assignFor, setAssignFor, prompt, setPrompt, addingUnder, setAddingUnder, setAddingTo, openActions }
-  return { ui, actions, actionsHold, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
+  return { ui, actions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu }
 }
 
 /**
@@ -218,7 +214,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   const collapsedGroups = useCollapsedGroups()
   // Bulk selection (bulk-edit D1): ticked rows, separate from the cursor row.
   const { tickRows, selection, ticked } = useTickedRows(rows, taskMap, isReadOnly)
-  const { ui, actions, actionsHold, onActionsOpen, releaseActions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
+  const { ui, actions, actionsFrom, selectMode, setSelectMode, addingTo, expandedId, setExpandedId, rowMenu } = useListUi(selection.ticked, ticked)
   // The open task lives in the shell's panel slot (app-shell D1); the Inbox (inbox-split D1), and every list with the
   // side panel (task-side-panel D2, D7), keep it there beside the list, set up before the bindings' route reset.
   const openId = usePanelTaskId()
@@ -409,12 +405,11 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
           {agenda.toggle && <TodayAgenda cal={agenda.cal} zone={m.zone} />}
 
           <SelectionBar ids={ticked} onClear={selection.clear} menuOpen={actions.forTicked}
-            onMenuOpenChange={onActionsOpen} startPicker={actions.picker} onDone={selectMode ? () => setSelectMode(false) : undefined} />
-          {(actions.forCursor || actionsHold) && selectedId ? (
-            // `.` with nothing ticked: the same menu for the cursor task; held mounted until its review closes (D1).
-            <BulkActionsMenu ids={[selectedId]} open={actions.forCursor} onOpenChange={onActionsOpen} onAllClosed={releaseActions} startPicker={actions.picker} anchor={actionsFrom}
+            onMenuOpenChange={actions.onOpenChange} startPicker={actions.picker} onDone={selectMode ? () => setSelectMode(false) : undefined} />
+          {actions.forCursor && selectedId && ( // `.` with nothing ticked: the same menu for the cursor task.
+            <BulkActionsMenu ids={[selectedId]} open onOpenChange={actions.onOpenChange} startPicker={actions.picker} anchor={actionsFrom}
               trigger={<span className="sr-only">{t('Actions')}</span>} triggerClassName="sr-only" />
-          ) : null}
+          )}
           {rowMenu.element}{queryHost}
 
           {route.view === 'inbox' && <RoutinesInboxSlot />}{route.view === 'project' && currentProject && <ProjectNote project={currentProject} phone={phone} />}

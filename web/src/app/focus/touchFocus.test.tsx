@@ -4,7 +4,6 @@
 // menus add and remove by the rules `f` follows, a full focus refuses, a viewer's
 // task joins the user's own focus, and every change has Undo.
 import 'fake-indexeddb/auto'
-import { currentDateTime } from '../../lib/dates'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setFocusStyle } from '../../lib/bento'
@@ -180,7 +179,7 @@ describe('Task menu', () => {
 describe('Actions menu (the phone’s selection bar, right-click, More)', () => {
   const one = { id: 't1', title: 'Write the report', project_id: null, labels: [], completed_at: null, deleted_at: null } as unknown as Task
   const items = (focus: ReturnType<typeof focusMenuState>, tasks: Task[] = [one]) => flatItems(bulkMenuGroups(tasks.map((x) => x.id),
-    { tasks, labels: [], projects: [], sections: [], memberships: new Map(), runningTask: null, focus }, { review: () => {}, prefs: currentDateTime(), schedule: () => {} }))
+    { tasks, labels: [], projects: [], sections: [], memberships: new Map(), runningTask: null, focus }, { review: () => {}, pickDate: () => {}, schedule: () => {} }))
   it('One task offers the focus command by style and state; several tasks do not', () => {
     const today = { focus: 't1', focus_date: TODAY }
     expect(focusMenuState(one, null, null, TODAY)).toBe('add')

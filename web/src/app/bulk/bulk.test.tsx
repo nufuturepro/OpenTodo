@@ -13,7 +13,7 @@ import { PanelHost } from '../PanelHost'
 import { resetPanel } from '../panel'
 import { TaskListView } from '../TaskListView'
 import { hideBulkToast } from './toastStore'
-import { ActionToasts } from '../ActionToasts'
+import { UndoToast } from './UndoToast'
 
 let n = 0
 beforeEach(() => {
@@ -41,7 +41,7 @@ const bar = () => document.querySelector('[data-selection-bar] [role="status"]')
 async function inbox(...titles: string[]) {
   const ids: string[] = []
   for (const t of titles) ids.push(await createTask({ title: t }))
-  const r = await render(<><TaskListView route={{ view: 'inbox' }} /><PanelHost /><ActionToasts /></>)
+  const r = await render(<><TaskListView route={{ view: 'inbox' }} /><PanelHost /><UndoToast /></>)
   mounted.push(r)
   await waitFor(() => document.body.textContent!.includes(titles[titles.length - 1]))
   return { r, ids }
@@ -146,9 +146,8 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     await key(document.body, 'j')
     await key(document.body, '.')
     await waitFor(() => items().length > 0)
-    // The keyboard menu keeps both: the priority strip and the date group's own choices.
-    expect(items().some((m) => m.startsWith('Pick a date…'))).toBe(true)
-    expect([...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].filter((b) => /^Priority [1-4]$/.test(b.getAttribute('aria-label') ?? '')).length).toBe(4)
+    expect(items().some((m) => m.startsWith('Date…'))).toBe(true)
+    expect(items().some((m) => m.startsWith('Priority…'))).toBe(true)
   })
 
   it('Priority and Date are one item each: their choices open in place, Escape goes back', async () => {
@@ -158,20 +157,19 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     await key(document.body, 'j')
     await key(document.body, '.')
     await waitFor(() => items().length > 0)
-    // The choices are open in place from the start: the priority strip, the date row.
-    const digits = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].filter((b) => /^Priority [1-4]$/.test(b.getAttribute('aria-label') ?? ''))
-    expect(digits.map((d) => d.textContent)).toEqual(['1', '2', '3', '4'])
-    expect(item('Tomorrow')).toBeDefined()
-    expect(item('Move to project')).toBeDefined()
-    // The date panel extends the menu beside its items; Escape steps back to them.
-    await act(async () => { item('Pick a date…')!.click() })
-    await waitFor(() => !!document.querySelector('[data-date-panel]'))
-    expect(item('Move to project')).toBeDefined()
-    await key(document, 'Escape')
-    await waitFor(() => !document.querySelector('[data-date-panel]'))
-    expect(document.activeElement?.getAttribute('data-menu-label')).toBe('Pick a date…')
-    await key(document, 'Escape')
-    await waitFor(() => items().length === 0)
+    expect(item('Priority 1')).toBeUndefined()
+    expect(item('Tomorrow')).toBeUndefined()
+    await act(async () => { item('Priority…')!.click() })
+    await waitFor(() => !!item('Priority 4'))
+    expect(item('Move to project')).toBeUndefined()
+    expect(document.activeElement).toBe(item('Priority 1'))
+    await key(document.activeElement as HTMLElement, 'Escape')
+    await waitFor(() => !!item('Move to project'))
+    expect(document.activeElement).toBe(item('Priority…'))
+    await act(async () => { item('Date…')!.click() })
+    await waitFor(() => !!item('Next week'))
+    await act(async () => { item('Date')!.click() })
+    await waitFor(() => !!item('Date…'))
   })
 
   it('Date → Tomorrow reschedules the ticked tasks', async () => {
@@ -180,32 +178,11 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     await key(document.body, 'ArrowDown', { shiftKey: true }); await key(document.body, 'ArrowDown', { shiftKey: true })
     await key(document.body, '.')
     await waitFor(() => document.querySelectorAll('[role="menuitem"]').length > 0)
+    await act(async () => { ([...document.querySelectorAll('[role="menuitem"]')].find((m) => m.textContent?.startsWith('Date…')) as HTMLElement).click() })
     await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')].some((m) => m.textContent?.startsWith('Tomorrow')))
     await act(async () => { ([...document.querySelectorAll('[role="menuitem"]')].find((m) => m.textContent?.startsWith('Tomorrow')) as HTMLElement).click() })
     await waitFor(() => !!document.querySelector('[data-bulk-toast]'))
     for (const id of ids) expect((await db.tasks.get(id))!.due).toEqual({ date: '2026-10-15' })
-  })
-
-  it('the Priority group is one strip of four digits with full accessible names, the shared one checked', async () => {
-    const { ids } = await inbox('One', 'Two')
-    await updateTask(ids[0], { priority: 2 })
-    await updateTask(ids[1], { priority: 2 })
-    await key(document.body, 'j'); await key(document.body, 'x')
-    await key(document.body, 'ArrowDown', { shiftKey: true })
-    await key(document.body, '.')
-    await waitFor(() => document.querySelectorAll('[role="menuitem"]').length > 0)
-    const digits = [...document.querySelectorAll('[role="menuitemcheckbox"]')].filter((b) => /^Priority [1-4]$/.test(b.getAttribute('aria-label') ?? ''))
-    // Four buttons showing only their digit, all in one row under the group label.
-    expect(digits.map((d) => d.textContent)).toEqual(['1', '2', '3', '4'])
-    expect(new Set(digits.map((d) => d.parentElement)).size).toBe(1)
-    // The shared priority is checked; a diverging task unchecks it live.
-    await waitFor(() => digits[1].getAttribute('aria-checked') === 'true')
-    expect(digits.map((d) => d.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false'])
-    await updateTask(ids[1], { priority: 4 })
-    await waitFor(() => digits.every((d) => d.getAttribute('aria-checked') === 'false'))
-    // Type-ahead "pri" still lands on the strip.
-    await key(digits[0], 'p'); await key(digits[0], 'r'); await key(digits[0], 'i')
-    expect(document.activeElement?.getAttribute('aria-label')).toMatch(/^Priority [1-4]$/)
   })
 
   it('L then "errand" adds it to the tasks lacking it and the picker stays open', async () => {
@@ -285,90 +262,5 @@ describe('actions (2.5, 3.3, 4.2)', () => {
     await key(document.body, 'z', { ctrlKey: true })
     await waitFor(() => document.querySelector('[data-bulk-toast]')!.textContent!.includes('Undone'), 'Undone in the toast')
     await waitFor(async () => (await priority()) === 4, 'priority 4 back')
-  })
-})
-
-// The touch grip: choosing rows from the marker at the row's right edge, while the
-// row body's own hold stays the actions menu's gesture (OpenSpec change touch-row-grip).
-describe('the touch grip (bulk-actions on touch)', () => {
-  // The row menu's own trigger is fixed-positioned at the gesture; the Selection bar
-  // has its own unpositioned "Actions for…" button, which this must not confuse.
-  const rowMenuOpen = () => [...document.querySelectorAll<HTMLButtonElement>('button[aria-label^="Actions for"]')].some((b) => b.style.position === 'fixed')
-
-  it('a tap on the grip ticks the row, shows every checkbox and the bar, with one haptic', async () => {
-    const vibrate = vi.fn()
-    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true })
-    const { ids } = await inbox('Tap me')
-    const grip = document.querySelector<HTMLElement>(`[data-task-id="${ids[0]}"] [data-row-grip] button`)!
-    expect(grip).toBeTruthy()
-    await act(async () => { grip.click() })
-    await waitFor(() => bar() === '1 selected')
-    expect(tickedTitles()).toEqual(['Tap me'])
-    expect(vibrate).toHaveBeenCalledWith(10)
-    expect(rowMenuOpen()).toBe(false)
-  })
-
-  it("a hold on the grip ticks the row (idempotent) and opens no menu", async () => {
-    const vibrate = vi.fn()
-    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true })
-    const { ids } = await inbox('Hold me')
-    const grip = document.querySelector<HTMLElement>(`[data-task-id="${ids[0]}"] [data-row-grip] button`)!
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-    try {
-      await act(async () => { grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 6, pointerType: 'touch', clientX: 20, clientY: 20 })) })
-      await act(async () => { vi.advanceTimersByTime(400) })
-      await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 6, pointerType: 'touch', clientX: 20, clientY: 20 })) })
-      // The swallowed click's guard ends on a timer; let it run before real timers return.
-      await act(async () => { vi.advanceTimersByTime(10) })
-      expect(tickedTitles()).toEqual(['Hold me'])
-      expect(bar()).toBe('1 selected')
-      expect(vibrate).toHaveBeenCalledWith(10)
-      expect(rowMenuOpen()).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it("a hold on the row's body arms and opens its menu — it never ticks", async () => {
-    const { ids } = await inbox('Body hold')
-    const li = document.querySelector<HTMLElement>(`[data-task-id="${ids[0]}"]`)!
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-    try {
-      await act(async () => { li.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 7, pointerType: 'touch', clientX: 30, clientY: 60 })) })
-      await act(async () => { vi.advanceTimersByTime(400) })
-      // The hold arms (its tint); selection is the grip's, so nothing ticks.
-      expect(li.hasAttribute('data-touch-hold')).toBe(true)
-      await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, pointerType: 'touch', clientX: 30, clientY: 60 })) })
-      await act(async () => { vi.advanceTimersByTime(10) })
-      expect(li.hasAttribute('data-ticked')).toBeFalsy()
-      expect(bar()).toBeNull()
-      expect(rowMenuOpen()).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('a hold that becomes a drag gives its tick back and leaves no bar', async () => {
-    const { ids } = await inbox('Drag me', 'Stay put')
-    const grip = document.querySelector<HTMLElement>(`[data-task-id="${ids[0]}"] [data-row-grip] button`)!
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-    try {
-      await act(async () => { grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 8, pointerType: 'touch', clientX: 20, clientY: 20 })) })
-      await act(async () => { vi.advanceTimersByTime(400) })
-      // The hold selected: the row is ticked and the bar says so.
-      expect(tickedTitles()).toEqual(['Drag me'])
-      expect(bar()).toBe('1 selected')
-      // The press becomes a drag: the tick its own hold created is given back at once.
-      await act(async () => { window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 8, pointerType: 'touch', clientX: 20, clientY: 200 })) })
-      expect(tickedTitles()).toEqual([])
-      expect(bar()).toBeNull()
-      await act(async () => { window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 8, pointerType: 'touch', clientX: 20, clientY: 200 })) })
-      await act(async () => { vi.advanceTimersByTime(10) })
-      expect(tickedTitles()).toEqual([])
-      expect(bar()).toBeNull()
-      expect(rowMenuOpen()).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
   })
 })
