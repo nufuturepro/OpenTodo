@@ -30,7 +30,16 @@ COPY internal/notesearch/testdata/vectors.json /src/internal/notesearch/testdata
 COPY docs/ /src/docs/
 COPY CHANGELOG.md /src/CHANGELOG.md
 # vite writes to ../internal/web/dist (see web/vite.config.ts)
-RUN mkdir -p /src/internal/web && npm run build
+# The TypeScript 7 native compiler (`@typescript/native`) publishes no musl build, so on
+# this Alpine image its `tsc` shim only prints usage and exits 1. The checks below run the
+# same two projects `npm run build` type-checks, with the pinned TypeScript 6 compiler
+# (`tsc6`, pure JavaScript) that the package also installs.
+RUN mkdir -p /src/internal/web \
+ && npm run help \
+ && node -e "require('node:fs').rmSync('../internal/web/dist/assets', { recursive: true, force: true })" \
+ && ./node_modules/.bin/tsc6 --noEmit \
+ && ./node_modules/.bin/tsc6 --noEmit -p tsconfig.sw.json \
+ && ./node_modules/.bin/vite build
 
 # ---- 2. server --------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
