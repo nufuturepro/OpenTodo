@@ -7201,5 +7201,20 @@
   "Pick a date": "Datum wählen",
   "Press and hold a task’s grip to select it.": "Halte den Griff einer Aufgabe gedrückt, um sie auszuwählen.",
   "Version": "Version",
-  "Opens the changelog on the website, at this release.": "Öffnet das Changelog auf der Website, bei dieser Version."
+  "Opens the changelog on the website, at this release.": "Öffnet das Changelog auf der Website, bei dieser Version.",
+  "Breaking": "Breaking",
+  "Changed": "Changed",
+  "Changelog": "Changelog",
+  "Embedded": "Embedded",
+  "Fixed": "Fixed",
+  "Highlights": "Highlights",
+  "Known limitations and verification follow-ups": "Known limitations and verification follow-ups",
+  "Loading the changelog…": "Loading the changelog…",
+  "Migrations": "Migrations",
+  "Pop up": "Pop up",
+  "Release notes": "Release notes",
+  "Select it to read what changed in each release.": "Select it to read what changed in each release.",
+  "The changelog could not be loaded.": "The changelog could not be loaded.",
+  "The changelog opens as a dialog, or embedded under the version on this device.": "The changelog opens as a dialog, or embedded under the version on this device.",
+  "Upgrade notes": "Upgrade notes"
 }
