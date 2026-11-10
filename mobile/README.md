@@ -14,9 +14,9 @@ The release build is reproducible (OpenSpec change `play-production`): the same 
 
 | Tool | Version | Pinned in |
 | --- | --- | --- |
-| JDK | Temurin 17.0.21+9 (F-Droid: Debian's OpenJDK 17) | `java-version` in `.github/workflows/ci.yml` and `android-repro.yml`; `sudo` in `android/store/fdroid/app.opentodo.yml` |
+| JDK | Temurin 21.0.13+9 (F-Droid: its build server's default, Debian's OpenJDK 21) | `java-version` in `.github/workflows/ci.yml` and `android-repro.yml` |
 | Gradle | 9.8.2 | `distributionUrl` and `distributionSha256Sum` in `android/gradle/wrapper/gradle-wrapper.properties` |
-| Android Gradle Plugin | 9.5.0 (Kotlin 2.4.21) | `android/build.gradle.kts` |
+| Android Gradle Plugin | 9.5.1 (Kotlin 2.4.21) | `android/build.gradle.kts` |
 | Build tools | 36.0.0 | `buildToolsVersion` in `android/app/build.gradle.kts`; the SDK step in CI |
 
 The APK carries no build-time, machine or checkout metadata: no dependency block (`dependenciesInfo`, which F-Droid refuses) and no commit file (`vcsInfo`); the version comes only from `OPENTODO_VERSION`. `scripts/repo-checks.test.mjs` fails when one of the pins goes missing or this table stops naming it.
@@ -61,7 +61,7 @@ SIM="iPhone 16" make ios                   # a specific simulator
 cd mobile/ios && open OpenTodo.xcodeproj   # Run, with your team selected for signing
 ```
 
-`make ios` is not part of `make check` (it needs macOS). CI's `ios` job runs it on a macOS runner, only when `mobile/ios` or the workflow changes.
+`make ios` is not part of `make check` (it needs macOS). CI's `ios` job runs it on a macOS runner, only when `mobile/ios` or the workflow changes. `WalkthroughTests` is skipped there; it needs a server and runs in the on-demand iPhone walkthrough workflow (`docs/ios-app.md`).
 
 ### Signing for a device
 
@@ -211,7 +211,8 @@ The official iOS build comes from TestFlight and the App Store. As the copyright
 4. A new key and CSR on the runner; `appstore.mjs sign` creates an Apple Distribution certificate and three App Store profiles through the API, checks they carry the App Group and writes `ExportOptions.plist`; they go into a keychain made for the run.
 5. `xcodebuild -exportArchive`, then `xcrun altool --upload-package` with the API key.
 6. "What to test" from the version's CHANGELOG section, once Apple has the build.
-7. Always, even after a failure: the certificate is revoked, the profiles, the keychain and the key file deleted. Apple emails the account holder about each certificate created and revoked.
+7. Always, even after a failure: the keychain and the key file are deleted. The certificate and the profiles of a build that was uploaded stay: Apple checks the signature again when the build is submitted for TestFlight or App Store review, and a revoked certificate makes it fail with ITMS-90035 "Invalid Signature". Their private key never left the runner, so nobody can sign with them. A run that uploaded nothing revokes its certificate and deletes its profiles.
+8. When Apple refuses a new certificate because the team is at its limit, `sign` revokes the oldest certificate this workflow made (the one named by the oldest "OpenTodo CI" profiles), deletes its profiles and tries again. Builds signed with it can no longer be submitted for review, which with one release a week only affects older builds. A certificate made by hand is never touched. Apple emails the account holder about each certificate created and revoked.
 
 **When it runs:** after the GitHub release of a final tag (never a release candidate), and by hand: **Actions → iOS TestFlight → Run workflow**, with a tag, branch or commit and, rarely, a build number. Without the secrets it warns and succeeds. A failed upload never touches the release. Nothing is submitted for review; that is a step in [RELEASING.md](../RELEASING.md).
 

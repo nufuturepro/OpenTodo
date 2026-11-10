@@ -754,7 +754,10 @@ body {
 @layer base {
   @media (pointer: coarse) {
     input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="hidden"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"]),
-    textarea, select, [contenteditable]:not([contenteditable="false"]) {
+    textarea, select, [contenteditable]:not([contenteditable="false"]),
+    /* The copies of quick add's text behind its fields (QuickAddTint, the notes sizer)
+       wrap and tint the same text, so they take the same size (GitHub issue 1051). */
+    [data-quick-add-tints], .quick-add-notes-sizer {
       --ot-text-hint: 16px; --ot-text-meta: 16px; --ot-text-list: 16px;
       --ot-text-prose: 16px; --ot-text-h3: 16px;
       font-size: max(16px, 1em);
@@ -772,6 +775,12 @@ body {
    and an overlay. Dark pairs a border with the elevation, which does not read on a
    dark canvas on its own. */
 .surface-row { @apply rounded-chip hover:bg-hover; }
+/* The quick add's line field (quick-add-field-surface): a filled input surface with a resting
+   hairline, because the dark fill alone is about 1.03:1 on the surface. The sunken and surface
+   tokens are one colour in the high-contrast presentation, so it gets a stronger border there. */
+.quick-add-surface { @apply rounded-control border border-soft bg-sunken px-3 py-1.5 focus-within:border-focus focus-within:ring-2 focus-within:ring-focus/30; }
+.quick-add-surface:has(:disabled) { @apply opacity-60; }
+html:root[data-contrast="high"] .quick-add-surface:not(:focus-within) { @apply border-default; }
 .surface-card { @apply rounded-card border border-default bg-surface; }
 .surface-overlay { @apply rounded-popover border border-strong bg-pop shadow-3; }
 /* Shared Button (src/ui/Button.tsx, OpenSpec change ui-primitives D3): the same
@@ -960,6 +969,13 @@ html:root[data-contrast="high"] .ui-block--projected:not(:focus-visible) { backg
 .ui-frame-band--past {
   background: color-mix(in oklab, var(--hue-soft) 40%, transparent);
   border-top-color: color-mix(in oklab, var(--hue-solid) 35%, transparent);
+}
+/* A coloured section's header (section-tint): the frame band's recipe, the soft step
+   mixed towards the surface, at 50 % so every text tone keeps AA on it in every theme.
+   Opaque, so it reads the same on the list and on a board column. Measured as
+   hue-<name>-tint in ui/tokens/pairs.ts (DERIVED_TOKENS). */
+.ui-group-tint {
+  background: color-mix(in oklab, var(--hue-soft) 50%, var(--ot-surface));
 }
 /* An event of Today's agenda that already ended (OpenSpec change today-agenda, D6): dimmed by mixing, never by opacity. */
 .ui-event-past {

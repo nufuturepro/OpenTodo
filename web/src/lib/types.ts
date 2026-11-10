@@ -664,7 +664,7 @@ export interface RoutineProposalItem {
   before?: Record<string, unknown>
   /** Text the AI wrote ("Written by AI"). */
   ai: boolean
-  side?: { kind: string; notice?: { text: string; taskId?: string }; fired?: { taskId?: string }; hook?: string; delivery?: { Text?: string | null }; mail?: { Subject: string; Text: string } }
+  side?: { kind: string; notice?: { text: string; taskId?: string }; fired?: { taskId?: string }; hook?: string; delivery?: { Text?: string | null }; mail?: { Subject: string; Text: string }; members?: string[] }
 }
 
 /** What applying a proposal did. */
@@ -1003,6 +1003,8 @@ export interface UserPrefs extends UserPrefsFields {
   focus_presets?: string
   /** Background noise (focus-everywhere D6): off | white | pink | brown; '' and anything else read as off. */
   focus_noise?: string
+  /** End-of-session sound length (focus-end-alert D1): short | long, read while focus_sound is 'on'; '' and anything else read as short. */
+  focus_alert?: string
   _clock: Clock
 }
 
@@ -1342,6 +1344,8 @@ export interface CalendarConnection {
   target: string
   read: string[]
   include_date_only: boolean
+  /** The part of the account written to the calendar (sync-scope); absent from older servers: all. */
+  scope?: SyncScope
   enabled: boolean
   state: 'off' | 'choose_calendar' | 'pending' | 'ok' | 'failed' | 'reconnect' | 'stopped'
   next_sync_at: number
@@ -1385,6 +1389,21 @@ export interface CalendarConnectionPatch {
   include_date_only?: boolean
   enabled?: boolean
   password?: string
+  scope?: SyncScope
+}
+
+/**
+ * The part of an account a calendar sync connection or a CalDAV app password
+ * covers (OpenSpec change sync-scope): everything, only the chosen places, or
+ * everything except them. `workspaces` covers a workspace's projects and its
+ * Inbox, `projects` a project and its sub-projects, `inboxes` the tasks
+ * without a project of a workspace (by workspace id).
+ */
+export interface SyncScope {
+  mode: 'all' | 'only' | 'except'
+  workspaces: string[]
+  projects: string[]
+  inboxes: string[]
 }
 
 /** The filter of an issue connection (OpenSpec issue-connections "Filter"). */
@@ -1735,6 +1754,8 @@ export interface AppPassword {
   createdAt: number
   lastUsedAt: number | null
   revokedAt: number | null
+  /** Absent from servers before sync-scope: the whole account. */
+  scope?: SyncScope
 }
 
 export interface WebhookDelivery {

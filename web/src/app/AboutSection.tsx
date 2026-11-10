@@ -4,20 +4,25 @@
 // owner's welcome note on demand. Every link is a plain link opening a new tab;
 // the version comes from this server's status while online. The version row
 // (version-hint-motion) shows that number — this build's while offline — and links to
-// the published changelog, at the release this client runs.
-import { useEffect, useState } from 'react'
+// the published changelog, at the release this client runs. What's new (OpenSpec whats-new)
+// loads with this section. The App code row says who signed the code this device
+// runs (signed-web-app).
+import { lazy, Suspense, useState } from 'react'
 import { Badge, Icon, Notice, SettingRow, SettingsSection } from '../ui'
 // The build's version, inlined by vite.config.ts's `define` (see globals.d.ts), so the
 // bundle carries the number and not package.json's scripts and devDependencies.
 const buildVersion = __APP_VERSION__
-import { api } from '../lib/api'
 import { t } from '../lib/i18n'
-import { useOnline } from '../lib/online'
 import type { User } from '../lib/types'
 import { navigate } from './router'
-import { CoffeeButton, DISCORD_URL, ISSUES_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
+import { CoffeeButton, DISCORD_URL, REPO_URL, WelcomeNote, X_URL } from './WelcomeDialog'
+import { openFeedback } from '../lib/feedbackRequest'
 import { cardCopy, rowCopy } from '../lib/settingsCopy'
 import { shell, shellOutdated, type OpenTodoShell } from '../lib/shell'
+import { useServerVersion } from '../lib/serverVersion'
+import { AppCodeRow } from './AppCodeRow'
+
+const WhatsNew = lazy(() => import('./WhatsNew'))
 
 export const WEBSITE_URL = 'https://open-todo.app'
 export const DOCS_URL = 'https://open-todo.app/docs/'
@@ -41,19 +46,6 @@ function ExternalLink({ href, label, testId }: { href: string; label: string; te
       {label}<Icon name="external-link" size="xs" />
     </a>
   )
-}
-
-/** The server's version while online; null before it is known or offline. */
-function useServerVersion(): string | null {
-  const online = useOnline()
-  const [version, setVersion] = useState<string | null>(null)
-  useEffect(() => {
-    if (!online) return
-    let cancelled = false
-    api.authStatus().then((s) => { if (!cancelled) setVersion(s.version || null) }, () => {})
-    return () => { cancelled = true }
-  }, [online])
-  return version
 }
 
 const PLATFORM_NAME: Record<OpenTodoShell['platform'], string> = { android: 'Android', ios: 'iOS', desktop: 'desktop' }
@@ -83,6 +75,7 @@ export function AboutSection({ user }: { user: User }) {
             className="ui-btn ui-btn--secondary ui-btn--sm inline-flex items-center gap-1.5 whitespace-nowrap"
             data-about-version>{version ?? buildVersion}<Icon name="external-link" size="xs" /></a>} />
         <ShellAppRow app={app} />
+        <AppCodeRow serverVersion={version} />
         <SettingRow id="about-help" {...rowCopy('about', 'help')}
           control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => navigate({ view: 'help' })} data-about-help>{t('Open Help')}</button>} />
         <SettingRow id="about-docs" {...rowCopy('about', 'docs')}
@@ -90,10 +83,10 @@ export function AboutSection({ user }: { user: User }) {
         <SettingRow id="about-website" {...rowCopy('about', 'website')}
           control={<ExternalLink href={WEBSITE_URL} label="open-todo.app" testId="website" />} />
         <SettingRow id="about-feedback" {...rowCopy('about', 'feedback')}
-          control={<ExternalLink href={ISSUES_URL} label={t('Open an issue')} testId="issues" />} />
+          control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={openFeedback} data-about-feedback>{t("Something isn't working")}</button>} />
         <SettingRow id="about-community" {...rowCopy('about', 'community')}
           control={<ExternalLink href={DISCORD_URL} label={t('Join on Discord')} testId="discord" />} />
-        <SettingRow id="about-news" {...rowCopy('about', 'news')}
+        <SettingRow id="about-x" {...rowCopy('about', 'x')}
           control={<ExternalLink href={X_URL} label={t('Follow on X')} testId="x" />} />
         <SettingRow id="about-source" {...rowCopy('about', 'source')}
           control={<ExternalLink href={REPO_URL} label="GitHub" testId="source" />} />
@@ -102,6 +95,9 @@ export function AboutSection({ user }: { user: User }) {
             control={<button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={() => setNote(true)} data-about-welcome>{t('Show it again')}</button>} />
         )}
       </SettingsSection>
+      <Suspense fallback={null}>
+        <WhatsNew serverVersion={version} />
+      </Suspense>
       <SettingsSection {...cardCopy('about-support')}>
         <div className="pt-1"><CoffeeButton className="sm:w-64" /></div>
       </SettingsSection>

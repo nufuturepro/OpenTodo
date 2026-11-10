@@ -332,6 +332,9 @@
     "web/src/app/routines/RunHistory.tsx",
     "web/src/lib/rules/inbox.ts"
   ],
+  "A dot shows when this version has notes you have not read yet.": [
+    "web/src/lib/settingsCopy.ts"
+  ],
   "A field": [
     "web/src/lib/assistant.ts"
   ],
@@ -470,6 +473,9 @@
   "A project can have at most {n} fields.": [
     "web/src/lib/fields.ts"
   ],
+  "A proxy or the server changed the app's files.": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
   "A reminder added when a task gets a date or a time": [
     "web/src/app/settingsIndex.ts"
   ],
@@ -527,9 +533,6 @@
   ],
   "A short summary written by AI": [
     "web/src/lib/rules/sentence.ts"
-  ],
-  "A short tone when a session or a break ends, while the app is shown.": [
-    "web/src/lib/settingsCopy.ts"
   ],
   "A short vibration when you complete a task or pick one up with a long press.": [
     "web/src/lib/settingsCopy.ts"
@@ -1378,6 +1381,7 @@
   ],
   "All": [
     "web/src/app/Sidebar.tsx",
+    "web/src/app/SyncScopeField.tsx",
     "web/src/lib/rules/sentence.ts",
     "web/src/ui/Combobox/useCombobox.ts"
   ],
@@ -1398,6 +1402,12 @@
   ],
   "All events": [
     "web/src/app/AuditPanel.tsx"
+  ],
+  "All except these": [
+    "web/src/app/SyncScopeField.tsx"
+  ],
+  "All except {names}": [
+    "web/src/app/SyncScopeField.tsx"
   ],
   "All its tasks together, as one step": [
     "web/src/app/menus/flowMenu.ts"
@@ -1761,6 +1771,9 @@
   "App": [
     "web/src/app/OAuthClients.tsx",
     "web/src/app/settingsSections.ts"
+  ],
+  "App code": [
+    "web/src/app/AppCodeRow.tsx"
   ],
   "App icon badge": [
     "web/src/app/settingsIndex.ts",
@@ -2683,6 +2696,7 @@
     "web/src/app/DefaultRemindersSettings.tsx",
     "web/src/app/DigestCard.tsx",
     "web/src/app/EncryptionPanel.tsx",
+    "web/src/app/FeedbackDialog.tsx",
     "web/src/app/FieldsDialog.tsx",
     "web/src/app/IssueEditor.tsx",
     "web/src/app/LinkDialog.tsx",
@@ -3775,6 +3789,7 @@
     "web/src/app/UsersPanel.tsx"
   ],
   "Copied.": [
+    "web/src/app/AppCodeRow.tsx",
     "web/src/lib/settingsCopy.ts"
   ],
   "Copied. Create a bookmark and paste it as the address.": [
@@ -3806,6 +3821,9 @@
   ],
   "Copy configuration": [
     "web/src/app/AssistantsPanel.tsx"
+  ],
+  "Copy diagnostics": [
+    "web/src/app/AppCodeRow.tsx"
   ],
   "Copy it now: it will not be shown again. Anyone with the link can open the page.": [
     "web/src/app/task-detail/TaskPageDialog.tsx"
@@ -4860,6 +4878,7 @@
     "web/public/push-sw.js",
     "web/src/app/ArchivePrompt.tsx",
     "web/src/app/DemoBanner.tsx",
+    "web/src/app/RefusedBanner.tsx",
     "web/src/app/ReminderToasts.tsx",
     "web/src/app/RemindersField.tsx",
     "web/src/app/Shell.tsx",
@@ -5199,6 +5218,9 @@
   "Earlier conversations on this device": [
     "web/src/app/assistant/AssistantPanelBody.tsx"
   ],
+  "Earlier versions": [
+    "web/src/app/WhatsNew.tsx"
+  ],
   "Edit": [
     "web/src/app/CalendarFeedsPanel.tsx",
     "web/src/app/IssuesPanel.tsx",
@@ -5359,6 +5381,9 @@
   ],
   "Email project members": [
     "web/src/lib/rules/sentence.ts"
+  ],
+  "Email project members: {subject}": [
+    "web/src/lib/rules/proposal.ts"
   ],
   "Email sent": [
     "web/src/app/auditFormat.ts"
@@ -6082,6 +6107,7 @@
     "web/src/lib/settingsCopy.ts"
   ],
   "Feedback and problems": [
+    "web/src/app/settingsIndex.ts",
     "web/src/lib/settingsCopy.ts"
   ],
   "Fetching more…": [
@@ -6269,6 +6295,9 @@
   "Find a webhook…": [
     "web/src/app/routines/words.tsx"
   ],
+  "Find a workspace or project…": [
+    "web/src/app/SyncScopeField.tsx"
+  ],
   "Find a workspace…": [
     "web/src/app/ProjectHeader.tsx"
   ],
@@ -6449,7 +6478,9 @@
     "web/src/app/QuickAddSettings.tsx"
   ],
   "Follow on X": [
-    "web/src/app/AboutSection.tsx"
+    "web/src/app/AboutSection.tsx",
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
   ],
   "Follow project ({flow})": [
     "web/src/app/menus/flowMenu.ts"
@@ -6942,6 +6973,21 @@
   "Good morning.": [
     "web/src/app/assistant/AssistantWelcome.tsx"
   ],
+  "Google Calendar was not connected: Google did not complete the sign-in. Try again.": [
+    "web/src/app/CalendarSyncPanel.tsx"
+  ],
+  "Google Calendar was not connected: Google refused the redirect address. The server owner must register it in the Google client.": [
+    "web/src/app/CalendarSyncPanel.tsx"
+  ],
+  "Google Calendar was not connected: Google refused the server’s client ID or secret. The server owner must check them.": [
+    "web/src/app/CalendarSyncPanel.tsx"
+  ],
+  "Google Calendar was not connected: the CalDAV API is not enabled in the server owner’s Google project.": [
+    "web/src/app/CalendarSyncPanel.tsx"
+  ],
+  "Google Calendar was not connected: the calendar permission was not allowed. Connect again and leave it ticked.": [
+    "web/src/app/CalendarSyncPanel.tsx"
+  ],
   "Google Calendar was not connected: the permission was not granted.": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
@@ -6960,6 +7006,9 @@
   ],
   "Google did not grant lasting access. Remove OpenTodo at myaccount.google.com/permissions and connect again.": [
     "web/src/app/CalendarSyncPanel.tsx"
+  ],
+  "Google would send you back to another address than the one this page is open at. The server owner must set OPENTODO_BASE_URL to the address people open OpenTodo at.": [
+    "web/src/lib/i18n/errors.ts"
   ],
   "Got it": [
     "web/src/app/assistant/DisclosureNotice.tsx"
@@ -7759,6 +7808,7 @@
     "web/src/app/ProjectActivity.tsx",
     "web/src/app/SampleNotice.tsx",
     "web/src/app/Sidebar.tsx",
+    "web/src/app/SyncScopeField.tsx",
     "web/src/app/TabBar.tsx",
     "web/src/app/TaskListView.tsx",
     "web/src/app/TriageView.tsx",
@@ -7982,6 +8032,12 @@
   ],
   "It is never shown again.": [
     "web/src/app/NotificationChannelEditor.tsx"
+  ],
+  "It isn't signed by OpenTodo.": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
+  "It isn't signed with this app's key.": [
+    "web/src/lib/appCodeCopy.ts"
   ],
   "It may have been revoked or have expired. Ask whoever shared it for a new one.": [
     "web/src/app/PublicListScreen.tsx"
@@ -8669,10 +8725,14 @@
     "web/src/app/assistant/ComposerCapture.tsx"
   ],
   "Lists": [
+    "web/src/app/CaldavPanel.tsx",
     "web/src/app/calendar/PlanPanel.tsx"
   ],
   "Lists and logic": [
     "web/src/lib/rules/sentence.ts"
+  ],
+  "Lists of {name}": [
+    "web/src/app/CaldavPanel.tsx"
   ],
   "Lists sorted by date or priority keep their order.": [
     "web/src/lib/settingsCopy.ts"
@@ -8874,6 +8934,9 @@
   ],
   "Logo": [
     "web/src/lib/settingsCopy.ts"
+  ],
+  "Long": [
+    "web/src/app/focus/FocusSettings.tsx"
   ],
   "Long break": [
     "web/src/app/focus/FocusParts.tsx",
@@ -9777,6 +9840,12 @@
     "web/src/app/notes/NotesPage.tsx",
     "web/src/app/palette/registry.ts"
   ],
+  "New notes": [
+    "web/src/app/NewsDot.tsx"
+  ],
+  "New notes for this version": [
+    "web/src/app/WhatsNew.tsx"
+  ],
   "New objective for {period}": [
     "web/src/app/objectives/ObjectiveCards.tsx"
   ],
@@ -9859,10 +9928,6 @@
     "web/src/app/WorkspaceControl.tsx",
     "web/src/app/WorkspacesSettings.tsx",
     "web/src/app/palette/registry.ts"
-  ],
-  "News and updates": [
-    "web/src/app/settingsIndex.ts",
-    "web/src/lib/settingsCopy.ts"
   ],
   "News, guides, comparisons and what is new in each release.": [
     "web/src/lib/settingsCopy.ts"
@@ -10543,7 +10608,8 @@
     "web/src/lib/rules/catalogue.ts"
   ],
   "Not available offline.": [
-    "web/src/app/RestoreSection.tsx"
+    "web/src/app/RestoreSection.tsx",
+    "web/src/app/RoutineEmailStopScreen.tsx"
   ],
   "Not available with end-to-end encryption: calendar apps cannot read encrypted titles.": [
     "web/src/lib/settingsCopy.ts"
@@ -10838,6 +10904,9 @@
   ],
   "Nothing more is sent to <span>{url}</span>, and its delivery log is deleted too.": [
     "web/src/app/WebhooksPanel.tsx"
+  ],
+  "Nothing new in this version yet.": [
+    "web/src/app/WhatsNew.tsx"
   ],
   "Nothing old in Someday.": [
     "web/src/app/review/MonthlyLook.tsx"
@@ -11336,6 +11405,7 @@
     "web/src/app/InviteScreen.tsx",
     "web/src/app/ProjectInviteScreen.tsx",
     "web/src/app/ResetScreen.tsx",
+    "web/src/app/RoutineEmailStopScreen.tsx",
     "web/src/app/WorkspaceInviteScreen.tsx"
   ],
   "One next step|method": [
@@ -11425,6 +11495,9 @@
   "Only the server owner can change the AI assistants settings of this server.": [
     "web/src/lib/assistants.ts"
   ],
+  "Only these": [
+    "web/src/app/SyncScopeField.tsx"
+  ],
   "Only this person can use the link. Leave empty for anyone with the link.": [
     "web/src/app/MembersPanel.tsx"
   ],
@@ -11495,13 +11568,8 @@
   "Open an authenticator app on your phone (any app that supports time-based codes).": [
     "web/src/app/TwoFactorPanel.tsx"
   ],
-  "Open an issue": [
-    "web/src/app/AboutSection.tsx"
-  ],
   "Open an issue on GitHub. Every report is read.": [
-    "web/src/app/WelcomeDialog.tsx",
-    "web/src/app/settingsIndex.ts",
-    "web/src/lib/settingsCopy.ts"
+    "web/src/app/WelcomeDialog.tsx"
   ],
   "Open as a new view: {query}": [
     "web/src/app/palette/filterEntries.ts"
@@ -11541,6 +11609,9 @@
   ],
   "Open menu": [
     "web/src/app/Shell.tsx"
+  ],
+  "Open on GitHub": [
+    "web/src/app/FeedbackDialog.tsx"
   ],
   "Open on launch": [
     "web/src/lib/settingsCopy.ts"
@@ -12447,6 +12518,9 @@
     "web/src/app/themes/ThemeEditor.tsx",
     "web/src/app/themes/ThemePreview.tsx"
   ],
+  "Preview build": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "Preview loading…": [
     "web/src/app/routines/StepCard.tsx"
   ],
@@ -13195,6 +13269,9 @@
   ],
   "Relative reminders fire once the task has a due date.": [
     "web/src/app/RemindersField.tsx"
+  ],
+  "Release notes on GitHub": [
+    "web/src/app/WhatsNew.tsx"
   ],
   "Releases and what is being built, on X.": [
     "web/src/app/settingsIndex.ts",
@@ -14098,6 +14175,7 @@
   "Save": [
     "web/src/app/AttachmentSettingsPanel.tsx",
     "web/src/app/BrandingPanel.tsx",
+    "web/src/app/CaldavPanel.tsx",
     "web/src/app/CalendarFeedsPanel.tsx",
     "web/src/app/CalendarSyncDialogs.tsx",
     "web/src/app/DefaultRemindersSettings.tsx",
@@ -14514,6 +14592,9 @@
   "Selected row": [
     "web/src/app/themes/tokenNames.ts"
   ],
+  "Self-built": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "Send": [
     "web/src/app/NotificationChannelEditor.tsx",
     "web/src/app/assistant/AssistantComposer.tsx",
@@ -14535,6 +14616,7 @@
     "web/src/lib/settingsCopy.ts"
   ],
   "Send by email": [
+    "web/src/app/FeedbackDialog.tsx",
     "web/src/app/InviteLinksSection.tsx",
     "web/src/app/MembersPanel.tsx",
     "web/src/app/WorkspaceInvites.tsx"
@@ -14862,8 +14944,7 @@
     "web/src/lib/settingsCopy.ts"
   ],
   "Share feedback or report a problem": [
-    "web/src/app/WelcomeDialog.tsx",
-    "web/src/app/settingsIndex.ts"
+    "web/src/app/WelcomeDialog.tsx"
   ],
   "Share project": [
     "web/src/app/ProjectHeader.tsx"
@@ -14897,6 +14978,9 @@
   ],
   "Shift+Enter: add to {slot}": [
     "web/src/app/calendar/CalendarStatus.tsx"
+  ],
+  "Short": [
+    "web/src/app/focus/FocusSettings.tsx"
   ],
   "Short break": [
     "web/src/app/focus/FocusParts.tsx",
@@ -15254,6 +15338,9 @@
   "Sign-up is disabled on this server.": [
     "web/src/lib/i18n/errors.ts"
   ],
+  "Signed by OpenTodo": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "Signed in": [
     "web/src/app/auditFormat.ts"
   ],
@@ -15267,6 +15354,9 @@
   ],
   "Signed out everywhere": [
     "web/src/app/auditFormat.ts"
+  ],
+  "Signed with this server's key": [
+    "web/src/app/AppCodeRow.tsx"
   ],
   "Signing in did not work. Please try again.": [
     "web/src/app/sso.ts"
@@ -15509,6 +15599,11 @@
   "Someone without an account, whose provider confirms their email, gets a member account on first sign-in. Off: only existing accounts (matched by verified email) and open sign-up.": [
     "web/src/app/SsoPanel.tsx"
   ],
+  "Something isn't working": [
+    "web/src/app/AboutSection.tsx",
+    "web/src/app/FeedbackDialog.tsx",
+    "web/src/app/SidebarFooter.tsx"
+  ],
   "Something went wrong": [
     "web/src/app/EmailScreens.tsx",
     "web/src/app/InviteScreen.tsx",
@@ -15547,14 +15642,11 @@
   "Sort {list} by {by}": [
     "web/src/lib/rules/sentence.ts"
   ],
-  "Sorted by date (or their own rule): no drag or Alt moves there": [
+  "Sorted by date (or their own rule): no Alt moves there; in Upcoming, drag a task onto another day to move it": [
     "web/src/lib/shortcuts.ts"
   ],
   "Sound": [
     "web/src/lib/settingsCopy.ts"
-  ],
-  "Sound at the end of a session": [
-    "web/src/app/focus/FocusSettings.tsx"
   ],
   "Source": [
     "web/src/app/notes/NoteFilters.tsx",
@@ -15816,6 +15908,12 @@
   ],
   "Stop dictation": [
     "web/src/app/quickadd/VoiceParts.tsx"
+  ],
+  "Stop emails": [
+    "web/src/app/RoutineEmailStopScreen.tsx"
+  ],
+  "Stop emails from “{routine}”?": [
+    "web/src/app/RoutineEmailStopScreen.tsx"
   ],
   "Stop encrypting future backups": [
     "web/src/app/BackupsPanel.tsx"
@@ -16226,6 +16324,9 @@
   "Tasks for today’s focus": [
     "web/src/lib/rules/sentence.ts"
   ],
+  "Tasks from": [
+    "web/src/app/CalendarSyncDialogs.tsx"
+  ],
   "Tasks go to {calendar} · {n, plural, one {# calendar shown} other {# calendars shown}}": [
     "web/src/app/CalendarSyncPanel.tsx"
   ],
@@ -16281,6 +16382,9 @@
   ],
   "Tell the assistant your time zone: due dates are evaluated in the time zone it passes (UTC otherwise). Changes made offline on a device appear once it syncs.": [
     "web/src/app/AssistantsPanel.tsx"
+  ],
+  "Tell us what went wrong. A hello is welcome too.": [
+    "web/src/app/FeedbackDialog.tsx"
   ],
   "Template": [
     "web/src/lib/rules/sentence.ts"
@@ -16813,6 +16917,9 @@
   "The last four weeks": [
     "web/src/app/review/MonthlyLook.tsx"
   ],
+  "The last update didn't pass the check. It was installed: checks only report for now.": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
   "The licence is set to unknown. Check the theme's licence before you share this file.": [
     "web/src/app/themes/ImportReport.tsx"
   ],
@@ -17243,6 +17350,12 @@
   "The server took too long to answer. Your changes stay on this device.": [
     "web/src/lib/http.ts"
   ],
+  "The server went back to an older version.": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
+  "The server's list of files couldn't be read.": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
   "The server’s assistant": [
     "web/src/app/assistant/AssistantSettings.tsx"
   ],
@@ -17314,6 +17427,12 @@
   ],
   "The test passes: Then runs": [
     "web/src/lib/rules/preview.ts"
+  ],
+  "The text is too long for a link. It is copied: paste it into the message.": [
+    "web/src/app/FeedbackDialog.tsx"
+  ],
+  "The text is too long for a link. It is selected: copy it and paste it into the message.": [
+    "web/src/app/FeedbackDialog.tsx"
   ],
   "The thank-you shown the first time you opened this server.": [
     "web/src/app/settingsIndex.ts",
@@ -17456,6 +17575,9 @@
   ],
   "These fields go back to this version’s values:": [
     "web/src/app/task-detail/HistoryTab.tsx"
+  ],
+  "These notes are in English.": [
+    "web/src/app/WhatsNew.tsx"
   ],
   "These tasks already have {label}": [
     "web/src/lib/undoActions.ts"
@@ -17835,6 +17957,7 @@
     "web/src/app/EmailScreens.tsx"
   ],
   "This link is no longer valid.": [
+    "web/src/app/RoutineEmailStopScreen.tsx",
     "web/src/lib/i18n/errors.ts"
   ],
   "This link is not valid any more. Ask for a new one.": [
@@ -18081,6 +18204,9 @@
   "This server requires single sign-on for your account. Use the \"Sign in with\" button instead.": [
     "web/src/app/AuthScreen.tsx"
   ],
+  "This server runs {version}": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "This server uses single sign-on for every account.": [
     "web/src/app/AuthScreen.tsx"
   ],
@@ -18147,6 +18273,9 @@
   ],
   "This token or session is not allowed to do this: {detail}": [
     "web/src/lib/i18n/errors.ts"
+  ],
+  "This update wasn't installed.": [
+    "web/src/lib/appCodeCopy.ts"
   ],
   "This upload would go over your attachment storage.": [
     "web/src/lib/i18n/errors.ts"
@@ -18569,7 +18698,8 @@
     "web/src/app/EmailScreens.tsx"
   ],
   "Too many requests from this network. Wait a minute, then reload the page.": [
-    "web/src/app/PublicListScreen.tsx"
+    "web/src/app/PublicListScreen.tsx",
+    "web/src/app/RoutineEmailStopScreen.tsx"
   ],
   "Too many tests in a short time. Try again in a few minutes.": [
     "web/src/app/NotificationsSettings.tsx"
@@ -19264,6 +19394,9 @@
     "web/src/app/WorkspaceControl.tsx",
     "web/src/lib/shortcuts.ts"
   ],
+  "Updates are not signature-checked.": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "Updates in {names}": [
     "web/src/app/WorkspaceControl.tsx"
   ],
@@ -19438,8 +19571,18 @@
     "web/src/app/AuthScreen.tsx",
     "web/src/app/RestoreSection.tsx"
   ],
+  "Verify key": [
+    "web/src/app/AppCodeRow.tsx"
+  ],
   "Verify your email address to use this": [
     "web/src/lib/rules/catalogue.ts"
+  ],
+  "Version notices": [
+    "web/src/app/WhatsNew.tsx",
+    "web/src/lib/settingsCopy.ts"
+  ],
+  "Version {version}": [
+    "web/src/app/AppCodeRow.tsx"
   ],
   "Version, documentation, website, feedback and support": [
     "web/src/app/settingsSections.ts"
@@ -19690,6 +19833,10 @@
   "Welcome! Create the owner account for this server. Only you can do this; sign-up closes afterwards unless you open it.": [
     "web/src/app/AuthScreen.tsx"
   ],
+  "What changed in each version, in English.": [
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
+  ],
   "What changed in your shared projects": [
     "web/src/app/FeedView.tsx"
   ],
@@ -19733,6 +19880,9 @@
   "What this device ran, without the text.": [
     "web/src/lib/settingsCopy.ts"
   ],
+  "What to do": [
+    "web/src/lib/appCodeCopy.ts"
+  ],
   "What to do with “{title}”": [
     "web/src/app/objectives/ReviewObjectives.tsx"
   ],
@@ -19741,6 +19891,10 @@
   ],
   "What you type here is sent to the map provider through this server.": [
     "web/src/app/locations/LocationEditor.tsx"
+  ],
+  "What's new": [
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
   ],
   "Whatever is on your mind…": [
     "web/src/app/method/LoopHome.tsx",
@@ -20014,6 +20168,10 @@
   "Write a reply…": [
     "web/src/page/TaskPageScreen.tsx"
   ],
+  "Write it here. It opens as a GitHub issue or an email.": [
+    "web/src/app/settingsIndex.ts",
+    "web/src/lib/settingsCopy.ts"
+  ],
   "Write tasks into": [
     "web/src/app/CalendarSyncDialogs.tsx"
   ],
@@ -20207,6 +20365,9 @@
   "You sign in with it. A new address is confirmed by a link sent to it.": [
     "web/src/lib/settingsCopy.ts"
   ],
+  "You will get no more emails from “{routine}”.": [
+    "web/src/app/RoutineEmailStopScreen.tsx"
+  ],
   "You will no longer be able to sign in with {provider} using this account. Your password and passkeys keep working.": [
     "web/src/app/SsoPanel.tsx"
   ],
@@ -20335,6 +20496,9 @@
   ],
   "Your loops, your server|method": [
     "web/src/lib/method/vocabulary.json"
+  ],
+  "Your message": [
+    "web/src/app/FeedbackDialog.tsx"
   ],
   "Your name": [
     "web/src/page/TaskPageScreen.tsx"
