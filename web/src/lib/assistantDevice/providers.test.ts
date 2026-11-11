@@ -81,7 +81,7 @@ describe('Anthropic from the browser', () => {
     const conv = anthropicProvider(setup, f).start({ system: 'S', messages: [{ role: 'assistant', text: 'skip' }, { role: 'user', text: 'Q' }], tools: [tool], maxTokens: 8192 })
     const texts: string[] = []
     const r = await conv.next((t) => texts.push(t))
-    expect(r).toMatchObject({ stop: 'tool_use', input: 120, output: 42, toolCalls: [{ id: 'tu1', name: 'complete_tasks', args: '{"ids":["a"]}' }] })
+    expect(r).toMatchObject({ stop: 'tool_use', input: 100, cached: 20, cacheWrite: 0, output: 42, toolCalls: [{ id: 'tu1', name: 'complete_tasks', args: '{"ids":["a"]}' }] })
     expect(texts).toEqual(['Let me check.'])
     expect(calls[0].url).toBe('https://api.anthropic.com/v1/messages')
     const h = calls[0].init.headers as Record<string, string>
@@ -131,6 +131,37 @@ describe('Chat Completions from the browser', () => {
     expect(calls[0].url).toBe('http://localhost:11434/v1/chat/completions')
     expect((calls[0].init.headers as Record<string, string>).authorization).toBeUndefined()
     expect(JSON.parse(String(calls[0].init.body))).toMatchObject({ max_tokens: 100, tool_choice: 'auto', stream_options: { include_usage: true } })
+  })
+
+  it('offers the tools set for the next call (assistant-lean-tools)', async () => {
+    const done = sse([{ choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }] }, '[DONE]'], false)
+    const { f, calls } = fakeFetch([done, done])
+    const conv = chatProvider({ provider: 'compatible', model: 'm', baseUrl: 'http://localhost:11434/v1', savedAt: 1 } as never, f).start({ system: 'S', messages: [{ role: 'user', text: 'Q' }], tools: [], maxTokens: 100 })
+    await conv.next(() => {})
+    conv.setTools([tool])
+    await conv.next(() => {})
+    const bodies = calls.map((c) => JSON.parse(String(c.init.body)))
+    expect(bodies[0].tools).toBeUndefined()
+    expect(bodies[1].tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(['complete_tasks'])
+    const a = fakeFetch([sse([{ type: 'message_stop' }]), sse([{ type: 'message_stop' }])])
+    const ac = anthropicProvider({ provider: 'anthropic', key: 'k', model: 'm' } as never, a.f).start({ system: 'S', messages: [{ role: 'user', text: 'Q' }], tools: [tool], maxTokens: 64 })
+    await ac.next(() => {}).catch(() => {})
+    ac.setTools(manifest.tools)
+    await ac.next(() => {}).catch(() => {})
+    const ab = a.calls.map((c) => JSON.parse(String(c.init.body)))
+    expect([ab[0].tools.length, ab[1].tools.length]).toEqual([1, manifest.tools.length])
+  })
+
+  it('reads the cached part of prompt_tokens (assistant-usage-cache)', async () => {
+    const setup = { provider: 'openai' as const, model: 'gpt-5', key: 'sk-test', savedAt: 1 }
+    const body = sse([
+      { choices: [{ delta: { content: 'Nothing is overdue.' }, finish_reason: 'stop' }] },
+      { choices: [], usage: { prompt_tokens: 20000, completion_tokens: 300, prompt_tokens_details: { cached_tokens: 18000 } } },
+      '[DONE]',
+    ], false)
+    const { f } = fakeFetch([body])
+    const r = await chatProvider(setup, f).start({ system: 'S', messages: [{ role: 'user', text: 'Q' }], tools: [tool], maxTokens: 100 }).next(() => {})
+    expect(r).toMatchObject({ stop: 'end_turn', input: 2000, cached: 18000, output: 300 })
   })
 
   it('sends OpenAI a bearer key and Gemini schemas without type lists', async () => {

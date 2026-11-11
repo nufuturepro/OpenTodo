@@ -29,7 +29,7 @@ A project page in the List layout and a label page SHALL offer the display panel
 - **THEN** the board shows one column per section as before and the header shows no display button
 
 ### Requirement: Grouping and order of a project or label list
-Grouping and order SHALL apply to a project's top-level tasks; each SHALL keep its subtasks under it in their manual order. Groups SHALL have the headings and order of a saved view's grouping (due date: Earlier, Today, Tomorrow, each later date, No date; priority: Priority 1 to 4; label: the labels in label order, then No label). A task SHALL be listed once: a task with several labels under the first of them in label order. Grouping by Section SHALL keep the project's sections with their headers, collapsing, adding and dropping, ordering the tasks inside each; None SHALL list the tasks without headings. Due date, deadline and custom-field orders SHALL list tasks without a value last in either direction; for priority, descending SHALL put priority 1 first. Equal custom-field values SHALL fall back to due date, priority, position and task id, in that order. A project's Later and Completed groups SHALL stay at the end. The defaults SHALL show what the pages showed before: a project by section in manual order, a label by project in manual order.
+Grouping and order SHALL apply to a project's top-level tasks; each SHALL keep its subtasks under it in their manual order. Groups SHALL have the headings and order of a saved view's grouping (due date: Earlier, Today, Tomorrow, each later date, No date; priority: Priority 1 to 4; label: the labels in label order, then No label). A task SHALL be listed once: a task with several labels under the first of them in label order. Grouping by Section SHALL keep the project's sections with their headers, collapsing, adding and dropping, ordering the tasks inside each; None SHALL list the tasks without headings. Due date, deadline and custom-field orders SHALL list tasks without a value last in either direction; for priority, descending SHALL put priority 1 first. Equal custom-field values SHALL fall back to due date, priority, position and task id, in that order. Grouped by Section, a project's deferred and parked tasks SHALL stay in their section under its Later (OpenSpec `start-dates` "Deferred tasks"), in the section's order; under every other grouping, in a project without sections and on the timeline, a project's Later group SHALL stay at the end. The Completed group SHALL stay at the end. The defaults SHALL show what the pages showed before: a project by section in manual order, a label by project in manual order.
 
 #### Scenario: Order inside sections by a custom field
 - **WHEN** a project with sections is ordered by its Number field "Effort", descending
@@ -37,7 +37,7 @@ Grouping and order SHALL apply to a project's top-level tasks; each SHALL keep i
 
 #### Scenario: Keep subtasks and Later tasks in place
 - **WHEN** a project is ordered by a custom field and a top-level task has subtasks
-- **THEN** its subtasks remain under it in manual order and the Later and Completed groups remain at the end
+- **THEN** its subtasks remain under it in manual order, each section's Later stays after the section's active tasks, and the Completed group remains at the end
 
 #### Scenario: Subtasks stay with their parent
 - **WHEN** a project is grouped by priority and a priority-2 task has a priority-4 subtask
@@ -50,6 +50,10 @@ Grouping and order SHALL apply to a project's top-level tasks; each SHALL keep i
 #### Scenario: Several labels
 - **WHEN** a project is grouped by label and a task carries "work" and "call", with "call" first in the label order
 - **THEN** the task is listed once, under "call"
+
+#### Scenario: Later at the end under another grouping
+- **WHEN** a project with sections and a deferred task is grouped by priority
+- **THEN** the deferred task is listed in one Later group after the priority groups
 
 ### Requirement: Display options are stored per project and per label
 A project's options SHALL be stored in the user's personal preferences row of that project and a label's on the label, as one operation per field written locally first, so they work offline, follow the user to their own devices after sync and survive a restart. On a shared project each member SHALL keep their own options; a viewer may set theirs. Concurrent changes SHALL converge per field (last writer wins): a grouping changed on one device and an order changed on another both survive. A missing, empty or unknown stored value SHALL read as the default without being rewritten.
@@ -95,3 +99,49 @@ A project's list, a label's page and a saved view SHALL let the user change Grou
 #### Scenario: Nothing to write
 - **WHEN** a project is grouped by priority and the user presses `r g p`
 - **THEN** no operation is queued and the notice reads "Group by: Priority"
+
+### Requirement: Urgency order on project and label pages
+A project page in the List layout, a label page and the Inbox SHALL offer **Urgency** in Order by, after Title and before any custom field (OpenSpec `urgency-score`). Choosing it SHALL order the top-level tasks by score, most urgent first, and set the direction to ascending, which for this order reads **Most urgent first**; the direction under More options SHALL offer **Least urgent first**, which reverses it. Ascending is the stored direction of the most urgent first so that a client without the order, which reads `urgency` as the page's default, shows that default order and not its reverse. Equal scores SHALL fall back to due date, priority, position and task id, in that order. Subtasks SHALL stay under their parent, and the Later and Completed groups at the end. The choice SHALL be stored as `sort_by` `urgency` in the user's preferences of that project or on the label, like every order: written locally first, working offline, converging per field by last-writer-wins, and read as the default by clients that do not know it, without being rewritten. The order SHALL follow changes at once: a task whose score changes, locally or after sync, moves to its new place.
+
+#### Scenario: Order a project by urgency
+- **WHEN** the user opens Display options on "Work" and chooses Urgency
+- **THEN** the task with the highest score is first, the direction reads Most urgent first, and the choice is stored for "Work" only as `sort_by` `urgency` with `sort_dir` `asc`
+
+#### Scenario: Offline and on another device
+- **WHEN** the device is offline and the user orders the label "errand" by urgency, then reconnects, and opens "errand" on the phone after sync
+- **THEN** both devices list the errands by urgency
+
+#### Scenario: Older client
+- **WHEN** a client without urgency support opens a project ordered by urgency
+- **THEN** it shows manual order, not reversed, and leaves the stored `urgency` unchanged
+
+#### Scenario: Personal on a shared project
+- **WHEN** Ana orders the shared project "Launch" by urgency
+- **THEN** Ben, a member, still sees "Launch" in his own order
+
+#### Scenario: Blocker completed
+- **WHEN** a project is ordered by urgency and the task blocking "Book flights" is completed
+- **THEN** "Book flights" moves up at once, because its blocked component is gone
+
+### Requirement: Urgency score shown with its order
+While a list is ordered by urgency, each top-level list row from 640 px SHALL show its score with one decimal in the faint tone with tabular figures in the row's trailing group, as a button named "Urgency <score>, show why". Focusing it SHALL show the breakdown as a tooltip, one component per part with its label and signed value, then the total with two decimals, and hovering it SHALL do the same where the row's revealed actions do not cover it; while it has the focus the revealed actions SHALL give way so it stays visible. Enter or Space on it SHALL open the same breakdown as a popover, and Escape SHALL close it and return focus to the button. For one task the row's menu (its More button, a right-click or a touch hold) SHALL offer **Why here?**, opening the same breakdown in the menu, a bottom sheet below 640 px. Below 640 px rows SHALL show no score. Subtask rows, cards and lists in any other order SHALL show no score, and the menu SHALL have no **Why here?** in any other order.
+
+#### Scenario: Breakdown from the keyboard
+- **WHEN** a list is ordered by urgency and the user tabs to the score of a priority-1 task due today that blocks two tasks and was created 30 days ago
+- **THEN** the tooltip reads "Due today +8.80 · Priority 1 +6.00 · Blocks 2 tasks +8.00 · Age 30 d +0.16 = 22.96" and the chip reads 23.0
+
+#### Scenario: Keyboard popover
+- **WHEN** the user presses Enter on a row's score
+- **THEN** the breakdown opens as a popover, and Escape closes it with focus back on the score
+
+#### Scenario: From the row menu
+- **WHEN** a list ordered by urgency is open on a desktop, where the revealed actions cover a hovered row's end, and the user opens a row's menu
+- **THEN** **Why here?** shows the breakdown
+
+#### Scenario: Phone
+- **WHEN** a list ordered by urgency is opened at 390 px and the user opens a row's touch menu
+- **THEN** the row shows no score, and the menu's "Why here?" opens the breakdown in a bottom sheet
+
+#### Scenario: Other orders show nothing
+- **WHEN** the same list is ordered by priority
+- **THEN** no row shows a score and the menu has no "Why here?"

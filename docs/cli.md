@@ -118,11 +118,12 @@ ot list --anytime              # no due date, deadline or start
 ot list --blocked --project Home   # waiting for an open task
 ot list --available                # what can be done now: not blocked, not waiting for an earlier step
 ot list --sector this-week         # planned for this week without a date; carried: periods that ended
+ot today --sort urgency            # most urgent first, with the urgency score
 ```
 
 Human output is a compact table: an id prefix, priority, due date and time (overdue dates are marked and shown in red on a terminal), project and title, plus an `ORIGIN` column (the issue id or the page's host) when a listed task has an [origin](capture.md#where-a-task-came-from) and a `BY` column with the deadline when one has a deadline (a passed deadline is marked overdue), and an `ENERGY` column when a listed task has an energy; `--json` always carries `energy` (null for none). The due cell adds `(someday)`, `starts <date>` (for a multi-day task its days instead: `3–5 Nov`, `30 Oct – 2 Nov`, or with the years when they differ), the [time sector](time-sectors.md) of a task without a due date (`this week`, `next month`, the period such as `2026-W47`, or `from 2026-W43` when its period has ended; `--json` always carries `sector`, null for none), `evening` (or `morning`, `afternoon`) and `waiting` when they apply. Dates are evaluated in your local time zone. A task fixed to a time zone (see [sync.md](sync.md#zoned-due-values)) is shown converted to your zone with the original as a hint, e.g. `2026-10-11 00:00 (09:00 Berlin)`; `ot edit --due/--time` on it takes the date and time as shown and keeps the zone, and `--time ""` releases it to a floating date. Tasks of archived projects stay out of the cross-project views, as in the web app.
 
-Custom-field sorting is available in the web app and saved views; `ot list` has no sort flag for it (see [Group and order](group-and-order.md)).
+`--sort urgency` (on `ot list`, `ot today`, `ot inbox` and `ot upcoming`) orders the listed tasks by the [urgency score](urgency-order.md), the same rule as the web app and the assistant tools, highest first, equal scores by due date, priority and position. It adds a `URG` column and `urgency` to each task in `--json`, and replaces the Today limit's waiting heading with the one order. `--sort default` is the usual order; any other value exits with code 2. Custom-field sorting is available in the web app and saved views; `ot list` has no sort flag for it (see [Group and order](group-and-order.md)).
 
 ```
 ID        P   DUE                 PROJECT  TITLE
@@ -252,6 +253,7 @@ ot notes list --source task --project Home # note, task, project or all; --stand
 ot notes list --label work --limit 20
 ot notes search plumber                    # every word in the title or text, title matches first
 ot notes show 3fa1                         # the text, then text appended that no device merged yet
+ot notes links Trip                        # what the note links to and what links to it
 ot notes add "Wi-Fi" --project Home --label home --body "- network: home" [--idempotency-key wifi-1]
 ot notes add "Meeting" --body-file agenda.md       # or --body-file - for standard input
 ot notes edit 3fa1 --title "Wi-Fi at home" --project none --label none
@@ -263,7 +265,7 @@ ot task note 8c2a                          # a task's note as Markdown
 ot task note 8c2a --set "New plan" | --file plan.md | --file - | --append "- called, no answer" | --clear
 ```
 
-A note `<ref>` is a full id, a unique id prefix, a title (ignoring case) or a unique title prefix; an ambiguous one changes nothing and exits 2 with the candidates. `ot notes show` accepts the id of a task or project note from the list too; `edit`, `append`, `rm` and `to-task` act on standalone notes, and `ot task note` on a task's note (a task id, unique id prefix or title). The list prints KIND (`note`, `task`, `project`; `task (done)` and `project (archived)` are marked), id prefix, title (`Untitled note` when a note has none), project and when its text last changed; `ot notes search` adds a MATCH column with the text around the first match. Search runs on your machine over the notes the server returned, with the matching of the app: every word must occur in the title or the text, case and accents ignored, a quoted phrase as one; title matches first.
+A note `<ref>` is a full id, a unique id prefix, a title (ignoring case) or a unique title prefix; an ambiguous one changes nothing and exits 2 with the candidates. `ot notes show` accepts the id of a task or project note from the list too; `edit`, `append`, `rm` and `to-task` act on standalone notes, and `ot task note` on a task's note (a task id, unique id prefix or title). The list prints KIND (`note`, `task`, `project`; `task (done)` and `project (archived)` are marked), id prefix, title (`Untitled note` when a note has none), project and when its text last changed; `ot notes search` adds a MATCH column with the text around the first match. Search runs on your machine over the notes the server returned, with the matching of the app: every word must occur in the title or the text, case and accents ignored, a quoted phrase as one; title matches first. `ot notes links <ref>` (a note, or a task or project, with or without a note) prints two lists: what its text links to (`[Title](?note=<id>)`, `?task=`, `?project=`; `(not found)` for something missing, in the Trash or not yours) and the notes that link to it, newest change first. It is worked out on your machine from the notes the server returned, so it works with an unlocked encrypted account; a locked one stops with `encryption_enabled` (exit 5).
 
 Text is Markdown. What a note shows is its text followed by anything appended that no device has merged into it yet; the next device that opens the note turns the Markdown into formatted content. **A replacement** (`edit --body`, `edit --body-file`, `task note --set`, `--file` and `--clear`) carries the version `ot` read: when someone changed the note in the app after that (or another write came first), the server refuses it with `body_changed`, exit 1, and nothing changes. Read it again and retry. **An append** (`ot notes append`, `ot task note --append`) never replaces anything, so it is safe while someone edits the same note on a phone: every device adds the text at the end once. A note holds at most 100 appends no device has merged yet (`too_many_appends`). `ot task note` takes one of `--set`, `--file`, `--append` and `--clear` per call; two exit 2 before anything is sent.
 
@@ -461,6 +463,7 @@ Every command accepts `--json`. Stdout then holds only JSON, with the same field
 | `token list` / `create` / `revoke` | array of `token` / `token_created` (`{token, secret}`) / `token` |
 | `notes list`, `notes search` | array of `note`: `{kind, id, title, project_id, project, label_ids, updated_at, body_version, encrypted}`, `search` adds `snippet` (`[{text, mark}]`) |
 | `notes show`, `add`, `edit`, `task note` | `note_text`: `{kind, id, title, text, appends, body_version, project_id, label_ids, encrypted}` |
+| `notes links` | `note_links`: `{kind, id, title, links: [{kind, id, title, available}], linked_from: [{kind, id, title}]}` |
 | `notes append`, `task note --append` | `note_append`: `{entity, entity_id, append_id, body_version}` |
 | `task occurrences` | `occurrences`: `{series_id, rule, capped, occurrences: [{date, time?, tz?, state, record_id?, due?}]}` |
 | `task occurrence` | `task`: the occurrence's record |

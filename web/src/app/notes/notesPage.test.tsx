@@ -3,20 +3,26 @@
 // the three sources, 50 at a time with Show more, the filters, the search with its
 // highlighted snippet, the keyboard, the empty state, opening a note, the phone's
 // Filters sheet, and the note editor without mentions, images or Make subtask.
+// The home (notes-home, tasks 1.2, 2.2, 3.1, 3.2 and 4.1): Pinned and Recent,
+// writing from the search field, pinning from the menus and with `p`, Unlinked.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { EditorView } from 'prosemirror-view'
 import { db, useDatabase } from '../../lib/db'
-import { createNote, planNote } from '../../lib/noteOps'
+import { createNote, planNote, trashNote } from '../../lib/noteOps'
+import { isFavourite, pin } from '../../lib/favourites'
+import { undoBatch } from '../../lib/undo'
+import { resetLinkIndex } from '../../lib/noteLinks'
 import { createProject, createTask, mutate, mutateMany, resetDeviceId, updateTask } from '../../lib/ops'
 import { activeBody, encodeDoc, newDoc, updateBody, type RNode } from '../../lib/richtext'
 import { setCurrentUserId } from '../../lib/sharing'
+import { act } from 'react'
 import { click, flush, key, minWidthPx, render, type, waitFor } from '../../ui/test-utils'
 import { noteViewOf } from '../NotesEditor'
-import { PREVIEW_MAX, previewOf } from './NoteRow'
 import { panelOccupant, resetPanel } from '../panel'
 import { ProjectNote } from '../ProjectNote'
-import { NOTE_FILTERS_KEY, NotesPage } from './NotesPage'
+import { NOTE_FILTERS_KEY, NOTE_TOKENS_KEY, NotesPage } from './NotesPage'
+import { NotePanel } from './NoteEditor'
 
 const ME = 'u-me'
 const original = window.matchMedia
@@ -34,6 +40,7 @@ beforeEach(() => {
   setCurrentUserId(ME)
   localStorage.clear()
   resetPanel()
+  resetLinkIndex()
   history.replaceState(null, '', '/notes')
 })
 afterEach(() => {
@@ -101,26 +108,51 @@ describe('the list', () => {
 })
 
 describe('filters', () => {
-  it('Only standalone in one project; the choice is remembered on the device', async () => {
+  it('Tokens (notes-space): kind:note and in:<project> from the suggestions; the chips are remembered on the device', async () => {
     const reno = await createProject({ name: 'Renovation' })
     await createNote({ title: 'In Renovation', project_id: reno })
     await createNote({ title: 'Elsewhere' })
     await createTask({ title: 'Task in Renovation', project_id: reno, description: 'a task note' })
     const { container, unmount } = await page()
     await waitFor(() => rows(container).length === 3, 'three rows')
-    await click(container.querySelector('[data-note-filter="source"]')!)
-    await click([...document.querySelectorAll('[role="menuitemcheckbox"]')].find((b) => b.textContent === 'Standalone only')!)
+    const field = container.querySelector<HTMLInputElement>('[data-note-search]')!
+    await act(async () => field.focus())
+    await type(field, 'kind:note ')
     await waitFor(() => rows(container).length === 2, 'standalone only')
-    await click(container.querySelector('[data-note-filter="project"]')!)
-    const option = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.includes('Renovation'))
-    await waitFor(() => !!option(), 'the project option')
+    expect(field.value).toBe('')
+    expect(container.querySelector('[data-note-chip="kind"]')!.textContent).toBe('kind: note')
+    await type(field, 'in:ren')
+    const option = () => [...container.querySelectorAll<HTMLElement>('[data-note-suggestions] [role="option"]')].find((o) => o.textContent?.includes('Renovation'))
+    await waitFor(() => !!option(), 'the project suggestion')
     await click(option()!)
     await waitFor(() => rows(container).length === 1, 'one row')
     expect(titles(container)).toEqual(['In Renovation'])
-    expect(JSON.parse(localStorage.getItem(NOTE_FILTERS_KEY)!)).toEqual({ source: 'note', projectId: reno, labelId: null })
+    expect(field.value).toBe('')
+    expect(JSON.parse(localStorage.getItem(NOTE_TOKENS_KEY)!)).toEqual([{ key: 'kind', value: 'note' }, { key: 'in', id: reno, name: 'Renovation' }])
     await unmount()
     const again = await page()
     await waitFor(() => rows(again.container).length === 1, 'remembered')
+  })
+
+  it('Remove a chip: Backspace in the empty field, or its remove button; Enter still opens after a key prefix', async () => {
+    await createNote({ title: 'pin numbers', description: 'the pin is 1234' })
+    await createNote({ title: 'Other' })
+    localStorage.setItem(NOTE_TOKENS_KEY, JSON.stringify([{ key: 'kind', value: 'note' }, { key: 'pinned' }]))
+    const { container } = await page()
+    await waitFor(() => !!container.querySelector('[data-note-chip="pinned"]'), 'the chips')
+    expect(rows(container)).toHaveLength(0)
+    const field = container.querySelector<HTMLInputElement>('[data-note-search]')!
+    await key(field, 'Backspace')
+    await waitFor(() => rows(container).length === 2, 'every standalone note')
+    expect(container.querySelector('[data-note-chip="pinned"]')).toBeNull()
+    await click(container.querySelector('[data-note-chip="kind"] button')!)
+    expect(container.querySelector('[data-note-chip]')).toBeNull()
+    await act(async () => field.focus())
+    await type(field, 'pin')
+    await waitFor(() => !!container.querySelector('[data-note-suggestions]'), 'the key suggestion')
+    await key(field, 'Enter')
+    await waitFor(() => location.pathname.startsWith('/notes/'), 'the first result opens')
+    expect(container.querySelector('[data-note-chip]')).toBeNull()
   })
 
   it('Label filter: task notes and standalone notes with the label, no project notes', async () => {
@@ -146,11 +178,11 @@ describe('search', () => {
     await type(container.querySelector<HTMLInputElement>('[data-note-search]')!, 'ferry')
     await waitFor(() => rows(container).length === 1, 'one result')
     expect(titles(container)).toEqual(['Trip'])
-    const mark = container.querySelector('[data-note-preview] mark')!
+    const mark = container.querySelector('[data-note-snippet] mark')!
     expect(mark.textContent).toBe('ferry')
-    expect(container.querySelector('[data-note-preview]')!.textContent).toContain('the ferry leaves at 7')
+    expect(container.querySelector('[data-note-snippet]')!.textContent).toContain('the ferry leaves at 7')
     // The note's text is never HTML.
-    expect(container.querySelector('[data-note-preview] b')).toBeNull()
+    expect(container.querySelector('[data-note-snippet] b')).toBeNull()
   })
 })
 
@@ -167,7 +199,8 @@ describe('keyboard', () => {
     await type(search, 'ferry')
     await waitFor(() => rows(container).length === 2, 'two results')
     await key(search, 'Escape')
-    const open = () => [...container.querySelectorAll<HTMLElement>('[data-note-open]')]
+    // The notes, without New note "ferry" above them (notes-home).
+    const open = () => [...container.querySelectorAll<HTMLElement>('[data-note-open]:not([data-note-create])')]
     expect(document.activeElement).toBe(open()[0])
     await key(document.activeElement!, 'j')
     expect(document.activeElement).toBe(open()[1])
@@ -220,17 +253,16 @@ describe('opening notes', () => {
 })
 
 describe('phones', () => {
-  it('Phone filters: the Filters button opens a sheet with Source, Project and Label; rows are at least 48 px', async () => {
+  it('Phone filters: no pickers or Filters sheet, the chips in the field; rows are one line at least 48 px; no New note in the header', async () => {
     width = 390
     await createNote({ title: 'One' })
     const { container } = await page()
     await waitFor(() => rows(container).length === 1, 'one row')
-    expect(container.querySelector('[data-note-filter]')).toBeNull()
+    expect(container.querySelector('[data-note-filter], [data-note-filters-button]')).toBeNull()
     expect(rows(container)[0].className).toContain('min-h-12')
-    await click(container.querySelector('[data-note-filters-button]')!)
-    await waitFor(() => !!document.querySelector('[data-note-filters-sheet]'), 'the sheet')
-    const sheet = document.querySelector('[data-note-filters-sheet]')!
-    expect([...sheet.querySelectorAll('[data-note-filter]')].map((e) => e.getAttribute('data-note-filter'))).toEqual(['source', 'project', 'label'])
+    expect(container.querySelector('[data-note-search-field]')).not.toBeNull()
+    // One add on a phone: the floating + (notes-home); the header has no New note.
+    expect(container.querySelector('[data-note-new]')).toBeNull()
   })
 })
 
@@ -261,14 +293,208 @@ describe('the note editor for a standalone note', () => {
   })
 })
 
-describe('the row preview', () => {
-  it('is the stripped note, cut to PREVIEW_MAX code points', () => {
-    expect(previewOf('# Plan\n\n**Buy** milk')).toBe('Plan Buy milk')
-    const long = 'word '.repeat(200)
-    expect(previewOf(long)).toBe(long.trim().slice(0, PREVIEW_MAX))
-    // Never half of a character outside the Basic Multilingual Plane.
-    const astral = '\u{1D11E}'.repeat(PREVIEW_MAX + 5)
-    expect([...previewOf(astral)]).toHaveLength(PREVIEW_MAX)
-    expect(previewOf(astral)).toBe('\u{1D11E}'.repeat(PREVIEW_MAX))
+const search = (root: ParentNode) => root.querySelector<HTMLInputElement>('[data-note-search]')!
+const newRow = (root: ParentNode) => root.querySelector<HTMLElement>('[data-note-new-row]')
+const prefs = () => db.userPrefs.get('me')
+const groupTitles = (root: ParentNode) => [...root.querySelectorAll('[data-notes-group] [data-group-label]')].map((e) => e.textContent)
+const menuItem = (label: string) => [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((b) => b.textContent?.startsWith(label))
+
+describe('writing from the search field', () => {
+  it('Write right away: `/`, a title nothing matches, Enter: the note is created and open, the field empty, one Undo', async () => {
+    await createNote({ title: 'Trip', description: 'the ferry' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    await key(document.body, '/')
+    await type(search(container), 'Packing for Lisbon')
+    await waitFor(() => !!newRow(container), 'the New note row')
+    expect(newRow(container)!.textContent).toBe('New note "Packing for Lisbon"')
+    expect(newRow(container)!.hasAttribute('data-cursor')).toBe(true)
+    await key(search(container), 'Enter')
+    await waitFor(async () => (await db.notes.count()) === 2, 'a new note')
+    const created = (await db.notes.toArray()).find((n) => n.title === 'Packing for Lisbon')!
+    expect(created.project_id).toBeNull()
+    await waitFor(() => location.pathname === `/notes/${created.id}`, 'the note open')
+    await waitFor(() => search(container).value === '', 'the field cleared')
+    expect(newRow(container)).toBeNull()
+    const undo = (await db.assistantUndo.toArray()).find((u) => u.label === 'Note created')!
+    await undoBatch(undo.id)
+    expect((await db.notes.get(created.id))!.deleted_at).toBeTruthy()
+  })
+
+  it('the new note opens with the caret in its body', async () => {
+    width = 390
+    await createNote({ title: 'Existing' })
+    const { container, unmount } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    await type(search(container), 'Shopping')
+    await key(search(container), 'Enter')
+    await waitFor(async () => (await db.notes.count()) === 2, 'a new note')
+    const created = (await db.notes.toArray()).find((n) => n.title === 'Shopping')!
+    await unmount()
+    const shown = await page(created.id)
+    await waitFor(() => !!document.activeElement?.closest(`[data-note-page="${created.id}"] .notes-editor`), 'the caret in the body', 10_000)
+    expect(shown.container.querySelector<HTMLInputElement>('[data-note-title-field]')!.value).toBe('Shopping')
+  })
+
+  it('Search still comes first: Enter opens the best match and creates nothing', async () => {
+    const trip = await createNote({ title: 'Trip', description: 'the ferry leaves at 7' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    await type(search(container), 'ferry')
+    await waitFor(() => !!newRow(container), 'the New note row')
+    expect(newRow(container)!.hasAttribute('data-cursor')).toBe(false)
+    expect(container.querySelector(`[data-note-key="note:${trip}"]`)!.hasAttribute('data-cursor')).toBe(true)
+    await key(search(container), 'Enter')
+    expect(location.pathname).toBe(`/notes/${trip}`)
+    expect(await db.notes.count()).toBe(1)
+  })
+
+  it("Create although notes match: Up reaches New note, Enter creates it in the Project filter's project", async () => {
+    const reno = await createProject({ name: 'Renovation' })
+    await createNote({ title: 'Trip', description: 'ferry', project_id: reno })
+    localStorage.setItem(NOTE_FILTERS_KEY, JSON.stringify({ source: 'all', projectId: reno, labelId: null }))
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    await type(search(container), 'ferry')
+    await waitFor(() => !!newRow(container), 'the New note row')
+    await key(search(container), 'ArrowUp')
+    expect(newRow(container)!.hasAttribute('data-cursor')).toBe(true)
+    await key(search(container), 'Enter')
+    await waitFor(async () => (await db.notes.count()) === 2, 'a new note')
+    const created = (await db.notes.toArray()).find((n) => n.title === 'ferry')!
+    expect(created.project_id).toBe(reno)
+  })
+
+  it('Offline: the note is a local write in the outbox, kept in the database', async () => {
+    const { container } = await page()
+    await waitFor(() => !!container.querySelector('[data-empty-state="notes"]'), 'the empty state')
+    await type(search(container), 'Offline idea')
+    await waitFor(() => !!newRow(container), 'the New note row')
+    await click(newRow(container)!.querySelector('button')!)
+    await waitFor(async () => (await db.notes.count()) === 1, 'a new note')
+    const id = (await db.notes.toArray())[0].id
+    expect((await db.outbox.toArray()).some((o) => o.entity === 'note' && o.entityId === id && o.field === 'title' && o.value === 'Offline idea')).toBe(true)
+  })
+
+  it('on a phone the New note row is at least 48 px tall', async () => {
+    width = 390
+    const { container } = await page()
+    await type(search(container), 'Idea')
+    await waitFor(() => !!newRow(container), 'the New note row')
+    expect(newRow(container)!.className).toContain('min-h-12')
+  })
+})
+
+describe('pinned notes', () => {
+  it('Pin from the row menu: Pinned first, then Recent; a search shows one list; `p` on the row unpins', async () => {
+    const wifi = await createNote({ title: 'Wi-Fi', description: 'home-5G' })
+    await createNote({ title: 'Trip', description: 'ferry' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 2, 'two rows')
+    expect(groupTitles(container)).toEqual([])
+    expect(titles(container)).toEqual(['Trip', 'Wi-Fi'])
+    await click(container.querySelector(`[data-note-key="note:${wifi}"] [data-note-menu]`)!)
+    await waitFor(() => !!menuItem('Pin'), 'the menu')
+    await click(menuItem('Pin')!)
+    await waitFor(() => groupTitles(container).length === 2, 'the groups')
+    expect(groupTitles(container)).toEqual(['Pinned', 'Recent'])
+    expect(titles(container)).toEqual(['Wi-Fi', 'Trip'])
+    expect(isFavourite(await prefs(), 'note', wifi)).toBe(true)
+    await type(search(container), 'ferry')
+    await waitFor(() => groupTitles(container).length === 0, 'one list while searching')
+    await type(search(container), '')
+    await waitFor(() => groupTitles(container).length === 2, 'the groups again')
+    const button = container.querySelector<HTMLElement>(`[data-note-key="note:${wifi}"] [data-note-open]`)!
+    button.focus()
+    await key(button, 'p')
+    await waitFor(() => groupTitles(container).length === 0, 'unpinned')
+    expect(isFavourite(await prefs(), 'note', wifi)).toBe(false)
+  })
+
+  it('Trash and restore: a pinned note leaves Pinned in the Trash and is back after the restore', async () => {
+    const wifi = await createNote({ title: 'Wi-Fi' })
+    await createNote({ title: 'Other' })
+    await pin('note', wifi)
+    const { container } = await page()
+    await waitFor(() => groupTitles(container).length === 2, 'the groups')
+    const trashed = await trashNote(wifi)
+    await waitFor(() => groupTitles(container).length === 0, 'no groups while in the Trash')
+    await undoBatch(trashed.entry!.id)
+    await waitFor(() => groupTitles(container).length === 2, 'pinned again')
+    expect(titles(container)[0]).toBe('Wi-Fi')
+  })
+
+  it('task notes are not pinnable: their rows have no menu', async () => {
+    await createTask({ title: 'Task', description: 'a task note' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    expect(container.querySelector('[data-note-menu]')).toBeNull()
+  })
+
+  it("the open note's own menu pins it", async () => {
+    const id = await createNote({ title: 'Wi-Fi' })
+    const { container } = await render(<NotePanel id={id} />)
+    await waitFor(() => !!container.querySelector('[data-note-menu]'), 'the note menu')
+    await click(container.querySelector('[data-note-menu]')!)
+    await waitFor(() => !!menuItem('Pin'), 'the menu')
+    await click(menuItem('Pin')!)
+    await waitFor(async () => isFavourite(await prefs(), 'note', id), 'pinned')
+  })
+})
+
+describe('Unlinked', () => {
+  it('orphan lists the standalone notes nothing links to, outgoing links ignored; linked: lists what links either way', async () => {
+    const trip = await createNote({ title: 'Trip' })
+    await createNote({ title: 'Ideas', description: `go on [Trip](?note=${trip})` })
+    await createTask({ title: 'Book', description: `see [Trip](?note=${trip})` })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 3, 'three rows')
+    const field = container.querySelector<HTMLInputElement>('[data-note-search]')!
+    await type(field, 'orphan ')
+    await waitFor(() => titles(container).length === 1, 'the unlinked note')
+    expect(titles(container)).toEqual(['Ideas'])
+    await click(container.querySelector('[data-note-chip="orphan"] button')!)
+    await type(field, 'linked:Trip ')
+    await waitFor(() => titles(container).length === 2, 'what links to Trip')
+    expect(titles(container).sort()).toEqual(['Book', 'Ideas'])
+  })
+
+  it('a stored Unlinked filter of an earlier version becomes the orphan chip', async () => {
+    const trip = await createNote({ title: 'Trip' })
+    await createNote({ title: 'Ideas', description: `go on [Trip](?note=${trip})` })
+    localStorage.setItem(NOTE_FILTERS_KEY, JSON.stringify({ source: 'unlinked', projectId: null, labelId: null }))
+    const { container } = await page()
+    await waitFor(() => titles(container).length === 1, 'the unlinked note')
+    expect(titles(container)).toEqual(['Ideas'])
+    expect(container.querySelector('[data-note-chip="orphan"]')).not.toBeNull()
+  })
+})
+
+describe('the row (notes-space D5)', () => {
+  it('is one line: kind, title, where it lives, labels, time', async () => {
+    await db.labels.put({ id: 'l-err', name: 'errand', color: '#0aa', position: 0, created_at: 0, deleted_at: null, _clock: {} })
+    const p = await createProject({ name: 'Home' })
+    await createTask({ title: 'Call the plumber', project_id: p, labels: ['l-err'], description: 'ask about the boiler' })
+    await createTask({ title: 'Loose', description: 'no project' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 2, 'two rows')
+    const row = container.querySelector('[data-note-key^="task:"][data-note-key]')!
+    const plumber = [...rows(container)].find((r) => r.textContent?.includes('plumber'))!
+    expect(plumber.querySelector('[data-note-place]')!.textContent).toBe('Home')
+    expect(plumber.querySelector('[data-note-labels]')!.textContent).toContain('errand')
+    expect(plumber.querySelector('time')).not.toBeNull()
+    expect(plumber.textContent).not.toContain('boiler')
+    expect(row.className).toContain('@container/note')
+    const loose = [...rows(container)].find((r) => r.textContent?.includes('Loose'))!
+    expect(loose.querySelector('[data-note-place]')!.textContent).toBe('Inbox')
+  })
+
+  it('while searching, the snippet follows the title on the same line', async () => {
+    await createNote({ title: 'Trip', description: 'the ferry leaves at 7' })
+    const { container } = await page()
+    await waitFor(() => rows(container).length === 1, 'one row')
+    await type(container.querySelector<HTMLInputElement>('[data-note-search]')!, 'ferry')
+    await waitFor(() => !!container.querySelector('[data-note-snippet] mark'), 'the snippet')
+    expect(container.querySelector('[data-note-snippet]')!.parentElement!.querySelector('[data-note-title]')!.textContent).toBe('Trip')
   })
 })

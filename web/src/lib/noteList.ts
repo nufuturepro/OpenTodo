@@ -119,20 +119,31 @@ function byRecency(a: NoteEntry, b: NoteEntry): number {
   return b.updated - a.updated || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
 
-/** The page's filters (D3); remembered per device by the page. */
+/** The page's filters as an earlier version stored them (D3, notes-home D5); read once and turned into chips (notes-space D6). */
 export interface NoteFilters {
-  source: 'all' | NoteSource
+  source: 'all' | NoteSource | 'unlinked'
   projectId: string | null
   labelId: string | null
 }
 
 export const NO_NOTE_FILTERS: NoteFilters = { source: 'all', projectId: null, labelId: null }
 
-/** The entries the filters keep, in the same order. A label filter leaves project notes out (they have no labels). */
-export function filterEntries(entries: readonly NoteEntry[], f: NoteFilters): NoteEntry[] {
-  return entries.filter((e) => (f.source === 'all' || e.source === f.source)
-    && (!f.projectId || e.projectId === f.projectId)
-    && (!f.labelId || e.labels.includes(f.labelId)))
+/**
+ * The default list in two groups (notes-home D4): the pinned standalone notes in the
+ * favourites order, then every other entry in the list's order. Pinned ids that
+ * name no listed note (in the Trash, another workspace) are left out.
+ */
+export function homeGroups(entries: readonly NoteEntry[], pinnedIds: readonly string[]): { pinned: NoteEntry[]; recent: NoteEntry[] } {
+  if (pinnedIds.length === 0) return { pinned: [], recent: entries as NoteEntry[] }
+  const byKey = new Map(entries.map((e) => [e.key, e]))
+  const pinned: NoteEntry[] = []
+  for (const id of pinnedIds) {
+    const e = byKey.get(`note:${id}`)
+    if (e && !pinned.includes(e)) pinned.push(e)
+  }
+  if (pinned.length === 0) return { pinned, recent: entries as NoteEntry[] }
+  const keys = new Set(pinned.map((e) => e.key))
+  return { pinned, recent: entries.filter((e) => !keys.has(e.key)) }
 }
 
 /** A search result: the entry and its snippet of the text around the first match. */

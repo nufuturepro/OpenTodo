@@ -47,22 +47,38 @@ Project and Inbox views SHALL render subtasks indented beneath their parent, ord
 - **THEN** the checkboxes of top-level tasks sit at the same horizontal position in both
 
 ### Requirement: Flat display in cross-project and date views
-Views that span projects or filter by date SHALL list each matching task once, flat, with a breadcrumb naming its parent; a parent that does not itself match SHALL not be shown.
+Views that span projects or filter by date SHALL list each matching task once, flat, with a breadcrumb naming its parent; a parent that does not itself match SHALL not be shown. Today and Upcoming with their Nest subtasks display option on (OpenSpec `builtin-view-options` "Nest subtasks in Today and Upcoming") SHALL instead list a subtask under its parent when both are listed in the same group, and keep the flat row with its breadcrumb otherwise.
 
 #### Scenario: Flat in Today
 - **WHEN** only "Compare prices" is due today
 - **THEN** Today lists "Compare prices" once with a breadcrumb "Hotel" and does not list "Plan trip" or "Hotel"
 
+#### Scenario: Nested in Today
+- **WHEN** Nest subtasks is on in Today and "Hotel" and its subtask "Compare prices" are both due today
+- **THEN** Today lists "Hotel" with "Compare prices" indented under it, and does not list "Plan trip"
+
 ### Requirement: Parent progress
-A task with at least one non-deleted subtask SHALL show its progress as "completed/total" over its direct subtasks in list rows and in the detail panel, computed from local data so it is correct offline and updates live when a subtask changes on any device.
+A task with at least one non-deleted subtask SHALL show its progress as "completed/total" over its direct subtasks in list rows and in the detail panel, computed from local data so it is correct offline and updates live when a subtask changes on any device. A subtask's own subtasks SHALL count toward that subtask's progress, not its parent's; a deleted subtask SHALL count nowhere, and a completed parent SHALL keep showing the progress of its subtasks. In a list row and on a card the count SHALL be led by a small progress ring showing the share done, in the count's own colour, decorative, so assistive technology reads the count ("3 of 5 subtasks completed") and nothing more. The detail panel's Subtasks heading SHALL show the count, the bar and the share as a whole percentage ("60%", read "60% done"). Progress is derived, never stored or synced, so it converges whenever the subtasks it counts converge.
 
 #### Scenario: Progress indicator
 - **WHEN** "Plan trip" has five direct subtasks of which three are completed
-- **THEN** its row shows "3/5"
+- **THEN** its row shows a ring three-fifths full and "3/5", and its panel's Subtasks heading reads "3 of 5" with the bar and "60%"
 
 #### Scenario: Remote completion updates progress
 - **WHEN** another device completes a fourth subtask and this device syncs
-- **THEN** the row shows "4/5" without a page reload
+- **THEN** the row shows "4/5" and its ring four-fifths full without a page reload
+
+#### Scenario: Nested subtasks count toward their own parent
+- **WHEN** "Plan trip" has four direct subtasks, one completed, and its open subtask "Hotel" has two completed subtasks of its own
+- **THEN** "Plan trip" shows "1/4" and "Hotel" shows "2/2" with a full ring
+
+#### Scenario: Deleted subtask
+- **WHEN** "Plan trip" has five subtasks, three completed, and one of the completed ones is moved to the Trash
+- **THEN** its row shows "2/4" and its ring half full
+
+#### Scenario: Offline
+- **WHEN** the device is offline and the user completes a subtask
+- **THEN** its parent's ring, count and percentage update at once
 
 ### Requirement: Completing a parent
 Completing a parent SHALL also complete every open descendant, one completion operation per task, so the result converges on every device. Reopening a parent SHALL reopen only the parent. Completing the last open subtask SHALL not complete the parent automatically but SHALL offer a one-key action to complete it. Under concurrent edits, a subtask added to a parent that was completed on another device SHALL remain open and SHALL be displayed at the top level of its project.
@@ -136,7 +152,7 @@ Pasting text with at least two non-empty lines into an empty "Add subtask" field
 - **THEN** the three subtasks are shown under the parent at once, survive a reload and upload together when the network returns
 
 ### Requirement: Subtasks in a project's Later group
-In a project's list, a subtask SHALL be listed where its top-level task is: when the top-level task is deferred or parked, the whole subtree SHALL be listed in the project's Later group, nested under it as in the rest of the list, each subtask keeping its own dates and chips; when the top-level task is active, a deferred or parked subtask SHALL stay nested under its parent with its "Starts" or "Someday" chip. Parents in the Later group SHALL fold like any other parent. Today, Upcoming, Anytime, Someday and the sidebar counts SHALL keep deciding per task. The placement SHALL be computed on the device from local data without any write, so it is the same offline and follows synced changes on every device.
+In a project's list, a subtask SHALL be listed where its top-level task is: when the top-level task is deferred or parked, the whole subtree SHALL be listed in the project's Later, nested under it as in the rest of the list, each subtask keeping its own dates and chips; when the top-level task is active, a deferred or parked subtask SHALL stay nested under its parent with its "Starts" or "Someday" chip. In a list grouped by section the subtree SHALL be in the Later of the top-level task's section (OpenSpec `start-dates` "Deferred tasks"), whatever the subtasks' own sections. Parents in Later SHALL fold like any other parent. Today, Upcoming, Anytime, Someday and the sidebar counts SHALL keep deciding per task. The placement SHALL be computed on the device from local data without any write, so it is the same offline and follows synced changes on every device.
 
 #### Scenario: Parent deferred to Later
 - **WHEN** "Paint the fence" with subtasks "Buy paint" and "Book the sprayer" (due tomorrow) is given a start date next week in the project "Home"
@@ -149,3 +165,7 @@ In a project's list, a subtask SHALL be listed where its top-level task is: when
 #### Scenario: Deferred on another device
 - **WHEN** another device defers "Paint the fence" and this device syncs while the project is open
 - **THEN** the parent and its subtasks move to Later together without a reload, and nothing is written by this device
+
+#### Scenario: Subtree in its section's Later
+- **WHEN** "Paint the fence" in the section "Garden" has the subtask "Buy paint" and is given a start date next week, in a project listed by section
+- **THEN** "Garden"'s Later, once opened, shows "Paint the fence" with "Buy paint" indented beneath it, and no other section lists either

@@ -1,12 +1,14 @@
 package agenttools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"github.com/OpenTodoApp/opentodo/internal/e2ee"
 	"github.com/OpenTodoApp/opentodo/internal/flow"
 	"github.com/OpenTodoApp/opentodo/internal/inbox"
 	"github.com/OpenTodoApp/opentodo/internal/sector"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -49,7 +51,7 @@ func readDef(name, title, desc string, schema map[string]any) func(Caller) Defin
 func init() {
 	register(tool{
 		def: readDef("list_projects", "List projects",
-			"List the user's projects (their own and shared ones they are a member of) with the number of open tasks in each. Archived projects are left out unless include_archived is true.",
+			"List the user's projects (their own and shared ones they are a member of) with the number of open tasks in each and their sections (board columns) in order. Archived projects are left out unless include_archived is true.",
 			object(nil, map[string]any{
 				"include_archived": map[string]any{"type": "boolean", "default": false, "description": "Also return archived projects."},
 				"workspace":        workspaceProp,
@@ -66,7 +68,7 @@ func init() {
 				"available":         map[string]any{"type": "boolean", "description": "true: only tasks that can be done now; false: only tasks that cannot."},
 				"project_id":        map[string]any{"type": "string", "description": "Only tasks of this project (see list_projects)."},
 				"workspace":         workspaceProp,
-				"label":             map[string]any{"type": "string", "description": "Only tasks carrying this label (name, case-insensitive, or id)."},
+				"label":             map[string]any{"type": "string", "description": "Only tasks carrying this label (name, case-insensitive, or id; a plural of a label's name finds it: errands for errand)."},
 				"priority":          map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "description": "Only tasks of this priority: 1 is the highest, 4 the default."},
 				"due_from":          map[string]any{"type": "string", "format": "date", "description": "Only tasks due on or after this date (YYYY-MM-DD)."},
 				"due_to":            map[string]any{"type": "string", "format": "date", "description": "Only tasks due on or before this date (YYYY-MM-DD)."},
@@ -74,6 +76,7 @@ func init() {
 				"completed_after":   map[string]any{"type": "string", "description": "Only tasks completed at or after this time: YYYY-MM-DD (start of that day in timezone), an RFC 3339 time or Unix milliseconds. Implies completed tasks only."},
 				"completed_before":  map[string]any{"type": "string", "description": "Only tasks completed before this time, in the same forms as completed_after. Implies completed tasks only."},
 				"include_completed": completedArg,
+				"sort":              map[string]any{"type": "string", "enum": []string{"default", "urgency"}, "default": "default", "description": "default: by do-on date and priority. urgency: the most urgent first by the app's urgency score (due date, deadline, priority, the tasks it blocks, age and a running timer raise it; blocked, deferred and Someday lower it); each task then has urgency and urgency_parts."},
 				"timezone":          timezoneProp,
 				"limit":             limitProp,
 				"cursor":            cursorProp,
@@ -82,16 +85,16 @@ func init() {
 	})
 	register(tool{
 		def: readDef("get_task", "Get a task",
-			"Get one task with its description, project, section, labels, subtasks and comments.",
+			"Get one task with its description, project, section, labels, subtasks and comments."+linkDescription,
 			object([]string{"id"}, map[string]any{
 				"id":       map[string]any{"type": "string", "description": "Task id."},
 				"timezone": timezoneProp,
 			})),
-		read: (*Registry).getTask,
+		readC: (*Registry).getTask,
 	})
 	register(tool{
 		def: readDef("search_tasks", "Search tasks",
-			"Find tasks whose title or description contains the query (case-insensitive). Open tasks only unless include_completed is true. Paged like list_tasks.",
+			"Find tasks whose title or description contains the query (case-insensitive), or that carry a label named like it (the name holds the query, or the query is the name with a plural s or es: errands finds errand). Open tasks only unless include_completed is true. Paged like list_tasks.",
 			object([]string{"query"}, map[string]any{
 				"query":             map[string]any{"type": "string", "minLength": 1, "description": "Text to look for."},
 				"workspace":         workspaceProp,
@@ -156,6 +159,10 @@ type projectOut struct {
 	Fields []fieldOut `json:"fields"`
 	// WorkspaceID is the project's workspace (OpenSpec change workspaces).
 	WorkspaceID string `json:"workspace_id,omitempty"`
+	// Sections are the project's live sections in board order (assistant-eval-gaps):
+	// list_projects and opentodo://projects carry them, so an assistant can name
+	// a board column without another read. Omitted for a project without any.
+	Sections []sectionOut `json:"sections,omitempty"`
 }
 
 // inboxCount counts the Inbox tasks (internal/inbox): open, no project, not scheduled.
@@ -195,8 +202,23 @@ func (snap *snapshot) renderProject(p opsync.Entity, counts map[string]int) proj
 	return out
 }
 
+// projectSections groups the live sections by project, in board order.
+func (snap *snapshot) projectSections() map[string][]sectionOut {
+	rows := slices.Clone(snap.sectionRows)
+	slices.SortStableFunc(rows, func(a, b opsync.Entity) int {
+		return cmp.Or(cmp.Compare(num(a, "position"), num(b, "position")), cmp.Compare(num(a, "created_at"), num(b, "created_at")), strings.Compare(rawStr(a, "id"), rawStr(b, "id")))
+	})
+	out := map[string][]sectionOut{}
+	for _, sec := range rows {
+		pid := rawStr(sec, "project_id")
+		out[pid] = append(out[pid], sectionOut{ID: rawStr(sec, "id"), FlowMode: flow.SectionFlow(str(sec, "flow_mode")), Untrusted: nameText{Name: str(sec, "name")}})
+	}
+	return out
+}
+
 func (r *Registry) projectsPayload(snap *snapshot, includeArchived bool, workspace string) map[string]any {
 	counts := snap.openCounts()
+	sections := snap.projectSections()
 	items := []keyed[projectOut]{}
 	for _, p := range snap.projList {
 		if !includeArchived && boolean(p, "archived") {
@@ -205,7 +227,9 @@ func (r *Registry) projectsPayload(snap *snapshot, includeArchived bool, workspa
 		if workspace != "" && snap.partition().Project(str(p, "id")) != workspace {
 			continue
 		}
-		items = append(items, keyed[projectOut]{key: sortableFloat(num(p, "position")) + "|" + sortableFloat(num(p, "created_at")), id: str(p, "id"), v: snap.renderProject(p, counts)})
+		v := snap.renderProject(p, counts)
+		v.Sections = sections[v.ID]
+		items = append(items, keyed[projectOut]{key: sortableFloat(num(p, "position")) + "|" + sortableFloat(num(p, "created_at")), id: str(p, "id"), v: v})
 	}
 	list, _, _ := page(items, "", len(items))
 	truncated := len(list) > MaxItems
@@ -261,6 +285,9 @@ type taskQuery struct {
 	loc                             *time.Location
 	limit                           int
 	cursor                          string
+	// urgency orders by the urgency score (urgency-sort); scope is read for it.
+	urgency bool
+	scope   *urgencyScope
 }
 
 func parseTaskQuery(a args) (taskQuery, error) {
@@ -340,15 +367,38 @@ func parseTaskQuery(a args) (taskQuery, error) {
 	if q.cursor, err = a.str("cursor"); err != nil {
 		return q, err
 	}
+	if q.urgency, err = parseSort(a); err != nil {
+		return q, err
+	}
 	return q, nil
 }
 
-// labelIDs resolves a label argument (name, case-insensitive, or id).
+// labelIDs resolves a label argument (name, case-insensitive, or id). When no
+// label has that name or id, a label whose name the argument is a simple plural
+// of is meant ("errands" for "errand", assistant-eval-gaps).
 func (snap *snapshot) labelIDs(label string) map[string]bool {
 	ids := map[string]bool{}
 	for id, name := range snap.labels {
 		if id == label || strings.EqualFold(name, label) {
 			ids[id] = true
+		}
+	}
+	if len(ids) == 0 {
+		for _, l := range snap.labelList {
+			if labelFilterMatches(rawStr(l, "name"), label) {
+				ids[rawStr(l, "id")] = true
+			}
+		}
+	}
+	return ids
+}
+
+// searchLabels are the ids of the labels search_tasks finds for a query.
+func searchLabels(labels []opsync.Entity, needle string) map[string]bool {
+	ids := map[string]bool{}
+	for _, l := range labels {
+		if labelSearchMatches(rawStr(l, "name"), needle) {
+			ids[rawStr(l, "id")] = true
 		}
 	}
 	return ids
@@ -444,7 +494,11 @@ func (r *Registry) queryTasks(snap *snapshot, q taskQuery) (map[string]any, erro
 		if sec := str(t, "sector"); q.sector != "" && !(sec == q.sector || (q.sector == "carried" && sector.Carried(sec, today, 1))) {
 			continue
 		}
-		items = append(items, keyed[taskOut]{key: taskKey(t, q.loc), id: str(t, "id"), v: snap.render(t, q.loc, today, false)})
+		out, key := snap.render(t, q.loc, today, false), taskKey(t, q.loc)
+		if q.scope != nil {
+			key = q.scope.score(t, &out, dueKey(t, q.loc))
+		}
+		items = append(items, keyed[taskOut]{key: key, id: str(t, "id"), v: out})
 	}
 	list, next, err := page(items, q.cursor, q.limit)
 	if err != nil {
@@ -477,6 +531,11 @@ func (r *Registry) listTasks(ctx context.Context, userID string, a args) (map[st
 	snap, err := r.load(ctx, userID)
 	if err != nil {
 		return nil, err
+	}
+	if q.urgency {
+		if q.scope, err = r.urgencyScope(ctx, userID, snap, q); err != nil {
+			return nil, err
+		}
 	}
 	return r.queryTasks(snap, q)
 }
@@ -600,7 +659,7 @@ func (r *Registry) taskDetail(ctx context.Context, userID, id string, loc *time.
 	return map[string]any{"task": out, "subtasks": subtasks, "comments": comments, "attachments": attachments, "reminders": reminders, "timezone": loc.String(), "today": today, "server_time": r.serverTime()}, nil
 }
 
-func (r *Registry) getTask(ctx context.Context, userID string, a args) (map[string]any, error) {
+func (r *Registry) getTask(ctx context.Context, c Caller, a args) (map[string]any, error) {
 	id, err := a.str("id")
 	if err != nil {
 		return nil, err
@@ -612,7 +671,11 @@ func (r *Registry) getTask(ctx context.Context, userID string, a args) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	return r.taskDetail(ctx, userID, id, loc)
+	out, err := r.taskDetail(ctx, c.UserID, id, loc)
+	if err != nil {
+		return nil, err
+	}
+	return r.withLinks(ctx, c, "task", id, out)
 }
 
 // ---- today_summary ----

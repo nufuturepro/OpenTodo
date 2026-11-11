@@ -1,12 +1,12 @@
 // Shared data types. Field names mirror the server op schema exactly
 // (internal/sync/ops.go); never rename a field without a migration plan.
 
-import type { AttachmentFields, CommentFields, FieldDefFields, FrameFields, CustomThemeFields, ObjectiveFields, LabelFields, NoteFields, PlaceFields, ProjectFields, ProjectPrefsFields, ReminderFields, ReviewFields, RuleFields, SectionFields, SlotFields, TaskFields, TimeEntryFields, UserPrefsFields, ViewFields } from '../generated/opSchema'
+import type { AttachmentFields, CommentFields, FieldDefFields, FrameFields, CustomThemeFields, ObjectiveFields, MemoryItemFields, LabelFields, NoteFields, PlaceFields, ProjectFields, ProjectPrefsFields, ReminderFields, ReviewFields, RuleFields, SectionFields, SlotFields, TaskFields, TimeEntryFields, UserPrefsFields, ViewFields } from '../generated/opSchema'
 import type { LanguageCode } from '../locales'
 import type { ThemeDocument } from './theme/format'
 
-export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place' | 'rule' | 'frame' | 'slot' | 'note' | 'theme' | 'objective'
-export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place', 'rule', 'frame', 'slot', 'note', 'theme', 'objective']
+export type Entity = 'project' | 'task' | 'label' | 'view' | 'reminder' | 'section' | 'comment' | 'project_prefs' | 'user_prefs' | 'attachment' | 'field' | 'review' | 'time_entry' | 'place' | 'rule' | 'frame' | 'slot' | 'note' | 'theme' | 'objective' | 'memory'
+export const ENTITIES: readonly Entity[] = ['project', 'task', 'label', 'view', 'reminder', 'section', 'comment', 'project_prefs', 'user_prefs', 'attachment', 'field', 'review', 'time_entry', 'place', 'rule', 'frame', 'slot', 'note', 'theme', 'objective', 'memory']
 
 export interface Op {
   id: string
@@ -363,6 +363,22 @@ export interface Objective extends ObjectiveFields {
   _e2ee?: RowEncryption
 }
 
+/**
+ * One fact the user asked the assistant to remember (OpenSpec change
+ * `assistant-memory`): personal, at most 20 live, sent with every assistant
+ * turn and never to MCP clients or routines. A text this device could not
+ * decrypt is the placeholder string.
+ */
+export interface MemoryItem extends MemoryItemFields {
+  id: string
+  text: string
+  position: number
+  created_at: number
+  deleted_at: number | null
+  _clock: Clock
+  _e2ee?: RowEncryption
+}
+
 /** A task's origin kind; the list is closed (the server refuses any other). */
 export type OriginKind = 'url' | 'email' | 'issue' | 'import' | 'obsidian'
 
@@ -445,12 +461,12 @@ export interface Label extends LabelFields {
 export type ViewKind = 'list' | 'dashboard'
 export type GroupBy = 'project' | 'due' | 'priority' | 'label' | 'none'
 export type FieldSortBy = `field:${string}`
-export type SortBy = 'due' | 'priority' | 'position' | 'created' | 'title' | 'deadline' | FieldSortBy
+export type SortBy = 'due' | 'priority' | 'position' | 'created' | 'title' | 'deadline' | 'urgency' | FieldSortBy
 export type SortDir = 'asc' | 'desc'
 
 export const VIEW_KINDS: readonly ViewKind[] = ['list', 'dashboard']
 export const GROUP_BY_OPTIONS: readonly GroupBy[] = ['project', 'due', 'priority', 'label', 'none']
-export const SORT_BY_OPTIONS: readonly SortBy[] = ['due', 'priority', 'position', 'created', 'deadline', 'title']
+export const SORT_BY_OPTIONS: readonly SortBy[] = ['due', 'priority', 'position', 'created', 'deadline', 'title', 'urgency']
 
 const FIELD_SORT_PREFIX = 'field:'
 const FIELD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -564,10 +580,11 @@ export type RuleMinutesPredicate = 'none' | { min_minutes: number } | { max_minu
 
 /** An automation rule's condition: every predicate that is set must hold (automation-rules "Conditions"). */
 export interface RuleCondition {
-  project?: 'none' | { in: string[]; descendants?: boolean }
-  section?: 'none' | { in: string[] }
+  /** No project, one of the projects, or none of them (`not_in`, routine-conditions D2). */
+  project?: 'none' | { in: string[]; descendants?: boolean } | { not_in: string[]; descendants?: boolean }
+  section?: 'none' | { in: string[] } | { not_in: string[] }
   labels?: { any?: string[]; all?: string[]; none?: string[] }
-  priority?: { in: number[] }
+  priority?: { in: number[] } | { not_in: number[] }
   due?: RuleDatePredicate
   deadline?: 'none' | 'set' | { within_days: number }
   start?: 'someday' | 'deferred' | 'none'
@@ -646,7 +663,15 @@ export interface RoutineRun {
   tokens?: number
   ai_auto?: boolean
   proposal?: RoutineProposal
+  /** What the run's Ask AI steps showed, kinds and parameters only (assistant-routine-blocks D1). */
+  blocks?: RoutineRunBlock[]
 }
+
+/** A block a routine run showed: tasks, a day or week of the calendar, or deadlines (assistant-routine-blocks D1). */
+export type RoutineRunBlock =
+  | { kind: 'tasks'; ids: string[] }
+  | { kind: 'calendar'; date: string; span: 'day' | 'week' }
+  | { kind: 'deadlines'; from: string; to: string }
 
 /** A run the Inbox card lists (routines-editor D10; proposals: routines-ai-step D2). */
 export interface RoutineInboxRun extends RoutineRun {

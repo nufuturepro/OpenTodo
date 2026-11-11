@@ -7,10 +7,10 @@ import type { AgentAccess, ApiToken, McpConsentInfo, McpOAuthClient, McpOAuthCli
 import type { AssistantStatus } from './assistantStatus'
 import type { AssistantOwnerSettings, AssistantMemberSettings, AssistantSettingsInput, AssistantTestDraft, AssistantTestResult, MyAssistantTestDraft, AssistantUsage, MyAssistantInput } from './assistantTypes'
 import type { KeyRecord } from './crypto'
-import type { RelayDevice, RoutineRunRequest } from './relay'
+import type { RelayDevice, RoutineRunRequest } from './relayTypes'
 import type { DraftAnswer } from './rules/describe'
 import type { DeviceCommit, DeviceStepRecord } from './rules/deviceTypes'
-import type { AssertionJSON, CreationOptionsJSON, RegistrationJSON, RequestOptionsJSON } from './passkeys'
+import type { AssertionJSON, CreationOptionsJSON, RegistrationJSON, RequestOptionsJSON } from './passkeyTypes'
 import type {
   Profile,
   SpeechService,
@@ -598,7 +598,7 @@ export const api = {
   routineCatalogue: () => request<{ steps: RoutineCatalogueEntry[] }>('GET', '/api/v1/me/rules/catalogue'),
   /** Describe it (routines-describe-it): the assistant drafts a routine from one sentence; nothing is saved. */
   draftRoutine: (text: string) => request<DraftAnswer>('POST', '/api/v1/assistant/routine-draft', { text }),
-  testRoutineDraft: (body: { trigger: RuleTrigger; condition?: RuleCondition | null; steps: RoutineStep[]; task_id?: string; call_ai?: boolean; project_id?: string }) =>
+  testRoutineDraft: (body: { trigger: RuleTrigger; condition?: RuleCondition | null; steps: RoutineStep[]; task_id?: string; call_ai?: boolean; project_id?: string; workspace_id?: string }) =>
     request<RoutineTestResult>('POST', '/api/v1/rules/test', body),
   testRoutine: (id: string, body: { run_id: string; task_id?: string; call_ai?: boolean }) =>
     request<RoutineTestResult>('POST', `/api/v1/rules/${encodeURIComponent(id)}/run`, { ...body, test: true }),

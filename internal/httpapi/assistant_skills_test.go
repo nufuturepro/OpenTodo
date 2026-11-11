@@ -20,7 +20,7 @@ func TestAssistantSkillsRoute(t *testing.T) {
 	}
 	e.enableAssistant(nil)
 	skills := list(e)
-	if len(skills) != 6 || skills[5].(map[string]any)["id"] != "capture" {
+	if len(skills) != 10 || skills[5].(map[string]any)["id"] != "capture" || skills[9].(map[string]any)["id"] != "brief-today" {
 		t.Fatalf("skills = %v", skills)
 	}
 	first := skills[0].(map[string]any)
@@ -36,7 +36,7 @@ func TestAssistantSkillsRoute(t *testing.T) {
 	m := newClientAt(e, "10.0.0.9")
 	resp, out = m.do("POST", "/api/v1/auth/register", map[string]string{"email": "m@example.com", "name": "M", "password": "correct horse battery"})
 	m.mustStatus(resp, 201, out)
-	if n := len(list(m)); n != 6 {
+	if n := len(list(m)); n != 10 {
 		t.Fatalf("member lists %d skills", n)
 	}
 	resp, out = m.do("PUT", "/api/v1/encryption/keys", keyRecord(1, 1))
@@ -111,7 +111,9 @@ func TestTurnRunsSkill(t *testing.T) {
 		tools = append(tools, tl.(map[string]any)["name"].(string))
 	}
 	slices.Sort(tools)
-	if strings.Join(tools, ",") != "get_task,list_tasks,schedule_tasks,search_tasks,update_tasks" {
+	// Its registry tools and its display tools (assistant-generative-ui D1), with
+	// those Today suggests (assistant-project-blocks D2) and the follow-ups (assistant-followups).
+	if strings.Join(tools, ",") != "ask_choice,get_task,list_tasks,schedule_tasks,search_tasks,show_calendar,show_deadlines,show_free_time,show_stats,suggest_followups,update_tasks" {
 		t.Fatalf("tools offered = %v", tools)
 	}
 	uses, err := (*svc).Store.SkillUses(t.Context(), userIDOf(t, e))

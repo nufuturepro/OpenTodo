@@ -193,7 +193,8 @@
       },
       "inbox": {
         "flags": {
-          "limit": "int"
+          "limit": "int",
+          "sort": "string"
         },
         "output": {
           "(type)": "array"
@@ -226,6 +227,7 @@
           "project": "string",
           "sector": "string",
           "someday": "bool",
+          "sort": "string",
           "today": "bool",
           "upcoming": "bool"
         },
@@ -293,6 +295,14 @@
         },
         "output": {
           "(type)": "ref:note_text"
+        }
+      },
+      "notes links": {
+        "args": {
+          "ref": "required"
+        },
+        "output": {
+          "(type)": "ref:note_links"
         }
       },
       "notes list": {
@@ -802,7 +812,8 @@
       "today": {
         "flags": {
           "all": "bool",
-          "limit": "int"
+          "limit": "int",
+          "sort": "string"
         },
         "output": {
           "(type)": "array"
@@ -837,7 +848,8 @@
       },
       "upcoming": {
         "flags": {
-          "limit": "int"
+          "limit": "int",
+          "sort": "string"
         },
         "output": {
           "(type)": "array"
@@ -1158,6 +1170,21 @@
         "entity": "any",
         "entity_id": "string"
       },
+      "note_links": {
+        "(type)": "object",
+        "id": "string",
+        "kind": "any",
+        "linked_from": "array",
+        "linked_from[].id": "string",
+        "linked_from[].kind": "any",
+        "linked_from[].title": "string",
+        "links": "array",
+        "links[].available": "boolean",
+        "links[].id": "string",
+        "links[].kind": "any",
+        "links[].title": "string",
+        "title": "string"
+      },
       "note_result": {
         "(type)": "any"
       },
@@ -1366,6 +1393,7 @@
         "split_from.series": "string",
         "start": "string|null",
         "title": "string",
+        "urgency": "number",
         "waiting_for_slot": "boolean"
       },
       "task_detail": {
@@ -1717,6 +1745,10 @@
       "400",
       "listed"
     ],
+    "invalid_grant": [
+      "400",
+      "listed"
+    ],
     "invalid_input": [
       "400",
       "422",
@@ -1727,6 +1759,10 @@
       "listed"
     ],
     "invalid_redirect_uri": [
+      "400",
+      "listed"
+    ],
+    "invalid_request": [
       "400",
       "listed"
     ],
@@ -1895,6 +1931,10 @@
       "listed"
     ],
     "oidc_state_invalid": [
+      "listed"
+    ],
+    "other_workspace": [
+      "409",
       "listed"
     ],
     "owner_must_transfer": [
@@ -2080,6 +2120,10 @@
       "404",
       "listed"
     ],
+    "workspace_gone": [
+      "409",
+      "listed"
+    ],
     "workspace_not_empty": [
       "409",
       "listed"
@@ -2256,7 +2300,8 @@
         "position": "number",
         "project_id": "nullable_string",
         "steps": "routine_steps",
-        "trigger": "rule_trigger"
+        "trigger": "rule_trigger",
+        "workspace_id": "nullable_string"
       },
       "sections": {
         "aisle": "nullable_string",
@@ -2370,11 +2415,19 @@
         "full_titles": "string",
         "haptics": "string",
         "id": "string",
+        "inbox_group_by": "string",
+        "inbox_row_layout": "string",
+        "inbox_sort_by": "string",
+        "inbox_sort_dir": "string",
         "language": "string",
         "maps": "string",
         "method_mode": "string",
         "motion": "string",
         "objectives": "string",
+        "priority_name_1": "string",
+        "priority_name_2": "string",
+        "priority_name_3": "string",
+        "priority_name_4": "string",
         "reminder_default_dated": "string",
         "reminder_default_timed": "string",
         "routines_hide_successes": "string",
@@ -2396,8 +2449,18 @@
         "today_assignees": "string",
         "today_done": "string",
         "today_events": "string",
+        "today_group_by": "string",
         "today_limit": "number",
+        "today_row_layout": "string",
+        "today_sort_by": "string",
+        "today_sort_dir": "string",
+        "today_subtasks": "string",
         "upcoming_events": "string",
+        "upcoming_later": "string",
+        "upcoming_row_layout": "string",
+        "upcoming_sort_by": "string",
+        "upcoming_sort_dir": "string",
+        "upcoming_subtasks": "string",
         "upcoming_today": "string",
         "week_start": "string",
         "welcome": "string"
@@ -2437,6 +2500,7 @@
       "format": "string",
       "frames": "array",
       "labels": "array",
+      "memory": "array",
       "notes": "array",
       "objectives": "array",
       "places": "array",
@@ -2546,7 +2610,8 @@
         "name": "string",
         "project": "string?",
         "steps": "string?",
-        "trigger": "string"
+        "trigger": "string",
+        "workspace": "string|null?"
       },
       "kind": "write"
     },
@@ -2605,6 +2670,32 @@
         "items[].workspace_id": "string|null?"
       },
       "kind": "write"
+    },
+    "find_free_time": {
+      "arguments": {
+        "day_end_hour": "integer?",
+        "day_start_hour": "integer?",
+        "from": "string?",
+        "min_minutes": "integer?",
+        "timezone": "string?",
+        "to": "string?"
+      },
+      "kind": "read",
+      "result": {
+        "_notice": "string",
+        "days": "array",
+        "days[].date": "string",
+        "days[].free": "array",
+        "days[].free_minutes": "number",
+        "from": "string",
+        "min_minutes": "number",
+        "server_time": "string",
+        "timezone": "string",
+        "to": "string",
+        "working_day": "object",
+        "working_day.end": "string",
+        "working_day.start": "string"
+      }
     },
     "get_note": {
       "arguments": {
@@ -2765,6 +2856,7 @@
         "priority": "integer?",
         "project_id": "string?",
         "sector": "string?",
+        "sort": "string?",
         "timezone": "string?",
         "view": "string?",
         "workspace": "string?"
@@ -3051,7 +3143,8 @@
         "name": "string?",
         "routine": "string",
         "steps": "string?",
-        "trigger": "string?"
+        "trigger": "string?",
+        "workspace": "string|null?"
       },
       "kind": "write"
     },
@@ -3173,6 +3266,12 @@
       "sort_dir": "string",
       "workspace_id": "nullable_string"
     },
+    "memory": {
+      "created_at": "number",
+      "deleted_at": "nullable_number",
+      "position": "number",
+      "text": "memory_text"
+    },
     "note": {
       "created_at": "number",
       "deleted_at": "nullable_number",
@@ -3264,7 +3363,8 @@
       "position": "number",
       "project_id": "nullable_string",
       "steps": "routine_steps",
-      "trigger": "rule_trigger"
+      "trigger": "rule_trigger",
+      "workspace_id": "nullable_string"
     },
     "section": {
       "aisle": "nullable_string",
@@ -3372,11 +3472,19 @@
       "formatting_toggle": "string",
       "full_titles": "string",
       "haptics": "string",
+      "inbox_group_by": "string",
+      "inbox_row_layout": "string",
+      "inbox_sort_by": "string",
+      "inbox_sort_dir": "string",
       "language": "string",
       "maps": "string",
       "method_mode": "string",
       "motion": "string",
       "objectives": "string",
+      "priority_name_1": "string",
+      "priority_name_2": "string",
+      "priority_name_3": "string",
+      "priority_name_4": "string",
       "reminder_default_dated": "string",
       "reminder_default_timed": "string",
       "routines_hide_successes": "string",
@@ -3398,8 +3506,18 @@
       "today_assignees": "string",
       "today_done": "string",
       "today_events": "string",
+      "today_group_by": "string",
       "today_limit": "number",
+      "today_row_layout": "string",
+      "today_sort_by": "string",
+      "today_sort_dir": "string",
+      "today_subtasks": "string",
       "upcoming_events": "string",
+      "upcoming_later": "string",
+      "upcoming_row_layout": "string",
+      "upcoming_sort_by": "string",
+      "upcoming_sort_dir": "string",
+      "upcoming_subtasks": "string",
       "upcoming_today": "string",
       "week_start": "string",
       "welcome": "string"
@@ -3476,6 +3594,9 @@
       "policy": "signed-in"
     },
     "DELETE /api/v1/labels/{id}": {
+      "policy": "signed-in"
+    },
+    "DELETE /api/v1/me/apps/{id}": {
       "policy": "signed-in"
     },
     "DELETE /api/v1/me/avatar": {
@@ -4348,6 +4469,7 @@
         "encryption.wrappedByRecovery": "string",
         "exportedAt": "string",
         "format": "string",
+        "memory": "array",
         "places": "array",
         "project_prefs": "array",
         "review": "array",
@@ -4414,6 +4536,7 @@
     "GET /api/v1/health": {
       "policy": "public",
       "response": {
+        "app_sign_in": "boolean",
         "status": "string",
         "version": "string"
       },
@@ -4758,6 +4881,15 @@
         "200"
       ]
     },
+    "GET /api/v1/me/apps": {
+      "policy": "signed-in",
+      "response": {
+        "apps": "array"
+      },
+      "statuses": [
+        "200"
+      ]
+    },
     "GET /api/v1/me/assistant": {
       "policy": "signed-in",
       "statuses": [
@@ -5029,6 +5161,13 @@
         "runs": "array",
         "runs[].ai_auto": "boolean",
         "runs[].at": "number",
+        "runs[].blocks": "array",
+        "runs[].blocks[].date": "string",
+        "runs[].blocks[].from": "string",
+        "runs[].blocks[].ids": "array",
+        "runs[].blocks[].kind": "string",
+        "runs[].blocks[].span": "string",
+        "runs[].blocks[].to": "string",
         "runs[].changes": "string",
         "runs[].depth": "number",
         "runs[].device_id": "string",
@@ -5675,6 +5814,13 @@
         "runs": "array",
         "runs[].ai_auto": "boolean",
         "runs[].at": "number",
+        "runs[].blocks": "array",
+        "runs[].blocks[].date": "string",
+        "runs[].blocks[].from": "string",
+        "runs[].blocks[].ids": "array",
+        "runs[].blocks[].kind": "string",
+        "runs[].blocks[].span": "string",
+        "runs[].blocks[].to": "string",
         "runs[].changes": "string",
         "runs[].depth": "number",
         "runs[].device_id": "string",
@@ -5769,6 +5915,13 @@
       "response": {
         "ai_auto": "boolean",
         "at": "number",
+        "blocks": "array",
+        "blocks[].date": "string",
+        "blocks[].from": "string",
+        "blocks[].ids": "array",
+        "blocks[].kind": "string",
+        "blocks[].span": "string",
+        "blocks[].to": "string",
         "changes": "string",
         "depth": "number",
         "device_id": "string",
@@ -7605,6 +7758,29 @@
         "201"
       ]
     },
+    "POST /api/v1/app/sign-out": {
+      "policy": "signed-in"
+    },
+    "POST /api/v1/app/token": {
+      "policy": "public",
+      "request": {
+        "code": "string",
+        "code_verifier": "string",
+        "grant_type": "string",
+        "refresh_token": "string",
+        "state": "string"
+      },
+      "response": {
+        "access_token": "string",
+        "expires_in": "number",
+        "refresh_token": "string",
+        "scope": "string",
+        "token_type": "string"
+      },
+      "statuses": [
+        "200"
+      ]
+    },
     "POST /api/v1/assistant/routine-draft": {
       "policy": "signed-in.session-only",
       "request": {
@@ -7623,6 +7799,8 @@
         "errors[].step": "string",
         "note": "string",
         "usage": "object",
+        "usage.cache_write": "number",
+        "usage.cached": "number",
         "usage.cap": "number",
         "usage.input": "number",
         "usage.month_total": "number",
@@ -8565,6 +8743,19 @@
         "workspace_id": "nullable_string"
       }
     },
+    "POST /api/v1/me/app-sign-in": {
+      "policy": "signed-in.session-only",
+      "request": {
+        "allow": "boolean",
+        "query": "string"
+      },
+      "response": {
+        "redirect": "string"
+      },
+      "statuses": [
+        "200"
+      ]
+    },
     "POST /api/v1/me/assistant/disclosure-seen": {
       "policy": "signed-in.full-tokens",
       "statuses": [
@@ -8702,6 +8893,13 @@
     "POST /api/v1/me/rules/runs/{run}/commit": {
       "policy": "signed-in.session-only",
       "request": {
+        "blocks": "array",
+        "blocks[].date": "string",
+        "blocks[].from": "string",
+        "blocks[].ids": "array",
+        "blocks[].kind": "string",
+        "blocks[].span": "string",
+        "blocks[].to": "string",
         "changes": "array",
         "changes[].create": "boolean",
         "changes[].entity": "string",
@@ -8748,6 +8946,13 @@
         "run": "object",
         "run.ai_auto": "boolean",
         "run.at": "number",
+        "run.blocks": "array",
+        "run.blocks[].date": "string",
+        "run.blocks[].from": "string",
+        "run.blocks[].ids": "array",
+        "run.blocks[].kind": "string",
+        "run.blocks[].span": "string",
+        "run.blocks[].to": "string",
         "run.changes": "string",
         "run.depth": "number",
         "run.device_id": "string",
@@ -8887,6 +9092,13 @@
         "run": "object",
         "run.ai_auto": "boolean",
         "run.at": "number",
+        "run.blocks": "array",
+        "run.blocks[].date": "string",
+        "run.blocks[].from": "string",
+        "run.blocks[].ids": "array",
+        "run.blocks[].kind": "string",
+        "run.blocks[].span": "string",
+        "run.blocks[].to": "string",
         "run.changes": "string",
         "run.depth": "number",
         "run.device_id": "string",
@@ -9557,7 +9769,8 @@
         "project_id": "string",
         "steps": "string",
         "task_id": "string",
-        "trigger": "string"
+        "trigger": "string",
+        "workspace_id": "string"
       },
       "response": {
         "device_run": "object|null",
@@ -9574,6 +9787,13 @@
         "run": "object",
         "run.ai_auto": "boolean",
         "run.at": "number",
+        "run.blocks": "array",
+        "run.blocks[].date": "string",
+        "run.blocks[].from": "string",
+        "run.blocks[].ids": "array",
+        "run.blocks[].kind": "string",
+        "run.blocks[].span": "string",
+        "run.blocks[].to": "string",
         "run.changes": "string",
         "run.depth": "number",
         "run.device_id": "string",
@@ -9714,6 +9934,13 @@
         "run": "object",
         "run.ai_auto": "boolean",
         "run.at": "number",
+        "run.blocks": "array",
+        "run.blocks[].date": "string",
+        "run.blocks[].from": "string",
+        "run.blocks[].ids": "array",
+        "run.blocks[].kind": "string",
+        "run.blocks[].span": "string",
+        "run.blocks[].to": "string",
         "run.changes": "string",
         "run.depth": "number",
         "run.device_id": "string",

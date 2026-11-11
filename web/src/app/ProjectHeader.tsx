@@ -1,4 +1,5 @@
-import { Button, Icon, IconPicker, PageHeader, Tooltip } from '../ui'
+import { Button, Icon, PageHeader, ProgressRing, ReadAs, Tooltip } from '../ui'
+import { openConnections, useConnected } from './signals'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { useMembership, useProjects } from '../lib/localData'
@@ -7,7 +8,7 @@ import { showUndoToast } from './bulk/toastStore'
 import { useOtherWorkspaces } from './workspaceNav'
 import { useDemo } from '../lib/demo'
 import { useOnline } from '../lib/online'
-import { archiveProject, deleteProject, moveProject, updateProject } from '../lib/ops'
+import { archiveProject, deleteProject, moveProject } from '../lib/ops'
 import { buildProjectTree, descendantIds } from '../lib/projects'
 import { canDeleteProject, canEditProject, canEditTasks, canManageMembers } from '../lib/sharing'
 import { flattenTree } from '../lib/tree'
@@ -20,16 +21,14 @@ import { FieldsDialog } from './FieldsDialog'
 import { HistoryPanel } from './HistoryPanel'
 import { ProjectActivity } from './ProjectActivity'
 import { ActionMenu, type ActionGroup, type ActionItem } from './menus/ActionMenu'
-import { iconPickerSpec } from './menus/stylePickers'
+import { ColourSwatches, projectIconItem, projectRenameItem, renameProject, setProjectColour } from './menus/projectAppearance'
 import { closePanel, openPanel, usePanelOccupantKey } from './panel'
 import { PanelFrame } from './PanelFrame'
 import { ProjectMark } from './Sidebar'
 import { useShortcutScope } from './shortcuts'
 import { keysOf } from '../lib/shortcuts'
-import { HUES, hueFor } from '../ui'
 import { t } from '../lib/i18n'
 import { roleName } from '../lib/roleNames'
-import { hueName } from '../lib/colourNames'
 import { act } from './actionError'
 import { setFavourite } from '../lib/favourites'
 import { useIsFavourite } from './useFavourites'
@@ -38,11 +37,15 @@ import { projectFlowItem } from './menus/flowMenu'
 import { maintenanceItem, reviewEveryItem } from './menus/reviewMenu'
 import { inMaintenance } from '../lib/reviewCadence'
 import { useMethodMode, type MethodMode } from '../lib/method/mode'
-import { openTaskCount, useOpenTaskCount } from '../lib/liveTasks'
+import { openTaskCount, useLiveTasks, useOpenTaskCount } from '../lib/liveTasks'
+import { percentOf, projectProgressOf, shareOf } from '../lib/progress'
+import { projectFlowOf } from '../lib/flow'
 import { useProjectPrefsRow, useProjectViewMode, useShowCompletedPref } from '../lib/liveData'
 import { saveShowCompleted } from '../lib/sections'
 import { isReusable } from '../lib/reusable'
 import { listModeItem } from './menus/listMenu'
+import { printItems } from './menus/printItem'
+import { openAssistantWith, useAssistantStatus } from '../lib/assistantStatus'
 
 /** A "Move to" target: a project, or the top level (id ''). */
 export interface MoveTarget { id: string; name: string; path: string[] }
@@ -69,23 +72,6 @@ export function moveTargets(project: Project, projects: Project[]): MoveTarget[]
     .filter((n) => n.id !== project.id && !excluded.has(n.id))
     .map((n) => ({ id: n.id, name: n.item.name, path: pathOf(n.item) }))
   return [{ id: '', name: 'Top level', path: [] }, ...rest]
-}
-
-/** Colour swatches with radio semantics, inside the menu (they keep the menu open). */
-function ColourSwatches({ project }: { project: Project }) {
-  // A swatch is not a MenuItem, so picking one keeps the menu open to compare colours.
-  const current = hueFor(project.color)
-  return (
-    <div role="group" aria-label={t('Colour')} className="flex flex-wrap gap-1 px-1.5 py-1.5">
-      {HUES.map((h) => (
-        <button key={h.name} type="button" role="menuitemradio" aria-checked={h.name === current} aria-label={t('Colour {name}', { name: hueName(h.name) })} data-menu-label={`Colour ${h.name}`}
-          className="touch-target inline-flex items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          onClick={() => act(updateProject(project.id, { color: h.hex }))}>
-          <span data-hue={h.name} className={`block h-5 w-5 rounded-full bg-hue-solid ${h.name === current ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface' : ''}`} />
-        </button>
-      ))}
-    </div>
-  )
 }
 
 /**
@@ -140,17 +126,8 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
         source: o.workspaces, getKey: (w: { id: string }) => w.id, getLabel: (w: { name: string }) => w.name, rankContext: 'project-move-workspace',
         onPick: (w: { id: string; name: string }) => { void moveProjectToWorkspaceUndoable(project.id, w.id, w.name).then((r) => { if (r.entry) showUndoToast(r.label, r.entry.id) }) },
       } }] : []),
-      { kind: 'action', id: 'rename', label: t('Rename'), icon: 'pencil', onSelect: a.rename },
-      // The searchable icon picker (icons-and-section-style), inside the same overlay.
-      { kind: 'step', id: 'icon', label: t('Icon'), icon: 'image', step: {
-        title: t('Icon'),
-        render: (done, back) => (
-          <IconPicker value={project.icon} color={project.color} onClose={back}
-            noneMark={<span className="block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color }} />}
-            onPick={(icon) => { act(updateProject(project.id, { icon })); done() }} />
-        ),
-        palette: iconPickerSpec(project.icon, (icon) => act(updateProject(project.id, { icon }))),
-      } },
+      projectRenameItem(a.rename),
+      projectIconItem(project),
       ...(flow ? [flow] : []),
       ...(maintenance ? [maintenance] : []),
       { kind: 'confirm', id: 'archive', label: subCount ? t('Archive with sub-projects') : t('Archive'), icon: 'archive', confirm: {
@@ -175,8 +152,10 @@ export function projectMenuGroups(project: Project, o: { role: ProjectRole; shar
 const ACTIVITY_PANEL = 'project-activity'
 const HISTORY_PANEL = 'project-history'
 
-export function ProjectHeader({ project, userId, actions, layout, subtitle, phone, extraGroups, lead, secondary }: {
+export function ProjectHeader({ project, userId, actions, layout, subtitle, phone, extraGroups, lead, secondary, print }: {
   project: Project
+  /** The list layout offers Print… (print-lists). */
+  print?: boolean
   userId?: string
   /** Items the layout adds to the project menu (a board's Colour by, calendar-clarity D3). */
   extraGroups?: ActionGroup[]
@@ -220,6 +199,10 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
   const targets = useMemo(() => moveTargets(project, projects), [projects, project])
   const subCount = useMemo(() => projects.filter((p) => p.parent_id === project.id && !p.deleted_at).length, [projects, project.id])
   const openTasks = useOpenTaskCount(project.id)
+  // The project's own progress beside its title (task-progress D4): the All projects rule, patched per write; an area never finishes, so it has none.
+  const liveTasks = useLiveTasks()
+  const share = liveTasks && projectFlowOf(project) !== 'area' ? shareOf(projectProgressOf(liveTasks).get(project.id)) : null
+  const percent = share === null ? null : percentOf(share)
   const pinned = useIsFavourite('project', project.id)
   // "Show completed tasks" (project-completed-section): a list-layout preference of this device.
   const listLayout = useProjectViewMode(project.id) === 'list'
@@ -247,7 +230,7 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
   async function save() {
     setNameEdit(null)
     const name = currentNameEdit?.value ?? project.name
-    if (name.trim() && name.trim() !== project.name) await updateProject(project.id, { name: name.trim() })
+    await renameProject(project, name)
   }
 
   const startEditing = () => setNameEdit({ projectId: project.id, value: project.name })
@@ -256,21 +239,30 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
   const otherWorkspaces = useOtherWorkspaces()
   const mode = useMethodMode()
   const reviewEvery = useProjectPrefsRow(project.id)?.review_every
+  const connected = useConnected('project', project.id)
   const panels: ActionGroup = { items: [
     // A reusable list always shows its ticked items (reusable-lists D7), so it offers no switch.
     ...(listLayout && !isReusable(project) ? [{ kind: 'check' as const, id: 'show-completed', label: t('Show completed tasks'), icon: 'circle-check-big' as const, checked: showCompleted, onSelect: () => saveShowCompleted(project.id, !showCompleted) }] : []),
     { kind: 'action', id: 'activity', label: t('Activity'), icon: 'history', shortcut: keysOf('project.activity'), onSelect: showActivity },
     { kind: 'action', id: 'history', label: t('History'), icon: 'rotate-ccw', onSelect: showHistory },
+    // What links with the project (notes-graph D3), offered while something does.
+    ...(connected ? [{ kind: 'action' as const, id: 'connections', label: t('Show connections'), icon: 'waypoints' as const, onSelect: () => openConnections('project', project.id) }] : []),
     // The project's routines on the Routines page (routines-shared D12).
     { kind: 'action', id: 'routines', label: t('Routines'), icon: 'zap', onSelect: () => navigate({ view: 'rules', project: project.id }) },
     // Display mode (display-mode D6): the project in large type, without the shell.
     { kind: 'action', id: 'display', label: t('Display mode'), icon: 'monitor', onSelect: () => navigate({ view: 'display', target: { kind: 'project', id: project.id }, options: { ...DEFAULT_DISPLAY_OPTIONS } }) },
+    ...(print ? printItems() : []),
   ] }
   // Every role gets the copies (project-templates D6); editing items follow the role inside projectMenuGroups.
+  // What's next? (assistant-in-context): the project-next skill on this project, while the assistant is available.
+  const assistantAvailable = !!useAssistantStatus()?.available
+  const assistantGroup: ActionGroup[] = assistantAvailable ? [{ label: t('Assistant'), items: [{ kind: 'action', id: 'assistant-next', label: t('What’s next?'), icon: 'sparkles',
+    onSelect: () => openAssistantWith({ skill: 'project-next', text: t('What’s next in “{name}”?', { name: project.name }), send: true }) }] }] : []
   const groups: ActionGroup[] = [
     ...projectMenuGroups(project, { role, shared: !!membership, targets, subCount, openTasks, pinned, workspaces: otherWorkspaces, mode, reviewEvery },
       { rename: startEditing, duplicate: () => setDialog('duplicate'), saveTemplate: () => setDialog('template'), fields: () => setDialog('fields'), pin: () => setFavourite('project', project.id, !pinned) }),
     ...(extraGroups ?? []),
+    ...assistantGroup,
     panels,
   ]
 
@@ -287,6 +279,11 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
   // The list page waits for the membership (audit M12), so this row has its final content at first paint.
   const meta = (
     <span className="flex flex-wrap items-center gap-x-2">
+      {share !== null && (
+        <span data-project-progress="" className="inline-flex min-h-6 items-center gap-1.5 text-meta tabular-nums text-muted">
+          <ProgressRing value={share} /><ReadAs label={t('{n}% done', { n: percent })}>{`${percent}%`}</ReadAs>
+        </span>
+      )}
       {membership && (
         <button type="button" className="flex min-h-6 items-center gap-1 text-meta text-muted hover:text-default" onClick={() => setSharing(true)}>
           {/* Named by its content (WCAG 2.5.3 Label in Name): the member list is visually hidden, the initials and count are not read. */}
@@ -319,6 +316,7 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
   // members and the public links open from Share in the project menu, and 44 px controls
   // there would make the bar grow when the membership arrives.
   const phoneMeta = [
+    percent === null ? '' : t('{n}% done', { n: percent }),
     membership ? `${membership.members.length} · ${roleName(role)}` : '',
     role === 'viewer' ? t('Read-only') : '',
     inMaintenance(project) ? t('In maintenance') : '',
@@ -339,7 +337,8 @@ export function ProjectHeader({ project, userId, actions, layout, subtitle, phon
           </Tooltip>
           {actions}
         </>}
-        menu={<ActionMenu label={t('Project menu')} title={project.name} groups={phone ? [...phone.groups, { items: [shareItem] }, ...groups] : groups} header={editable ? <ColourSwatches project={project} /> : undefined}
+        menu={<ActionMenu label={t('Project menu')} title={project.name} groups={phone ? [...phone.groups, { items: [shareItem] }, ...groups] : groups}
+          header={editable ? <ColourSwatches color={project.color} onPick={(color) => setProjectColour(project, color)} menu /> : undefined}
           trigger={<Icon name="ellipsis" size="md" />} triggerClassName="ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1.5" width="sm:w-72"
           open={menuOpen} onOpenChange={(v) => { setMenuOpen(v); if (!v) setStartPicker(null) }} startPicker={startPicker} />}>
         {secondary}

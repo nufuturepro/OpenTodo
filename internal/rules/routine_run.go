@@ -60,6 +60,7 @@ func (e *Engine) runRoutine(ctx context.Context, w *world, r *rule, o runOpts) (
 	finish := func(f routineFinish) (Result, error) {
 		f.DurationMs = e.now().Sub(st.start).Milliseconds()
 		f.Tokens = st.aiTokens
+		f.Blocks = st.blocks
 		f.Steps = make([]StepRecord, len(st.records))
 		for i := range st.records {
 			f.Steps[i] = st.records[i].StepRecord
@@ -133,6 +134,9 @@ func (e *Engine) runRoutine(ctx context.Context, w *world, r *rule, o runOpts) (
 	}
 	if where := st.outsideProject(); where != "" {
 		return finish(routineFinish{Outcome: OutcomeFailed, Reason: "a shared routine acts only in its project " + st.projectName() + " (a " + where + " outside it)", FailedStep: -1})
+	}
+	if where := st.outsideWorkspace(); where != "" {
+		return finish(routineFinish{Outcome: OutcomeFailed, Reason: st.workspaceFailure(where), FailedStep: -1})
 	}
 	planned := st.writesPlanned()
 	if st.test {

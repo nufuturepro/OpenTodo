@@ -1,6 +1,6 @@
 ---
 title: The iOS app
-summary: The OpenTodo app for iPhone and iPad, from TestFlight or built from source: connect it to your server, reminders without push, sharing, widgets and Face ID unlock.
+summary: The OpenTodo app for iPhone and iPad, from the App Store or built from source: connect it to your server, reminders without push, sharing, widgets and Face ID unlock.
 audience: user
 section: Reference
 specs: []
@@ -13,13 +13,13 @@ The OpenTodo app for iPhone and iPad opens your own OpenTodo server, like the [i
 
 ## Install it
 
-The official app comes through TestFlight, Apple's app for testing new apps, and later from the App Store. Install **TestFlight** from the App Store, then open the OpenTodo invitation link; the link will be on this page once the first build is out. TestFlight updates the app with every release.
+The official app is in the App Store: [OpenTodo for iPhone and iPad](https://apps.apple.com/us/app/opentodo/id6832200428). It is the first release, so expect some rough edges, and [say what to improve](feedback-and-support.md). New builds go to testers through TestFlight, Apple's app for testing, before they reach the App Store.
 
 As the copyright holder, the author of OpenTodo allows distributing its iOS app through Apple's App Store and TestFlight. You can still build the app yourself from source ([Building it](#building-it)).
 
 ## Connect to your server
 
-On first start the app asks for your server's address, the one you open in the browser (for example `todo.example.com`). Plain `http` is only accepted for addresses on your own network; everything else must be `https`. The screen says what is wrong when it can't connect:
+On first start the app asks for your server's address, the one you open in the browser (for example `todo.example.com`). An address without a scheme is reached over `https`, and the field shows it as `https://todo.example.com` before anything is sent; the app never tries `http` by itself and never follows a redirect to another address. Plain `http` is only used when you type it, only for addresses on your own network, and the screen then says the connection is not encrypted; everything else must be `https`. **Connect** becomes active once the address is well-formed. After connecting, **Settings → About** shows the exact address under **OpenTodo for iOS**. The screen says what is wrong when it can't connect:
 
 - **No answer**: the first start needs the network. Check the address and the connection.
 - **Not an OpenTodo server**: the address answers, but not like OpenTodo. Check for typos.
@@ -27,6 +27,12 @@ On first start the app asks for your server's address, the one you open in the b
 - **Must be reached over https**: the app suggests the `https` address; tap it and try again.
 
 To point the app at another server later, long-press its icon and choose **Change server**. It asks first, because it also forgets the cached web app and its data, including changes that have not reached the server yet.
+
+### Single sign-on and login walls
+
+OpenTodo's own **Sign in with …** button (see [Single sign-on](self-hosting/sso.md)) signs in inside the app: the provider's page opens in the app and sends you back signed in. A bar above the provider's page names the site you are signing in on, since the app has no address bar; the **×** in the bar, or swiping back, returns to your server. A login wall in front of the server (Pangolin, Authelia, Authentik's proxy, Cloudflare Access, oauth2-proxy) works the same way once the app is connected: when the wall asks again, its sign-in page opens in the app. If a sign-in can't continue in the app (for example a page left open for a long time), the app says so and offers **Sign in here** to start again.
+
+Only pages the sign-in leads through stay in the app; a link to another site on a sign-in page (a privacy policy, a help page) opens in Safari, like every other link. The app's first-run check does not pass a login wall: let the wall bypass `/api/v1/health` and `/healthz` (the [Android guide](android-app.md#bypassing-the-wall-instead) lists the paths). The hourly background refresh never follows the wall's redirect; while its session has expired, the refresh waits until you next open the app. Some providers refuse to sign in inside an app's web view (Google answers "Error 403: disallowed_useragent"); with those, sign in with a password or a passkey. An app built for one server with app-bound domains (see [Building it](#building-it)) can only show the pages of the hosts it declares, so add the provider's host to `OPENTODO_APP_BOUND_HOST` too.
 
 ## Reminders
 
@@ -49,6 +55,8 @@ The app appears in the share sheet of other apps. A link, some text or files ope
 ## Widgets
 
 **Today**, in the medium size, shows the tasks due today and the overdue ones, with the time and priority, from the last thing the web app published. Tap a task to open it. For an encrypted account the widget shows counts only until you unlock.
+
+Version 1.2.0 of the app never filled the widget, never scheduled reminders and offered browser push in **Settings → Notifications**. Update the app from the App Store or TestFlight and open it once; the widget fills and reminders are scheduled.
 
 ## Theme colours
 

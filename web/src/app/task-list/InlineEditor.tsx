@@ -4,24 +4,28 @@
 // and Project, the panel's own editors, and Open details. Enter or a click away saves,
 // Esc discards the title change, Shift+Enter saves and opens the panel. The title is
 // the panel's TitleField, so `tomorrow p1 #work` typed here applies as it does there.
-import { type FocusEvent, type KeyboardEvent, useMemo, useRef, useState } from 'react'
+import { type FocusEvent, type KeyboardEvent, lazy, Suspense, useMemo, useRef, useState } from 'react'
 import { describeDue, localDueOf, logicalToday } from '../../lib/dates'
 import { sectorLabel } from '../../lib/sectorNames'
 import { removeLabel, resolveLabels } from '../../lib/labels'
 import type { EditPlan } from '../../lib/nlp/edit'
 import { updateTask } from '../../lib/ops'
+import { priorityShort } from '../../lib/priority'
 import type { Label, Priority, Project, Task } from '../../lib/types'
 import { Icon, IconButton, type IconName, Menu, MenuItem } from '../../ui'
 import { act } from '../actionError'
 import { LabelChip, LabelPicker } from '../LabelPicker'
 import { ProjectPickerField } from '../ProjectPickerField'
 import { FacetEditor } from '../task-detail/FacetEditor'
-import { WhenControl } from '../task-detail/WhenControl'
 import { TitleField } from '../TitleField'
 import { commitTitleEdit } from '../titleEdit'
 import { moveWithUndo } from '../undoable'
 import { useViewerZone } from '../useViews'
 import { t } from '../../lib/i18n'
+
+// Date opens the row's Schedule popover, loaded on first use like the row's own, so the
+// When editor stays out of the list's first load (when-picker).
+const RowSchedule = lazy(() => import('./RowSchedule'))
 
 export interface InlineEditorProps {
   task: Task
@@ -88,7 +92,6 @@ export function InlineEditor({ task, caret, projects, labelMap, onDone, onFollow
   )
 }
 
-const PRIORITY_TEXT: Record<Priority, string> = { 1: 'P1', 2: 'P2', 3: 'P3', 4: 'P4' }
 
 /** One compact control of the bar: an icon and the value, or a quiet placeholder. */
 function BarButton({ icon, text, empty, onClick, label, buttonRef, expanded }: {
@@ -118,11 +121,11 @@ export function EditBar({ task, projects, labelMap, onDetails }: { task: Task; p
     <div className="mt-1 flex min-h-8 flex-wrap items-center gap-0.5" data-edit-bar role="group" aria-label={t('Task properties')}>
       <BarButton icon="calendar-days" label={t('Date')} text={due?.label ?? sector?.text ?? t('Date')} empty={!due && !sector} expanded={open === 'date'}
         buttonRef={(el) => { anchors.current.date = el }} onClick={() => setOpen(open === 'date' ? null : 'date')} />
-      <Menu kind="menu" label={`${t('Priority')}: ${PRIORITY_TEXT[task.priority]}`} align="start"
-        trigger={<span className={`inline-flex items-center gap-1 text-meta ${task.priority === 4 ? 'text-faint' : 'text-muted'}`}><Icon name="flag" size="xs" />{PRIORITY_TEXT[task.priority]}</span>}
+      <Menu kind="menu" label={`${t('Priority')}: ${priorityShort(task.priority)}`} align="start"
+        trigger={<span className={`inline-flex items-center gap-1 text-meta ${task.priority === 4 ? 'text-faint' : 'text-muted'}`}><Icon name="flag" size="xs" />{priorityShort(task.priority)}</span>}
         triggerClassName="inline-flex min-h-7 items-center rounded-control px-1.5 hover:bg-sunken dark:hover:bg-raised">
         {([1, 2, 3, 4] as Priority[]).map((p) => (
-          <MenuItem key={p} label={PRIORITY_TEXT[p]} checked={task.priority === p} onSelect={() => act(updateTask(task.id, { priority: p }))} />
+          <MenuItem key={p} label={priorityShort(p)} checked={task.priority === p} onSelect={() => act(updateTask(task.id, { priority: p }))} />
         ))}
       </Menu>
       <BarButton icon="tag" label={t('Labels')} text={labels.length ? labels.map((l) => l.name).join(', ') : t('Labels')} empty={!labels.length} expanded={open === 'labels'}
@@ -134,9 +137,9 @@ export function EditBar({ task, projects, labelMap, onDetails }: { task: Task; p
       </span>
       <IconButton icon="chevron-right" size="sm" label={t('Open details')} shortcut="Shift+Enter" onClick={onDetails} className="ml-auto" data-open-details />
       {open === 'date' && (
-        <FacetEditor anchor={dateAnchor} icon="calendar-days" title={t('Do on')} onClose={() => setOpen(null)} width="sm:w-[28rem]">
-          <WhenControl task={task} segment="due" />
-        </FacetEditor>
+        <Suspense fallback={null}>
+          <RowSchedule task={task} anchor={dateAnchor} onClose={() => setOpen(null)} />
+        </Suspense>
       )}
       {open === 'labels' && (
         <FacetEditor anchor={labelsAnchor} icon="tag" title={t('Labels')} onClose={() => setOpen(null)}>

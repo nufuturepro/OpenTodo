@@ -11,12 +11,12 @@ import { encryptValue } from '../crypto'
 import { db } from '../db'
 import { currentKey } from '../e2ee'
 import { sealValue } from '../e2eeEnvelope'
-import type { RoutineRunRequest } from '../relay'
+import type { RoutineRunRequest } from '../relayTypes'
 import type { Entity, Rule } from '../types'
 import { completeOnDevice, deviceAIReady, DeviceAIError } from './deviceAI'
 import { NOTICE_BINDING, PROPOSAL_BINDING, type DeviceChange, type DeviceCommit, type DeviceSide, type DeviceStepRecord } from './deviceTypes'
 import { AIError, planRoutine, proposalItems, type MergedChange, type RunPlan, type RunWorld, type SideSpec, type StepRecord } from './run'
-import { loadRunWorld } from './run/load'
+import { loadRunWorld, WorkspaceGone } from './run/load'
 import { hasAI, readRoutine } from './steps'
 
 /** What a device run did, for this device's list of recent runs (no text). */
@@ -93,7 +93,15 @@ export async function runOnDevice(req: RoutineRunRequest, onStart: (name: string
   const withAI = hasAI(steps)
   const ai = withAI && (await deviceAIReady())
   const prefs = await db.userPrefs.get('me')
-  const world = await loadRunWorld({ steps, encrypted: true, project: rule.project_id || undefined, env: { ai, aiConsent: ai, energy: (prefs as { energy?: string } | undefined)?.energy === 'on' } })
+  let world: Awaited<ReturnType<typeof loadRunWorld>>
+  try {
+    world = await loadRunWorld({ steps, encrypted: true, project: rule.project_id || undefined, workspace: rule.workspace_id || undefined,
+      env: { ai, aiConsent: ai, energy: (prefs as { energy?: string } | undefined)?.energy === 'on' } })
+  } catch (err) {
+    if (!(err instanceof WorkspaceGone)) throw err
+    await api.failDeviceRun(req.run, { step: -1, code: 'workspace_gone' }).catch(() => undefined)
+    return { name, outcome: 'failed', writes: 0 }
+  }
   const plan = await planRoutine(world, { id: rule.id, name, steps, trigger: (rule.trigger ?? { kind: 'manual' }) as RunRoutineTrigger, condition: rule.condition ?? null, aiBudget: req.budget },
     { key: req.occurrence, runId: req.run, triggerTaskId: req.task, aiTokensToday: req.tokens,
       ai: async (c) => {
@@ -104,17 +112,19 @@ export async function runOnDevice(req: RoutineRunRequest, onStart: (name: string
         }
       } })
   const base = { steps: wireSteps(plan.records), duration_ms: Date.now() - started, tokens: plan.tokens }
+  // The blocks go with every commit, never with a failure (assistant-routine-blocks D1).
+  const shown = plan.blocks.length ? { blocks: plan.blocks } : {}
   if (plan.outcome === 'failed' || plan.outcome === 'stopped') {
     await api.failDeviceRun(req.run, { step: plan.failedStep, code: failCode(plan), ...base })
     return { name, outcome: 'failed', writes: 0 }
   }
   const outcome = plan.outcome === 'ended' || plan.outcome === 'already_matched' ? plan.outcome : 'applied'
   const propose = async () => {
-    const res = await api.commitDeviceRun(req.run, { ...base, proposal: await sealProposal(key, req.run, world, plan) })
+    const res = await api.commitDeviceRun(req.run, { ...base, ...shown, proposal: await sealProposal(key, req.run, world, plan) })
     return { name, outcome: res.run.outcome, writes: 0 }
   }
   if (plan.writesPlanned === 0) {
-    const res = await api.commitDeviceRun(req.run, { ...base, outcome })
+    const res = await api.commitDeviceRun(req.run, { ...base, ...shown, outcome })
     return { name, outcome: res.run.outcome, writes: 0 }
   }
   // A routine with an AI step writes only in auto mode, within its limits,
@@ -122,7 +132,7 @@ export async function runOnDevice(req: RoutineRunRequest, onStart: (name: string
   if (withAI && !req.auto) return propose()
   let commit: DeviceCommit
   try {
-    commit = { ...base, outcome, changes: await Promise.all(plan.changes.map((c) => sealChange(key, c))), completing: plan.completing, sides: await sealSides(key, req.run, plan.sides) }
+    commit = { ...base, ...shown, outcome, changes: await Promise.all(plan.changes.map((c) => sealChange(key, c))), completing: plan.completing, sides: await sealSides(key, req.run, plan.sides) }
   } catch {
     await api.failDeviceRun(req.run, { step: -1, code: 'encrypted', ...base })
     return { name, outcome: 'failed', writes: 0 }

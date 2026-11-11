@@ -58,9 +58,11 @@
   "invalid_credentials",
   "invalid_energy",
   "invalid_file",
+  "invalid_grant",
   "invalid_input",
   "invalid_op",
   "invalid_redirect_uri",
+  "invalid_request",
   "invalid_rotation",
   "invalid_scope",
   "invalid_token",
@@ -103,6 +105,7 @@
   "oidc_failed",
   "oidc_link_required",
   "oidc_state_invalid",
+  "other_workspace",
   "owner_must_transfer",
   "page_invalid",
   "page_not_encrypted",
@@ -149,6 +152,7 @@
   "unsupported_protocol_version",
   "user_not_found",
   "verification_invalid",
+  "workspace_gone",
   "workspace_not_empty",
   "write_limit"
 ]

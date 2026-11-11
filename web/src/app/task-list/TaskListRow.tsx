@@ -1,4 +1,4 @@
-import { type FormEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, memo, use, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../../lib/i18n'
 import { resolveLabels } from '../../lib/labels'
 import { createSubtask } from '../../lib/ops'
@@ -6,6 +6,7 @@ import type { Label, Task } from '../../lib/types'
 import { act } from '../actionError'
 import { isGhost, useDeparture } from '../motion'
 import { MAX_INDENT, TaskRow, type RowMotion, type TaskRowProps } from '../TaskRow'
+import { UrgencyChip, UrgencyContext } from '../useUrgency'
 
 /** The list's row handlers, stable for the life of the list (large-list-performance D1). */
 export interface RowActions {
@@ -13,6 +14,8 @@ export interface RowActions {
   toggleCollapse: (id: string) => void
   /** Opens the task: inline (a click, inline-task-editing) or in the panel. */
   open: (id: string, e?: React.MouseEvent) => void
+  /** A double-click: the task's page (row-click-modes D2). */
+  openPage: (id: string) => void
   tick: (id: string, range: boolean) => void
   drag: (e: React.PointerEvent, task: Task) => void
   /** A press on the row's touch grip: hold selects, hold then move drags (bulk-actions on touch). */
@@ -29,7 +32,7 @@ export interface RowActions {
   contextAt: (task: Task, x: number, y: number, row: HTMLElement) => void
 }
 
-type TaskListRowProps = Omit<TaskRowProps, 'motion' | 'labels' | 'onToggle' | 'onOpen' | 'onTick' | 'onToggleCollapse' | 'onPointerDown' | 'onGripDown' | 'onGripClick' | 'dropKey' | 'actions' | 'onMore' | 'onExpand'> & {
+type TaskListRowProps = Omit<TaskRowProps, 'motion' | 'labels' | 'onToggle' | 'onOpen' | 'onOpenPage' | 'onTick' | 'onToggleCollapse' | 'onPointerDown' | 'onGripDown' | 'onGripClick' | 'dropKey' | 'actions' | 'onMore' | 'onExpand'> & {
   labelMap: Map<string, Label>
   /** The row can be picked up (to a sidebar project or label, ux-feedback-2 D4). */
   draggable: boolean
@@ -62,6 +65,8 @@ export function rowMotion(task: Task, departure: ReturnType<typeof useDeparture>
 export const TaskListRow = memo(function TaskListRow({ task, labelMap, draggable, reorderable, collapsible, expandable, handlers: actions, ...rest }: TaskListRowProps) {
   const labels = useMemo(() => resolveLabels(task.labels, labelMap), [task.labels, labelMap])
   const departure = useDeparture(task.id)
+  // Under the urgency order a top-level row shows its score (urgency-sort D4).
+  const urgency = use(UrgencyContext)
   // A departing row leaves by itself when its moment ends (or Undo turns it into a
   // restore): the list does not draw again for it, so a completion draws the list
   // once, when the task leaves its data (incremental-list-updates D4).
@@ -82,9 +87,11 @@ export const TaskListRow = memo(function TaskListRow({ task, labelMap, draggable
       onToggle={() => actions.toggle(task)}
       onToggleCollapse={collapsible ? () => actions.toggleCollapse(task.id) : undefined}
       onOpen={(e) => actions.open(task.id, e)}
+      onOpenPage={() => actions.openPage(task.id)}
       onTick={(range) => actions.tick(task.id, range)}
       onMore={(from) => actions.more(task.id, from)}
       onExpand={expandable ? () => actions.expand(task.id) : undefined}
+      score={urgency && !rest.depth && rest.shape !== 'card' ? <UrgencyChip of={urgency} task={task} /> : undefined}
     />
   )
 })

@@ -1,12 +1,13 @@
 // The Inbox card "Routines since your last visit" (OpenSpec change
 // routines-editor, design D10, spec routine-inbox): inside the Inbox list
-// above the first task, only when it has lines; one line per routine, at most
+// under the last task, only when it has lines; one line per routine, at most
 // five, then "See all runs". It counts as seen after 2 seconds on screen or
 // with Mark as seen (the synced marker moves to the newest displayed run);
 // failures stay until handled, a success line can be dismissed on every device.
 // Offline it shows what was last fetched. Loaded lazily, only for users with
-// routines.
-import { useEffect, useMemo, useRef, useState } from 'react'
+// routines. A line's newest run shows its blocks under it, read-only
+// (assistant-routine-blocks D2).
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { formatInstant } from '../../lib/dates'
 import { t } from '../../lib/i18n'
@@ -21,6 +22,13 @@ import { ActionMenu, type ActionGroup } from '../menus/ActionMenu'
 import { navigate } from '../router'
 import { ProposalReview } from './ProposalReview'
 
+const RunBlocks = lazy(() => import('./RunBlocks'))
+
+/** The blocks a line shows: its newest run's, for a success or a proposal. */
+function lineBlocks(l: InboxLine) {
+  return l.kind === 'success' || l.kind === 'proposal' ? l.runs[0]?.blocks ?? [] : []
+}
+
 /** The card's view: its lines and actions (stories and tests render it directly). */
 export function InboxCardView({ lines, more, hide, online, onOpen, onDismiss, onSeen, onHide, onAll, onUndo }: {
   lines: InboxLine[]; more: number; hide: boolean; online: boolean
@@ -34,7 +42,7 @@ export function InboxCardView({ lines, more, hide, online, onOpen, onDismiss, on
     { kind: 'action', id: 'all', label: t('See all runs'), icon: 'history', onSelect: onAll },
   ] }]
   return (
-    <Card as="section" padding="none" className="mb-3 p-3" aria-labelledby="routines-inbox-title" data-routines-inbox>
+    <Card as="section" padding="none" className="mt-4 p-3" aria-labelledby="routines-inbox-title" data-routines-inbox>
       <div className="flex items-center gap-2">
         <Icon name="zap" className="text-accent" />
         <h2 id="routines-inbox-title" className="flex-1 text-body font-medium text-strong">{t('Routines since your last visit')}</h2>
@@ -43,16 +51,23 @@ export function InboxCardView({ lines, more, hide, online, onOpen, onDismiss, on
       </div>
       <ul className="mt-1 space-y-0.5">
         {lines.map((l) => (
-          <li key={`${l.ruleId}:${l.kind}`} className="flex items-center gap-1" data-inbox-line={l.kind}>
-            <button type="button" onClick={() => onOpen(l)}
-              className={`user-text min-h-11 min-w-0 flex-1 truncate rounded-control px-2 text-left text-meta hover:bg-sunken dark:hover:bg-raised ${l.kind === 'failure' ? 'text-danger' : l.kind === 'proposal' ? 'font-medium text-strong' : 'text-default'}`}>
-              {l.text}
-            </button>
-            {l.auto && onUndo && <Button size="sm" variant="ghost" disabled={!online} onClick={() => onUndo(l)} data-inbox-undo>{t('Undo')}</Button>}
-            {l.kind === 'success' && (
-              <IconButton icon="x" size="sm" variant="ghost" label={t('Dismiss {name}', { name: l.name })} disabled={!online} onClick={() => onDismiss(l)} />
+          <Fragment key={`${l.ruleId}:${l.kind}`}>
+            <li className="flex items-center gap-1" data-inbox-line={l.kind}>
+              <button type="button" onClick={() => onOpen(l)}
+                className={`user-text min-h-11 min-w-0 flex-1 truncate rounded-control px-2 text-left text-meta hover:bg-sunken dark:hover:bg-raised ${l.kind === 'failure' ? 'text-danger' : l.kind === 'proposal' ? 'font-medium text-strong' : 'text-default'}`}>
+                {l.text}
+              </button>
+              {l.auto && onUndo && <Button size="sm" variant="ghost" disabled={!online} onClick={() => onUndo(l)} data-inbox-undo>{t('Undo')}</Button>}
+              {l.kind === 'success' && (
+                <IconButton icon="x" size="sm" variant="ghost" label={t('Dismiss {name}', { name: l.name })} disabled={!online} onClick={() => onDismiss(l)} />
+              )}
+            </li>
+            {lineBlocks(l).length > 0 && (
+              <li className="px-2" data-inbox-blocks>
+                <Suspense fallback={null}><RunBlocks blocks={lineBlocks(l)} /></Suspense>
+              </li>
             )}
-          </li>
+          </Fragment>
         ))}
       </ul>
       {more > 0 && <p className="px-2 text-meta text-muted">{t('{n, plural, one {# more routine} other {# more routines}}', { n: more })}</p>}

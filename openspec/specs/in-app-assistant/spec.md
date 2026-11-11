@@ -72,7 +72,7 @@ The server SHALL contact only the hosts of providers the owner enabled and, whil
 ### Requirement: Per-user consent and own keys
 Before a user's first turn, the app SHALL show which provider will receive their task content (for a member's own provider, that it goes with their key) and which fields may be sent, and SHALL record consent for that provider only through `PUT /api/v1/me/assistant`. If the owner allows it, users MAY store their own key there. Consent is server state, not an op.
 
-The list of fields SHALL name everything the assistant may send for that user: for the server's assistant, task titles and descriptions; due dates, repeats, priorities, estimates and completion; custom fields, task locations and the links tasks came from; comments; the names, types and links of attachments (never the files); notes; workspace, project, section and label names and project descriptions; saved view names and webhook hosts when the user describes a routine; the user's routines and calendar frames; tracked time and its notes; names of members and groups of shared projects and workspaces; the user's display name, today's date and time zone; the messages typed; and photos added. For the on-device assistant (`mode: "device"`) it SHALL name only what the device sends: task titles and descriptions; due dates, repeats, priorities, estimates and completion; comments; project, section and label names and project descriptions; saved view names and webhook hosts when describing a routine; the display name, date and time zone; the messages; and photos. The paragraph on routines SHALL say that an Ask AI or Summarise step sends its instruction and what it reads, including a project's name, sections and open tasks. `GET /api/v1/me/assistant` SHALL return the list in English as `fields`, and the app SHALL show each entry in the reader's language. Every read tool the server's assistant can call SHALL be covered by an entry of the list. A disclosure that only describes data already sent SHALL raise `disclosure_version` without asking for consent again; a consent from version 1 on keeps counting.
+The list of fields SHALL name everything the assistant may send for that user: for the server's assistant, task titles and descriptions; due dates, repeats, priorities, estimates and completion; custom fields, task locations and the links tasks came from; comments; the names, types and links of attachments (never the files); notes; workspace, project, section and label names and project descriptions; saved view names and webhook hosts when the user describes a routine; the user's routines and calendar frames; tracked time and its notes; names of members and groups of shared projects and workspaces; the user's display name, today's date and time zone; the messages typed; and photos added. For the on-device assistant (`mode: "device"`) it SHALL name only what the device sends: task titles and descriptions; due dates, repeats, priorities, estimates and completion; comments; notes; project, section and label names and project descriptions; saved view names and webhook hosts when describing a routine; calendar frames and slots; tracked time and its notes; the display name, date and time zone; the messages; and photos. The paragraph on routines SHALL say that an Ask AI or Summarise step sends its instruction and what it reads, including a project's name, sections and open tasks. `GET /api/v1/me/assistant` SHALL return the list in English as `fields`, and the app SHALL show each entry in the reader's language. Every read tool the server's assistant can call SHALL be covered by an entry of the list. A disclosure that only describes data already sent SHALL raise `disclosure_version` without asking for consent again; a consent from version 1 on keeps counting.
 
 #### Scenario: Consent required
 - **WHEN** a user who has not consented sends `POST /api/v1/assistant/turn`
@@ -104,7 +104,7 @@ The list of fields SHALL name everything the assistant may send for that user: f
 
 #### Scenario: On-device list
 - **WHEN** an encrypted user in `mode: "device"` reads the disclosure
-- **THEN** the list names task, comment and project data, the Describe it names and the turn's own context, and does not name notes, tracked time, routines or frames, which the device does not send
+- **THEN** the list names task, comment, project and note data, calendar frames and slots, tracked time, the Describe it names and the turn's own context, and does not name custom fields, locations, attachments or routines, which the device does not send
 
 #### Scenario: Translated list
 - **WHEN** a user whose language is Italian opens the disclosure
@@ -115,11 +115,15 @@ The list of fields SHALL name everything the assistant may send for that user: f
 - **THEN** `consented` stays true and the composer is enabled
 
 ### Requirement: Assistant turn route
-`POST /api/v1/assistant/turn` SHALL require a session (bearer tokens get 403 `session_required`), accept a conversation of at most 40 messages and 256 KB, allow one turn per user at a time (409 `turn_in_progress`) and at most 8 server-wide (503 `assistant_busy`), and stream text, status, change-set, usage and done events. It writes nothing; it reads synced data only. In host mode the 8 SHALL be shared by all of the host's tenants, not counted per tenant, so the operator's provider keys see at most 8 turns however many tenants are open.
+`POST /api/v1/assistant/turn` SHALL require a session (bearer tokens get 403 `session_required`), accept a conversation of at most 40 messages and 256 KB, allow one turn per user at a time (409 `turn_in_progress`) and at most 8 server-wide (503 `assistant_busy`), and stream text, status, block, change-set, usage and done events. It writes nothing; it reads synced data only. In host mode the 8 SHALL be shared by all of the host's tenants, not counted per tenant, so the operator's provider keys see at most 8 turns however many tenants are open.
 
 #### Scenario: Streamed answer
 - **WHEN** a consented user asks "what is due today?"
 - **THEN** the response streams text events listing today's tasks, then a usage event and a done event with `end_turn`
+
+#### Scenario: Block event
+- **WHEN** a consented user asks "show me what's overdue" and the model calls `show_tasks` with three task ids
+- **THEN** the response streams a block event of kind `tasks` with those three ids and no task titles, between the text events before and after the call
 
 #### Scenario: Token refused
 - **WHEN** a script calls the route with a `full` API token
@@ -157,7 +161,17 @@ The assistant SHALL use the agent tool registry shared with MCP: read tools run 
 - **THEN** the answer explains that it cannot change sharing and no change set is proposed
 
 ### Requirement: Reviewable change sets
-The panel and the Assistant page SHALL show a proposed change set as a card: a head naming it, the number of checked items out of all ("3 of 4 selected") and that nothing changes until the user applies; one row per task or project with a checkbox, the title and each change in words (old → new) at the right of a wide card and under the title of a narrow one, checked by default, with shared items marked; and a foot with an apply action naming how many changes it applies ("Apply 3 changes"), Discard, and the keys. It SHALL apply only after confirmation (Enter or the apply action) or discard it (Esc or Discard). Items whose local value changed since the proposal SHALL be unchecked and marked; items missing locally SHALL be dropped with a note. Review and apply work offline once the proposal has arrived; applied changes converge as ops.
+The panel and the Assistant page SHALL show a proposed change set as a card: a head naming it, the number of checked items out of all ("3 of 4 selected") and that nothing changes until the user applies; the items in a shape; and a foot with an apply action naming how many changes it applies ("Apply 3 changes"), Discard, and the keys. It SHALL apply only after confirmation (Enter or the apply action) or discard it (Esc or Discard). Items whose local value changed since the proposal SHALL be unchecked and marked; items missing locally SHALL be dropped with a note. Review and apply work offline once the proposal has arrived; applied changes converge as ops.
+
+The shapes are:
+- **List**: one row per task or project with a checkbox, the title and each change in words (old → new), at the right of a wide card and under the title of a narrow one, with shared items marked.
+- **Calendar**: chosen when at least two items change a do-on date, a start date or a deadline, all of them to dates within 7 consecutive days. The affected days show with the user's existing dated tasks, and the proposed items appear marked as proposed at their new dates and times.
+- **Outline**: chosen when the change set creates a project. That project, its sections and its new tasks show as a tree.
+- **Map**: chosen when every item sets a place, while maps are on.
+
+Otherwise the card SHALL use the list. Every item SHALL keep its checkbox in every shape, checked by default. A switch in the card's head SHALL toggle between the chosen shape and the list, and the list SHALL always be reachable.
+
+Before applying, the user SHALL be able to edit a checked item's proposed title (for a created task or project), its proposed do-on date, start date or deadline, and its proposed priority. The edited value SHALL be what applies. The item SHALL be marked "edited", and an edited value SHALL pass the same checks as the same field typed in the app. Editing never adds a field the proposal did not touch.
 
 #### Scenario: Review and apply part
 - **WHEN** a change set proposes 5 changes and the user unchecks one and presses Enter
@@ -170,6 +184,22 @@ The panel and the Assistant page SHALL show a proposed change set as a card: a h
 #### Scenario: The card counts the selection
 - **WHEN** a change set proposes 4 changes, one of them changed since proposed
 - **THEN** the head reads "3 of 4 selected" and the apply action reads "Apply 3 changes"; unchecking another item makes them "2 of 4 selected" and "Apply 2 changes"
+
+#### Scenario: A week plan shows as a calendar
+- **WHEN** a change set moves 6 tasks to dates between Monday and Friday of next week
+- **THEN** the card shows those five days with the existing dated tasks and the 6 proposed items marked as proposed, and "Show as list" switches to the list with the same 6 checked items
+
+#### Scenario: A new project shows as an outline
+- **WHEN** a change set creates the project "Move flat" with two sections and 9 tasks
+- **THEN** the card shows "Move flat" with its two sections and their tasks as a tree, each task with a checkbox
+
+#### Scenario: Edit before applying
+- **WHEN** a change set proposes a new task "Call landlord" due Friday, and the user edits the title to "Call landlord about deposit" and the date to Thursday, then applies
+- **THEN** the task is created with the edited title and Thursday, the item was marked "edited", and Undo moves it to the Trash
+
+#### Scenario: Edited offline
+- **WHEN** the user edits and applies a proposed item while offline, and another device later changes the same task's priority
+- **THEN** the edited fields apply locally at once, sync later, and both devices converge by last writer per field
 
 ### Requirement: Applying through operations
 Confirmed changes SHALL be applied with `mutateMany()` as one batch with device `assistant:<device-id>`, so they apply locally first, work offline once proposed, sync later, converge with concurrent edits by last-writer-wins, appear in history and activity like any edit, and trigger the usual reminders, webhooks and notifications.
@@ -212,7 +242,7 @@ The system prompt SHALL state that task text, comments, email-to-task content an
 - **THEN** the answer summarises the Inbox, notes that one task contains instructions it ignored, and proposes no change set
 
 ### Requirement: Model response checks
-Before using a model response, the server SHALL check the stop reason: tool use continues the loop, a refusal SHALL show "The model declined this request." with no partial content and no change set, and truncation SHALL mark the answer as cut off without proposing changes. A turn SHALL run at most 12 model calls; a tool-use answer on the 12th call SHALL end it with stop reason `round_limit` and no change set, while an `end_turn` on the 12th call SHALL keep the change set it planned. For Anthropic it SHALL use `tool_choice` auto, strict tool schemas, adaptive thinking and streaming.
+Before using a model response, the server SHALL check the stop reason: tool use continues the loop, a refusal SHALL show "The model declined this request." with no partial content and no change set, and truncation SHALL mark the answer as cut off without proposing changes. A turn SHALL run at most 12 model calls; a tool-use answer on the 12th call SHALL end it with stop reason `round_limit` and no change set, while an `end_turn` on the 12th call SHALL keep the change set it planned. For Anthropic it SHALL use `tool_choice` auto, adaptive thinking and streaming, and SHALL mark the tools strict only when the request's whole tool set fits Anthropic's strict limits (at most 20 tools and 24 optional parameters across their schemas); a larger set SHALL be sent with the same schemas, not strict, and the registry SHALL validate every call's arguments either way. A turn the provider refuses SHALL be logged on the server with the provider's status and error type, never the provider's text.
 
 #### Scenario: Refusal
 - **WHEN** the provider ends a turn with stop reason `refusal`
@@ -237,6 +267,14 @@ Before using a model response, the server SHALL check the stop reason: tool use 
 #### Scenario: A single call over the registry's own per-call limit
 - **WHEN** one `schedule_tasks` call names 70 tasks
 - **THEN** the tool answers a tool error and the turn does not write from it
+
+#### Scenario: More tools than Anthropic allows strict
+- **WHEN** an in-app turn with Anthropic offers 32 tools
+- **THEN** the request carries them without strict mode and the turn is answered
+
+#### Scenario: A small tool set stays strict
+- **WHEN** a request offers at most 20 tools with at most 24 optional parameters in all
+- **THEN** every tool is marked strict
 
 ### Requirement: Cost controls and usage
 The owner SHALL set a monthly per-user token cap (default 500,000; 0 means unlimited) and `cap_member_keys` (default off). Each turn SHALL record input and output tokens, marking own-key turns. A user at the cap SHALL get 429 `assistant_quota` before any provider request; own-key turns SHALL be neither counted nor blocked unless `cap_member_keys` is on. `GET /api/v1/me/assistant/usage` SHALL return month-to-date usage, its counted and own-key parts, and the cap. Usage is server state, not an op.
@@ -626,7 +664,7 @@ An on-device turn SHALL run in the browser with the same fixed instructions, lim
 - **THEN** the turn runs and its proposal can be applied and is queued for sync
 
 ### Requirement: Provider requests from the device
-The device SHALL call only the provider set up on it: Anthropic's Messages API with the browser access header, strict tools, `tool_choice` auto and adaptive thinking; OpenAI, Google Gemini and model servers through the Chat Completions format with streaming. A request blocked by the page's policy or by the provider's cross-origin rules SHALL be reported as such, saying to reload the page when the owner allowed the provider a moment ago, and a rejected key SHALL be reported as the device's key being rejected, without the key in the message.
+The device SHALL call only the provider set up on it: Anthropic's Messages API with the browser access header, `tool_choice` auto and adaptive thinking, its tools strict only within Anthropic's strict limits as on the server; OpenAI, Google Gemini and model servers through the Chat Completions format with streaming. A request blocked by the page's policy or by the provider's cross-origin rules SHALL be reported as such, saying to reload the page when the owner allowed the provider a moment ago, and a rejected key SHALL be reported as the device's key being rejected, without the key in the message.
 
 #### Scenario: Only the chosen provider
 - **WHEN** a device set up with OpenAI runs a turn while its network is inspected
@@ -635,6 +673,10 @@ The device SHALL call only the provider set up on it: Anthropic's Messages API w
 #### Scenario: Rejected key
 - **WHEN** the provider answers 401
 - **THEN** the answer says the provider rejected the key saved on this device and points to the device settings
+
+#### Scenario: The device's tools exceed the strict limits
+- **WHEN** a device set up with Anthropic offers its 15 tools with 47 optional parameters
+- **THEN** the request carries them without strict mode
 
 ### Requirement: On-device usage stays on the device
 On-device turns SHALL show their token count marked as the user's key, SHALL not be reported to the server and SHALL not count toward or be blocked by the owner's monthly allowance.
@@ -875,3 +917,47 @@ When a device has turned on "Suggest after adding" and the assistant is availabl
 #### Scenario: Other ways to create tasks
 - **WHEN** a task is created by import, the API, CalDAV, email, a pasted list or another device's sync
 - **THEN** no question is sent
+
+### Requirement: On-device read tools match the server's
+The on-device assistant SHALL offer `list_time_entries`, `list_frames`, `list_slots`, `list_notes`, `search_notes` and `get_note` with the server's argument schemas, reading this device's decrypted rows. It SHALL leave out deleted rows and projects kept away from assistants, and mark people's text as untrusted, giving the same results as the server for the same rows. They read local data, so they work offline; they write nothing.
+
+#### Scenario: Time on an encrypted account
+- **WHEN** an encrypted account's on-device assistant calls `list_time_entries` for this week
+- **THEN** it gets the week's entries from this device's rows, with the same fields and totals the server returns for the same entries
+
+#### Scenario: Notes in a kept-away project
+- **WHEN** the device's `search_notes` matches a note in a project kept away from assistants
+- **THEN** that note is not in the result, as on the server
+
+### Requirement: Edit proposals in every shape
+In the calendar, outline and map shapes, every proposed item SHALL offer the same edits as in the list. In the calendar shape, a proposed item SHALL also move to another day or time by dragging or with the keyboard, changing its proposed date. An edited item is marked edited and its edited values apply. Edits work offline and apply as one batch that converges like any applied proposal.
+
+#### Scenario: Drag to another day
+- **WHEN** the user drags a proposed task from Tuesday to Wednesday in the calendar shape and applies
+- **THEN** the task is due Wednesday and the item was marked edited
+
+### Requirement: Proposals that grow over turns
+While a proposal is open and unapplied, a new turn SHALL send it with the request, and the assistant SHALL amend it: adding, changing or dropping items. The card SHALL show the amended proposal and mark what the latest turn changed. Applying applies the amended proposal as one batch.
+
+#### Scenario: Also add a task
+- **WHEN** a proposal moves 3 tasks and the user writes "also add a task to call the plumber"
+- **THEN** the card shows the 3 moves and the new task, the new task marked as added in this turn
+
+#### Scenario: Open proposal too large
+- **WHEN** the open proposal sent with a turn has more than 50 items
+- **THEN** the turn route answers 413 `too_large` and no provider request is made
+
+### Requirement: Cached input in usage
+Each turn SHALL record input read from the provider's prompt cache apart from fresh input, for every provider that reports it. Toward the monthly cap, cache reads SHALL count at one tenth and cache writes in full. The answer's usage line SHALL name the cached part, and `GET /api/v1/me/assistant/usage` SHALL report `cached_tokens` beside its totals. Turns recorded before this have no cached part and count as recorded.
+
+#### Scenario: A cached turn
+- **WHEN** a turn's provider reports 18,000 cache-read input tokens, 2,000 fresh input tokens and 300 output tokens
+- **THEN** 4,100 tokens count toward the cap, and the answer shows "20,300 tokens, 18,000 from cache"
+
+#### Scenario: Usage route reports cache
+- **WHEN** a signed-in user calls `GET /api/v1/me/assistant/usage` after that turn
+- **THEN** the response includes `cached_tokens: 18000` and the counted total of 4,100 for it
+
+#### Scenario: Unauthenticated usage request
+- **WHEN** a request without credentials calls `GET /api/v1/me/assistant/usage`
+- **THEN** the response is 401 `unauthorized`

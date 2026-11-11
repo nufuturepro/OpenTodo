@@ -22,7 +22,6 @@ import { navigate } from './router'
 import { sidebarFind } from './signals'
 import { Shell } from './Shell'
 import { Sidebar } from './Sidebar'
-import budget from './budget.json'
 import { resetSidebarLayout, setSidebarWidth, sidebarLayout, toggleSidebarCollapsed } from './sidebarLayout'
 
 const user = { id: 'u1', email: 'a@example.com', name: 'Ada', role: 'owner', created_at: 0 } as unknown as User
@@ -110,12 +109,12 @@ describe('primary destinations and More (ux-overhaul 4.1)', () => {
     expect(moreToggle(r.container).getAttribute('aria-expanded')).toBe('false')
     expect(moreItems(r.container)).toEqual([])
     await click(moreToggle(r.container))
-    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'completed', 'review', 'stats', 'focus', 'notes', 'places', 'rules', 'trash', 'filter'])
+    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'completed', 'review', 'stats', 'focus', 'places', 'rules', 'trash', 'filter'])
     expect(localStorage.getItem('ot.sidebar.more')).toBe('1')
     // A shared project brings Assigned to me and Updates.
     await db.memberships.put({ projectId: 'p1', role: 'editor', ownerId: 'alice', members: [] } as Membership)
     await waitFor(() => moreItems(r.container).includes('assigned'))
-    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'assigned', 'completed', 'review', 'stats', 'focus', 'notes', 'feed', 'places', 'rules', 'trash', 'filter'])
+    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'assigned', 'completed', 'review', 'stats', 'focus', 'feed', 'places', 'rules', 'trash', 'filter'])
     expect(primaryOf(r.container)).toHaveLength(4)
     await r.unmount()
   })
@@ -163,24 +162,15 @@ describe('primary destinations and More (ux-overhaul 4.1)', () => {
     await r.unmount()
   })
 
-  it('Notes (notes-overview): in More after Focus, promotable in Companion, back in More in Open Loops first with the six destinations unchanged', async () => {
-    await applyOps([{ id: 'n0', entity: 'user_prefs', entityId: 'me', field: 'method_mode', value: 'companion', ts: Date.now() + 500, device: 'laptop' } as Op])
+  it('Notes left More (notes-space D4): a stored notes promotion is ignored and kept in the row', async () => {
+    await applyOps([{ id: 'n0', entity: 'user_prefs', entityId: 'me', field: 'sidebar_destinations', value: 'notes,someday', ts: Date.now() + 500, device: 'laptop' } as Op])
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} />)
+    await waitFor(() => primaryOf(r.container).includes('someday'))
+    expect(primaryOf(r.container)).toEqual(['inbox', 'today', 'upcoming', 'day', 'someday'])
     await waitFor(() => !!r.container.querySelector('[data-testid="sidebar-more"] button[aria-expanded]'), 'the More group')
     await click(moreToggle(r.container))
-    const items = moreItems(r.container)
-    expect(items[items.indexOf('focus') + 1]).toBe('notes')
-    // No count and no marker on the entry.
-    expect(r.container.querySelector('[data-destination="notes"]')!.textContent).toBe('Notes')
-    await setPromoted(await db.userPrefs.get('me'), 'notes', true)
-    await waitFor(() => primaryOf(r.container).includes('notes'))
-    expect(primaryOf(r.container)).toEqual(['inbox', 'today', 'upcoming', 'day', 'notes'])
     expect(moreItems(r.container)).not.toContain('notes')
-    await applyOps([{ id: 'n1', entity: 'user_prefs', entityId: 'me', field: 'method_mode', value: 'first', ts: Date.now() + 1000, device: 'laptop' } as Op])
-    await waitFor(() => primaryOf(r.container)[0] === 'loop')
-    expect(primaryOf(r.container)).toEqual(['loop', 'inbox', 'today', 'next', 'waiting', 'review'])
-    expect(primaryOf(r.container).length).toBeLessThanOrEqual(budget.MAX_PRIMARY_DESTINATIONS)
-    expect(moreItems(r.container)).toContain('notes')
+    await setPromoted(await db.userPrefs.get('me'), 'someday', false)
     expect((await db.userPrefs.get('me'))?.sidebar_destinations).toBe('notes')
     await r.unmount()
   })
@@ -239,7 +229,7 @@ describe('the desktop sidebar (sidebar-compact-desktop)', () => {
     expect(spokenText(toggle)).toBe('More, Review due · no weekly review yet')
     await click(toggle)
     await waitFor(() => moreItems(r.container).length > 0)
-    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'completed', 'review', 'stats', 'focus', 'notes', 'places', 'rules', 'trash', 'filter'])
+    expect(moreItems(r.container)).toEqual(['loop', 'next', 'waiting', 'anytime', 'someday', 'completed', 'review', 'stats', 'focus', 'places', 'rules', 'trash', 'filter'])
     // Choosing one navigates.
     await click(r.container.querySelector<HTMLElement>('[data-sidebar-item][data-destination="someday"]')!)
     await waitFor(() => window.location.pathname === '/someday')
@@ -1050,12 +1040,13 @@ describe('quiet sidebar (quiet-sidebar 1.2-1.4, 2.1)', () => {
 
 // sidebar-v2 D1, D8: the header row is the brand slot; the column takes the tinted sidebar colour.
 describe('the brand header and the sidebar colour', () => {
-  it('Header: the mono mark and the wordmark, no image, search beside them, one row of at most 40 px', async () => {
+  it('Header at rest: the workspace picture and name, no app mark, search beside them, one row of at most 40 px (sidebar-brand-and-row-grid)', async () => {
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} onSearch={() => {}} />)
     await waitFor(() => !!r.container.querySelector('[data-sidebar-header] [data-palette-button]'), 'the header')
     const header = r.container.querySelector('[data-sidebar-header]')!
-    expect(header.querySelector('[data-brand-mark="mono"]')).not.toBeNull()
-    expect(header.querySelector('[data-brand-wordmark]')!.textContent).toBe('OpenTodo')
+    expect(header.querySelector('[data-workspace-mark]')).not.toBeNull()
+    expect(header.querySelector('[data-brand-mark]')).toBeNull()
+    expect(header.querySelector('[data-brand-wordmark]')).toBeNull()
     expect(r.container.querySelector('img')).toBeNull()
     expect(header.querySelector('[data-palette-button]')).not.toBeNull()
     // 32 px with a fine pointer (min-h-8), never wrapping: one flex row.
@@ -1064,12 +1055,18 @@ describe('the brand header and the sidebar colour', () => {
     await r.unmount()
   })
 
-  it('Rail: the mark alone, named OpenTodo', async () => {
+  it('Icon rail: the workspace picture alone, named by the workspace', async () => {
     const r = await render(<Sidebar route={{ view: 'inbox' }} user={user} onSearch={() => {}} collapsed />)
     await waitFor(() => !!r.container.querySelector('[data-sidebar-header] [role="img"]'), 'the rail header')
     const header = r.container.querySelector('[data-sidebar-header]')!
-    expect(header.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('OpenTodo')
-    expect(header.querySelector('[data-brand-wordmark]')).toBeNull()
+    expect(header.querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('Personal')
+    expect(header.querySelector('[data-workspace-mark]')).not.toBeNull()
+    expect(header.querySelector('[data-brand-mark]')).toBeNull()
+    // The brand line keeps the mark alone at the rail's end.
+    const line = r.container.querySelector('[data-brand-line]')!
+    expect(line.querySelector('[data-brand-mark]')).not.toBeNull()
+    expect(line.querySelector('[data-brand-text]')).toBeNull()
+    expect(line.getAttribute('aria-label')).toBe('OpenTodo')
     await r.unmount()
   })
 

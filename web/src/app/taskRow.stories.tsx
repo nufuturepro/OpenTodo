@@ -20,6 +20,7 @@ export default meta
 
 const noop = () => {}
 const home = project({ id: 'p-home', name: 'Home', color: HEX.green })
+const workWithIcon = project({ id: 'p-work', name: 'Work', color: HEX.blue, icon: 'briefcase' })
 const errand = label('l-errand', 'errand', HEX.orange)
 const deepWork = label('l-deep', 'deep-work', HEX.violet)
 const base = { selected: false, showProject: false, onToggle: noop, onOpen: noop }
@@ -124,6 +125,18 @@ export const LabelsAndProject: StoryObj = {
       <TaskRow {...base} showProject project={home} task={task({ id: 't1', title: 'Fix the bike light', project_id: home.id, labels: [errand.id] })} labels={[errand]} />
       <TaskRow {...base} showProject project={home} task={task({ id: 't2', title: 'Read the sync protocol draft', project_id: home.id, due: { date: TOMORROW } })} labels={[deepWork, errand]} />
       <TaskRow {...base} showProject task={task({ id: 't3', title: 'Renew passport' })} labels={[errand]} />
+    </List>
+  ),
+}
+
+/** A project icon and the colour dot fallback in each row layout. */
+export const ProjectIcons: StoryObj = {
+  render: () => (
+    <List>
+      <TaskRow {...base} layout="line" showProject project={workWithIcon} task={task({ id: 't1', title: 'Prepare the demo', project_id: workWithIcon.id })} />
+      <TaskRow {...base} layout="line" showProject project={home} task={task({ id: 't2', title: 'Fix the bike light', project_id: home.id })} />
+      <TaskRow {...base} layout="detailed" showProject project={workWithIcon} task={task({ id: 't3', title: 'Review the demo', project_id: workWithIcon.id })} />
+      <TaskRow {...base} layout="detailed" showProject project={home} task={task({ id: 't4', title: 'Water the plants', project_id: home.id })} />
     </List>
   ),
 }
@@ -368,6 +381,27 @@ export const EveryMetadata: StoryObj = {
         habit={{ current: 6, best: 9, pending: true, atRisk: false } as HabitStats} assignee="Jo"
         task={task({ id: 't-counts', title: 'Prepare the quarterly report', project_id: work.id, due: { date: TOMORROW }, recurrence: 'every week', deadline: '2026-10-30', start: '2026-10-01', estimate_minutes: 60, labels: [errand.id, call.id, homeLabel.id], description: 'Three charts.', assignee_id: 'u-jo', origin: { kind: 'issue', provider: 'github', id: 'o/r#7', url: 'https://github.com/o/r/issues/7' } })} />
     </List>
+  ),
+}
+
+/**
+ * The row grid (sidebar-brand-and-row-grid D2 to D4) in a 64 rem list: the slots project,
+ * labels, estimate, date and assignee line up down the list, an empty slot keeps its
+ * width, the unused assignee slot takes none, the dates end the column; the marks sit on
+ * the title's first baseline, also on a wrapped title; Evening is an icon in the time column.
+ */
+export const SlotGrid: StoryObj = {
+  render: () => (
+    <ul className="max-w-5xl space-y-0.5 rounded-card border border-default bg-surface p-2 shadow-1">
+      {[
+        <TaskRow key="a" {...base} showProject timeColumn slotsOff="assignee" project={home} labels={[errand]} task={task({ id: 'g1', title: 'Fix the bike light', project_id: home.id, labels: [errand.id], estimate_minutes: 45, due: { date: TOMORROW, time: '09:30' } })} />,
+        <TaskRow key="b" {...base} showProject timeColumn slotsOff="assignee" project={home} task={task({ id: 'g2', title: 'Pay the water bill', project_id: home.id, due: { date: '2026-10-20' } })} />,
+        <TaskRow key="c" {...base} showProject timeColumn slotsOff="assignee" labels={[deepWork]} task={task({ id: 'g3', title: 'Read the sync protocol draft', labels: [deepWork.id] })} />,
+        <TaskRow key="d" {...base} showProject timeColumn slotsOff="assignee" project={home} progress={{ done: 2, total: 3 }}
+          task={task({ id: 'g4', title: 'Prepare the quarterly report with the three charts finance asked for, the summary and the appendix of every number that changed since the last quarter', priority: 1, recurrence: 'every week', project_id: home.id, due: { date: TODAY } })} />,
+        <TaskRow key="e" {...base} showProject timeColumn slotsOff="assignee" project={home} task={task({ id: 'g5', title: 'Water the plants', evening: true, project_id: home.id, due: { date: '2026-10-16' } })} />,
+      ]}
+    </ul>
   ),
 }
 

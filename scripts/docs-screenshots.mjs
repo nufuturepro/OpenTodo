@@ -100,6 +100,11 @@ async function context(theme, opts = {}) {
   return c
 }
 const settle = (p, ms = 600) => p.waitForTimeout(ms)
+/** Clears the assistant's Memory through its card (assistant-memory shots). */
+async function clearMemory(p) {
+  await p.locator('[data-memory-clear]').click(); await p.getByRole('alertdialog').getByRole('button', { name: 'Clear all' }).click()
+  await p.locator('[data-memory-text]').first().waitFor({ state: 'detached' })
+}
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const row = (p, title) => p.getByRole('button', { name: new RegExp('^' + esc(title)) }).first()
 const detail = (p) => p.locator('[data-detail-for]')
@@ -326,6 +331,93 @@ const shots = [
     await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
     await settle(p, 400)
   } },
+  // The home of notes (notes-home): two standalone notes pinned from their row menus, the
+  // sample data's notes under Recent; both notes are removed after (which takes them out of Pinned).
+  { name: 'notes-home', server: D, async run(p) {
+    await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
+    const add = (title, description) => p.evaluate(async ([t, d]) => (await (await fetch('/api/v1/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t, description: d }) })).json()).id, [title, description])
+    p.notesHome = [await add('Packing list', 'Passport, chargers, the blue jacket'), await add('Wi-Fi', 'home-5G, the password is on the router')]
+    for (const id of p.notesHome) {
+      const row = p.locator(`[data-note-key="note:${id}"]`); await row.waitFor()
+      await row.locator('[data-note-menu]').click(); await p.locator('[data-note-pin="pin"]').click()
+      await p.locator(`[data-notes-group="pinned"]`).waitFor()
+    }
+    await p.mouse.move(900, 700); await settle(p, 500)
+  }, async after(p) {
+    for (const id of p.notesHome ?? []) await p.evaluate((nid) => fetch(`/api/v1/notes/${nid}`, { method: 'DELETE' }), id).catch(() => {})
+  } },
+  // Search tokens (notes-space): a kind chip, then `in:` typed with the project suggestions open.
+  { name: 'note-tokens', server: D, async run(p) {
+    await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
+    const field = p.locator('[data-note-search]'); await field.click()
+    await field.pressSequentially('kind:task in:', { delay: 15 })
+    await p.locator('[data-note-suggestions] [role="option"]').first().waitFor(); await p.mouse.move(900, 700); await settle(p, 500)
+  } },
+  // Note links (note-links): a new note, `[[` typed and the picker open on a task of the sample data; the note is removed after.
+  { name: 'note-links', server: D, async run(p) {
+    await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
+    await p.getByRole('button', { name: 'New note' }).first().click(); await settle(p, 800)
+    const title = p.locator('input[data-note-title-field]')
+    // The new note is first in the list: open it when it did not open by itself.
+    if (!(await title.count())) await p.locator('[data-note-key]').first().click()
+    await title.waitFor(); await title.fill('Kitchen meeting'); await title.press('Enter')
+    const editor = p.locator('[data-note-form] .notes-editor[contenteditable="true"]'); await editor.waitFor(); await editor.click()
+    await p.keyboard.type('Agenda for Thursday. Next: [[quotes', { delay: 15 })
+    await p.locator('[data-suggest="link"] [role="option"]').first().waitFor(); await p.mouse.move(600, 700); await settle(p, 500)
+  }, async after(p) {
+    const id = new URL(p.url()).pathname.split('/').pop()
+    await p.keyboard.press('Escape'); await p.keyboard.press('Escape')
+    await p.evaluate((nid) => fetch(`/api/v1/notes/${nid}`, { method: 'DELETE' }), id).catch(() => {})
+  } },
+  // Connections (notes-graph): a note linked with three others, one of them linked onward, its graph open; the notes are removed after.
+  { name: 'note-connections', server: D, async run(p) {
+    await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
+    const add = (title, description) => p.evaluate(async ([t, d]) => (await (await fetch('/api/v1/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t, description: d }) })).json()).id, [title, description])
+    const times = await add('Ferry times', 'Every 20 minutes from Cais do Sodré')
+    const food = await add('Places to eat', 'Cafés near the river')
+    const trip = await add('Trip to Lisbon', `Ferry: [Ferry times](?note=${times}). Food: [Places to eat](?note=${food}).`)
+    const packing = await add('Packing list', `For the [Trip to Lisbon](?note=${trip}): light jacket, sandals.`)
+    const tram = await add('Tram 28', `Starts near [Places to eat](?note=${food}).`)
+    p.connections = [times, food, trip, packing, tram]
+    // Open the note from its row once it has synced, then the graph button of its Linked references (Packing list links to it).
+    const row = p.locator(`[data-note-key="note:${trip}"]`); await row.waitFor(); await row.click()
+    await p.locator('[data-connections-open]').waitFor(); await settle(p, 300)
+    await p.locator('[data-connections-open]').click()
+    await p.locator('[data-connections-graph]').waitFor(); await p.mouse.move(10, 700); await settle(p, 500)
+  }, async after(p) {
+    await p.keyboard.press('Escape')
+    for (const id of p.connections ?? []) await p.evaluate((nid) => fetch(`/api/v1/notes/${nid}`, { method: 'DELETE' }), id).catch(() => {})
+  } },
+  // The graph of all notes (notes-graph-page): a dozen linked notes in the Notes page's Graph mode; removed after.
+  { name: 'notes-graph', server: D, async run(p) {
+    await go(p, demoBase, '/notes', () => p.locator('[data-note-key], [data-empty-state]').first().waitFor())
+    // Each cluster in a project of the sample data, so the graph shows its colours.
+    const projects = await p.evaluate(async () => ((await (await fetch('/api/v1/projects')).json()).projects ?? []).map((x) => x.id))
+    let cluster = 0
+    const add = (title, description) => p.evaluate(async ([t, d, pid]) => (await (await fetch('/api/v1/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: t, description: d, project_id: pid }) })).json()).id, [title, description, projects[cluster] ?? null])
+    const link = (title, id) => `[${title}](?note=${id})`
+    const index = await add('Index', '')
+    const made = { Index: index }
+    const groups = [['Trip to Lisbon', 'Packing list', 'Ferry times', 'Places to eat', 'Tram 28'], ['Reading list', 'Deep Work', 'Quotes', 'Book club'], ['Garden', 'Tomatoes', 'Compost', 'Seed swap']]
+    for (const g of groups) {
+      cluster++
+      let prev = null
+      for (const title of g) {
+        const parts = [prev && link(prev, made[prev]), g[0] !== title && link(g[0], made[g[0]])].filter(Boolean)
+        made[title] = await add(title, parts.length ? `See ${parts.join(' and ')}.` : '')
+        prev = title
+      }
+    }
+    made['Weekly review'] = await add('Weekly review', `${link('Index', index)}, ${link('Reading list', made['Reading list'])}, ${link('Garden', made.Garden)} and ${link('Trip to Lisbon', made['Trip to Lisbon'])}.`)
+    p.graphNotes = Object.values(made)
+    await go(p, demoBase, '/notes?view=graph', () => p.locator('[data-notes-graph][data-ready]').waitFor())
+    // The demo's reminder toast would cover the graph.
+    await p.addStyleTag({ content: '[aria-label^="Reminder:"] { display: none !important }' })
+    await p.mouse.move(10, 700); await settle(p, 600)
+  }, async after(p) {
+    await p.evaluate(() => localStorage.removeItem('opentodo.notes.view'))
+    for (const id of p.graphNotes ?? []) await p.evaluate((nid) => fetch(`/api/v1/notes/${nid}`, { method: 'DELETE' }), id).catch(() => {})
+  } },
   // Focus (focus-mode 7.2): a task of the sample data, its session started a moment ago.
   { name: 'focus', server: D, async run(p) {
     await go(p, demoBase, '/focus', () => p.locator('[data-focus-timer], [data-empty-state="focus"]').first().waitFor())
@@ -334,7 +426,7 @@ const shots = [
       await p.getByRole('option').first().click()
       await p.locator('[data-focus-timer]').waitFor()
     }
-    await p.locator('[data-focus-toggle]').click(); await settle(p, 1200)
+    await p.locator('[data-focus-toggle]').click(); await p.mouse.move(0, 0); await settle(p, 1200)
   } },
   // stats-and-review: the weekly review on its first unfinished step, and Statistics.
   { name: 'review', server: D, async run(p) { await go(p, demoBase, '/review', () => p.locator('#review-step-title').waitFor()); await settle(p, 300) } },
@@ -345,16 +437,16 @@ const shots = [
     await p.locator('[data-offer="start"]').getByRole('button', { name: 'Keep my start view' }).click()
     const contexts = p.locator('[data-offer="contexts"]')
     if (await contexts.count()) await contexts.getByRole('button', { name: 'Create them' }).click()
-    await go(p, demoBase, '/loop', () => p.locator('[data-loop-tile="do"]').waitFor()); await settle(p, 300)
+    await go(p, demoBase, '/loop/clarify', () => p.locator('[data-loop-part="clarify"]').waitFor()); await settle(p, 300)
   }, async after(p) {
     await go(p, demoBase, '/settings/account/profile', () => p.locator('[data-method-mode="lists"]').waitFor())
     await p.locator('[data-method-mode="lists"]').click(); await settle(p, 300)
   } },
   { name: 'next', server: D, async run(p) { await go(p, demoBase, '/next', () => p.locator('[data-group]').first().waitFor()); await settle(p, 300) } },
-  // close-the-day: the Carry over step with its decisions.
+  // close-the-day-redesign: the What moves step with its decisions.
   { name: 'close-day', server: D, async run(p) {
-    await go(p, demoBase, '/review/close', () => p.locator('#review-step-title').waitFor())
-    await p.keyboard.press(']'); await p.locator('[data-review-step="carry"]').waitFor(); await settle(p, 300)
+    await go(p, demoBase, '/review/close', () => p.locator('#close-step-title').waitFor())
+    await p.keyboard.press(']'); await p.locator('[data-close-step="moves"]').waitFor(); await settle(p, 300)
   } },
   { name: 'review-walk', server: D, async run(p) { await go(p, demoBase, '/review/projects', () => p.locator('[data-walk-card]').waitFor()); await settle(p, 300) } },
   { name: 'stats', server: D, async run(p) { await go(p, demoBase, '/stats', () => p.locator('[data-period-chooser]').waitFor()); await settle(p, 300) } },
@@ -409,6 +501,38 @@ const shots = [
   }, async after(p) {
     await p.locator('[data-display-panel] select[aria-label="Group by"]').selectOption('section').catch(() => {})
     await p.keyboard.press('Escape')
+  } },
+  // A project ordered by urgency (urgency-sort) with the first row's breakdown open, as Enter on its score opens it; the order syncs, so the scene puts it back.
+  { name: 'urgency-order', server: D, async run(p) {
+    await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation')
+    await p.locator('main [data-display-trigger]').first().click(); await p.locator('[data-display-panel]').waitFor()
+    await p.locator('[data-display-panel] select[aria-label="Order by"]').selectOption('urgency')
+    await p.keyboard.press('Escape'); await p.locator('[data-urgency-chip]').first().waitFor(); await p.mouse.move(700, 40)
+    await p.locator('[data-urgency-chip]').first().focus(); await p.keyboard.press('Enter')
+    await p.locator('[data-urgency-breakdown]').waitFor(); await settle(p, 500)
+  }, async after(p) {
+    await p.keyboard.press('Escape')
+    await p.locator('main [data-display-trigger]').first().click().catch(() => {})
+    await p.locator('[data-display-panel] select[aria-label="Order by"]').selectOption('position').catch(() => {})
+    await p.keyboard.press('Escape')
+  } },
+  // Priority names (priority-names): three levels named in Settings → General → Priorities, then Home renovation
+  // grouped by priority under those names. Names and grouping sync, so the scene puts both back.
+  { name: 'priorities', server: D, async run(p) {
+    await go(p, demoBase, '/settings/general/priorities', () => p.locator('[data-priority-name="1"]').waitFor())
+    for (const [n, name] of [[1, 'Must'], [2, 'Should'], [3, 'Could']]) await p.locator(`[data-priority-name="${n}"]`).fill(name)
+    await settle(p, 400)
+    await go(p, demoBase, '/inbox'); await openProject(p, 'Home renovation')
+    await p.locator('main [data-display-trigger]').first().click(); await p.locator('[data-display-panel]').waitFor()
+    await p.locator('[data-display-panel] select[aria-label="Group by"]').selectOption('priority')
+    await p.keyboard.press('Escape'); await p.locator('[data-group-label]', { hasText: 'Must' }).first().waitFor()
+    await p.mouse.move(700, 40); await p.locator('body').evaluate(() => (document.activeElement)?.blur()); await settle(p, 500)
+  }, async after(p) {
+    await p.locator('main [data-display-trigger]').first().click().catch(() => {})
+    await p.locator('[data-display-panel] select[aria-label="Group by"]').selectOption('section').catch(() => {})
+    await p.keyboard.press('Escape')
+    await go(p, demoBase, '/settings/general/priorities', () => p.locator('[data-priority-names-reset]').waitFor())
+    await p.locator('[data-priority-names-reset]').click(); await settle(p, 400)
   } },
   // Detailed rows (row-layouts): the project's own choice in Display options; the choice syncs, so the scene puts it back.
   { name: 'row-layouts', server: D, async run(p) {
@@ -818,6 +942,10 @@ const shots = [
   { name: 'assistant-review', server: 'assistant', async run(p) {
     await ask(p, 'Move everything overdue to Friday', () => p.locator('[data-assistant-review]').waitFor({ timeout: 20000 }))
   }, async after(p) { await p.locator('[data-assistant-review]').getByRole('button', { name: 'Discard' }).click().catch(() => {}) } },
+  // Blocks in an answer (assistant-generative-ui): the day's tasks and the day as planned.
+  { name: 'assistant-answers', server: 'assistant', async run(p) {
+    await ask(p, 'Plan my day', () => p.locator('[data-assistant-panel] [data-assistant-block="calendar"] [data-agenda-item]').first().waitFor({ timeout: 20000 }))
+  } },
   { name: 'assistant-phone', server: 'assistant', phone: true, async run(p) {
     await ask(p, 'Move everything overdue to Friday', () => p.locator('[data-assistant-review]').waitFor({ timeout: 20000 }))
   }, async after(p) { await p.locator('[data-assistant-review]').getByRole('button', { name: 'Discard' }).click().catch(() => {}) } },
@@ -874,6 +1002,13 @@ const shots = [
     const main = await p.locator('main').boundingBox(); const top = await h.boundingBox()
     return { x: main.x, y: Math.max(0, top.y - 20), width: main.width, height: 560 }
   } },
+  // Brief me under Assistant in Today's menu (assistant-in-context), the menu open.
+  { name: 'assistant-in-context', server: 'assistant', async run(p) {
+    await go(p, assistantBase, '/today', () => p.getByRole('heading', { name: 'Today', level: 1 }).waitFor())
+    await p.locator('[data-page-header] button[aria-label="More actions"]').first().click()
+    const menu = p.getByRole('menu'); await p.locator('[data-assistant-brief]').waitFor(); await p.mouse.move(2, 2); await settle(p, 500)
+    return clipOf(p, menu, 16)
+  }, async after(p) { await p.keyboard.press('Escape') } },
   // The owner's switch for the on-device assistant of encrypted accounts (assistant-on-device), not saved.
   { name: 'assistant-device-owner', server: 'assistant', async run(p) {
     await go(p, assistantBase, '/settings/integrations/assistant', () => p.getByRole('heading', { name: 'Assistant', level: 1 }).waitFor())
@@ -887,6 +1022,21 @@ const shots = [
     const box = await group.boundingBox()
     return { x: Math.max(0, box.x - 24), y: Math.max(0, box.y - 24), width: box.width + 48, height: box.height + 48 }
   } },
+  // The assistant card's Memory (assistant-memory): three facts added there, cleared after each shot.
+  { name: 'assistant-memory', server: 'assistant', async run(p) {
+    await go(p, assistantBase, '/settings/integrations/assistant', () => p.getByRole('heading', { name: 'Assistant', level: 1 }).waitFor())
+    const group = p.locator('[data-assistant-card-group="assistant-memory"]'); await group.waitFor(); await settle(p, 1500)
+    if (await group.locator('[data-memory-text]').count()) await clearMemory(p)
+    for (const text of ['Works Monday to Thursday', 'Mornings are for deep work; meetings after 14:00', 'Anna is my manager']) {
+      await group.locator('[data-memory-add]').click()
+      await group.locator('[data-memory-input]').fill(text); await group.locator('[data-memory-input]').press('Enter')
+      await group.locator('[data-memory-text]', { hasText: text }).waitFor()
+    }
+    await p.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur())
+    await group.evaluate((el) => el.scrollIntoView({ block: 'center' })); await p.mouse.move(2, 2); await settle(p, 600)
+    const box = await group.boundingBox()
+    return { x: Math.max(0, box.x - 24), y: box.y + 2, width: box.width + 48, height: box.height + 14 }
+  }, async after(p) { await clearMemory(p); await settle(p, 2500) } },
 ]
 
 // ------------------------------------------------------------------ run

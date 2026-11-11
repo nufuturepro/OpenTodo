@@ -2,6 +2,7 @@ import { t } from './i18n/catalog'
 import type { Due } from './types'
 import type { DateTimePrefs } from './userPrefs'
 import { createSignal } from './store'
+import { onPageVisibility, platform } from './platform'
 
 /** Local calendar date as YYYY-MM-DD. */
 export function todayISO(now = new Date()): string {
@@ -68,13 +69,7 @@ export function addDaysISO(iso: string, days: number): string {
 
 const DAY_MS = 86_400_000
 
-function resolveZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  } catch {
-    return 'UTC'
-  }
-}
+const resolveZone = () => platform.timeZone.current()
 
 let currentZone = resolveZone()
 const zone = createSignal()
@@ -100,13 +95,13 @@ export function refreshViewerZone(): boolean {
 /** Subscribe to viewer-zone changes; returns the unsubscribe function. */
 export const onViewerZoneChange = zone.subscribe
 
-/** Re-resolve the zone whenever the page becomes visible again (design D5). */
-export function watchViewerZone(doc: Document = document): () => void {
-  const onVisibility = () => {
-    if (doc.visibilityState === 'visible') refreshViewerZone()
-  }
-  doc.addEventListener('visibilitychange', onVisibility)
-  return () => doc.removeEventListener('visibilitychange', onVisibility)
+/**
+ * Re-resolve the zone when the host says it may have changed: on the web, when
+ * the page becomes visible again (design D5); `doc` is a test's page.
+ */
+export function watchViewerZone(doc?: Document): () => void {
+  if (doc) return onPageVisibility((visible) => visible && refreshViewerZone(), doc)
+  return platform.timeZone.onChange(refreshViewerZone)
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>()
@@ -629,13 +624,13 @@ export function weekDays(iso: string, p: ResolvedDateTime = current): string[] {
 export interface QuickChoice {
   id: string
   label: string
-  /** The date it means, `null` for "No date", `'someday'` for Someday. */
+  /** The date it means, `'someday'` for Someday (`null`: no date). */
   date: string | null | 'someday'
 }
 
 /**
  * The quick choices of a date segment, from one table so the words match the row and
- * the quick-add parser: Do on (Today, Tomorrow, This weekend, Next week, No date),
+ * the quick-add parser: Do on (Today, Tomorrow, This weekend, Next week; Clear removes the date),
  * Start (Today, Tomorrow, Next week, Someday) and Deadline (End of week, End of
  * month, In 2 weeks). Weeks follow the user's first day of the week.
  */
@@ -653,7 +648,6 @@ export function quickChoices(kind: 'due' | 'start' | 'deadline', today = logical
       { id: 'tomorrow', label: t('Tomorrow'), date: addDaysISO(today, 1) },
       { id: 'weekend', label: t('This weekend'), date: weekend },
       { id: 'next-week', label: t('Next week'), date: nextWeek },
-      { id: 'none', label: t('No date'), date: null },
     ]
     case 'start': return [
       { id: 'today', label: t('Today'), date: today },

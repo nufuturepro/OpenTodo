@@ -2,6 +2,7 @@
 // every extra kilobyte matters on a low-end phone.
 import { useMemo, useSyncExternalStore } from 'react'
 import { readCalendarMode } from '../lib/calendarMode'
+import { readString } from '../lib/deviceStorage'
 import { resettable } from '../lib/moduleState'
 import { displayTargetPath, parseDisplayOptions, parseDisplayTarget, serializeDisplayOptions, type DisplayOptions, type DisplayTarget } from './display/displayOptions'
 import { afterOverlayPops } from '../ui'
@@ -70,25 +71,32 @@ export type Route =
   // Open Loops (open-loops-method): the derived Next and Waiting views.
   | { view: 'next' }
   | { view: 'waiting' }
-  | { view: 'loop' }
+  // The Loop home (loop-guided-dashboard D4): /loop/<move> opens that move in place.
+  | { view: 'loop'; move?: LoopMove }
   // Focus (focus-mode D7): one task and a timer; /focus takes the first task of today's focus.
   | { view: 'focus'; id?: string }
   // Notes (notes-overview D7): every note, /notes/<id> one standalone note; `create` (/notes?new=1) starts a new note.
-  | { view: 'notes'; id?: string; create?: boolean }
+  // `graph` (notes-graph-page D1): the Graph mode, ?view=graph; left out, the mode last shown on this device.
+  | { view: 'notes'; id?: string; create?: boolean; graph?: boolean }
+
+/** The Open Loops moves a Loop home address can open (lib/method's MoveId, kept here so the router stays small). */
+export type LoopMove = 'catch' | 'clarify' | 'place' | 'do' | 'review'
+const LOOP_MOVES: readonly string[] = ['catch', 'clarify', 'place', 'do', 'review']
 
 /**
  * Whether a view offers quick add, which decides the floating add button on a
  * phone. Screens with nothing to add a task to (Settings and its sub-pages, the
  * theme editor, Import, Help, the feeds, statistics, sign-in links) leave the
  * button out: there it would only cover the ends of rows and form fields. Every
- * view is listed, so a new one has to decide.
+ * view is listed, so a new one has to decide. The rituals that keep nothing else
+ * on screen, Focus and Close the day, leave it out too (no-layout-jump).
  */
 export const VIEW_QUICK_ADD: Readonly<Record<Route['view'], boolean>> = {
   inbox: true, today: true, upcoming: true, someday: true, anytime: true,
   day: true, week: true, month: true, plan: true, year: true,
   completed: true, assigned: true, project: true, task: true, label: true, labels: true,
   places: true, place: true, projects: true, filter: true, views: true, view: true,
-  triage: true, review: true, next: true, waiting: true, loop: true, focus: true, notes: true,
+  triage: true, review: true, next: true, waiting: true, loop: true, focus: false, notes: true,
   rules: false, settings: false, 'theme-editor': false, import: false, help: false,
   invite: false, 'project-invite': false, 'workspace-invite': false, reset: false,
   'confirm-email': false, forgot: false, verify: false, public: false, share: false,
@@ -97,6 +105,7 @@ export const VIEW_QUICK_ADD: Readonly<Record<Route['view'], boolean>> = {
 
 /** Whether the route's view offers quick add (VIEW_QUICK_ADD). */
 export function offersQuickAdd(r: Route): boolean {
+  if (r.view === 'review' && r.step === 'close') return false
   return VIEW_QUICK_ADD[r.view]
 }
 
@@ -265,13 +274,15 @@ export function parseRoute(pathname: string): Route {
     case 'waiting':
       return { view: 'waiting' }
     case 'loop':
-      return { view: 'loop' }
+      return LOOP_MOVES.includes(parts[1]) ? { view: 'loop', move: parts[1] as LoopMove } : { view: 'loop' }
     case 'stats':
       return { view: 'stats' }
     case 'focus':
       return parts[1] ? { view: 'focus', id: safeDecode(parts[1]) } : { view: 'focus' }
-    case 'notes':
-      return parts[1] ? { view: 'notes', id: safeDecode(parts[1]) } : { view: 'notes' }
+    case 'notes': {
+      const graph = new URLSearchParams(query).get('view') === 'graph' ? { graph: true } : {}
+      return parts[1] ? { view: 'notes', id: safeDecode(parts[1]), ...graph } : { view: 'notes', ...graph }
+    }
     default:
       return { view: 'inbox' }
   }
@@ -359,10 +370,14 @@ export function routePath(r: Route): string {
     }
     case 'review':
       return r.step ? `/review/${r.step}` : '/review'
+    case 'loop':
+      return r.move ? `/loop/${r.move}` : '/loop'
     case 'focus':
       return r.id ? `/focus/${encodeURIComponent(r.id)}` : '/focus'
-    case 'notes':
-      return r.id ? `/notes/${encodeURIComponent(r.id)}` : r.create ? '/notes?new=1' : '/notes'
+    case 'notes': {
+      const graph = r.graph ?? readString(NOTES_VIEW_KEY) === 'graph'
+      return r.id ? `/notes/${encodeURIComponent(r.id)}${graph ? '?view=graph' : ''}` : r.create ? `/notes?new=1${graph ? '&view=graph' : ''}` : graph ? '/notes?view=graph' : '/notes'
+    }
     case 'help':
       return `/help${r.page ? `/${encodeURIComponent(r.page)}` : ''}${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}`
     default:
@@ -370,11 +385,16 @@ export function routePath(r: Route): string {
   }
 }
 
+/** The Notes page's mode last shown on this device (notes-graph-page D1), written by the page. */
+export const NOTES_VIEW_KEY = 'opentodo.notes.view'
+
 /**
  * The address the router tracks: the path, plus the query on display routes,
  * whose presentation options live there (display-mode D2).
  */
 export function addressOf(loc: Pick<Location, 'pathname' | 'search'>): string {
+  // The Notes page's Graph mode is its address (notes-graph-page D1); its other parameters are not.
+  if ((loc.pathname === '/notes' || loc.pathname.startsWith('/notes/')) && new URLSearchParams(loc.search).get('view') === 'graph') return `${loc.pathname}?view=graph`
   // A routine's page keeps ?run=<run> (routines-editor-page D1), so a reload shows the run.
   return loc.pathname === '/display' || loc.pathname.startsWith('/display/') || loc.pathname.startsWith('/routines/') ? `${loc.pathname}${loc.search}` : loc.pathname
 }

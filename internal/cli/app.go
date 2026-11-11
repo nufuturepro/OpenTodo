@@ -165,8 +165,8 @@ func init() {
 	commands = []command{
 		{"login", "sign in with email and password and store an API token", "ot login <server-url> [--email <email>] [--profile <name>]", cmdLogin},
 		{"auth", "manage the stored credentials: set-token, status, logout", "ot auth set-token <token> [--server <url>]\not auth status\not auth logout [--yes]", cmdAuth},
-		{"list", "list tasks (default: all open tasks)", "ot list [--inbox|--today|--upcoming|--project <name-or-id>|--completed|--all] [--limit <n>]", cmdList},
-		{"today", "alias for `ot list --today`", "ot today [--all] [--limit <n>]", viewAlias("today")},
+		{"list", "list tasks (default: all open tasks)", "ot list [--inbox|--today|--upcoming|--project <name-or-id>|--completed|--all] [--sort default|urgency] [--limit <n>]", cmdList},
+		{"today", "alias for `ot list --today`", "ot today [--all] [--sort default|urgency] [--limit <n>]", viewAlias("today")},
 		{"inbox", "alias for `ot list --inbox`", "ot inbox [--limit <n>]", viewAlias("inbox")},
 		{"upcoming", "alias for `ot list --upcoming`", "ot upcoming [--limit <n>]", viewAlias("upcoming")},
 		{"add", "create a task and print its id", "ot add <title> [--project <name-or-id>] [--due <when>] [--time HH:MM] [--priority 1-4] [--label <l>]... [--note <text>] [--idempotency-key <key>]", cmdAdd},
@@ -174,7 +174,7 @@ func init() {
 		{"done", "complete one or more tasks", "ot done <ref>...", cmdDone},
 		{"reopen", "reopen one or more completed tasks", "ot reopen <ref>...", cmdReopen},
 		{"rm", "delete one or more tasks (soft delete)", "ot rm <ref>... [--yes]", cmdRm},
-		{"notes", "notes: list, search, show, add, edit, append, rm, to-task", "ot notes [list] [--source note|task|project|all] [--standalone] [--project <ref>] [--label <ref>] [--search <text>] [--limit <n>]\not notes search <text>\not notes show <ref>\not notes add <title> [--project <ref>] [--label <l>]... [--body <text> | --body-file <path|->] [--idempotency-key <key>]\not notes edit <ref> [--title <t>] [--project <ref|none>] [--label <l>]... [--body <text> | --body-file <path|->]\not notes append <ref> <text> | --body-file <path|->\not notes rm <ref>... [--yes]\not notes to-task <ref>", cmdNotes},
+		{"notes", "notes: list, search, show, links, add, edit, append, rm, to-task", "ot notes [list] [--source note|task|project|all] [--standalone] [--project <ref>] [--label <ref>] [--search <text>] [--limit <n>]\not notes search <text>\not notes show <ref>\not notes links <ref>\not notes add <title> [--project <ref>] [--label <l>]... [--body <text> | --body-file <path|->] [--idempotency-key <key>]\not notes edit <ref> [--title <t>] [--project <ref|none>] [--label <l>]... [--body <text> | --body-file <path|->]\not notes append <ref> <text> | --body-file <path|->\not notes rm <ref>... [--yes]\not notes to-task <ref>", cmdNotes},
 		{"task", "one task: show, note, occurrences, occurrence, split", "ot task show <ref>\not task note <ref> [--set <text> | --file <path|-> | --append <text> | --clear]", cmdTask},
 		{"project", "manage projects: list, add, rename, edit, move, archive, rm", "ot project list [--all]\not project add <name> [--color <#rrggbb>] [--idempotency-key <key>]\not project rename <ref> <new-name>\not project edit <ref> [--reusable|--no-reusable] [--aisles|--no-aisles]\not project move <ref> --workspace <name>\not project archive <ref> [--undo]\not project rm <ref> [--yes]", cmdProject},
 		{"token", "manage API tokens: list, create, revoke", "ot token list\not token create <name> [--scope full|read|agent]\not token revoke <id-or-name> [--yes]", cmdToken},
@@ -422,7 +422,7 @@ func flagUsage(f flagSpec) string {
 }
 
 var commandHelp = map[string]string{
-	"list":       "Filters: --inbox (no project), --today (due today or earlier, overdue first), --upcoming (due after today),\n--project <name-or-id>, --completed (most recent first), --all (open and completed). Default: every open task.",
+	"list":       "Filters: --inbox (no project), --today (due today or earlier, overdue first), --upcoming (due after today),\n--project <name-or-id>, --completed (most recent first), --all (open and completed). Default: every open task.\n--sort urgency: the most urgent first by the urgency score, with a URG column.",
 	"add":        "--due accepts YYYY-MM-DD, today, tomorrow or an English weekday (next occurrence). --time needs HH:MM.\n--label may be repeated. Prints the new task id; with --json prints the task.",
 	"edit":       "Clear a value with --due none, --project none or --note \"\". Only the given flags change.",
 	"rm":         "Soft-deletes (tombstone). Asks for confirmation on a terminal unless --yes is given;\noff a terminal or with --json it refuses without --yes (exit 2).",

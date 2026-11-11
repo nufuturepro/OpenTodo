@@ -1,5 +1,8 @@
 import { useWorkspaceFilter } from './useWorkspaceFilter'
-import { Button, CatalogueIcon, Icon, type IconName, isCatalogueIcon, MenuItem, MenuSeparator, ReadAs, SIDEBAR_GROUP_ACTION, SIDEBAR_HEADING, SidebarGroup, SidebarGroupAction, SidebarHeader, SidebarItem, StatusDot, Menu, Tooltip, useMediaQuery, useScrollEdges } from '../ui'
+import { Button, Icon, type IconName, MenuItem, MenuSeparator, pushOverlay, ReadAs, SIDEBAR_GROUP_ACTION, SIDEBAR_HEADING, SidebarGroup, SidebarGroupAction, SidebarHeader, SidebarItem, StatusDot, Menu, Tooltip, useMediaQuery, useScrollEdges } from '../ui'
+import { ProjectMark } from './ProjectMark'
+// ProjectHeader imports through this re-export to preserve the entry chunk split (see the bundle budget).
+export { ProjectMark } from './ProjectMark'
 import { keysOf, SHORTCUTS } from '../lib/shortcuts'
 import { useShortcutHints } from './shortcuts/hints'
 
@@ -7,7 +10,7 @@ import { useShortcutHints } from './shortcuts/hints'
 const GO_KEYS: Record<string, string> = Object.fromEntries(SHORTCUTS.filter((s) => s.id.startsWith('go.')).map((s) => [s.id.slice(3), s.keys[0]]))
 import { requestTemplateDialog } from './TemplateDialogs'
 import { ProjectPickerField } from './ProjectPickerField'
-import { type FormEvent, Fragment, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, Fragment, type KeyboardEvent, lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { orderDestinations, readAppearance, readSidebarCounts, type DestinationId, type Promotable } from '../lib/appearance'
 import { useAssistantStatus } from '../lib/assistantStatus'
 import { readCalendarMode } from '../lib/calendarMode'
@@ -17,8 +20,7 @@ import { dailyDue, dayClosed, monthlyDue, reviewAgo, reviewDue } from '../lib/re
 import { formatInstant } from '../lib/dates'
 import { readMethodMode, type MethodMode } from '../lib/method/mode'
 import { SidebarFooter } from './SidebarFooter'
-import { WorkspaceControl } from './WorkspaceControl'
-import { InstanceMark, useInstanceName } from './InstanceBrand'
+import { useCurrentWorkspace, WorkspaceControl, WorkspaceMark } from './WorkspaceControl'
 import { buildProjectTree, collapseAllProjects, expandAllProjects, expandAncestorsOf, projectPath, rollUpCounts, siblingEdges, toggleCollapsedProject, visibleProjects, type ProjectNode, useCollapsedProjects } from '../lib/projects'
 import { flattenTree } from '../lib/tree'
 import type { Label, Project, Review, Task, User, View } from '../lib/types'
@@ -29,6 +31,8 @@ import { LabelRow, NewLabelForm, useLabelData, useLabelDrag } from './LabelsView
 import { ViewMark, ViewMenu } from './ViewsView'
 import { FavouritesGroup } from './FavouritesGroup'
 import { ProjectRowMenu } from './ProjectRowMenu'
+import { SidebarAppearance } from './sidebarAppearanceLazy'
+import { renameProject } from './menus/projectAppearance'
 import { useFavourites } from './useFavourites'
 import { useAssigneeDirectory, useToday, useViewerZone, useViews } from './useViews'
 import { MAX_INDENT } from './TaskRow'
@@ -53,6 +57,11 @@ import { StartGuideMoreItem, StartGuideMoreMenuItems } from './FirstDay'
 import { readString, writeString } from '../lib/deviceStorage'
 import { SidebarSchedule } from './calendar/SidebarSchedule'
 import { useResetOnChange } from '../lib/useResetOnChange'
+import { useShownSpace } from '../lib/sidebarSpace'
+import { SpaceSwitch } from './SpaceSwitch'
+
+/** The Notes space's groups (notes-space D1), loaded when the space is first shown. */
+const NotesSidebar = lazy(() => import('./notes/NotesSidebar'))
 
 
 /** Indentation per level in the sidebar (16 px, ux-feedback-2 D6); capped so a deep tree still fits a 360 px screen. */
@@ -153,7 +162,9 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   collapsed?: boolean
   onToggleCollapse?: () => void
 }) {
-  const instanceLabel = useInstanceName()
+  const workspace = useCurrentWorkspace()
+  // The space follows the screen where it belongs to one, else stays as chosen (notes-space D3).
+  const space = useShownSpace(route.view)
   const hints = useShortcutHints()
   const assistant = useAssistantStatus()
   const moreAsMenu = collapsed // More pops up only in the collapsed icon rail; expanded, an inline group that scrolls with the sidebar.
@@ -161,6 +172,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   const drawer = !useMediaQuery('(min-width: 48rem)')
   const projectCountMode = useMediaQuery('(pointer: coarse)') ? 'always' : 'hover'
   const scroller = useRef<HTMLDivElement>(null)
+  const [renamingProject, setRenamingProject] = useState<string | null>(null)
   useScrollEdges(scroller)
   // Promoted destinations (appearance preferences, synced): read with the rest of the row.
   const prefsRow = useUserPrefsRow()
@@ -249,7 +261,9 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   // sidebar already observes, in one pass.
   const views = useViews()
   const viewCounts = useViewCounts(views, today, labels, allProjects, openTasks)
-  const favourites = useFavourites()
+  // Pinned notes are the Notes space's Pinned group (notes-space D4); the Favourites group keeps the rest.
+  const allFavourites = useFavourites()
+  const favourites = useMemo(() => allFavourites.filter((f) => f.kind !== 'note'), [allFavourites])
   const [addingLabel, setAddingLabel] = useState(false)
   const [parentId, setParentId] = useState('')
 
@@ -384,7 +398,9 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   const item = (r: Route, label: string, icon: IconName, count?: number, badge?: ReactNode, tip?: string) => {
     // Day, Week, Month and Plan are one Calendar destination (ux-overhaul, planner-view).
     const calendar = (v: string) => v === 'day' || v === 'week' || v === 'month' || v === 'plan' || v === 'year'
-    const active = calendar(r.view) ? calendar(route.view) : JSON.stringify(r) === JSON.stringify(route)
+    // A Loop home address with a move open (/loop/<move>) is still the Loop home.
+    // All notes and Graph: the Notes page's two modes, a note open beside them or not (notes-graph-page D1).
+    const active = calendar(r.view) ? calendar(route.view) : r.view === 'loop' ? route.view === 'loop' : r.view === 'notes' && route.view === 'notes' ? !!r.graph === !!route.graph : JSON.stringify(r) === JSON.stringify(route)
     // With "Show shortcut hints" on, the destination prints its `g` key (keyboard-shortcuts "Hints preference").
     const go = hints && !collapsed && badge == null ? GO_KEYS[r.view] : undefined
     const node = <SidebarItem key={label} icon={icon} label={label} count={count} countLabel={openTasksLabel(count)} badge={go ? <kbd className="ui-kbd" data-go-hint>{go}</kbd> : badge} active={active} collapsed={collapsed} onClick={() => navigate(r)} data-destination={r.view} aria-description={tip && badge == null ? tip : undefined} {...(r.view === 'inbox' ? INBOX_DROP : {})} />
@@ -423,17 +439,24 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
     <div className="flex h-full flex-col" data-sidebar-collapsed={collapsed || undefined}>
       <div className={`shrink-0 pt-[max(0.75rem,var(--safe-top))] ${collapsed ? 'px-1.5' : 'px-3'}`}>
         {/* The header row is the workspace control (sidebar-v2 D1, workspaces D6); search beside it, in the rail's footer when collapsed. */}
-        <SidebarHeader left={<WorkspaceControl route={route} />} rail={<InstanceMark size={24} />} railLabel={instanceLabel}
+        <SidebarHeader left={<WorkspaceControl route={route} />} rail={<WorkspaceMark workspace={workspace.workspace} size={24} />} railLabel={workspace.name}
           collapsed={collapsed} onSearch={onSearch} searchLabel={t('Search and commands')} searchShortcut={keysOf('global.palette')} />
-        <nav className="space-y-0.5" aria-label={t('Primary')} data-sidebar-primary>
+        <SpaceSwitch space={space} collapsed={collapsed} />
+        {space === 'notes' ? (
+          <nav className="space-y-0.5" aria-label={t('Notes')} data-sidebar-primary>
+            {item({ view: 'notes', graph: false }, t('All notes'), 'notebook-pen')}
+            {item({ view: 'notes', graph: true }, t('Graph'), 'waypoints') /* notes-graph-page D1: the page's Graph mode */}
+          </nav>
+        ) : <nav className="space-y-0.5" aria-label={t('Primary')} data-sidebar-primary>
           {primary.map((d) => <Fragment key={d.id}>{d.node}</Fragment>)}
           {moreAsMenu && rest.length > 0 && (
             <MoreMenu entries={rest} collapsed={collapsed} hints={hints}
               active={rest.some((m) => m.route.view === route.view)} extra={<StartGuideMoreMenuItems />} />
           )}
-        </nav>
+        </nav>}
       </div>
       <div ref={scroller} className={`ui-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 ${collapsed ? 'px-1.5' : 'px-3'}`} data-sidebar-scroll>
+      {space === 'notes' ? <Suspense fallback={null}><NotesSidebar route={route} collapsed={collapsed} /></Suspense> : <>
       {finding && !collapsed && (
         <div className="pt-3" data-sidebar-find>
           <input ref={findInput} className="ui-input py-1.5 text-body" type="search" placeholder={t('Find a project, label or view…')} aria-label={t('Find in the sidebar')}
@@ -472,10 +495,11 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
             const isCollapsed = collapsed_.has(n.id)
             const count = counts.byProject.get(n.id)
             const drop = dropAt?.id === n.id ? dropAt.zone : null
+            const editing = renamingProject === n.id && !collapsed && movable(n.id)
             return (
               <li data-drag-id="sidebar-project" key={n.id} role="treeitem" aria-level={n.depth + 1} aria-expanded={has ? !isCollapsed : undefined}
                 data-project-row={n.id} data-drop-target={`project:${n.id}`} data-task-drop={canEditTasks(roleOf(n.id, memberMap)) ? taskDrop.project(n.id) : undefined}
-                onPointerDown={movable(n.id) ? (e) => startDrag(e, n) : undefined}
+                onPointerDown={!editing && movable(n.id) ? (e) => startDrag(e, n) : undefined}
                 className={`group relative flex items-center rounded-control ${countsAll ? 'ui-swap-row ' : ''}${movingProject ? '' : 'data-drop-active:ring-2 data-drop-active:ring-accent'} ${rowGap(shownRows, i)} ${drop === 'inside' ? feedback.inside : ''}`} style={{ paddingLeft: collapsed ? 0 : `${levels * INDENT_REM}rem` }}>
                 <GuideLines levels={levels} />
                 {(drop === 'before' || drop === 'after') && (
@@ -496,7 +520,12 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
                     )}
                   </span>
                 )}
-                <SidebarItem
+                {editing ? (
+                  <ProjectNameEditor project={p} drawer={drawer} onDone={(restoreFocus) => {
+                    setRenamingProject((id) => id === n.id ? null : id)
+                    if (restoreFocus) requestAnimationFrame(() => focusRow(n.id))
+                  }} />
+                ) : <SidebarItem
                   data-project-id={n.id}
                   data-find-active={isActiveMatch('project', n.id) || undefined}
                   className={isActiveMatch('project', n.id) ? 'ring-2 ring-focus' : found && !found.matched.has(n.id) ? 'text-faint' : undefined}
@@ -514,8 +543,9 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
                   </>}
                   count={count} countMode={countsAll ? 'swap' : projectCountMode} countLabel={openTasksLabel(count)}
                   aria-description={count && isCollapsed && has ? t('Open tasks including sub-projects') : undefined}
-                />
-                {!collapsed && <ProjectRowMenu project={p} movable={movable(n.id)} edges={siblingEdges(tree, n)} className={countsAll ? 'ui-swap-menu' : 'hover-reveal'} />}
+                />}
+                {!collapsed && <ProjectRowMenu project={p} movable={movable(n.id)} edges={siblingEdges(tree, n)} appearance
+                  onRename={() => setRenamingProject(n.id)} className={countsAll && !editing ? 'ui-swap-menu' : 'hover-reveal'} />}
               </li>
             )
           })}
@@ -529,7 +559,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
           <SidebarGroupAction onClick={() => { setGroupOpen('labels', true); setAddingLabel(true) }} aria-label={t('New label')}><Icon name="plus" size="xs" /></SidebarGroupAction>
         </>}>
         {!collapsed && shownLabels.map((l) => <LabelRow key={l.id} quiet={!countsAll} swap={countsAll} label={l} labels={labels} count={labelCounts.get(l.id)} duplicate={duplicates.has(l.id)} route={route} drop={labelDrag.drop} onDragStart={labelDrag.start} findActive={isActiveMatch('label', l.id)} />)}
-        {addingLabel && !collapsed && <NewLabelForm onDone={() => setAddingLabel(false)} className="px-1 pt-1" />}
+        {addingLabel && !collapsed && <NewLabelForm onDone={() => setAddingLabel(false)} appearance className="px-1 pt-1" />}
       </SidebarGroup>}
       {groupsReady && filtersShown && <SidebarGroup title={t('Views')} collapsible open={isOpen('filters')} onToggle={() => toggleGroup('filters')} count={views.length} collapsed={collapsed}
         actions={<SidebarGroupAction active={route.view === 'views'} onClick={() => navigate({ view: 'views' })} aria-label={t('All views')}>{t('All')}</SidebarGroupAction>}>
@@ -548,6 +578,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
           )
         })}
       </SidebarGroup>}
+      </>}
       </div>
       {/* The day's schedule (sidebar-schedule, issue 536): pinned above the footer, outside the scroller; not in the rail or the phone drawer. */}
       {!collapsed && !drawer && <SidebarSchedule />}
@@ -556,7 +587,40 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   )
 }
 
-/** A project's mark: its icon in its colour, or the colour dot (project-organization "Project icon"). */
+/** Replaces the project link while its name is being edited. */
+function ProjectNameEditor({ project, drawer, onDone }: { project: Project; drawer: boolean; onDone: (restoreFocus: boolean) => void }) {
+  const [name, setName] = useState(project.name)
+  const initial = useRef(project.name)
+  const field = useRef<HTMLInputElement>(null)
+  const done = useRef(false)
+  const finish = useCallback((restoreFocus: boolean) => {
+    if (done.current) return false
+    done.current = true
+    onDone(restoreFocus)
+    return true
+  }, [onDone])
+  useEffect(() => {
+    field.current?.focus({ preventScroll: true })
+    field.current?.select()
+  }, [])
+  // The drawer intercepts Escape at window capture. Cancel the edit before closing the drawer.
+  useEffect(() => {
+    if (drawer) return pushOverlay(() => finish(true)).pop
+  }, [drawer, finish])
+  function save(restoreFocus: boolean) {
+    if (finish(restoreFocus) && name.trim() !== initial.current) act(renameProject(project, name))
+  }
+  return <input ref={field} data-project-rename className="ui-input min-h-9 min-w-0 flex-1 py-0.5 pointer-fine:min-h-8 max-md:min-h-12"
+    aria-label={t('Project name')} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save(false)}
+    onKeyDown={(e) => {
+      if (e.nativeEvent.isComposing || (e.key !== 'Enter' && e.key !== 'Escape')) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') finish(true)
+      else save(true)
+    }} />
+}
+
 /**
  * The sidebar's inline New project form, under the last project. It opens from the
  * + menu, often below the fold with a long list (GitHub issue 997), and on a phone that
@@ -567,6 +631,8 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
  */
 function NewProjectForm({ projects, parentId, onParent, onDone }: { projects: Project[]; parentId: string; onParent: (id: string) => void; onDone: () => void }) {
   const [name, setName] = useState('')
+  const [color, setColor] = useState<string>()
+  const [icon, setIcon] = useState<string | null>(null)
   const form = useRef<HTMLFormElement>(null)
   const field = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -576,15 +642,18 @@ function NewProjectForm({ projects, parentId, onParent, onDone }: { projects: Pr
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    const id = await createProject({ name, parent_id: parentId || null })
+    const id = await createProject({ name, parent_id: parentId || null, color, icon })
     if (parentId) await toggleCollapsedProject(parentId, false)
     onDone()
     navigate({ view: 'project', id })
   }
   return (
     <form ref={form} onSubmit={(e) => void submit(e)} className="space-y-1 scroll-mb-4 px-1 pt-1" data-new-project-form>
-      <input ref={field} className="ui-input" placeholder={t('Project name')} value={name} onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && onDone()} />
+      <div className="flex items-center gap-1">
+        <SidebarAppearance color={color} onColor={setColor} icon={icon} onIcon={setIcon} />
+        <input ref={field} className="ui-input min-w-0 flex-1" placeholder={t('Project name')} value={name} onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Escape' && onDone()} />
+      </div>
       <ProjectPickerField label={t('Parent project')} projects={projects} value={parentId || null} onChange={(id) => onParent(id ?? '')}
         rankContext="project.parent" inbox={false} noneLabel={t('Top level')} className="py-1 text-meta" />
       <div className="flex gap-1">
@@ -593,13 +662,6 @@ function NewProjectForm({ projects, parentId, onParent, onDone }: { projects: Pr
       </div>
     </form>
   )
-}
-
-export function ProjectMark({ project, size = 'sm' }: { project: Pick<Project, 'color' | 'icon'>; size?: 'sm' | 'md' }) {
-  const dot = <span className={`inline-block shrink-0 rounded-full ${size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5'}`} style={{ backgroundColor: project.color }} />
-  // A catalogue icon (icons-and-section-style); the dot while the catalogue loads and for a name this device does not know.
-  if (!project.icon || !isCatalogueIcon(project.icon)) return dot
-  return <span style={{ color: project.color }} className="flex items-center"><CatalogueIcon name={project.icon} size={size === 'md' ? 'md' : 'sm'} fallback={dot} /></span>
 }
 
 /** Unread activity count (activity-feed): others' changes since the project's activity was last seen. */
@@ -631,8 +693,6 @@ function moreEntriesOf(o: { shared: boolean; reviewDot: ReactNode; reviewText: s
     { id: 'stats', route: { view: 'stats' }, label: t('Statistics'), icon: 'chart-column' },
     // Focus (focus-everywhere D1): after Statistics in every mode, promotable, no count.
     { id: 'focus', route: { view: 'focus' }, label: t('Focus'), icon: 'clock' },
-    // Notes (notes-overview, app-shell "Notes in the More group"): after Focus in every mode, promotable, no count, no marker.
-    { id: 'notes', route: { view: 'notes' }, label: t('Notes'), icon: 'notebook-pen' },
     ...(o.shared ? [{ id: 'feed' as const, route: { view: 'feed' } as Route, label: t('Updates'), icon: 'newspaper' as IconName, badge: o.unreadBadge, note: o.unreadTotal > 0 ? `${formatUnread(o.unreadTotal)} ${t('unread updates')}` : undefined }] : []),
     // Saved locations (task-locations "Locations page"): in More in every mode, never primary.
     { id: 'places', route: { view: 'places' }, label: t('Locations'), icon: 'map-pin' },

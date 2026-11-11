@@ -14,6 +14,7 @@ import { useWorkspaceFilter } from './useWorkspaceFilter'
 import { useFieldDefs } from './useFields'
 import { resolveLabels } from '../lib/labels'
 import { hasTimeColumn } from '../lib/rowTime'
+import { listSlotsOff } from '../lib/rowSlots'
 import { setTaskCompleted } from '../lib/ops'
 import { breadcrumbOf, progressMap } from '../lib/subtasks'
 import { habitStatsMap } from '../lib/habits'
@@ -27,6 +28,7 @@ import { useShortcutScope } from './shortcuts'
 import { useAssigneeDirectory, useToday, useViewerZone } from './useViews'
 import { setPanelTaskId, usePanelTaskId } from './panel'
 import { openFromRow } from './sidePanel'
+import { openTaskPage } from './taskTrail'
 import { TaskRow } from './TaskRow'
 import { NO_TASKS, useLiveTasks } from '../lib/liveTasks'
 import { useTrackedTotals } from '../lib/timeEntries'
@@ -45,6 +47,7 @@ import { ROW_LAYOUTS, useAccountRowLayout, type RowLayout } from '../lib/rowLayo
 import { useWorkspaceState } from '../lib/localData'
 import { currentWorkspaceId } from '../lib/workspaces'
 import { ACTION_TOAST_MS, showBulkToast } from './bulk/toastStore'
+import { scoreOf, UrgencyChip, UrgencyContext, useUrgencyOf } from './useUrgency'
 import { GROUP_BY_OPTIONS, readSortBy, ROW_PROPERTIES, SORT_BY_OPTIONS, SORT_DIR_OPTIONS, VIEW_LAYOUTS, type GroupBy, type RowProperty, type SortBy, type SortDir, type ViewLayout } from '../lib/types'
 
 const DEBOUNCE_MS = 150
@@ -136,10 +139,10 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
   const habits = useMemo(() => habitStatsMap(allTasks, today), [allTasks, today])
 
   useEffect(() => { setCurrentFilter(good.ast ? good.src : null); return () => setCurrentFilter(null) }, [good])
-  // Custom field definitions and tracked minutes (time-tracking: `tracked > 1h` follows a running entry live).
-  const fieldDefs = useFieldDefs(), tracked = useTrackedTotals(), directory = useAssigneeDirectory()
-  const ctx = useMemo(() => ({ today, labels, projects, tasks: allTasks, sections: flow.sections, weekStart, fields: fieldDefs, ...tracked, ...directory, workspaces: ws.workspaces, workspaceOf: ws.workspaceOf }),
-    [today, labels, projects, allTasks, flow.sections, weekStart, fieldDefs, tracked, directory, ws])
+  // Custom field definitions, tracked minutes (time-tracking: `tracked > 1h` follows a running entry live) and the urgency order's scores (urgency-sort).
+  const fieldDefs = useFieldDefs(), tracked = useTrackedTotals(), directory = useAssigneeDirectory(), scorer = useUrgencyOf(allTasks, today, zone), urgency = display.sortBy === 'urgency' ? scorer : null
+  const ctx = useMemo(() => ({ today, labels, projects, tasks: allTasks, sections: flow.sections, weekStart, fields: fieldDefs, ...tracked, ...directory, workspaces: ws.workspaces, workspaceOf: ws.workspaceOf, score: scoreOf(scorer) }),
+    [today, labels, projects, allTasks, flow.sections, weekStart, fieldDefs, tracked, directory, ws, scorer])
   const compiled = useMemo(() => {
     if (!good.ast) return null
     // "Completed tasks: Show" (views-and-display D4) reads the query as `(query) & (open | completed)`.
@@ -166,7 +169,7 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
   const { groups, shown } = useFoldedGroups('filter', useMemo(() => (result ? groupTasks(result.tasks, display.groupBy, ctx) : []), [result, display.groupBy, ctx]))
   const rows = useMemo(() => shown.flatMap((g) => g.tasks.map((task) => ({ key: `${g.key}:${task.id}`, task }))), [shown])
   // The time column (rows-v2 D2): one fact of the whole result.
-  const timeColumn = useMemo(() => hasTimeColumn(rows.map((r) => r.task)), [rows])
+  const [timeColumn, slotsOff] = useMemo(() => { const ts = rows.map((r) => r.task); return [hasTimeColumn(ts), listSlotsOff(ts)] as const }, [rows])
 
   const [selected, setSelected] = useState<string | null>(null)
   const openId = usePanelTaskId()
@@ -275,7 +278,7 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
   }
 
   return (
-    <PageBody width="list">
+    <UrgencyContext.Provider value={urgency}><PageBody width="list">
       {saving ? <SaveViewCard onSave={save} onCancel={() => setSaving(false)} /> : (
         <PageHeader title={<ViewsCrumb name={t('New view')} />} meta={count ?? undefined} help="filter"
           actions={<Button variant="secondary" size="sm" disabled={!canSave} onClick={() => setSaving(true)}>{t('Save as view')}</Button>} />
@@ -327,7 +330,7 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
             task={tk}
             project={tk.project_id ? projectMap.get(tk.project_id) : undefined}
             labels={resolveLabels(tk.labels, labelMap)}
-            showProject={display.groupBy !== 'project'} timeColumn={timeColumn}
+            showProject={display.groupBy !== 'project'} timeColumn={timeColumn} slotsOff={slotsOff}
             hidden={display.hidden}
             layout={display.rowLayout} notes={shape === 'card' && !!display.cardNotes}
             onMore={(from) => { setSelected(key); bulk.openActions(null, from) }}
@@ -338,9 +341,9 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
             habit={habits.get(tk.id)}
             breadcrumb={tk.parent_id ? breadcrumbOf(tk, taskMap) : null}
             onToggle={() => act(setTaskCompleted(tk.id, !tk.completed_at))}
-            onOpen={(e) => { setSelected(key); openFromRow(tk.id, e) }}
+            onOpen={(e) => { setSelected(key); openFromRow(tk.id, e) }} onOpenPage={() => openTaskPage(tk.id)}
             expanded={expanded === key}
-            onExpand={() => { setSelected(key); setExpanded((cur) => (cur === key ? null : key)) }}
+            onExpand={() => { setSelected(key); setExpanded((cur) => (cur === key ? null : key)) }} score={urgency && shape !== 'card' ? <UrgencyChip of={urgency} task={tk} /> : undefined}
             {...bulk.rowProps(tk)}
           />
         )} />
@@ -351,7 +354,7 @@ export function FilterView({ initialQuery = '' }: { initialQuery?: string } = {}
           <p className="mt-2 px-1 text-hint text-faint">{t('Enter toggles or creates · Esc closes')}</p>
         </Dialog>
       )}
-    </PageBody>
+    </PageBody></UrgencyContext.Provider>
   )
 }
 
@@ -376,7 +379,11 @@ function useFilterDraft(initialQuery: string, query: string, display: ViewDispla
     void currentWorkspaceId().then(async (id) => {
       // Another workspace: the one being left keeps the page as it was.
       const prev = wsRef.current
-      if (prev !== null && prev !== id && !quiet.current) await saveFilterDraft(prev, toDraft(latest.current.query, latest.current.display))
+      // Still the same workspace, or the directory arriving after the page opened ('' to
+      // its default): not a switch, so the page keeps what was typed meanwhile.
+      if (prev === id) return
+      if (prev === '') { wsRef.current = id; setWs(id); return }
+      if (prev !== null && !quiet.current) await saveFilterDraft(prev, toDraft(latest.current.query, latest.current.display))
       const d = await getFilterDraft(id)
       if (!live) return
       if (d) {

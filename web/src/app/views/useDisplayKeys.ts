@@ -34,7 +34,7 @@ export interface DisplayKeysTarget<G extends ListGroupBy = ListGroupBy> {
 /** Registry id → the grouping it sets. */
 export const GROUP_KEYS: Record<string, ListGroupBy> = {
   'arrange.group-section': 'section', 'arrange.group-project': 'project', 'arrange.group-none': 'none',
-  'arrange.group-due': 'due', 'arrange.group-priority': 'priority', 'arrange.group-label': 'label',
+  'arrange.group-due': 'due', 'arrange.group-priority': 'priority', 'arrange.group-label': 'label', 'arrange.group-time': 'day',
 }
 
 /** Registry id → the order it sets. */
@@ -46,6 +46,7 @@ export const ORDER_KEYS: Record<string, SortBy> = {
 /** The direction as the panel words it. */
 function directionText(sortBy: SortBy, dir: SortDir): string {
   if (sortBy === 'priority') return dir === 'desc' ? t('Descending (p1 first)') : t('Ascending (p4 first)')
+  if (sortBy === 'urgency') return dir === 'desc' ? t('Least urgent first') : t('Most urgent first')
   return dir === 'desc' ? t('Descending') : t('Ascending')
 }
 

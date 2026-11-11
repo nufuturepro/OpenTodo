@@ -39,6 +39,8 @@ func (s *Server) registerMCPRoutes(mux *routes) {
 		// Reminders an assistant adds are read in the zone REST uses (agent-tools-complete D2).
 		UserZone: s.tzLocation,
 		Now:      s.now,
+		// find_free_time counts the calendar's events (assistant-time-blocks D1).
+		Events: s.freeTimeEvents,
 		// Relative reminders follow a new due date (deadline reminders a new
 		// deadline), as for a REST write, and a task that gets a due date gets
 		// the person's default reminder (default-reminders D6).
@@ -77,7 +79,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		// No server-initiated SSE stream (GET) and no sessions to end (DELETE).
+		// No server-initiated SSE stream (GET) and no sessions to end (DELETE):
+		// an Apps session id holds no state (mcp-blocks D6).
 		w.Header().Set("Allow", http.MethodPost)
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "the MCP endpoint accepts POST only")
 		return
@@ -136,7 +139,15 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
-	out, malformed := s.mcp.HandleVersion(r.Context(), caller, r.Header.Get("MCP-Protocol-Version"), body)
+	// What the client announced (mcp-blocks D6) and whether it is the
+	// decrypting bridge (D4): hints that choose the tools offered, never a
+	// credential; the bearer token above authorizes the request.
+	client := mcp.Client{ProtocolVersion: r.Header.Get("MCP-Protocol-Version"),
+		Apps: mcp.AppsSession(r.Header.Get(mcp.SessionHeader)), Decrypting: r.Header.Get(mcp.BridgeHeader) == "decrypt"}
+	out, malformed, announced := s.mcp.HandleClient(r.Context(), caller, client, body)
+	if announced {
+		w.Header().Set(mcp.SessionHeader, mcp.NewAppsSession())
+	}
 	if out == nil {
 		w.WriteHeader(http.StatusAccepted)
 		return

@@ -17,7 +17,7 @@ From 768 px wide the shell SHALL fill the viewport height with the sidebar and t
 - **THEN** it fails if more than three elements can scroll vertically, naming the screen and the extra element
 
 ### Requirement: Sidebar structure
-The sidebar SHALL show, top to bottom: the workspace control (the current workspace's icon or colour and name, opening the workspace switcher; the app name is shown beside it only while the account has one workspace) with a search button beside it (search and commands), the primary destinations Inbox, Today, Upcoming, Calendar (Day or Week, as last used) pinned at the top; then, in one scroller, a "More" group collapsed by default (Anytime, Someday, Assigned to me, Completed, Updates, Locations, Trash, New view, Ask when available), the Favourites group when the user has pinned anything in the current workspace, then Projects, Labels and Views, each collapsible with its state remembered on the device and its item count on the header while collapsed; then one pinned footer row holding the account (avatar and name, opening the account menu), the assistant launcher when the assistant is available, notifications and the sync status. Every group, row and count SHALL be those of the current workspace. On a device that has not stored a state for a group, Projects SHALL start open and Labels and Views SHALL start closed. From 768 px with a fine pointer, More SHALL instead be a row after the primary destinations that opens a menu of those destinations, carrying the same marker on the row. The Views group SHALL be shown only once the user has a saved view in the current workspace and the Labels group only once the user has a label there; an empty group shows nothing, not a placeholder sentence.
+The sidebar SHALL show, top to bottom: the workspace control (the current workspace's picture and name, opening the workspace switcher, see "Workspace picture") with a search button beside it (search and commands), the primary destinations Inbox, Today, Upcoming, Calendar (Day or Week, as last used) pinned at the top; then, in one scroller, a "More" group collapsed by default (Anytime, Someday, Assigned to me, Completed, Updates, Locations, Trash, New view, Ask when available), the Favourites group when the user has pinned anything in the current workspace, then Projects, Labels and Views, each collapsible with its state remembered on the device and its item count on the header while collapsed; then one pinned footer row holding the account (avatar and name, opening the account menu), the assistant launcher when the assistant is available, notifications and the sync status; then, under it, the brand line (see "Brand line in the sidebar footer"). Every group, row and count SHALL be those of the current workspace. On a device that has not stored a state for a group, Projects SHALL start open and Labels and Views SHALL start closed. From 768 px with a fine pointer, More SHALL instead be a row after the primary destinations that opens a menu of those destinations, carrying the same marker on the row. The Views group SHALL be shown only once the user has a saved view in the current workspace and the Labels group only once the user has a label there; an empty group shows nothing, not a placeholder sentence.
 
 Outside Open Loops first, the primary destinations SHALL be listed in the user's destination order (`appearance-preferences` "Primary destination order"); the table below gives the default order.
 
@@ -50,7 +50,7 @@ In `first` mode the primary destinations SHALL never exceed six and SHALL keep t
 
 #### Scenario: One workspace
 - **WHEN** an account that never created a workspace opens the app
-- **THEN** the control reads "OpenTodo · Personal" and opens the switcher with the one workspace, "New workspace" and "Manage workspaces"
+- **THEN** the control shows the picture "P" and "Personal" on one line and opens the switcher with the one workspace, "New workspace" and "Manage workspaces"
 
 #### Scenario: Groups follow the workspace
 - **WHEN** the user switches from "Personal" (4 projects, 2 labels, 1 filter) to "Work" (6 projects, no labels, no filters)
@@ -444,7 +444,7 @@ The notification bell in the sidebar footer SHALL show a dot in the accent colou
 - **THEN** the bell shows "3" in a small accent count, never in red, and reading the first one from the list changes it to "2"
 
 ### Requirement: Favourites group
-The Favourites group SHALL list the user's pinned projects, labels and saved filters in the user's order, each with the icon or colour and the live open-task count its own group shows, opening the same destination. Items SHALL be reorderable from their menus and by keyboard, and unpinnable from their menus. The group SHALL reflect pins, order and renames from the user's other devices after sync, and SHALL render from local data so it is correct offline.
+The Favourites group SHALL list the user's pinned projects, labels, saved filters and standalone notes in the user's order, each project, label and filter with the icon or colour and the live open-task count its own group shows, and each note with the note icon, its title ("Untitled note" when empty) and no count, opening the same destination (a note docked or as a page). Items SHALL be reorderable from their menus and by keyboard, and unpinnable from their menus. The group SHALL reflect pins, order and renames from the user's other devices after sync, and SHALL render from local data so it is correct offline.
 
 #### Scenario: Mixed kinds in order
 - **WHEN** the user pins "Website launch" (project, 5 open), "Deep work" (filter, 4 matches) and "errand" (label, 3 open) and moves "Deep work" to the top
@@ -458,23 +458,27 @@ The Favourites group SHALL list the user's pinned projects, labels and saved fil
 - **WHEN** the device is offline and the user pins a label
 - **THEN** it appears in Favourites at once, survives a reload, and reaches the user's other devices when the network returns
 
+#### Scenario: Pinned note
+- **WHEN** the user pins the note "Wi-Fi" and renames it "Home Wi-Fi" on another device
+- **THEN** the group shows "Home Wi-Fi" with the note icon and no count after sync, and activating it opens the note
+
 ### Requirement: Sidebar header row
-The top of the sidebar SHALL be one header row holding the instance's mark and name on the left (the brand mark and the wordmark "OpenTodo", or the owner's logo and name on a branded instance, see `instance-branding`) and the search and commands button on the right. The header row SHALL be a slot whose left part can be replaced by another control (the workspace control of `workspaces`) while the search button and everything below the row stay unchanged. On the icon rail the row SHALL show the mark alone, centred, with the instance's name as its tooltip and accessible name. The brand mark SHALL be the mono variant, so it follows the sidebar's text tone in both themes, and the wordmark SHALL be set in the interface typeface at the body size with the strong text tone. The header row SHALL be rendered from local data only and SHALL look the same offline.
+The top of the sidebar SHALL be one header row holding the workspace control on the left (the current workspace's picture and name, see "Workspace picture") and the search and commands button on the right. The instance's mark and name SHALL be in the brand line at the sidebar's end, not in the header (see "Brand line in the sidebar footer"). The header row SHALL keep its left part a slot holding the workspace control, while the search button and everything below the row stay unchanged. On the icon rail the row SHALL show the workspace's picture alone, centred, with the workspace's name as its tooltip and accessible name. The workspace's name SHALL be set in the interface typeface at the body size with the strong text tone. The header row SHALL be rendered from local data only and SHALL look the same offline.
 
 #### Scenario: Header at rest
 - **WHEN** a user opens the app on a 1280×800 screen in light and in dark
-- **THEN** the sidebar starts with the brand mark at 24 px, the wordmark "OpenTodo" and the search button in one row of 40 px or less, the mark's tray is drawn in the current text tone with the accent on its tick, and no tick-in-a-square image is anywhere in the sidebar
+- **THEN** the sidebar starts with the workspace's 20 px picture, its name and the search button in one row of 40 px or less, and no tick-in-a-square image and no app mark is in the header
 
 #### Scenario: Icon rail
 - **WHEN** the user collapses the sidebar with `[`
-- **THEN** the header row shows the mark alone at 24 px, hovering or focusing it reads "OpenTodo", and the search button moves to the footer as before
+- **THEN** the header row shows the workspace's picture alone, hovering or focusing it reads the workspace's name, and the search button moves to the footer as before
 
 #### Scenario: Branded header
 - **WHEN** the owner set a logo and the name "Acme Tasks"
-- **THEN** the header row shows the logo at 24 px and "Acme Tasks" in place of the mark and the wordmark, and the rail's tooltip reads "Acme Tasks"
+- **THEN** the header row shows the workspace's picture and name, and the logo and "Acme Tasks" are in the brand line at the sidebar's end
 
 #### Scenario: Replaceable left part
-- **WHEN** a later change renders another control in the header's left part
+- **WHEN** the workspace control renders in the header's left part
 - **THEN** the search button keeps its place and shortcut, the primary destinations start at the same vertical position, and the sidebar's tests for the destinations, groups and footer pass unchanged
 
 ### Requirement: Sidebar tones
@@ -598,21 +602,6 @@ From 1024 px every page header SHALL begin with the sidebar toggle: an icon butt
 - **WHEN** the window is 900 px wide
 - **THEN** no page header shows the sidebar toggle
 
-### Requirement: Workspace control on two lines
-While the workspace control shows both the instance's name and the workspace's name, it SHALL set them on two lines: the instance's wordmark first, at the size and tone the header row gives it, and the workspace's name below it, at the metadata size in the muted tone, each truncated on its own and with no separator between them. The header row SHALL stay one row of 40 px or less, and the control's accessible name SHALL be unchanged.
-
-#### Scenario: One workspace on a branded instance
-- **WHEN** the owner named the instance "Acme Family Tasks Server", the account has one workspace, and the sidebar is 256 px wide
-- **THEN** the header shows "Acme Family Tasks Server" on the first line, cut with an ellipsis if it does not fit, and "Personal" in full on the second line, and the header row is at most 40 px high
-
-#### Scenario: Several workspaces
-- **WHEN** the account has the workspaces Personal and Work and Work is current
-- **THEN** the control shows "Work" on one line with no instance name, as before
-
-#### Scenario: Name for assistive technology
-- **WHEN** a screen reader reaches the control of an account with one workspace
-- **THEN** it is announced as "Workspace: OpenTodo · Personal"
-
 ### Requirement: Schedule in the sidebar
 The sidebar SHALL offer a Schedule section between its scroller and its footer, folding like a sidebar group, closed until the user opens it and remembered on the device. Open, it SHALL show the current time and today's timed tasks and timed calendar events that have not ended, in start order, marking the one in progress, at most five, with a link to the Day calendar that counts the rest. A task SHALL open in the side panel where the page has one, an event SHALL open its details. The section SHALL not scroll on its own and SHALL not show in the icon rail or the phone drawer.
 
@@ -708,3 +697,92 @@ Below 768 px the drawer SHALL be out of the tab order and out of the accessibili
 #### Scenario: The column is never inert
 - **WHEN** the same account is open at 1280 px
 - **THEN** the sidebar is not inert and not hidden from assistive technology, and the page behind it is not inert
+
+### Requirement: Edit project appearance in the sidebar
+
+The project row menus in Projects and Favourites SHALL offer Rename, Icon and Colour in that order to users who may edit the project under the project header's permissions. Changes SHALL use the existing project operations offline and converge per field on sync.
+
+#### Scenario: Rename in the Projects group
+- **WHEN** a user chooses Rename from a project row in Projects
+- **THEN** the name becomes an editable field in the same row, Enter or leaving the field saves a valid change, and Escape cancels
+
+#### Scenario: Rename a favourite project
+- **WHEN** a user chooses Rename from a project row in Favourites
+- **THEN** the existing name dialog opens
+
+#### Scenario: Edit from either sidebar group
+- **WHEN** a project owner or admin opens a project's menu in Projects or Favourites and renames it or chooses an icon or colour
+- **THEN** the new value is saved to the same project and shown wherever the project is displayed
+
+#### Scenario: A member cannot edit project metadata
+- **WHEN** a project editor or viewer opens either sidebar menu
+- **THEN** the menu omits Rename, Icon and Colour
+
+### Requirement: Choose appearance while creating sidebar items
+
+The sidebar New project form SHALL offer one control to the left of the name for choosing the icon and colour. The sidebar New label form SHALL offer one control in the same position for choosing the colour. These controls SHALL fit in the existing name row without helper text. A submitted choice SHALL be saved with the new item through the existing local operations and converge on sync. The usual defaults SHALL apply to choices the user leaves untouched.
+
+#### Scenario: Set appearance before creation
+- **WHEN** a user chooses an icon and colour for a new project or a colour for a new label and submits the form
+- **THEN** the new item has the selected appearance immediately, including offline
+
+#### Scenario: Create with defaults or cancel
+- **WHEN** a user creates an item without changing its appearance, or cancels the form after choosing an appearance
+- **THEN** a submitted item uses its usual defaults and a cancelled draft creates no item
+
+### Requirement: Nothing appears above a list after it is shown
+Once a list is on screen, nothing SHALL appear or grow above its rows unless the user asked for it there: a notice that arrives later (a removed start view, a change the server refused, a new version ready, an update the app refused) SHALL be a toast in the bottom corner, and a part of a page that loads after the list SHALL sit below its rows. The toasts SHALL keep their text and controls: the update prompt keeps "Reload to update" until reloaded, the refused update keeps its help link and Dismiss. This is presentation only and behaves the same offline.
+
+#### Scenario: A new version while reading the Inbox
+- **WHEN** a new release takes over the tab while the user reads the Inbox
+- **THEN** "A new version of OpenTodo is ready." with "Reload to update" shows as a toast in the bottom corner, and no row of the Inbox moves
+
+#### Scenario: Refused change
+- **WHEN** the server refuses a change after a role change while Today is on screen
+- **THEN** a toast explains it, and the list does not move
+
+### Requirement: No floating add button in the rituals
+Below 768 px the shell SHALL hide the floating add button in Focus and in Close the day, which keep nothing else on screen. The tab bar SHALL stay, the rest of the review SHALL keep the button, and the button SHALL return on the next view that offers quick add. Close the day SHALL draw one divider under the shell's bar on a phone, also while it offers Reopen the day.
+
+#### Scenario: Focus on a phone
+- **WHEN** the user opens Focus on a 390 px phone
+- **THEN** the tab bar stays, the floating add button is gone, and it returns when the user opens Today
+
+#### Scenario: Close the day after closing
+- **WHEN** the user reopens Close the day on a 390 px phone after closing the day
+- **THEN** Reopen the day shows in the page under the shell's bar, with one divider under the bar and no floating add button
+
+### Requirement: Workspace picture
+The workspace control at the top of the sidebar SHALL show the current workspace's own picture followed by its name on one line:
+- the workspace's chosen icon from the icon set, drawn on its colour;
+- without an icon, the first character of its name on its colour;
+- without a colour, on the neutral raised surface.
+
+The picture SHALL be 20 px with the control radius. The control's name SHALL be the workspace's name, never the instance's, and the app's check-mark SHALL NOT be used as a workspace's picture. On the icon rail the header SHALL show the picture alone, with the workspace's name in its tooltip and accessible name. The picture is drawn from the cached workspace and looks the same offline.
+
+#### Scenario: Default workspace without an icon
+- **WHEN** an account has only its default workspace "Personal" with no icon and no colour
+- **THEN** the header shows "P" on the neutral surface and "Personal" beside it, and the app's mark is not in the header
+
+#### Scenario: Chosen icon and colour
+- **WHEN** the current workspace "Work" has the icon `briefcase` and a blue colour
+- **THEN** the header shows the briefcase on blue and "Work"
+
+#### Scenario: Rail
+- **WHEN** the user collapses the sidebar with `[` while "Work" is current
+- **THEN** the header shows the briefcase picture alone, and hovering or focusing it reads "Work"
+
+### Requirement: Brand line in the sidebar footer
+The sidebar SHALL end with one quiet line under the footer row: the instance's mark at 14 px and its name with the running version ("OpenTodo 0.22.0"), at the metadata size in the faint tone, turning muted on hover and focus. On a branded instance the line SHALL show the owner's logo and name, followed by the version. Activating the line SHALL open Settings › About, which holds What's new. While What's new has an entry the user has not read, the line SHALL carry the quiet accent dot, its meaning in its accessible name. On the icon rail the line SHALL show the mark alone. In the phone drawer it SHALL end the drawer. The line SHALL add no primary destination and no scroll region. It is rendered from local data and looks the same offline, with the version the app last received.
+
+#### Scenario: Unbranded
+- **WHEN** a user opens the app on a 1280 px screen of an unbranded server running 0.22.0
+- **THEN** the sidebar ends with the mark and "OpenTodo 0.22.0" in the faint tone under the account row, and activating it opens Settings › About
+
+#### Scenario: Branded
+- **WHEN** the owner set the name "Acme Tasks" and a logo
+- **THEN** the line shows the logo and "Acme Tasks 0.22.0", and the header shows the workspace's picture, not the logo
+
+#### Scenario: Unread news
+- **WHEN** a new What's new entry has arrived that the user has not opened
+- **THEN** the line carries the accent dot and its accessible name says there is something new, and the dot goes once the user has opened What's new

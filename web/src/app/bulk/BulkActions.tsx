@@ -4,9 +4,8 @@
 // like every other object menu. Moves and assignments go through the review (D6).
 import { keysOf } from '../../lib/shortcuts'
 import { Kbd } from '../shortcuts/Kbd'
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { createContext, lazy, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useState, type RefObject } from 'react'
 import type { Step } from '../../lib/move'
-import { useBelowStickyHeader } from './useBelowStickyHeader'
 import { allCompleted, applyBulk, commonSharedProject, readTicked, reviewAssign, reviewMove, type BulkAction, type ReviewPlan, useTickedTasks } from '../../lib/bulk'
 import { useAllLabels, useLabelsLoaded, useLiveSections, useProjects, useMembershipMapOrLoading, useReviewRow, useUserPrefsRow } from '../../lib/localData'
 import { DAY_PARTS, dayPartName, dayPartOf, dayPartsOn, type DayPart } from '../../lib/dayParts'
@@ -17,7 +16,7 @@ import { roleOf } from '../../lib/sharing'
 import { toggleTracking, useRunningEntry } from '../../lib/timeEntries'
 import { act } from '../actionError'
 import type { Label, Membership, Priority, Project, Section, Task } from '../../lib/types'
-import { Icon, Dialog, useFinePointer } from '../../ui'
+import { DESKTOP_HEADER_QUERY, Icon, Dialog, useFinePointer, useMediaQuery } from '../../ui'
 import { Tooltip } from '../../ui'
 import { DateField } from '../datetime/DateField'
 import { ActionMenu, type ActionGroup, type ActionItem, type ConfirmSpec } from '../menus/ActionMenu'
@@ -28,10 +27,13 @@ import { navigate } from '../router'
 import { createStore } from '../../lib/store'
 import { startFocusOn } from '../focus/startFocus'
 import { t } from '../../lib/i18n'
+import { priorityName } from '../../lib/priority'
 import { withListTransition } from '../motion'
 import { slotAction, slotLabel, useSlotState, type SlotState } from '../task-list/slotActions'
 import { focusMenuLabel, focusMenuState, runFocusPress, type FocusMenuState } from '../focus/focusRequest'
 import { useToday } from '../useViews'
+import { UrgencyContext } from '../useUrgency'
+import type { Urgency } from '../../lib/urgency'
 
 /** Confirm the trash of more than this many ticked tasks (the keyboard's big selection; a menu click stays immediate). */
 export const BULK_TRASH_CONFIRM_ABOVE = 20
@@ -226,7 +228,16 @@ export function addItems(id: string | undefined, r: ListReorder | null | undefin
 }
 
 /** The menu's groups for the given tasks (exported for the palette and tests). */
-export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (title: string, plan: Promise<ReviewPlan>) => void; pickDate: () => void; schedule?: () => void; reorder?: ListReorder | null }, besideRow = false): ActionGroup[] {
+const Breakdown = lazy(() => import('../UrgencyChip').then((m) => ({ default: m.UrgencyBreakdown })))
+
+/** "Why here?" under the urgency order (urgency-sort D4): the task's score, component by component. */
+function whyItem(why: Urgency | null | undefined): ActionItem[] {
+  return why ? [{ kind: 'step', id: 'why', label: t('Why here?'), icon: 'trending-up', step: {
+    title: t('Why here?'), render: () => <Suspense fallback={null}><div className="p-3"><Breakdown urgency={why} /></div></Suspense>,
+  } }] : []
+}
+
+export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (title: string, plan: Promise<ReviewPlan>) => void; pickDate: () => void; schedule?: () => void; reorder?: ListReorder | null; why?: Urgency | null }, besideRow = false): ActionGroup[] {
   const n = d.tasks.length
   const reopen = allCompleted(d.tasks)
   const live = d.labels.filter((l) => !l.deleted_at)
@@ -241,14 +252,14 @@ export function bulkMenuGroups(ids: readonly string[], d: Data, a: { review: (ti
   const swipeTwins = n === 1 && a.schedule
   return [
     ...(swipeTwins ? [{ items: [complete, { kind: 'action', id: 'schedule', label: t('Schedule…'), icon: 'calendar-days', onSelect: a.schedule } as ActionItem] }] : []),
-    ...(n === 1 ? [{ items: [...slotItem(d.tasks[0], d.slot), ...todayFocusItem(d.tasks[0], d.focus), ...trackingItem(d.tasks[0], d.runningTask, d.memberships), ...focusItem(d.tasks[0], d.memberships)] }] : []),
+    ...(n === 1 ? [{ items: [...whyItem(a.why), ...slotItem(d.tasks[0], d.slot), ...todayFocusItem(d.tasks[0], d.focus), ...trackingItem(d.tasks[0], d.runningTask, d.memberships), ...focusItem(d.tasks[0], d.memberships)] }] : []),
     ...(swipeTwins ? [] : [{ items: [complete] }]),
     // Beside a row its own Priority and Schedule buttons already offer these.
     // Priority and Date are one row each (a submenu), so the menu fits on the screen;
     // beside a row its own Priority and Schedule buttons already offer them.
     { items: [
       ...(besideRow ? [] : [
-        { kind: 'submenu', id: 'priority', label: t('Priority'), icon: 'flag', items: ([1, 2, 3, 4] as Priority[]).map((p) => ({ kind: 'action' as const, id: `p${p}`, label: t('Priority {p}', { p }), icon: 'flag' as const, shortcut: String(p), onSelect: run({ kind: 'priority', priority: p }) })) },
+        { kind: 'submenu', id: 'priority', label: t('Priority'), icon: 'flag', items: ([1, 2, 3, 4] as Priority[]).map((p) => ({ kind: 'action' as const, id: `p${p}`, label: priorityName(p), icon: 'flag' as const, shortcut: String(p), onSelect: run({ kind: 'priority', priority: p }) })) },
         { kind: 'submenu', id: 'date', label: t('Date'), icon: 'calendar-days', items: [
           { kind: 'action', id: 'today', label: t('Today'), icon: 'calendar-check', onSelect: run({ kind: 'due', pick: 'today' }) },
           { kind: 'action', id: 'tomorrow', label: t('Tomorrow'), icon: 'calendar-days', onSelect: run({ kind: 'due', pick: 'tomorrow' }) },
@@ -362,12 +373,16 @@ export function BulkActionsMenu({ ids, open, onOpenChange, trigger, triggerClass
   const besideRow = !!anchor?.current
   const touch = !useFinePointer()
   const n = data.tasks.length || ids.length
+  // Under the urgency order one task's menu explains its place (urgency-sort D4).
+  const urgencyOf = useContext(UrgencyContext)
+  const why = urgencyOf && ids.length === 1 && data.tasks.length === 1 ? urgencyOf(data.tasks[0]) : null
   const groups = useMemo(() => bulkMenuGroups(ids, data, {
     review: (title, plan) => { void plan.then((p) => bulkDialog.set({ kind: 'review', title, plan: p })) },
     pickDate: () => bulkDialog.set({ kind: 'date', ids, n }),
     schedule: touch && ids.length === 1 ? () => openRowSchedule(ids[0]) : undefined,
     reorder,
-  }, besideRow), [ids, data, besideRow, touch, n, reorder])
+    why,
+  }, besideRow), [ids, data, besideRow, touch, n, reorder, why])
   return (
     <ActionMenu label={t('Actions for {tasks}', { tasks: tasksWord(n) })} title={tasksWord(n)} groups={groups} open={open} pending={!settled && !data.ready} onOpenChange={onOpenChange}
       trigger={trigger} triggerClassName={triggerClassName} triggerProps={triggerProps} startPicker={startPicker} width="sm:w-72" anchor={anchor} />
@@ -395,7 +410,36 @@ export function BulkDialogHost() {
   )
 }
 
-/** "3 selected · Actions · Clear" above a list while tasks are ticked, kept in sight while the list scrolls. */
+
+/** The root's mark while a selection bar floats over the content (no-layout-jump; index.css). */
+const SELECTION_DOCK_ATTR = 'data-selection-docked'
+
+/** The app frame's left edge and width, followed as the window or the sidebar resizes; null outside the shell. */
+function useFrameBox(active: boolean): { left: number; width: number } | null {
+  const [box, setBox] = useState<{ left: number; width: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!active) return
+    const frame = document.querySelector<HTMLElement>('[data-app-frame]')
+    if (!frame) return
+    const measure = () => {
+      const r = frame.getBoundingClientRect()
+      setBox((b) => (b && b.left === r.left && b.width === r.width ? b : { left: r.left, width: r.width }))
+    }
+    measure()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    ro?.observe(frame)
+    window.addEventListener('resize', measure)
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure) }
+  }, [active])
+  return box
+}
+
+/**
+ * "3 selected · Actions · Clear" while tasks are ticked (no-layout-jump, issue 1143): it
+ * floats over the bottom of the content, on a phone above the tab bar where the add
+ * button stands (the button steps aside while it shows), so it appearing or leaving
+ * never moves a row, and it stays in sight while the list scrolls.
+ */
 export function SelectionBar({ ids, onClear, menuOpen, onMenuOpenChange, startPicker, onDone }: {
   ids: readonly string[]
   onClear: () => void
@@ -405,22 +449,41 @@ export function SelectionBar({ ids, onClear, menuOpen, onMenuOpenChange, startPi
   /** Select mode on touch (phone-v2 D8): Done hides the checkboxes and keeps the ticks; the bar shows with nothing ticked. */
   onDone?: () => void
 }) {
-  const bar = useRef<HTMLDivElement>(null)
   const shown = ids.length > 0 || !!onDone
-  // Pinned below the page header, so it stays reachable anywhere in a long list (issue 518).
-  const top = useBelowStickyHeader(bar, shown)
+  const desktop = useMediaQuery(DESKTOP_HEADER_QUERY)
+  // From 768 px a toast in the bottom corner rises above the bar (its lift is 0 there); on a
+  // phone its lift above the add button's place already clears the bar. The add button steps
+  // aside and the content keeps room under the bar by CSS (index.css).
+  useEffect(() => {
+    if (!shown || !desktop) return
+    const root = document.documentElement.style
+    root.setProperty('--selection-lift', '3.75rem')
+    return () => { root.removeProperty('--selection-lift') }
+  }, [shown, desktop])
+  // The room under the content and the add button stepping aside (index.css) read this mark on
+  // the root, set before paint: a `:has()` rule over the list restyled it on every change (issue 1179).
+  useLayoutEffect(() => {
+    if (!shown) return
+    const root = document.documentElement
+    root.setAttribute(SELECTION_DOCK_ATTR, '')
+    return () => root.removeAttribute(SELECTION_DOCK_ATTR)
+  }, [shown])
+  const box = useFrameBox(shown)
   if (!shown) return null
   return (
-    <div ref={bar} style={{ top }} className="sticky z-10 mb-2 flex items-center gap-2 rounded-control bg-selected px-3 py-1.5 text-body shadow-2" data-selection-bar>
-      <span role="status" className="min-w-0 flex-1 font-medium text-strong">{t('{count} selected', { count: ids.length })}</span>
-      {ids.length > 0 && <BulkActionsMenu ids={ids} open={menuOpen} onOpenChange={onMenuOpenChange} startPicker={startPicker}
-        trigger={<>{t('Actions')} <Kbd k={keysOf('list.actions')} only className="ml-1" /></>} triggerClassName="ui-btn ui-btn--ghost ui-btn--sm px-2 py-1 text-body" />}
-      {ids.length > 0 && (
-        <Tooltip label={t('Clear the selection')} shortcut="Esc">
-          <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm px-2 py-1 text-body" onClick={onClear}><Icon name="x" />{t('Clear')}</button>
-        </Tooltip>
-      )}
-      {onDone && <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1 text-body font-medium" onClick={onDone} data-select-done>{t('Close')}</button>}
+    <div data-selection-dock style={box ? { left: box.left, width: box.width } : undefined}
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(var(--toast-lift,4.25rem)-3.5rem+var(--safe-bottom))] z-30 flex justify-center px-4 md:bottom-[calc(1.25rem+var(--safe-bottom))] md:px-8">
+      <div className="pointer-events-auto flex w-full max-w-[40rem] items-center gap-2 rounded-control border border-default bg-selected px-3 py-1.5 text-body shadow-2" data-selection-bar>
+        <span role="status" className="min-w-0 flex-1 font-medium text-strong">{t('{count} selected', { count: ids.length })}</span>
+        {ids.length > 0 && <BulkActionsMenu ids={ids} open={menuOpen} onOpenChange={onMenuOpenChange} startPicker={startPicker}
+          trigger={<>{t('Actions')} <Kbd k={keysOf('list.actions')} only className="ml-1" /></>} triggerClassName="ui-btn ui-btn--ghost ui-btn--sm px-2 py-1 text-body" />}
+        {ids.length > 0 && (
+          <Tooltip label={t('Clear the selection')} shortcut="Esc">
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm px-2 py-1 text-body" onClick={onClear}><Icon name="x" />{t('Clear')}</button>
+          </Tooltip>
+        )}
+        {onDone && <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm touch-target px-2 py-1 text-body font-medium" onClick={onDone} data-select-done>{t('Close')}</button>}
+      </div>
     </div>
   )
 }

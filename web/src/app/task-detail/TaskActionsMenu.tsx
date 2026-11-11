@@ -1,23 +1,25 @@
 // The task's header menu, shared by the docked panel and the task page (OpenSpec
 // change task-full-page): Copy link, Help, the parent and recurring task, time
-// tracking, Focus, the task page, Duplicate, Attach, Remove origin, Break this
-// down and Delete. The page has no Expand: it already is the page.
+// tracking, Focus, the task page, Duplicate, Attach, Remove origin, the
+// assistant's Rewrite this, Find a slot and Break this down, and Delete. The page has no Expand: it already is the page.
 import { keysOf } from '../../lib/shortcuts'
 import { openHelp } from '../../lib/helpRequest'
 import { duplicateTask } from '../../lib/templates'
 import { updateTask } from '../../lib/ops'
 import { t } from '../../lib/i18n'
-import { Icon, Menu, MenuItem, MenuSeparator } from '../../ui'
+import { Icon, Menu, MenuGroup, MenuItem, MenuSeparator } from '../../ui'
 import { act } from '../actionError'
 import { navigate } from '../router'
 import { requestAttach } from './attachRequest'
 import { startFocusOn } from '../focus/startFocus'
 import { FocusMenuItem } from '../focus/focusRequest'
 import { TrackMenuItem } from './TimeTab'
+import { openConnections, useConnected } from '../signals'
 import type { TaskDetailModel } from './useTaskDetail'
 
 export function TaskActionsMenu({ m, page, readOnly, onOpen }: { m: TaskDetailModel; page: boolean; readOnly: boolean; onOpen?: (id: string) => void }) {
   const { task, parent, series } = m
+  const connected = useConnected('task', task?.id)
   if (!task) return null
   const done = !!task.completed_at
   return (
@@ -25,6 +27,8 @@ export function TaskActionsMenu({ m, page, readOnly, onOpen }: { m: TaskDetailMo
       <MenuItem label={t('Copy link')} icon="link" onSelect={m.copyLink} />
       <MenuItem label={t('Help')} icon="circle-help" description={t('The guide to the task page')} onSelect={() => openHelp('task-panel')} />
       {!page && <MenuItem label={t('Expand')} icon="external-link" description={t('Open the task as a page')} onSelect={() => navigate({ view: 'task', id: task.id })} />}
+      {/* What links with the task (notes-graph D3), offered while something does. */}
+      {connected && <MenuItem label={t('Show connections')} icon="waypoints" onSelect={() => openConnections('task', task.id)} data-show-connections />}
       {parent && <MenuItem label={t('Open parent task')} icon="corner-down-right" onSelect={() => onOpen?.(parent.id)} />}
       {series && <MenuItem label={t('Open recurring task')} icon="repeat" onSelect={() => onOpen?.(series.id)} />}
       {!readOnly && <TrackMenuItem task={task} />}
@@ -39,7 +43,14 @@ export function TaskActionsMenu({ m, page, readOnly, onOpen }: { m: TaskDetailMo
       {!readOnly && <MenuItem label={t('Add a link…')} icon="link" onSelect={() => requestAttach(task.id, 'link')} />}
       {/* The origin's Remove lives here; its row opens the source (task-panel-facets). */}
       {!readOnly && task.origin && <MenuItem label={t('Remove origin')} icon="x" onSelect={() => act(updateTask(task.id, { origin: null }))} />}
-      {!readOnly && m.assistantAvailable && <MenuItem label={t('Break this down')} icon="list" onSelect={m.breakDown} />}
+      {/* The assistant's skills on this task (assistant-skills, assistant-in-context), while it is available. */}
+      {!readOnly && m.assistantAvailable && (
+        <MenuGroup label={t('Assistant')}>
+          <MenuItem label={t('Rewrite this')} icon="pencil" onSelect={m.rewrite} data-assistant-rewrite />
+          {!done && <MenuItem label={t('Find a slot')} icon="calendar-clock" onSelect={m.findSlot} data-assistant-find-slot />}
+          <MenuItem label={t('Break this down')} icon="list" onSelect={m.breakDown} />
+        </MenuGroup>
+      )}
       {/* The task's note as a standalone note (notes-overview D6); its batch and Undo load on first use. */}
       {!readOnly && !task.deleted_at && !!task.description?.trim() && <MenuItem label={t('Move note to a new note')} icon="notebook-pen"
         description={t('The note leaves the task; Undo puts it back')} onSelect={() => void import('../notes/noteActions').then((a) => a.moveNoteOut(task.id))} data-move-note-out />}

@@ -43,6 +43,7 @@ import { CalendarSyncPanel } from './CalendarSyncPanel'
 import { ConfigWarningsNotice } from './ConfigWarnings'
 import { EmailInboxPanel } from './EmailInboxPanel'
 import { BriefingSection, DayPartsSection, FocusSection, KeyboardSection, LanguageSection, StartViewSection } from './PreferencesPanels'
+import { PrioritiesSection } from './PrioritiesSettings'
 import { ClosedListSection } from './ClosedListSettings'
 import { AutoArchiveSection } from './ProjectsSettings'
 import { CaptureSection } from './CaptureSettings'
@@ -54,6 +55,7 @@ import { SpeechServerPanel } from './SpeechServerPanel'
 import { BrandingPanel } from './BrandingPanel'
 import { YourDataSection } from './DataSettings'
 import { SessionPanel } from './AccountSettings'
+import { AppSessions } from './AppSessions'
 import { InvitationsPanel } from './MemberInvitations'
 import { ServerArchivePanel } from './ServerArchivePanel'
 import { WorkspacesSettings } from './WorkspacesSettings'
@@ -81,7 +83,7 @@ const PAGES: Record<string, (p: PageProps) => ReactNode> = {
           <LinkedAccountsPanel />
         </DemoDisabled>
       </Anchor>
-      <SessionPanel onLogout={onLogout} />
+      <SessionPanel onLogout={onLogout}><AppSessions /></SessionPanel>
     </>
   ),
   'account/activity': () => <Anchor id="sessions"><ActivityPanel /></Anchor>,
@@ -90,6 +92,7 @@ const PAGES: Record<string, (p: PageProps) => ReactNode> = {
   'general/start': () => <><StartViewSection /><BriefingSection /><DayPartsSection /><ClosedListSection /></>,
   'general/keyboard': () => <KeyboardSection />,
   'general/focus': () => <FocusSection />,
+  'general/priorities': () => <PrioritiesSection />,
   'general/maps': () => <MapsUserSection />,
   'language/language': () => <LanguageSection />,
   'language/date-time': () => <DateTimeSection />,
