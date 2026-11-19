@@ -66,13 +66,6 @@ import { SpaceSwitch } from './SpaceSwitch'
 const NotesSidebar = lazy(() => import('./notes/NotesSidebar'))
 
 
-/**
- * From 768 px with a fine pointer, More is a menu after the primary destinations instead
- * of a group in the scroller (sidebar-compact-desktop): the projects keep their room.
- * Touch keeps the inline group, which scrolls with the rest (sidebar-drawer-scroll).
- */
-export const MORE_MENU_QUERY = '(min-width: 48rem) and (pointer: fine)'
-
 /** Indentation per level in the sidebar (16 px, ux-feedback-2 D6); capped so a deep tree still fits a 360 px screen. */
 const INDENT_REM = 1
 
@@ -152,6 +145,11 @@ function useViewCounts(views: View[], today: string, labels: Label[], projects: 
   return useMemo(() => evaluateViews(views, { today, labels, projects, tasks: counted, sections, fields, ...tracked, ...directory, ...ws }, 0), [views, today, labels, projects, counted, sections, fields, tracked, directory, ws])
 }
 
+/** The due-review marker on the closed More heading (quiet-sidebar): nothing when the method shows Review up front. */
+function moreBadgeOf(due: boolean, first: boolean, text: string) {
+  return due && !first ? <Tooltip label={text} side="right"><StatusDot label={text} data-review-due-more /></Tooltip> : undefined
+}
+
 export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssistant, onSignOut, collapsed = false, onToggleCollapse }: {
   route: Route
   user: User
@@ -173,7 +171,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   const space = useShownSpace(route.view)
   const hints = useShortcutHints()
   const assistant = useAssistantStatus()
-  const moreAsMenu = useMediaQuery(MORE_MENU_QUERY)
+  const moreAsMenu = collapsed // More pops up only in the collapsed icon rail; expanded, an inline group that scrolls with the sidebar.
   // Below 768 px the sidebar is the phone drawer, under a tab bar with Today, Inbox and Upcoming (phone-v2 D7).
   const drawer = !useMediaQuery('(min-width: 48rem)')
   const projectCountMode = useMediaQuery('(pointer: coarse)') ? 'always' : 'hover'
@@ -422,8 +420,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   const unreadBadge = unread.total > 0 ? <UnreadBadge n={unread.total} label={t('unread updates')} /> : undefined
   // The weekly review (stats-and-review): when the last one was, and a marker once it is due.
   const method = readMethodMode(prefsRow)
-  // More carries no marker (sidebar-v2 D7): the dot sits on the Review entry, the unread badge on Updates.
-  const { text: reviewText, marker: reviewDot } = reviewMarker(review, method, today)
+  const { due, text: reviewText, marker: reviewDot } = reviewMarker(review, method, today)
   // Each More destination once, as data: an item in the inline group, or a menu item
   // (with its badge as the item's description) in the desktop menu.
   const moreEntries = moreEntriesOf({ shared: sharedIds.size > 0, reviewDot, reviewText, unreadBadge, unreadTotal: unread.total, ask: !!assistant?.available, habits: habitsOn })
@@ -431,6 +428,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   const moreList = first ? firstModeMore(moreEntries, calendarMode) : moreEntries
   const more = moreList.map((m) => ({ ...m, node: item(m.route, m.label, m.icon, undefined, m.badge, m.tip) }))
   const primaryExtra = first ? [] : more.filter((m) => m.id !== 'ask' && promoted.includes(m.id as Promotable))
+  const moreBadge = moreBadgeOf(due, first, reviewText)
   // The phone drawer lists only what the tab bar lacks (phone-v2 D7): Calendar, or the method's destinations.
   const rest = more.filter((m) => !primaryExtra.includes(m) && !(drawer && TAB_BAR_VIEWS.has(m.route.view)))
   const primary = orderedPrimary([...primaryDestinations(first, calendarMode, counts, reviewDot, reviewText).map((d) => ({ id: d.id, node: item(d.route, d.label, d.icon, d.count, d.badge, d.tip), view: d.route.view })),
@@ -470,7 +468,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
           {found?.empty && <p className="px-2 pt-2 text-meta text-faint" role="status">{t('Nothing matches.')}</p>}
         </div>
       )}
-      {!moreAsMenu && <SidebarGroup title={t('More')} collapsible open={moreOpen} onToggle={() => setMoreOpen(!moreOpen)} collapsed={collapsed} tight testId="sidebar-more">
+      {!moreAsMenu && <SidebarGroup title={t('More')} collapsible open={moreOpen} onToggle={() => setMoreOpen(!moreOpen)} badge={moreBadge} collapsed={collapsed} tight testId="sidebar-more">
         {rest.map((m) => <Fragment key={m.id}>{m.node}</Fragment>)}
         {/* The first-day checklist (moments-and-onboarding D5): after the destinations, until done or hidden. */}
         <StartGuideMoreItem collapsed={collapsed} />

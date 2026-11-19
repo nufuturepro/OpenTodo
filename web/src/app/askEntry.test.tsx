@@ -107,12 +107,13 @@ describe('Ask screen (3.4)', () => {
     const user = { id: 'u1', email: 'a@example.com', name: 'Ada', role: 'member', created_at: 0 } as unknown as User
     navigate({ view: 'inbox' })
     const r = await render(<Shell user={user} onLogout={() => {}} />)
-    await waitFor(() => !!document.querySelector('[data-sidebar-more-menu] button[aria-haspopup="menu"]'), 'the sidebar More menu')
-    // The sidebar's More menu lists the Assistant while it is available (ux-overhaul, sidebar-compact-desktop, assistant-surface).
-    await click(document.querySelector('[data-sidebar-more-menu] button[aria-haspopup="menu"]')!)
-    await waitFor(() => !!document.querySelector('[role="menu"] [data-menu-label="Assistant"]'), 'the Assistant in the More menu')
-    await key(document.body, 'Escape')
-    await waitFor(() => !document.querySelector('[role="menu"]'), 'the menu closed')
+    await waitFor(() => !!document.querySelector('[data-testid="sidebar-more"]'), 'the sidebar')
+    // The sidebar's More group lists Ask while the assistant is available.
+    const moreGroup = document.querySelector('[data-testid="sidebar-more"]')!
+    expect(moreGroup).not.toBeNull()
+    await click(moreGroup.querySelector('button[aria-expanded]')!)
+    await waitFor(() => !!moreGroup.querySelector('[data-destination="ask"]'), 'Ask in the More group')
+    expect(moreGroup.querySelector('[data-destination="ask"]')).not.toBeNull()
     await key(document.body, 'g')
     await key(document.body, 'k')
     await waitFor(() => !!document.activeElement?.hasAttribute('data-assistant-composer'), 'focus in the page composer')

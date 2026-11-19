@@ -27,6 +27,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const accent = a?.accent
   const custom = a?.custom
   const density = a?.density
+  const motion = a?.motion
   // The server's themes (theme-instance-default D3): a side following the server default, or one of its themes, re-resolves when they change.
   const inst = useInstanceThemes()
   const choices = row === undefined ? null : readThemeChoices(row, null, null, inst)
@@ -43,7 +44,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const stamp = useCustomThemeStamp(customIds)
   useEffect(() => {
     if (!mode || !accent) return
-    const value = { mode, accent, custom, density }
+    const value = { mode, accent, custom, density, motion }
     if (accent !== 'custom' || !custom) {
       applyAppearance(value)
       return
@@ -58,7 +59,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       if (live && !cached) applyAppearance(value)
     })
     return () => { live = false }
-  }, [mode, accent, custom, density])
+  }, [mode, accent, custom, density, motion])
   // Full task titles (full-task-titles D1): an attribute on <html>, like the density.
   const fullTitles = row === undefined ? null : fullTitlesOn(row)
   useEffect(() => { if (fullTitles !== null) applyFullTitles(fullTitles) }, [fullTitles])

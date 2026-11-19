@@ -42,6 +42,13 @@ export interface DragOptions {
    */
   onHold?: () => void
   /**
+   * The grip's hold ticked a row that was not ticked before, and the press has since
+   * become a drag or was abandoned: give that tick back at once (bulk-actions on
+   * touch — a hold selects, a hold that drags moves; only a release that never moved
+   * keeps the tick), so a move never leaves selection behind.
+   */
+  onHoldUndo?: () => void
+  /**
    * The press began on the row's grip, not its body. A grip never scrolls (its own
    * `touch-action: none`), so any movement past the threshold lifts the drag without
    * waiting for the hold; the hold still means select, and a release without either
@@ -199,6 +206,9 @@ export function beginDrag(e: { pointerId: number; pointerType: string; button: n
     if (lifted) return
     lifted = true
     hold.stop()
+    // A hold that selected and then moved is a drag, not a selection: hand its tick
+    // back (a hold that only ever dragged never ticked, so `heldSelected` is false).
+    if (heldSelected) opts.onHoldUndo?.()
     ghost = makeGhost(opts.label)
     document.body.style.userSelect = 'none'
     opts.onStart?.()

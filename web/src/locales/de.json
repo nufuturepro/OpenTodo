@@ -7762,5 +7762,12 @@
   "{kept} of {of} this month": "{kept} von {of} diesen Monat",
   "{kept} of {of} this week": "{kept} von {of} diese Woche",
   "{n, plural, one {Once a month} other {# times a month}}": "{n, plural, one {Einmal im Monat} other {#-mal im Monat}}",
-  "{n, plural, one {Once a week} other {# times a week}}": "{n, plural, one {Einmal pro Woche} other {#-mal pro Woche}}"
+  "{n, plural, one {Once a week} other {# times a week}}": "{n, plural, one {Einmal pro Woche} other {#-mal pro Woche}}",
+  "Animate menus and dialogs": "Menüs und Dialoge animieren",
+  "Instant overlays when off": "Ohne Animation alles sofort",
+  "Motion": "Animationen",
+  "Off makes menus, dialogs and changes instant.": "Aus macht Menüs, Dialoge und Änderungen sofort.",
+  "Opens the changelog on the website, at this release.": "Öffnet das Changelog auf der Website, bei dieser Version.",
+  "Press and hold a task’s grip to select it.": "Halte den Griff einer Aufgabe gedrückt, um sie auszuwählen.",
+  "Version": "Version"
 }

@@ -7762,5 +7762,12 @@
   "{kept} of {of} this month": "本月 {kept}/{of}",
   "{kept} of {of} this week": "本周 {kept}/{of}",
   "{n, plural, one {Once a month} other {# times a month}}": "{n, plural, other {每月 # 次}}",
-  "{n, plural, one {Once a week} other {# times a week}}": "{n, plural, other {每周 # 次}}"
+  "{n, plural, one {Once a week} other {# times a week}}": "{n, plural, other {每周 # 次}}",
+  "Animate menus and dialogs": "为菜单和对话框添加动画",
+  "Instant overlays when off": "关闭时浮层立即出现",
+  "Motion": "动态效果",
+  "Off makes menus, dialogs and changes instant.": "关闭后，菜单、对话框和更改都会立即出现，没有动画。",
+  "Opens the changelog on the website, at this release.": "在网站上打开此版本的更新日志。",
+  "Press and hold a task’s grip to select it.": "按住任务的握柄即可选中它。",
+  "Version": "版本"
 }

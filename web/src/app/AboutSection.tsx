@@ -2,11 +2,16 @@
 // the website, the source code, where to report a problem, the Discord server
 // (discord-community), the account on X (x-account-link), Buy Me a Coffee, and the
 // owner's welcome note on demand. Every link is a plain link opening a new tab;
-// the version comes from this server's status while online. What's new (OpenSpec whats-new)
+// the version comes from this server's status while online. The version row
+// (version-hint-motion) shows that number — this build's while offline — and links to
+// the published changelog, at the release this client runs. What's new (OpenSpec whats-new)
 // loads with this section. The App code row says who signed the code this device
 // runs (signed-web-app).
 import { lazy, Suspense, useState } from 'react'
 import { Badge, Icon, Notice, SettingRow, SettingsSection } from '../ui'
+// The build's version, inlined by vite.config.ts's `define` (see globals.d.ts), so the
+// bundle carries the number and not package.json's scripts and devDependencies.
+const buildVersion = __APP_VERSION__
 import { t } from '../lib/i18n'
 import type { User } from '../lib/types'
 import { navigate } from './router'
@@ -21,6 +26,18 @@ const WhatsNew = lazy(() => import('./WhatsNew'))
 
 export const WEBSITE_URL = 'https://open-todo.app'
 export const DOCS_URL = 'https://open-todo.app/docs/'
+export const CHANGELOG_URL = `${WEBSITE_URL}/changelog/`
+
+/**
+ * The changelog at the release this client runs: the website gives every release an
+ * anchor (`#v1-0-0`), so the row opens what changed in this version and the whole
+ * history under it. A build without a release number (`dev+abc1234`) or a pre-release
+ * suffix has no anchor of its own and opens the page's newest release instead.
+ */
+export function changelogUrl(version: string): string {
+  const release = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
+  return release ? `${CHANGELOG_URL}#v${release[1]}-${release[2]}-${release[3]}` : CHANGELOG_URL
+}
 
 function ExternalLink({ href, label, testId }: { href: string; label: string; testId: string }) {
   return (
@@ -58,6 +75,10 @@ export function AboutSection({ user }: { user: User }) {
   return (
     <>
       <SettingsSection {...cardCopy('about', { variant: version ? 'version' : 'plain', values: { version } })}>
+        <SettingRow id="about-version" {...rowCopy('about', 'version')}
+          control={<a href={changelogUrl(version ?? buildVersion)} target="_blank" rel="noopener noreferrer"
+            className="ui-btn ui-btn--secondary ui-btn--sm inline-flex items-center gap-1.5 whitespace-nowrap"
+            data-about-version>{version ?? buildVersion}<Icon name="external-link" size="xs" /></a>} />
         <ShellAppRow app={app} />
         <AppCodeRow serverVersion={version} />
         <SettingRow id="about-help" {...rowCopy('about', 'help')}

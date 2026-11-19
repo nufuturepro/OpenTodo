@@ -57,6 +57,8 @@ export interface AppearanceViewProps {
   /** The custom accent (accent-colour D5): its derived values for the tile, and writing a picked colour. */
   custom?: { values: CustomAccentValues | null; onPick: (hex: string) => void }
   onDensity?: (d: Density) => void
+  /** Motion preference (task-menu-refinement): on or off; off applies the root no-motion presentation. */
+  onMotion?: (m: 'on' | 'off') => void
   /** The account's task row layout (row-layouts D4): every list without its own choice. */
   rows?: { value: RowLayout; onChange: (r: RowLayout) => void }
   /** Full task titles (full-task-titles D1): wrap titles instead of cutting them. */
@@ -117,7 +119,7 @@ function TilePreview() {
 
 const TILE = 'flex w-28 shrink-0 snap-start flex-col gap-2 rounded-card border bg-surface p-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-focus sm:w-auto'
 
-export function AppearanceView({ value, onMode, onAccent, custom, onDensity, rows, titles, haptics, themes }: AppearanceViewProps) {
+export function AppearanceView({ value, onMode, onAccent, custom, onDensity, rows, titles, haptics, themes, onMotion }: AppearanceViewProps) {
   const tileRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [picking, setPicking] = useState(false)
   const customRef = useRef<HTMLButtonElement | null>(null)
@@ -191,6 +193,11 @@ export function AppearanceView({ value, onMode, onAccent, custom, onDensity, row
       {haptics && (
         <SettingRow id="appearance-haptics" {...rowCopy('appearance', 'haptics')} htmlFor="appearance-haptics-switch"
           control={<Switch id="appearance-haptics-switch" checked={haptics.on} onChange={haptics.onChange} label={t('Haptic feedback')} hideLabel />} />
+      )}
+      {onMotion && (
+        <SettingRow id="appearance-motion" {...rowCopy('appearance', 'motion')} htmlFor="appearance-motion-switch"
+          control={<Switch id="appearance-motion-switch" checked={(value.motion ?? 'on') !== 'off'}
+            onChange={(on) => onMotion(on ? 'on' : 'off')} label={t('Animate menus and dialogs')} hideLabel />} />
       )}
     </SettingsSection>
   )
@@ -332,6 +339,7 @@ export function AppearanceSection({ author = '' }: { author?: string }) {
   return <AppearanceView value={value} onMode={(m) => act(setAppearance('theme_mode', m))} onAccent={(a) => act(setAppearance('theme_accent', a))}
     custom={{ values, onPick: (hex) => act(setCustomAccent(hex)) }} themes={themes}
     onDensity={(d) => act(setAppearance('density', d))}
+    onMotion={(m) => act(setAppearance('motion', m === 'off' ? 'none' : ''))}
     rows={{ value: accountRowLayout(row), onChange: (r) => act(setAccountRowLayout(r)) }}
     titles={{ on: fullTitlesOn(row), onChange: (on) => act(setFullTitles(on)) }}
     haptics={canVibrate() ? { on: hapticsPrefOn(row), onChange: (on) => act(setHapticsPref(on)) } : undefined} />

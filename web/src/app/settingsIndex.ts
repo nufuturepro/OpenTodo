@@ -47,6 +47,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   { section: 'appearance', label: msg('Density'), description: msg('Comfortable or compact rows'), page: 'theme', anchor: 'appearance-density', keywords: 'compact rows' },
   { section: 'appearance', label: msg('Task rows'), description: msg('One line or detailed rows in every list without its own choice'), page: 'theme', anchor: 'appearance-rows', keywords: 'row layout detailed one line priority labels' },
   { section: 'appearance', label: msg('Show full task titles'), description: msg('Wrap long task titles instead of cutting them off'), page: 'theme', anchor: 'appearance-titles', keywords: 'long title wrap truncate truncated cut off ellipsis full text lines' },
+  { section: 'appearance', label: msg('Motion'), description: msg('Instant overlays when off'), page: 'theme', anchor: 'appearance-motion', keywords: 'animation transitions reduce' },
   { section: 'appearance', label: msg('Sidebar destinations'), description: msg('Which of Anytime, Someday, Assigned to me, Completed, Updates, Trash and New view sit next to Inbox, Today, Upcoming and Calendar'), page: 'sidebar', anchor: 'sidebar-destinations', keywords: 'promote more group order reorder move' },
   { section: 'appearance', label: msg('Sidebar counts'), description: msg('Numbers on Inbox and Today only, or on every project, label and view'), page: 'sidebar', anchor: 'sidebar-counts', keywords: 'count number badge' },
   { section: 'appearance', label: msg('Open tasks'), description: msg('As a page, or in a side panel beside the list'), page: 'task-details', anchor: 'task-details-heading', keywords: 'side panel task details split pane open tasks page beside list' },
@@ -73,7 +74,8 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = translatedList<SettingsE
   { section: 'notifications', label: msg('App icon badge'), description: msg('The installed app\'s icon shows how many of today\'s tasks are open.'), page: 'push', anchor: 'app-badge-heading', keywords: 'badge count icon home screen today' },
   { section: 'notifications', label: msg('Delivery channels'), description: msg('Send notifications to ntfy, Pushover, Gotify or any address you choose.'), page: 'channels', anchor: 'notification-channels-heading', keywords: 'ntfy pushover gotify webhook phone' },
   { section: 'notifications', label: msg('Weekly digest'), description: msg('An email on your review day with last week\'s numbers'), page: 'digest', anchor: 'email-digest-heading', keywords: 'email summary review statistics' },
-  // About (welcome-note)
+  // About (welcome-note, version-hint-motion)
+  { section: 'about', label: msg('Version'), description: msg('Opens the changelog on the website, at this release.'), anchor: 'about-version', keywords: 'changelog release notes what is new history updates version number' },
   { section: 'about', label: msg('Documentation'), description: msg('The same guides on the website, with setup and self-hosting.'), anchor: 'about-docs', keywords: 'docs help manual guide website version' },
   { section: 'about', label: msg('Feedback and problems'), description: msg('Write it here. It opens as a GitHub issue or an email.'), anchor: 'about-feedback', keywords: 'feedback issue bug problem broken github support contact report' },
   { section: 'about', label: msg('Community'), description: msg('Questions, ideas and other people who use OpenTodo, on Discord.'), anchor: 'about-community', keywords: 'discord community chat forum people' },

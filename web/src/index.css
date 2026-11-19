@@ -1191,7 +1191,11 @@ button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hov
 .row-hover:hover { background-color: var(--ot-hover); }
 /* A touch hold armed (task-row-context-menu "Touch: hold and release"): the pressed
    row tints while the hold counts, so holding reads as feedback before the menu opens
-   on release. A plain attribute, so it survives the row's re-renders mid-hold. */
+   on release. A plain attribute, so it survives the row's re-renders mid-hold. The tint
+   fades in and out with the row's own durations (version-hint-motion): the base rule
+   adds background-color to the row's transition property — unlayered, so it wins over
+   the utility class — while that class keeps the emphasis duration and the calm easing. */
+li[data-task-id] { transition-property: opacity, transform, background-color; }
 /* A row pressed on touch (touch-pressed-states): while a finger is on the row's body, the
    part that opens the task, the whole row takes the selected-row surface, and the body
    does not also dim. Not while one of its controls is pressed: they show their own.
@@ -1201,6 +1205,24 @@ button.ui-column-add { @apply flex-row items-start justify-start px-3 py-2.5 hov
   li[data-task-id] > [data-row-open]:active { opacity: 1; }
 }
 li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--text-color-accent) 8%, transparent); }
+/* The grip presses back (version-hint-motion): a press sinks it into a tinted chip, and
+   a hold in progress keeps it pressed alongside the row's tint. Scale and colour only —
+   reduced motion keeps the colour and drops the scale; no motion drops both. */
+[data-row-grip] button {
+  transition: transform var(--duration-ui) var(--ease-calm), background-color var(--duration-ui) var(--ease-calm);
+}
+[data-row-grip] button:active,
+li[data-task-id][data-touch-hold] [data-row-grip] button {
+  transform: scale(0.88);
+  background-color: color-mix(in oklab, var(--text-color-accent) 12%, transparent);
+}
+/* The grip's reminder arrives from under the page header (version-hint-motion): a slide
+   and a fade, instant under data-motion="none" and under reduced motion, like every animation. */
+@keyframes hint-in { from { opacity: 0; transform: translateY(-6px); } }
+.hint-in { animation: hint-in var(--duration-emphasis) var(--ease-spring) both; }
+/* The selection bar rises with the first tick (bulk-actions; version-hint-motion). */
+@keyframes bar-in { from { opacity: 0; transform: translateY(6px); } }
+[data-selection-bar] { animation: bar-in var(--duration-ui) var(--ease-spring) both; }
 /* The bulk-selection box (bulk-actions): drawn by us, not by the platform, so it fills
    the same 20 px slot as the completion circle it stands in for on every device — the
    native control's size and alignment vary per browser and read as off-centre on a phone. */
@@ -1213,6 +1235,7 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   border: 2px solid var(--ot-border-input);
   border-radius: var(--radius-chip);
   background: transparent;
+  transition: background-color var(--duration-ui) var(--ease-calm), border-color var(--duration-ui) var(--ease-calm);
 }
 .row-tick:checked {
   border-color: var(--ot-accent);
@@ -1222,6 +1245,11 @@ li[data-task-id][data-touch-hold] { background-color: color-mix(in oklab, var(--
   background-size: 75% 75%;
   background-repeat: no-repeat;
 }
+/* The selection box pops in where the completion circle stood (bulk-actions; version-hint-motion):
+   the swap happens in the same slot, so the title never moves, and the box arrives with a small
+   spring while the row is selecting. */
+@keyframes tick-in { from { opacity: 0; transform: scale(0.6); } }
+[data-row-controls][data-selecting] .row-tick { animation: tick-in var(--duration-ui) var(--ease-spring) both; }
 /* A narrow row's line is one run of muted text (rows-v2 D4): a faint middle dot between
    adjacent items, as generated content so it is never read out. A row's line holds two
    wrappers (the column's cells, then the rest), so its dots also cross from the first
@@ -1809,6 +1837,20 @@ html:root[data-contrast="high"] .quick-add-tint { background-color: transparent;
 .quick-add-notes-sizer { max-height: calc(6lh + 0.25rem + 2px); overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; }
 /* The sequence spotlight (shortcut-spotlight D2) fades in; reduced motion makes it instant. */
 .spotlight-in { animation: dialog-sheet-fade 120ms var(--ease-calm, ease-out) both; }
+}
+
+/* Overlay entrances (OpenSpec change task-menu-refinement, "Entrance motion"):
+   one short fade with a 4 px rise and a 0.98 scale for menus, popovers, pickers
+   and dialog cards, over --duration-ui under the calm easing. There is no exit
+   animation: an overlay closes at once so the chosen action's effect shows.
+   The reduced-motion media rule above runs it in 0.01 ms and data-motion="none"
+   in 0, so both presentations stay instant. */
+@layer components {
+@keyframes overlay-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: none; } }
+.overlay-in { animation: overlay-in var(--duration-ui) var(--ease-calm, ease-out) both; }
+/* The dialog card from 640 px; the phone sheet keeps dialog-sheet-up, which is
+   unanimated from 640 px up — this rule comes after it and wins there. */
+@media (min-width: 640px) { .dialog-card-in { animation: overlay-in var(--duration-ui) var(--ease-calm, ease-out) both; } }
 }
 
 

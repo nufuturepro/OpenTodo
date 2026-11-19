@@ -26249,5 +26249,29 @@
   ],
   "⤼ Skip": [
     "web/src/app/RecurrenceField.tsx"
+  ],
+  "Animate menus and dialogs": [
+    "web\\src\\app\\AppearanceSection.tsx"
+  ],
+  "Instant overlays when off": [
+    "web\\src\\app\\settingsIndex.ts"
+  ],
+  "Motion": [
+    "web\\src\\app\\settingsIndex.ts",
+    "web\\src\\lib\\settingsCopy.ts"
+  ],
+  "Off makes menus, dialogs and changes instant.": [
+    "web\\src\\lib\\settingsCopy.ts"
+  ],
+  "Opens the changelog on the website, at this release.": [
+    "web\\src\\app\\settingsIndex.ts",
+    "web\\src\\lib\\settingsCopy.ts"
+  ],
+  "Press and hold a task’s grip to select it.": [
+    "web\\src\\app\\task-list\\GripHint.tsx"
+  ],
+  "Version": [
+    "web\\src\\app\\settingsIndex.ts",
+    "web\\src\\lib\\settingsCopy.ts"
   ]
 }

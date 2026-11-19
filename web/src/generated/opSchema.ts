@@ -852,6 +852,13 @@ export interface UserPrefsFields {
    */
   row_detail?: string
   /**
+   * Motion preference (OpenSpec change task-menu-refinement): "" (default,
+   * motion on) or "none" (every entrance, transition and animation instant).
+   * Not restricted here; clients read an unknown value as on and keep the
+   * stored value unchanged.
+   */
+  motion?: string
+  /**
    * Favourites (OpenSpec change sidebar-favourites, design D1): an ordered,
    * comma-separated list of kind:id entries (project:<id>, label:<id>,
    * view:<id>) shown in the sidebar's Favourites group. Ids only, never
@@ -1351,7 +1358,7 @@ export const OP_DEFAULTS = {
     feed_seen_at: 0, reviewed_at: 0, group_by: '', sort_by: '', sort_dir: '', row_layout: '', review_every: '', card_notes: false,
   } satisfies Omit<ProjectPrefs, 'id' | '_clock'>,
   user_prefs: {
-    date_format: 'system', time_format: 'system', week_start: 'system', day_start: '', theme_mode: 'system', theme_accent: 'emerald', theme_accent_custom: '', theme_light: '', theme_dark: '', sidebar_destinations: '', density: '', row_detail: '', favourites: '', first_run: '', welcome: '', method_mode: '', time_sectors: '', start_checklist: '', language: 'system', focus_mode: '', focus_auto_start: '', focus_sound: '', focus_work_minutes: 0, focus_short_break_minutes: 0, focus_long_break_minutes: 0, focus_long_break_every: 0, focus_break_after_minutes: 0, maps: '', haptics: '', briefing: '', task_open: '', row_layout: '', today_events: '', today_assignees: '', upcoming_events: '', add_position: '', reminder_default_timed: '', reminder_default_dated: '', sidebar_counts: '', sidebar_order: '', focus_presets: '', focus_noise: '', focus_alert: '', day_parts: '', today_limit: 0, today_done: '', focus_style: '', energy: '', bento_order: '', formatting_toggle: '', routines_seen_at: 0, routines_hide_successes: '', upcoming_today: '', objectives: '', habits: '', full_titles: '', today_group_by: '', today_sort_by: '', today_sort_dir: '', today_row_layout: '', today_subtasks: '', upcoming_sort_by: '', upcoming_sort_dir: '', upcoming_row_layout: '', upcoming_subtasks: '', upcoming_later: '', inbox_group_by: '', inbox_sort_by: '', inbox_sort_dir: '', inbox_row_layout: '', priority_name_1: '', priority_name_2: '', priority_name_3: '', priority_name_4: '', daily_notes: false, daily_notes_project: '', daily_notes_template: '',
+    date_format: 'system', time_format: 'system', week_start: 'system', day_start: '', theme_mode: 'system', theme_accent: 'emerald', theme_accent_custom: '', theme_light: '', theme_dark: '', sidebar_destinations: '', density: '', row_detail: '', motion: '', favourites: '', first_run: '', welcome: '', method_mode: '', time_sectors: '', start_checklist: '', language: 'system', focus_mode: '', focus_auto_start: '', focus_sound: '', focus_work_minutes: 0, focus_short_break_minutes: 0, focus_long_break_minutes: 0, focus_long_break_every: 0, focus_break_after_minutes: 0, maps: '', haptics: '', briefing: '', task_open: '', row_layout: '', today_events: '', today_assignees: '', upcoming_events: '', add_position: '', reminder_default_timed: '', reminder_default_dated: '', sidebar_counts: '', sidebar_order: '', focus_presets: '', focus_noise: '', focus_alert: '', day_parts: '', today_limit: 0, today_done: '', focus_style: '', energy: '', bento_order: '', formatting_toggle: '', routines_seen_at: 0, routines_hide_successes: '', upcoming_today: '', objectives: '', habits: '', full_titles: '', today_group_by: '', today_sort_by: '', today_sort_dir: '', today_row_layout: '', today_subtasks: '', upcoming_sort_by: '', upcoming_sort_dir: '', upcoming_row_layout: '', upcoming_subtasks: '', upcoming_later: '', inbox_group_by: '', inbox_sort_by: '', inbox_sort_dir: '', inbox_row_layout: '', priority_name_1: '', priority_name_2: '', priority_name_3: '', priority_name_4: '', daily_notes: false, daily_notes_project: '', daily_notes_template: '',
   } satisfies Omit<UserPrefs, 'id' | '_clock'>,
   objective: {
     title: '', period: '', position: 0, done_at: 0, created_at: 0, deleted_at: null,

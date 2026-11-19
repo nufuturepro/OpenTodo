@@ -293,7 +293,7 @@ export function SettingsList({ user, current, page, inPage = false, compact = fa
       </nav>
       {!compact && (
         <p className="text-meta text-faint">
-          {t('OpenTodo is free software (AGPL-3.0). No telemetry, no tracking, no subscription.')}<a className="ml-1 underline" href="https://github.com/OpenTodoApp/OpenTodo" target="_blank" rel="noreferrer">{t('Source code')}</a>
+          {t('OpenTodo is free software (AGPL-3.0). No telemetry, no tracking, no subscription.')}<a className="ml-1 underline" href="https://github.com/nufuturepro/OpenTaskKit" target="_blank" rel="noreferrer">{t('Source code')}</a>
         </p>
       )}
     </div>

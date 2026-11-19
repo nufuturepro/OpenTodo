@@ -57,7 +57,7 @@ import { holdSelect, useListSwipe } from './task-list/RowSwipe'
 import { QuickAdd, type QuickAddInput } from './QuickAdd'
 import type { Route } from './router'
 import { AddSection } from './Sections'
-import { useSelection } from './selection'
+import { useSelection, type SelectionApi } from './selection'
 import { SubProjects } from './SubProjects'
 import { TimelineView } from './TimelineView'
 import { completeWithUndo } from './undoable'
@@ -84,6 +84,7 @@ import { RoutinesInboxSlot } from './routines/InboxSlot'
 import { closedListMeta } from './task-list/useClosedList'
 import { ClosedListMenuItems } from './task-list/ClosedListActions'
 import { ReplanTodayItem } from './calendar/ReplanMenuItem'
+import { GripHint } from './task-list/GripHint'
 import { closedListOffered } from '../lib/closedListPrefs'
 import { dayPartsOn, setDayParts } from '../lib/dayParts'
 import { readMethodMode } from '../lib/method/mode'
@@ -94,6 +95,21 @@ export { BLOCKED_OPEN_KEY } from '../lib/listGroups'
 /** The guide section of each list page (user-documentation "Contextual help"); projects use their header's. */
 const HELP_SCREENS: Partial<Record<Route['view'], string>> = {
   inbox: 'inbox', today: 'today', upcoming: 'upcoming', anytime: 'anytime', someday: 'someday', completed: 'completed', assigned: 'assigned', label: 'label',
+}
+
+/**
+ * The grip's hold ticked a row and the press then became a drag (bulk-actions on
+ * touch, touch-row-grip): give that tick back, and with nothing else ticked leave
+ * selection mode as the press found it. Called through the drag state, so it reads
+ * the latest render — the one that already carries the hold's tick.
+ */
+function undoGripHold(selection: SelectionApi, setSelectMode: (on: boolean) => void): (task: Task) => void {
+  return (task) => {
+    if (!selection.ticked.has(task.id)) return
+    const alone = selection.ticked.size === 1
+    selection.toggle(task.id)
+    if (alone) setSelectMode(false)
+  }
 }
 
 /** Transient UI of the list: pickers, prompts, quick adds and the actions menu. */
@@ -286,7 +302,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
   // Manual ordering (manual-ordering): projects (editors and above) and the Inbox by positions; a label page by its own order (view-manual-order).
   const projectManual = (route.view === 'project' && m.projectEditable) || route.view === 'inbox', ownOrder = useOwnOrder(route, rows, upcomingCal.groups, board), manual = projectManual || !!ownOrder, listReorder = useListReorder(manual, ownOrder?.step, m.listDisplay.onReorder, useListAdd(projectManual && m.treeView && !board, ui, m.toggleCollapsed))
   const sectionOfRow = useMemo(() => sectionOfRows(board, dataColumns, upcomingCal.groups), [board, dataColumns, upcomingCal.groups])
-  const drag = useListDrag({ manual, onReorder: ownOrder ? undefined : m.listDisplay.onReorder, source: { rows, groups: upcomingCal.groups, sectionOfRow, tree: m.tree, board, sectionMap, ticked: selection.ticked, onHold: (task) => holdSelect(task.id, selection, setSelectMode), openRowMenu: rowMenu.open, reorder: ownOrder?.reorder, groupOf: ownOrder?.groupOf, across: ownOrder?.across, readOnly: isReadOnly }, moveToSection, onDropped: setSelectedId, onDragStart: rowMenu.dismiss })
+  const drag = useListDrag({ manual, onReorder: ownOrder ? undefined : m.listDisplay.onReorder, source: { rows, groups: upcomingCal.groups, sectionOfRow, tree: m.tree, board, sectionMap, ticked: selection.ticked, onHold: (task) => holdSelect(task.id, selection, setSelectMode), onHoldUndo: undoGripHold(selection, setSelectMode), openRowMenu: rowMenu.open, reorder: ownOrder?.reorder, groupOf: ownOrder?.groupOf, across: ownOrder?.across, readOnly: isReadOnly }, moveToSection, onDropped: setSelectedId, onDragStart: rowMenu.dismiss })
   const { latestSectionMap } = drag
   // The view supplies defaults; attributes typed in the quick-add line override them.
   const withDefaults = useCallback(async (inputs: QuickAddInput[]) => {
@@ -348,7 +364,6 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
     today, userId, acceptPrompt, moveToSection, toggleViewMode, foldColumn: toggleSection,
     editInline: (id) => { setSelectedId(id); setInline({ id }) }, expandedId, setExpandedId,
   })
-  // Vim's `o` inserts by project position: only where positions are the order (manual: projectManual).
   const rowActions = useListBindings({ ...shared, manual: projectManual, setSelectMode, startDrag: drag.startDrag, insertAfter, listRoot, projectReadOnly: m.projectReadOnly, startInline, setExpandedId, openRowMenu: rowMenu.open, draggingId: drag.draggingId })
 
   const { edgeOf, boardGroups, queryControl: queryFilter, queryHost, cardNotes } = useListExtras(board, m.queryFilter, projectId ? { mode: viewMode, onChoose: chooseViewMode } : null, projectId) // Colour by on boards, Upcoming's query filter (calendar-clarity)
@@ -432,6 +447,7 @@ export function TaskListView({ route, userId, userRole }: { route: ListRoute; us
           {route.view === 'project' && currentProject && <><ProjectNote project={currentProject} phone={phone} /><LinkedRefs kind="project" id={currentProject.id} folded /></>}
           {route.view === 'project' && !board && <SubProjects projectId={route.id} />}
           {m.offerColumns && <ColumnsToggle on={!!m.columnsPref} onToggle={() => projectId && saveListColumns(projectId, !m.columnsPref)} />}
+          {!fine && own.length > 0 && <GripHint />}
           {own.length === 0 && !upcomingCal.hasEvents && !(board || m.liveSections.length > 0) && (m.duration || m.queryFilter?.query || completedNarrowed
             ? <FilteredEmpty onClear={() => { m.chooseDuration(null); m.queryFilter?.setQuery(''); m.setCompletedQuery(''); if (completedNarrowed) setCompletedDisplay({ projects: [] }) }} />
             : <EmptyState view={route.view} waiting={groups.find((g) => g.key === 'blocked')?.count ?? 0} readOnly={m.projectReadOnly}

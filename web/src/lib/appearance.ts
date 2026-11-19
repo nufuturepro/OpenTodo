@@ -8,6 +8,7 @@
 // as inline properties on the root; the derivation itself loads lazily.
 import { ACCENTS, CUSTOM_ACCENT, DARK_BAR, DEFAULT_ACCENT, isAccent, type AccentId, type ThemeAccent } from '../ui/tokens/accents'
 import { mutate } from './ops'
+import { applyMotion, syncRootMotion } from './rootMotion'
 import type { ThemeModePref, UserPrefs } from './types'
 import { USER_PREFS_ID } from './userPrefs'
 import { readJSON, writeJSON } from './deviceStorage'
@@ -27,6 +28,8 @@ export type Promotable = (typeof PROMOTABLE)[number]
 /** Row density (appearance-preferences "Density preference"); unknown stored values read as comfortable. */
 export const DENSITIES = ['comfortable', 'compact'] as const
 export type Density = (typeof DENSITIES)[number]
+/** Row detail (calm-rows D8): read from the retired `row_detail` field, which an older client may still write. */
+export type RowDetail = 'calm' | 'detailed'
 
 /** A stored custom colour: lowercase `#rrggbb` (accent-colour D1). */
 export const CUSTOM_HEX = /^#[0-9a-f]{6}$/
@@ -48,11 +51,15 @@ export interface Appearance {
   custom?: string
   /** Row density; comfortable when absent. */
   density?: Density
+  /** Row detail; calm when absent. */
+  detail?: RowDetail
+  /** Motion preference (task-menu-refinement); on when absent or unknown. */
+  motion?: 'on' | 'off'
   /** Promoted sidebar destinations, in the More group's order; unknown stored entries are dropped on read, kept in the row. */
   sidebar?: Promotable[]
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { mode: 'system', accent: DEFAULT_ACCENT, density: 'comfortable', sidebar: [] }
+export const DEFAULT_APPEARANCE: Appearance = { mode: 'system', accent: DEFAULT_ACCENT, density: 'comfortable', detail: 'calm', motion: 'on', sidebar: [] }
 
 /** Reads a stored row: a missing row or an unknown value (from a newer client) is the default. The row is not changed. */
 export function readAppearance(row: Partial<UserPrefs> | null | undefined): Appearance {
@@ -66,15 +73,23 @@ export function readAppearance(row: Partial<UserPrefs> | null | undefined): Appe
     accent,
     ...(custom ? { custom } : {}),
     density: row?.density === 'compact' ? 'compact' : 'comfortable',
+    // rows-v2 D1: `row_detail` is retired — stored and exported with the row, never applied.
+    detail: 'calm',
+    // Anything but `none` (including an unknown value from a newer client) is on,
+    // and the stored value is left alone (task-menu-refinement "Motion preference").
+    motion: row?.motion === 'none' ? 'off' : 'on',
     sidebar: PROMOTABLE.filter((id) => wanted.has(id)),
   }
 }
 
+export { syncRootMotion }
+
 /**
- * Changes the mode, the accent or the density through the op log (offline-safe,
- * synced). `row_detail` is retired (rows-v2 D1): kept in the schema, never written.
+ * Changes the mode, the accent, the density or the motion preference through the op
+ * log (offline-safe, synced). `row_detail` is retired (rows-v2 D1): kept in the
+ * schema, never written — the row's layout lives in `row_layout`.
  */
-export function setAppearance(field: 'theme_mode' | 'theme_accent' | 'density', value: string): Promise<void> {
+export function setAppearance(field: 'theme_mode' | 'theme_accent' | 'density' | 'motion', value: string): Promise<void> {
   return mutate('user_prefs', USER_PREFS_ID, { [field]: value })
 }
 
@@ -273,6 +288,10 @@ export function applyAppearance(a: Appearance, doc: Document = document, derived
   // touch targets keep their size through the coarse-pointer rules.
   if (a.density === 'compact') root.setAttribute('data-density', 'compact')
   else root.removeAttribute('data-density')
+  // Motion (task-menu-refinement): off applies the root no-motion presentation the
+  // existing CSS makes fully instant; on leaves the system's reduced-motion setting
+  // to act alone.
+  applyMotion(a.motion === 'off', doc)
   setMeta(doc, 'color-scheme', a.mode === 'system' ? 'light dark' : a.mode)
   const side = effectiveSide(a.mode, doc)
   applyTheme(themesNow[side] ?? null, doc)

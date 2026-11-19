@@ -29,6 +29,8 @@ export interface DragSource {
   ticked?: ReadonlySet<string>
   /** Touch: a hold on the row's grip selects it (phone-v2 D8); the row body's hold opens the menu instead. */
   onHold?: (task: Task) => void
+  /** Touch: the press's own hold ticked the row and the press became a drag — give that tick back (bulk-actions on touch). */
+  onHoldUndo?: (task: Task) => void
   /** Opens the row's actions menu for a task at a point (task-row-context-menu): a touch hold's release. */
   openRowMenu: (task: Task, x: number, y: number, row?: Element | null) => void
   /**
@@ -106,12 +108,18 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
       setDropAt(d)
     }
     const hold = st.onHold
+    // What the press found: a row ticked before it presses keeps its selection through
+    // a drag; a tick this press's own hold creates is given back if the press drags.
+    const wasTicked = st.ticked?.has(task.id) ?? false
     beginDrag(e, {
       grip,
       label: task.title,
       taskDrops: true,
       // Only the grip's hold selects (bulk-actions on touch); the row body's hold is the menu's.
       onHold: grip && hold ? () => hold(task) : undefined,
+      // A hold that then drags gives its tick back — only for a row this press found
+      // unticked (the provider's closure carries the hold's tick once it renders).
+      onHoldUndo: grip && !wasTicked ? () => dragState.current.onHoldUndo?.(task) : undefined,
       onStart: () => {
         setDraggingId(task.id)
         // A hold may have opened the menu (a native touch context menu); the drag wins.

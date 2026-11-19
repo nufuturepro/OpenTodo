@@ -37,7 +37,13 @@ function taskPageWithoutPwa(): Plugin {
 }
 
 export default defineConfig({
+  // The build's version as a string constant (Settings → About's Version row): a
+  // `define` rather than an import of package.json, which would put its scripts and
+  // devDependencies in the bundle and the workbench test's way.
   define: {
+    __APP_VERSION__: JSON.stringify(
+      JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version,
+    ),
     __APP_KEYS__: JSON.stringify(signing.keys.map((k: { spki: string }) => k.spki)),
     __OFFICIAL_KEYS__: JSON.stringify(signing.official),
   },
