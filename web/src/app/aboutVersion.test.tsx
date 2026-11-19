@@ -26,6 +26,8 @@ describe('changelogUrl', () => {
   it('anchors a release to its own section of the page', () => {
     expect(changelogUrl('1.0.0')).toBe(`${CHANGELOG_URL}#v1-0-0`)
     expect(changelogUrl('0.23.11')).toBe(`${CHANGELOG_URL}#v0-23-11`)
+    // The server reports its version with the release's `v` (v1.5.0).
+    expect(changelogUrl('v1.5.0')).toBe(`${CHANGELOG_URL}#v1-5-0`)
   })
 
   it('opens the newest release for a version the page has no anchor for', () => {
@@ -47,9 +49,9 @@ describe('the Version row', () => {
   })
 
   it('links the server’s version once it is known', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '1.0.0' }), { status: 200 })))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: 'v1.0.0' }), { status: 200 })))
     const r = await render(<AboutSection user={member} />)
-    await waitFor(() => document.querySelector('[data-about-version]')?.textContent === '1.0.0', 'the server version')
+    await waitFor(() => document.querySelector('[data-about-version]')?.textContent === 'v1.0.0', 'the server version')
     expect(document.querySelector('[data-about-version]')!.getAttribute('href')).toBe(`${CHANGELOG_URL}#v1-0-0`)
     await r.unmount()
   })

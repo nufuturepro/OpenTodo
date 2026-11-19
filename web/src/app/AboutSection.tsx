@@ -32,10 +32,11 @@ export const CHANGELOG_URL = `${WEBSITE_URL}/changelog/`
  * The changelog at the release this client runs: the website gives every release an
  * anchor (`#v1-0-0`), so the row opens what changed in this version and the whole
  * history under it. A build without a release number (`dev+abc1234`) or a pre-release
- * suffix has no anchor of its own and opens the page's newest release instead.
+ * suffix has no anchor of its own and opens the page's newest release instead. The
+ * server reports its version as `v1.5.0`, so the leading `v` is optional here.
  */
 export function changelogUrl(version: string): string {
-  const release = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
+  const release = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version)
   return release ? `${CHANGELOG_URL}#v${release[1]}-${release[2]}-${release[3]}` : CHANGELOG_URL
 }
 
