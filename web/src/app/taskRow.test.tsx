@@ -169,7 +169,7 @@ describe('one row language (rows-v2)', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it('P1 and P2 keep their ring colour, P3 and P4 get the neutral ring', async () => {
+  it('uses the priority outline for P1 to P3 and keeps P4 neutral', async () => {
     const ring = async (priority: Task['priority']) => {
       const r = await row({ priority })
       const cls = r.container.querySelector('[data-check-mark]')!.className
@@ -178,8 +178,7 @@ describe('one row language (rows-v2)', () => {
     }
     expect(await ring(1)).toContain('border-p1')
     expect(await ring(2)).toContain('border-p2')
-    expect(await ring(3)).toContain('border-input')
-    expect(await ring(3)).not.toContain('border-p3')
+    expect(await ring(3)).toContain('border-p3')
     expect(await ring(4)).toContain('border-input')
     expect(await ring(4)).not.toContain('border-p4')
   })
@@ -202,15 +201,69 @@ describe('one row language (rows-v2)', () => {
   it('Three labels on a row: two chips and "+1", read in full; the open label is left out', async () => {
     const labels = [L('l1', 'errand'), L('l2', 'call'), L('l3', 'home')]
     const r = await row({ labels: ['l1', 'l2', 'l3'] }, { labels })
+    await waitFor(() => !!r.container.querySelector('[data-label-chips][aria-label]'), 'the One line labels')
     const group = r.container.querySelector('[data-row-meta] [data-label-chips]')!
-    expect([...group.querySelectorAll('[data-label-chip]')].map((c) => c.textContent)).toEqual(['errand', 'call'])
+    expect([...group.querySelectorAll(':not([aria-hidden]) > [data-label-chip]')].map((c) => c.textContent)).toEqual(['errand', 'call'])
     expect(visibleText(group.querySelector('[data-label-more]')!)).toBe('+1')
-    expect(spokenText(group)).toBe('Labels: errand, call, home')
+    expect(group.getAttribute('aria-label')).toBe('Labels: errand, call, home')
     await r.unmount()
     const inView = await row({ labels: ['l1', 'l2', 'l3'] }, { labels, omitLabel: 'l1' })
     expect([...inView.container.querySelectorAll('[data-label-chip]')].map((c) => c.textContent)).toEqual(['call', 'home'])
     expect(inView.container.querySelector('[data-label-more]')).toBeNull()
     await inView.unmount()
+  })
+
+  it('fits the fixed label column, showing full names for a cut chip and the overflow count', async () => {
+    const long = 'A label too long for the slot'
+    const labels = [L('l1', long), L('l2', 'call'), L('l3', 'home')]
+    let width = 110
+    let resize: () => void = () => {}
+    const computedStyle = window.getComputedStyle.bind(window)
+    const mockStyle = vi.spyOn(window, 'getComputedStyle').mockImplementation((el) =>
+      el.matches('[data-row-cell="labels"]')
+        ? ({ gridColumnStart: 'labels' } as CSSStyleDeclaration)
+        : computedStyle(el))
+    const mockClientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.matches('[data-row-cell="labels"]') ? width : 0
+    })
+    const mockWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.matches('[data-label-chip]')) return this.textContent === long ? 140 : 32
+      return this.textContent === '+' || this.textContent === '0' ? 8 : 0
+    })
+    vi.stubGlobal('ResizeObserver', class {
+      private targets = new Set<Element>()
+      constructor(callback: (entries: { target: Element }[]) => void) {
+        resize = () => callback([...this.targets].map((target) => ({ target })))
+      }
+      observe(target: Element) { this.targets.add(target) }
+      unobserve(target: Element) { this.targets.delete(target) }
+      disconnect() { this.targets.clear() }
+    })
+    try {
+      const r = await row({ labels: labels.map((label) => label.id) }, { labels, layout: 'line' })
+      const group = r.container.querySelector('[data-row-cell="labels"] [data-label-chips]')!
+      const shown = () => [...group.querySelectorAll('[data-label-chip]')]
+        .filter((chip) => !chip.closest('[aria-hidden="true"]')).map((chip) => chip.textContent)
+      const overflow = () => group.querySelector('[data-label-more]')
+      await waitFor(() => overflow()?.textContent?.startsWith('+2') === true, 'fit measured')
+      expect(shown()).toEqual([long])
+      expect(group.querySelector('[data-tip][tabindex="0"]')?.getAttribute('data-tip')).toBe(long)
+      expect(visibleText(overflow()!)).toBe('+2')
+      expect(overflow()!.getAttribute('data-tip')).toBe('call, home')
+      expect(overflow()!.getAttribute('tabindex')).toBe('0')
+      expect(spokenText(group)).toContain(long)
+      expect(spokenText(group)).toContain('call, home')
+      width = 220
+      await act(async () => resize())
+      expect(shown()).toEqual([long, 'call', 'home'])
+      expect(group.querySelector('[data-tip]')).toBeNull()
+      expect(overflow()).toBeNull()
+      await r.unmount()
+    } finally {
+      mockWidth.mockRestore()
+      mockClientWidth.mockRestore()
+      mockStyle.mockRestore()
+    }
   })
 
   it('counts sit beside the title, quiet and read in full; a row with only counts is one line', async () => {
@@ -315,7 +368,7 @@ describe('one row language (rows-v2)', () => {
     const r = await row({ project_id: project.id }, { showProject: true, project })
     const cell = r.container.querySelector('[data-row-cell="project"]')!
     expect(cell.querySelector('svg')).toBeNull()
-    expect(cell.querySelector<HTMLElement>('.rounded-full')?.style.backgroundColor).toBe(project.color)
+    expect(cell.querySelector<HTMLElement>('.rounded-full.bg-hue-solid')?.dataset.hue).toBe('red')
     expect(spokenText(cell)).toBe(project.name)
     await r.unmount()
   })
@@ -640,7 +693,7 @@ describe('the touch grip', () => {
     const mark = fold.querySelector<HTMLElement>('[data-fold-mark]')!
     expect(mark.className).toContain('pointer-coarse:group-active/fold:bg-selected')
     expect(mark.className).toContain('pointer-events-none')
-    expect(fold.className).toContain('pointer-coarse:active:opacity-100')
+    expect(fold.className).toContain('pointer-coarse:active:animate-none')
     expect(r.container.querySelector('button[aria-label="Complete Task"]')!.className).toContain('pointer-coarse:-m-3')
     // The grip's target ends inside the row, 4 px from its edge.
     expect(r.container.querySelector('[data-row-grip]')!.className).toMatch(/\bme-1\b/)
@@ -661,8 +714,15 @@ describe('the touch grip', () => {
     const css = (await import('../index.css?raw')).default
     // The row body is unselectable on a coarse pointer — the source of the Android
     // word-selection — with form controls exempt so the inline editor still selects.
-    expect(css).toMatch(/li\[data-task-id\] \{ -webkit-user-select: none; user-select: none; \}/)
+    // The callout is off with it (#1346): without `-webkit-touch-callout: none` iOS's
+    // long-press recognizer fires on the body and cancels the drag's pointer mid-hold,
+    // so a hold on the row body often selected text or did nothing instead of dragging,
+    // while the grip (a button, already callout-off) worked. Keep both on the one rule.
+    expect(css).toMatch(/li\[data-task-id\] \{ -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; \}/)
     expect(css).toMatch(/li\[data-task-id\] :is\(input, textarea, \[contenteditable="true"\]\) \{ -webkit-user-select: text; user-select: text; \}/)
+    // The reading text inside an expanded row keeps its callout, so a link in notes still
+    // offers its long-press menu.
+    expect(css).toMatch(/li\[data-task-id\] \[data-row-details\] \{ -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; \}/)
     // The box is drawn by the app, not the platform: no native control's sizing or offset.
     expect(css).toMatch(/\.row-tick \{\s*appearance: none;/)
     expect(css).toMatch(/\.row-tick:checked \{[^}]*--ot-accent/)

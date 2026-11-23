@@ -6,7 +6,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import type { ProposedChange } from './assistantTypes'
 import { addDaysISO, logicalToday, weekStartOf } from './dates'
-import { db } from './db'
+import { db, tableOf } from './db'
 import { memberSet } from './rotation'
 import { getDeviceId, planCompletePlain, planProjectChange, type Change } from './ops'
 import { planCompletion, seriesRule, skipsInstead } from './recurring'
@@ -145,8 +145,10 @@ export function planAssign(tasks: readonly Task[], userId: string | null): Chang
 export async function toProposed(changes: Change[], memberships?: Map<string, Membership>): Promise<ProposedChange[]> {
   const out: ProposedChange[] = []
   for (const c of changes) {
-    const row = c.entity === 'task' ? (await db.tasks.get(c.entityId)) as unknown as Record<string, unknown> | undefined : undefined
-    const project = (c.patch.project_id ?? row?.project_id ?? null) as string | null
+    // Every entity's row is read: a project or a label that exists was taken for a new one,
+    // and its Undo trashed it instead of putting its fields back (#1660).
+    const row = (await tableOf(c.entity).get(c.entityId)) as unknown as Record<string, unknown> | undefined
+    const project = (c.entity === 'task' ? (c.patch.project_id ?? row?.project_id ?? null) : null) as string | null
     const shared = !!memberships && !!project && memberships.has(project)
     const base = row ? Object.fromEntries(Object.keys(c.patch).map((f) => [f, row[f] ?? null])) : undefined
     out.push({ entity: c.entity, entityId: c.entityId, patch: c.patch, ...(base ? { base } : { create: true }), ...(shared ? { shared } : {}) })
@@ -189,7 +191,7 @@ export interface BulkResult { undoId: string | null; label: string; count: numbe
  * Plan an action on the ticked tasks and apply it as one undoable batch. Works
  * offline: the changes go to the outbox with one timestamp and sync as ordinary ops.
  */
-export async function applyBulk(ids: readonly string[], action: BulkAction, opts: { now?: number; today?: string } = {}): Promise<BulkResult> {
+export async function applyBulk(ids: readonly string[], action: BulkAction, opts: { now?: number; today?: string } = {}): Promise<BulkResult & { completed?: boolean }> {
   const now = opts.now ?? Date.now()
   const today = opts.today ?? logicalToday()
   await getDeviceId()
@@ -209,7 +211,8 @@ export async function applyBulk(ids: readonly string[], action: BulkAction, opts
     case 'trash': changes = planTrash(tasks, all, now); label = bulkLabel(action, tasks.length); break
   }
   const entry = await applyBatch(await toProposed(changes), { source: 'bulk', label })
-  return { undoId: entry?.id ?? null, label, count: tasks.length }
+  const result = { undoId: entry?.id ?? null, label, count: tasks.length }
+  return action.kind === 'complete' && entry && !allCompleted(tasks) ? { ...result, completed: true } : result
 }
 
 /** The undo toast's words for a group action (page-rhythm D6): "4 tasks moved to today", "3 of 4 tasks rescheduled". */
@@ -248,12 +251,6 @@ export async function applyGroupDue(ids: readonly string[], pick: Exclude<DuePic
 export interface ReviewPlan {
   items: ProposedChange[]
   resolve: (checkedTaskIds: readonly string[]) => Promise<ProposedChange[]>
-}
-
-export async function planMoveFor(ids: readonly string[], target: MoveTarget): Promise<ProposedChange[]> {
-  const { tasks, all } = await readTicked(ids)
-  const memberships = await membershipMap()
-  return toProposed(planMove(tasks, all, target, memberships, await currentUserId(), Date.now(), await keepWorkspaceFor()), memberships)
 }
 
 export async function reviewMove(ids: readonly string[], target: MoveTarget): Promise<ReviewPlan> {

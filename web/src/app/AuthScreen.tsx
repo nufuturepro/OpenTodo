@@ -262,7 +262,7 @@ export function AuthScreen({ status, invite, notice, onAuthenticated }: {
           {mode === 'register' && (
             <label className="block text-body">
               <span className="mb-1 block text-muted">{t('Name')}</span>
-              <input className="ui-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" autoFocus={emailLocked} />
+              <input className="ui-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" autoFocus />
             </label>
           )}
           <label className="block text-body">
@@ -270,7 +270,7 @@ export function AuthScreen({ status, invite, notice, onAuthenticated }: {
             <input
               className={`ui-input ${emailLocked ? 'bg-sunken dark:bg-raised text-muted' : ''}`}
               type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete={passkeys ? 'username webauthn' : 'email'}
-              readOnly={emailLocked} aria-readonly={emailLocked} autoFocus={!emailLocked}
+              readOnly={emailLocked} aria-readonly={emailLocked} autoFocus={mode !== 'register'}
             />
           </label>
           <label className="block text-body">
@@ -370,7 +370,7 @@ function OrDivider() {
 /** The sign-in card frame shared by the password and code steps. */
 export function AuthCard({ version, children }: { version: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-canvas p-6">
+    <div className="flex min-h-full items-start justify-center bg-canvas p-6 pt-[max(1.5rem,var(--safe-top))] sm:items-center">
       <div className="w-full max-w-sm rounded-card border border-default bg-surface p-6 shadow-1">
         <div className="mb-6 flex items-center gap-3">
           <InstanceMark size={32} />

@@ -12,7 +12,7 @@ import { parse } from '../lib/filter'
 import { resolveLabels } from '../lib/labels'
 import { hasTimeColumn } from '../lib/rowTime'
 import { listSlotsOff } from '../lib/rowSlots'
-import { setTaskCompleted } from '../lib/ops'
+import { setTaskCompletedWithFeedback } from './completionSound'
 import { breadcrumbOf, progressMap } from '../lib/subtasks'
 import { GROUP_BY_OPTIONS, SORT_BY_OPTIONS, type View } from '../lib/types'
 import { displayOptions, runView, updateView, viewOptions, type ViewPatch } from '../lib/views'
@@ -30,7 +30,7 @@ import type { OrderHost } from '../lib/viewOrderMove'
 import { stepInView } from './viewOrderActions'
 import { groupOfKey, useViewOrderDrag, viewRowTarget, type ProjectGroups } from './views/useViewOrderDrag'
 import { useMembershipMap } from '../lib/localData'
-import { canEditTasks, roleOf } from '../lib/sharing'
+import { canEditTasks, roleOf, scopeOf } from '../lib/sharing'
 import { useBulkList } from './bulk/useBulkList'
 import { placeInDay } from './signals'
 import { logicalToday } from '../lib/dates'
@@ -53,7 +53,6 @@ import { useDisplayKeys } from './views/useDisplayKeys'
 import { rowLayoutOf, useAccountRowLayout } from '../lib/rowLayout'
 import { LIST_READY, perfMark } from '../lib/perfMarks'
 import { UrgencyChip, UrgencyContext } from './useUrgency'
-import { projectHue } from './projectHue'
 import { useCollapsedRows } from './task-list/collapsedRows'
 import { nestGroup, type NestedRow } from '../lib/viewNest'
 
@@ -232,6 +231,7 @@ export function SavedViewView({ view, data }: { view: View; data: ViewData }) {
   const projectGroups = useMemo<ProjectGroups | null>(() => (opts.groupBy !== 'project' || display.layout !== 'list' ? null : {
     projectOf: (k) => (k === 'inbox' ? { id: null, name: t('Inbox') } : projectMap.has(k) ? { id: k, name: projectMap.get(k)!.name } : null),
     canEdit: (id) => canEditTasks(roleOf(id, memberships)),
+    canNest: (from, to) => scopeOf(from, memberships) === scopeOf(to, memberships),
     nest,
     depthOf: (k) => nested.get(k)?.depth ?? 0,
   }), [opts.groupBy, display.layout, projectMap, memberships, nest, nested])
@@ -281,7 +281,7 @@ export function SavedViewView({ view, data }: { view: View; data: ViewData }) {
             onAdd={() => document.querySelector<HTMLButtonElement>('[data-filter-panel] [data-add-condition]')?.click()} />
           {filterOpen && (
             <FilterPanel count={draftCount} onClose={() => setFilterOpen(false)} inputRef={inputRef}
-              builder={<FilterBuilder query={draft} onChange={(q) => { setDraft(q); setDraftError(null) }} labels={labels} projects={projects} fields={ctx.fields ?? []} workspaces={ctx.workspaces} members={ctx.members} />}
+              builder={<FilterBuilder query={draft} onChange={(q) => { setDraft(q); setDraftError(null) }} labels={labels} projects={projects} sections={ctx.sections ?? []} fields={ctx.fields ?? []} workspaces={ctx.workspaces} members={ctx.members} />}
               formula={(
                 <div className="flex items-center gap-2">
                   <input ref={inputRef} className="ui-input border-transparent bg-transparent font-mono" aria-label={t('View query')} aria-invalid={!!message} aria-describedby="view-message"
@@ -312,10 +312,10 @@ export function SavedViewView({ view, data }: { view: View; data: ViewData }) {
 
           {bulk.render(rows.find((r) => r.key === selected)?.task.id ?? null)}
           <div ref={listRef} tabIndex={-1} className="outline-none" role="region" aria-label={t('View results')}>
-            <ViewResults groups={groups} layout={display.layout} foldScope={`view:${view.id}`} hueOf={opts.groupBy === 'project' ? (key) => projectHue(projectMap.get(key)) : undefined} selectedGroup={selected ? groupOfKey(selected) : null} renderTask={(tk, key, shape) => (
+            <ViewResults groups={groups} layout={display.layout} foldScope={`view:${view.id}`} projectOf={opts.groupBy === 'project' ? (key) => projectMap.get(key) : undefined} selectedGroup={selected ? groupOfKey(selected) : null}
+              isNested={(key) => !!nested.get(key)?.depth} renderTask={(tk, key, shape, groupSeparator) => (
               <TaskRow
-                key={key}
-                shape={shape}
+                key={key} shape={shape} groupSeparator={groupSeparator}
                 task={tk}
                 project={tk.project_id ? projectMap.get(tk.project_id) : undefined}
                 labels={resolveLabels(tk.labels, labelMap)}
@@ -336,15 +336,14 @@ export function SavedViewView({ view, data }: { view: View; data: ViewData }) {
                 hasChildren={nested.get(key)?.hasChildren}
                 collapsed={nested.get(key)?.collapsed}
                 onToggleCollapse={nested.get(key)?.hasChildren ? () => toggleCollapsed(tk.id) : undefined}
-                onToggle={() => act(setTaskCompleted(tk.id, !tk.completed_at))}
-                onOpen={(e) => { setSelected(key); openFromRow(tk.id, e) }}
+                onToggle={() => act(setTaskCompletedWithFeedback(tk.id, !tk.completed_at))}
+                selectOnClick onOpen={(e, intent) => { setSelected(key); openFromRow(tk.id, e, intent) }}
                 onOpenPage={() => openTaskPage(tk.id)}
                 onExpand={() => { setSelected(key); setExpanded((cur) => (cur === key ? null : key)) }}
                 {...bulk.rowProps(tk)}
                 onPointerDown={(e) => drag.startDrag(e, key, tk)}
                 dropKey={viewRowTarget(key)}
-                dropIndicator={drag.dropAt?.key === key ? drag.dropAt.zone : null}
-                dropNote={drag.dropAt?.key === key ? drag.dropAt.note : undefined}
+                {...drag.feedback(key)}
                 dragging={drag.draggingKey === key}
                 expanded={!drag.draggingKey && expanded === key}
                 score={urgency && shape !== 'card' ? <UrgencyChip of={urgency} task={tk} /> : undefined}

@@ -34,10 +34,15 @@ import { applyOps, createTask, mutate, resetDeviceId } from './ops'
 import { followSharedDueChanges } from './reminders'
 import { compareByPosition } from './ordering'
 import { ApiError } from './api'
-import { markTaskNotificationsRead, unreadCount, unreadNotifications } from './notifications'
+import { markTaskNotificationsRead } from './notifications'
+
 import { describeRejected } from './sharing'
 import { dismissRejected, startSync, stopSync, stopSyncAndWait, syncNow, syncSnapshot } from './sync'
 import { NetworkError, RequestTimeoutError } from './http'
+
+// The unread notifications in the cache, newest first, and their number.
+const unreadNotifications = async () => (await db.notifications.orderBy('createdAt').reverse().toArray()).filter((n) => n.readAt === null)
+const unreadCount = () => db.notifications.filter((n) => n.readAt === null).count()
 
 /** Minimal stand-in for the browser's EventSource with manual event injection. */
 class FakeEventSource {
@@ -369,6 +374,50 @@ describe('restore re-seed (log generation)', () => {
     }
   })
 
+  /** The restored server, refusing reserved devices as /api/v1/sync does (mcp-write-tools D4). */
+  function strictRestoredServer() {
+    const reserved = (d: string) => d === 'server' || d.startsWith('server:') || /^(agent|caldav|public|issues|page|rule|calsync):/.test(d)
+    syncCalls.mockImplementation((async (...args: unknown[]) => {
+      const cursor = args[1] as number
+      const ops = args[2] as SentOp[]
+      if (ops.some((o) => reserved(o.device))) throw new ApiError(400, 'invalid_op', 'op device: server and ids starting with agent:, caldav: or public: are reserved')
+      return { applied: ops.length, ops: [], cursor: cursor === 0 ? 2 : cursor, hasMore: false, serverTime: Date.now(), generation: 'gen-after' }
+    }) as never)
+  }
+
+  // reseed-reserved-devices D1: a field last written through REST, an AI assistant or
+  // CalDAV goes back with this device's id and its original time, so the server takes it.
+  it('re-seeds fields last written by the server or an assistant, and the exchange completes', async () => {
+    await applyOps([
+      { id: 'r1', entity: 'task', entityId: 't9', field: 'title', value: 'From n8n', ts: 600, device: 'server' },
+      { id: 'r2', entity: 'task', entityId: 't9', field: 'priority', value: 2, ts: 610, device: 'agent:tok1' },
+      { id: 'r3', entity: 'task', entityId: 't9', field: 'notes', value: 'mine', ts: 620, device: 'devA' },
+    ])
+    await setMeta('generation', 'gen-before')
+    strictRestoredServer()
+    await syncNow()
+    expect(syncSnapshot().state).toBe('idle')
+    expect(await db.outbox.count()).toBe(0)
+    expect(await getMeta('generation', '')).toBe('gen-after')
+    const ops = sent().flatMap((c) => c[2])
+    const me = sent()[0][0]
+    expect(ops.find((o) => o.field === 'title')).toMatchObject({ value: 'From n8n', ts: 600, device: me })
+    expect(ops.find((o) => o.field === 'priority')).toMatchObject({ value: 2, ts: 610, device: me })
+    // A field this or another device wrote keeps its clock as before.
+    expect(ops.find((o) => o.field === 'notes')).toMatchObject({ ts: 620, device: 'devA' })
+  })
+
+  // reseed-reserved-devices D2: an outbox an earlier build filled with such ops is not stuck for good.
+  it('sends an outbox an earlier re-seed left with reserved devices', async () => {
+    await db.outbox.add({ id: 'stuck-1', entity: 'task', entityId: 't9', field: 'title', value: 'From n8n', ts: 600, device: 'server' })
+    await db.outbox.add({ id: 'stuck-2', entity: 'task', entityId: 't9', field: 'due', value: null, ts: 601, device: 'caldav:pw1' })
+    await setMeta('generation', 'gen-after')
+    strictRestoredServer()
+    await syncNow()
+    expect(syncSnapshot().state).toBe('idle')
+    expect(await db.outbox.count()).toBe(0)
+  })
+
   it('adopts the first generation it sees without re-seeding', async () => {
     await applyOps([{ id: 'a1', entity: 'task', entityId: 't1', field: 'title', value: 'x', ts: 1, device: 'd' }])
     restoredServer()
@@ -660,6 +709,85 @@ describe('server limits (multi-tenant-host)', () => {
     expect(resent.every((o) => o.entityId === 'kept')).toBe(true)
     expect(syncSnapshot().state).toBe('idle')
     expect(syncSnapshot().pending).toBe(0)
+  })
+})
+
+describe('an op the server cannot accept (sync-invalid-op-alone, invalid-op-ends)', () => {
+  type Sent = { id: string; entityId: string }
+  const accept = async () => ({ applied: 0, ops: [], cursor: serverCursor.value, hasMore: false, serverTime: Date.now() })
+
+  it('keeps a field the server does not know on the device, says so, and offers it again later', async () => {
+    await mutate('task', 'odd', { title: 'Not accepted' })
+    await mutate('task', 'fine', { title: 'Fits' })
+    syncCalls.mockImplementation((async (...args: unknown[]) => ({
+      ...(await accept()),
+      rejected: (args[2] as Sent[]).filter((o) => o.entityId === 'odd').map((o) => ({ id: o.id, reason: 'unknown_field' })),
+    })) as never)
+    await syncNow()
+    // The change is not forgotten: the row stays as edited, and the status names it.
+    expect((await db.tasks.get('odd'))?.title).toBe('Not accepted')
+    expect((await db.tasks.get('fine'))?.title).toBe('Fits')
+    expect(await db.outbox.count()).toBe(0)
+    const s = syncSnapshot()
+    expect(s.state).toBe('error')
+    expect(s.error).toContain('could not accept')
+    expect(s.pending).toBeGreaterThan(0)
+    expect(s.rejected).toBeNull()
+
+    // A minute later it goes out again; a server that now accepts it clears the error.
+    syncCalls.mockClear()
+    syncCalls.mockImplementation(accept as never)
+    vi.setSystemTime(Date.now() + 61_000)
+    await syncNow()
+    const resent = (syncCalls.mock.calls.at(-1) as unknown as [string, number, Sent[]])[2]
+    expect(resent.length).toBeGreaterThan(0)
+    expect(resent.every((o) => o.entityId === 'odd')).toBe(true)
+    expect(syncSnapshot().state).toBe('idle')
+    expect(syncSnapshot().pending).toBe(0)
+  })
+  // invalid-op-ends D2: a value the server will never accept ends like any refused
+  // change: nothing is held, the server's value wins, and the notice says why.
+  it('ends a value the server will never accept: the server value returns and a notice says so', async () => {
+    await applyOps([{ id: 's1', entity: 'task', entityId: 'odd', field: 'title', value: 'Stored', ts: 100, device: 'other' }])
+    await mutate('task', 'odd', { title: 'Refused' })
+    let sentOnce = false
+    syncCalls.mockImplementation((async (...args: unknown[]) => {
+      const sent = args[2] as (Sent & { field: string })[]
+      const refused = sent.filter((o) => o.entityId === 'odd')
+      const first = !sentOnce && refused.length > 0
+      sentOnce ||= first
+      return {
+        ...(await accept()),
+        rejected: refused.map((o) => ({ id: o.id, reason: 'invalid' })),
+        // The server's own value travels with the answer, as for any refused field.
+        ops: first ? [{ id: 's1', entity: 'task', entityId: 'odd', field: 'title', value: 'Stored', ts: 100, device: 'other', seq: 1 }] : [],
+      }
+    }) as never)
+    await syncNow()
+    expect((await db.tasks.get('odd'))?.title).toBe('Stored')
+    expect(await db.outbox.count()).toBe(0)
+    const s = syncSnapshot()
+    expect(s.state).toBe('idle')
+    expect(s.pending).toBe(0)
+    expect(s.rejected?.invalid).toBe(1)
+    expect(describeRejected(s.rejected!)).toContain('could not accept the value')
+    // Nothing is held: a minute later no op is offered again.
+    syncCalls.mockClear()
+    vi.setSystemTime(Date.now() + 61_000)
+    await syncNow()
+    expect((syncCalls.mock.calls.at(-1) as unknown as [string, number, Sent[]])[2]).toEqual([])
+  })
+
+  it('puts a refused field the server has no value for back to its default', async () => {
+    await mutate('task', 'odd2', { title: 'Kept', priority: 1 })
+    syncCalls.mockImplementation((async (...args: unknown[]) => ({
+      ...(await accept()),
+      rejected: (args[2] as (Sent & { field: string })[]).filter((o) => o.entityId === 'odd2' && o.field === 'priority').map((o) => ({ id: o.id, reason: 'invalid' })),
+    })) as never)
+    await syncNow()
+    const row = await db.tasks.get('odd2')
+    expect(row?.title).toBe('Kept')
+    expect(row?.priority).toBe(4)
   })
 })
 

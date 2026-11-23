@@ -32,6 +32,7 @@ func (s *Server) registerAccountRoutes(mux *routes) {
 	// The same answer under the API path (OpenSpec health-route-alias): some reverse
 	// proxies and platforms answer /healthz themselves (Pomerium, Cloud Run).
 	mux.handle("GET /api/v1/health", public("health check under the API path, for proxies that reserve /healthz"), s.handleHealth)
+	mux.handle("GET /api/v1/openapi.json", public("the API description of this release: routes and schemas only, no account data (openapi-description)"), s.handleOpenAPI)
 	mux.handle("GET /.well-known/security.txt", public("RFC 9116: security researchers find where to report vulnerabilities in the software this server runs"), s.handleSecurityTxt)
 	mux.handle("GET /api/v1/auth/status", public("sign-in screen bootstrap: tells the app what the server offers"), s.handleAuthStatus)
 	mux.handle("POST /api/v1/auth/register", public("first-run owner setup and sign-up").DemoDenied(), s.handleRegister)
@@ -56,7 +57,7 @@ func (s *Server) registerAccountRoutes(mux *routes) {
 	s.registerNotePageRoutes(mux)
 
 	mux.handle("GET /api/v1/me", signedIn, s.handleMe)
-	mux.handle("GET /api/v1/tokens", signedIn, s.handleListTokens)
+	mux.handle("GET /api/v1/tokens", signedIn.FullTokens(), s.handleListTokens)
 	mux.handle("POST /api/v1/tokens", signedIn.Sensitive().DemoDenied(), s.handleCreateToken)
 	mux.handle("DELETE /api/v1/tokens/{id}", signedIn.DemoDenied(), s.handleDeleteToken)
 	mux.handle("POST /api/v1/passkeys/register/options", signedIn.Sensitive().DemoDenied(), s.handlePasskeyRegisterOptions)
@@ -156,6 +157,7 @@ func (s *Server) registerFeatureRoutes(mux *routes) {
 	// Occurrences of a recurring task for integrations (OpenSpec change series-occurrences).
 	s.registerOccurrenceRoutes(mux)
 	s.registerOccurrenceActionRoutes(mux)
+	s.registerAwayRoutes(mux)
 	s.registerSplitRoutes(mux)
 	// Habits for scripts, shortcuts and the CLI (OpenSpec change habits-assistant).
 	s.registerHabitRoutes(mux)
@@ -166,6 +168,7 @@ func (s *Server) registerFeatureRoutes(mux *routes) {
 	// Device relay for encrypted accounts' MCP calls (OpenSpec `mcp-device-relay`).
 	s.registerRelayRoutes(mux)
 	s.registerAppSignInRoutes(mux)
+	s.registerConnectedAppsRoutes(mux)
 	// In-app assistant (OpenSpec `in-app-assistant`): settings, consent, usage
 	// and the turn route over the same tool registry.
 	s.registerAssistantRoutes(mux)

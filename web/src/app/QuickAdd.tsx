@@ -1,4 +1,5 @@
 import { type FormEvent, forwardRef, useCallback, type KeyboardEvent, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { useMe } from '../lib/sharing'
 import { keysOf } from '../lib/shortcuts'
 import { useShortcutHints } from './shortcuts/hints'
 import { Icon } from '../ui'
@@ -19,9 +20,10 @@ import { ParseChips } from './ParseChips'
 import { QuickAddTint } from './QuickAddTint'
 import { composingEnter } from '../lib/composeKey'
 import { t, preferredLanguages } from '../lib/i18n'
-import { chipRange, type FieldKind, fieldRows, type FieldRow, startToken } from './quickadd/fields'
+import { chipRange, type FieldKind, fieldRows, type FieldRow, type QuickAddProject, startToken } from './quickadd/fields'
 import { FieldRows, QuickAddFooter } from './quickadd/FieldRows'
 import { SheetBar } from './quickadd/SheetBar'
+import { useLineDate } from './quickadd/LineDatePicker'
 import { usePasteOffer } from './quickadd/PasteOffer'
 import { NotesLine, useNotesField } from './quickadd/NotesLine'
 import { VoiceButton, VoiceNotice } from './quickadd/VoiceParts'
@@ -96,6 +98,8 @@ function useParseContext(settings: QuickAddSettings, projects: readonly ProjectR
   const energy = energyLevelsOn(prefs)
   // Sector phrases only while the account uses time sectors (time-sectors D8).
   const sectors = timeSectorsOn(prefs)
+  // Links need an author for their attachment: before the first sign-in they stay text (quick-add-links D2).
+  const signedIn = !!useMe()
   return useCallback(() => {
     if (!settings.enabled) return null
     const langs = preferredLanguages()
@@ -109,8 +113,10 @@ function useParseContext(settings: QuickAddSettings, projects: readonly ProjectR
       dayParts,
       energy,
       sectors,
+      // A link typed or pasted becomes a link attachment (quick-add-links).
+      links: signedIn,
     }
-  }, [settings, projects, dtPrefs, resolved, dayParts, energy, sectors])
+  }, [settings, projects, dtPrefs, resolved, dayParts, energy, sectors, signedIn])
 }
 
 /**
@@ -127,10 +133,12 @@ function useParseContext(settings: QuickAddSettings, projects: readonly ProjectR
  */
 export const QuickAdd = forwardRef<HTMLTextAreaElement, {
   placeholder: string
-  projects?: readonly ProjectRef[]
+  projects?: readonly QuickAddProject[]
   /** Every label (deleted ones are ignored) for resolving and colouring `@name` chips. */
   labels?: readonly LabelRef[]
   onAdd: (input: QuickAddInput) => Promise<void> | void
+  /** A reusable list: quick add suggests its ticked items by name (reusable-suggest, #1839). */
+  reuseProjectId?: string | null
   /** Prefilled line (the capture screen proposes the shared page's title); parsed like typed text. */
   initialValue?: string
   /** Form id, so a button elsewhere can submit it with `form=`. */
@@ -156,7 +164,7 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
   logDone?: boolean
   /** Whether Shift+Enter opens the notes field (quick-add-notes D2); off where the screen has its own notes, and in the palette, whose Shift+Enter adds and opens. */
   notes?: boolean
-}>(function QuickAdd({ placeholder, projects = [], labels = [], onAdd, initialValue, formId, hideHint, autoFocus, label, voiceShortcut, layout = 'line', onAddAndOpen, escape, onAddMany, logDone, notes: notesOn = true }, ref) {
+}>(function QuickAdd({ placeholder, projects = [], labels = [], onAdd, reuseProjectId, initialValue, formId, hideHint, autoFocus, label, voiceShortcut, layout = 'line', onAddAndOpen, escape, onAddMany, logDone, notes: notesOn = true }, ref) {
   // The `q` badge is printed only while "Show shortcut hints" is on (keyboard-shortcuts).
   const hints = useShortcutHints()
   const [value, setValue] = useState(initialValue ?? '')
@@ -199,10 +207,11 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
 
   // `#` and `@` suggestions (smart-title-tokens D1): a listbox under the field for the token at the caret.
   const energyOn = energyLevelsOn(useUserPrefsRow())
-  const suggest = useTokenSuggest({ input: inputRef, value, setValue: change, projects, labels, enabled: settings.enabled, energy: energyOn })
+  const suggest = useTokenSuggest({ input: inputRef, value, setValue: change, projects, labels, enabled: settings.enabled, energy: energyOn, reuseProjectId, tickedQuery: parsed?.title ?? value, onTicked: (title) => { void add(false, title) } })
   // Unmatched #tokens are explained once the caret has left them (natural-language-capture "Unmatched tokens are explained").
   const misses = (parsed?.unmatched ?? []).filter((m) => !suggest.open || caretOutside(inputRef.current, m.span))
 
+  const lineDate = useLineDate({ input: inputRef, value, chips, context, change }) // the sheet's date tool (phone-quickadd-date-picker)
   const voice = useDictation({
     inputRef, getText: () => valueRef.current, setText: change, settings, projects, labels, shortcut: voiceShortcut,
   })
@@ -242,10 +251,9 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
     void add(false)
   }
 
-  async function add(open: boolean) {
+  async function add(open: boolean, title?: string) { // `title`: a picked ticked item (reusable-suggest) in place of the typed title, tokens kept
     const line = value.trim()
-    if (!line) return
-    if (parsed && !parsed.title) return // only attributes typed so far; wait for a title
+    if (!line || (parsed && !parsed.title && !title)) return // only attributes typed so far; wait for a title
     const snapshot = parsed
     const description = notes?.trim()
     // Clear first so the next entry can be typed while labels are being created.
@@ -255,7 +263,8 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
     setHighlight(null)
     if (notes !== null) notesField.close()
     // Unknown @names become labels first (one op each), then the task references their ids.
-    const parsedInput: QuickAddInput = snapshot ? await toTaskInput(snapshot, { labels, createLabel: createLabelByName }) : { title: line }
+    const typed: QuickAddInput = snapshot ? await toTaskInput(snapshot, { labels, createLabel: createLabelByName }) : { title: line }
+    const parsedInput = title ? { ...typed, title } : typed
     const input = description ? { ...parsedInput, description } : parsedInput
     await (open && onAddAndOpen ? onAddAndOpen(input) : onAdd(input))
   }
@@ -366,9 +375,9 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
         </span>
         {voice.enabled && <span className={lead}><VoiceButton voice={voice} shortcut={voiceShortcut} /></span>}
         {!hideHint && hints && <span className={`${lead} max-sm:hidden`} data-kbd-hint><span className="ui-kbd" data-quick-add-hint>{keysOf('list.quick-add')}</span></span>}
-        {suggest.list}
-        {paste.offer}
+        {layout !== 'sheet' && suggest.list}{paste.offer}
       </div>
+      {layout === 'sheet' && suggest.list && <div className="px-3 pb-2 [&>ul]:static [&>ul]:mt-0 [&>ul]:w-full" data-sheet-suggestions>{suggest.list}</div>}
       {notes !== null && (
         <NotesLine ref={notesField.ref} value={notes} onChange={notesField.setNotes} onClose={notesField.close}
           className={layout === 'sheet' ? 'px-3 pb-2' : 'pl-5'} size={size} />
@@ -386,7 +395,7 @@ export const QuickAdd = forwardRef<HTMLTextAreaElement, {
         <div id="quick-add-preview" role="status" aria-live="polite">
           {misses.length > 0 && <div className="flex flex-wrap gap-1.5 px-3 pb-2 text-meta"><ParseChips chips={[]} misses={misses} projects={projects} labels={labels} onDismiss={dismiss} onMiss={(m) => suggest.openAt(m.span.end)} /></div>}
           <SheetBar chips={chips} projects={projects} labels={labels} line={lineInfo} onDismiss={dismiss} onStart={edit} canSend={!!value.trim() && !emptyTitle} energy={energyOn && settings.enabled}
-            notes={notesAllowed ? { open: notes !== null, start: notesField.open } : undefined} />
+            notes={notesAllowed ? { open: notes !== null, start: notesField.open } : undefined} date={settings.enabled ? lineDate : undefined} />
         </div>
       )}
       {layout === 'line' && <div id="quick-add-preview" role="status" aria-live="polite" className="empty:hidden">

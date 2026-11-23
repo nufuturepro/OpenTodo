@@ -92,10 +92,10 @@ When two devices reorder the same list offline, every device SHALL end with the 
 - **THEN** both devices show the same order and every task appears exactly once
 
 ### Requirement: Which views are manually ordered
-Manual ordering SHALL apply to project views (list and board), the Inbox, the project tree in the sidebar, label pages and saved list views. A project list or the Inbox shown in another order (OpenSpec `list-display-options`, `builtin-view-options`) SHALL stay draggable and movable by keyboard, and a move SHALL switch it back to manual order first; label pages and saved list views SHALL behave the same way (see "Manual order of a label page or saved view"). Today, Upcoming, Anytime, Someday, Assigned to me, Completed and place lists SHALL keep their own sort rules, or on Today and Upcoming the order chosen in their display options, offer no Manual order and use position only to break ties; dragging among rows and keyboard moves SHALL be unavailable there, except that Upcoming SHALL take a dragged task onto another day (see "Drag a task to another day in Upcoming"). The unsaved New view page SHALL not offer Manual order.
+Manual ordering SHALL apply to project views (list and board), the Inbox, the project tree in the sidebar, label pages and saved list views. A project list or the Inbox shown in another order (OpenSpec `list-display-options`, `builtin-view-options`) SHALL stay draggable and movable by keyboard, and a move SHALL switch it back to manual order first; label pages and saved list views SHALL behave the same way (see "Manual order of a label page or saved view"). Today under Project grouping SHALL support its own manual order (see "Project-group drops in Today"). Today under other groupings, Upcoming, Anytime, Someday, Assigned to me, Completed and place lists SHALL keep their own sort rules, or on Today and Upcoming the order chosen in their display options, offer no Manual order and use position only to break ties; dragging among rows and keyboard moves SHALL be unavailable there, except that Upcoming SHALL take a dragged task onto another day (see "Drag a task to another day in Upcoming"). The unsaved New view page SHALL not offer Manual order.
 
 #### Scenario: Not draggable in Today
-- **WHEN** the user tries to drag a task in Today or presses Alt+Up there
+- **WHEN** the user tries to reorder a task in Today grouped by Time of day or presses Alt+Up there
 - **THEN** nothing moves and the item is not shown as draggable
 
 #### Scenario: No reordering within a day of Upcoming
@@ -231,20 +231,101 @@ In Upcoming, a task dragged with a mouse or pen, or on touch after the same pres
 - **THEN** the task keeps its date and no operation is queued
 
 ### Requirement: Drops across project groups in a view
-In the List layout of a saved view or label page grouped by Project, a drop of a task into another project's group SHALL move the task, with its subtasks, to that project without a section and SHALL place it in the view's own order at the drop position, in one undoable batch named "Moved to <project>". With Nest subtasks on, a drop onto a task SHALL make the dragged task that task's last subtask, in the target's project. A drop target in a project the person may not edit SHALL show no drop line and refuse the drop. Other groupings and layouts SHALL keep drops within a group.
+In the List layout of a saved view or label page grouped by Project, a drop of a task into another project's group SHALL move the task and its subtasks in one undoable batch named "Moved to <project>". A top-level transfer SHALL clear its section and use the view's own order. In a saved list view with Nest subtasks on, a drop onto a row SHALL append to that row's subtasks. A drop between rows in that tree SHALL choose its depth with the same sideways gesture as a project list, show the line at that depth, and honor the indicated parent and sibling position. Nesting SHALL require an editable destination in the same sharing scope as the source and SHALL prevent cycles. A project the person may not edit SHALL take no drop. Other groupings and layouts SHALL keep drops within a group.
 
 #### Scenario: Move by dropping into another group
-- **WHEN** a view "This week" grouped by Project shows "Buy paint" under Home and the user drops it between two rows of the Work group
-- **THEN** "Buy paint" moves to Work, appears between those two rows, and Undo puts it back in Home at its old place
+- **WHEN** a task from Home is dropped at the top level between two Work rows
+- **THEN** the task moves to Work at that position in the view's order, and Undo restores its old project and order
 
 #### Scenario: Nest onto a task
-- **WHEN** Nest subtasks is on and the user drops "Book flights" onto "Trip to Lisbon" in another project's group
-- **THEN** "Book flights" moves to that project as the last subtask of "Trip to Lisbon"
+- **WHEN** Nest subtasks is on and a task is dropped onto a row in another editable project in the same sharing scope
+- **THEN** it moves there as that row's last subtask
+
+#### Scenario: Place at a nested gap
+- **WHEN** the pointer moves sideways over a gap in a saved view with Nest subtasks on
+- **THEN** the drop line shows the eligible depth and releasing places the task at that sibling position
 
 #### Scenario: Viewer's project
-- **WHEN** the user drags a task over the group of a project shared with them as a viewer
-- **THEN** no drop line shows there and releasing changes nothing
+- **WHEN** the pointer is over the group of a project shared with the person as a viewer
+- **THEN** no drop line shows and releasing changes nothing
 
 #### Scenario: Grouped by label
 - **WHEN** a view is grouped by Label
-- **THEN** a drop stays within the row's group, as before
+- **THEN** a drop stays within the row's group
+
+### Requirement: Project-group drops in Today
+
+In Today under Project grouping, tasks in the editable project groups and the displayed Inbox group SHALL support the rules in "Drops across project groups in a view". A drop line between rows SHALL position the task before or after that row in the destination group's own Today order. A first positional drop or keyboard reorder SHALL switch Today to Manual order and preserve the displayed relative order of the other top-level tasks in the project groups, subject to the existing 500-ID bound. A drop onto a group heading or empty space in a displayed group SHALL transfer the task at the top level, keep the current sort and preserve any personal order rank. With Nest subtasks enabled, a drop onto the middle of a row SHALL nest it as the last subtask of that row under the sharing-scope and permission rules in that requirement. A transfer to Inbox SHALL clear the task's project while preserving dates. The move SHALL preserve the existing Today membership rules and keep Earlier, Blocked, Waiting for a slot and Done today outside these gestures.
+
+Today SHALL store manual order in synced personal preferences. A reorder SHALL update that order only. A transfer or hierarchy change SHALL update the task and any affected Today placement in one undoable batch, carrying any retained rank to the replacement task ID if a transfer crosses sharing scopes. The batch SHALL apply offline and converge per field by last writer wins.
+
+#### Scenario: Place a task in a different project group
+
+- **WHEN** a user drops B from Home between X and Y in the Work group while Today is ordered by title
+- **THEN** B and its subtree move to Work, B appears between X and Y in Today's Manual order, other tasks keep their relative order, and Undo restores the previous project, placement and sort
+
+#### Scenario: Drop without choosing a position
+
+- **WHEN** a user drops a task on the Work heading while Today is ordered by due date
+- **THEN** the task moves to Work without changing its date or Today sort and appears where the destination sort puts it
+
+#### Scenario: Nest under a parent in the destination project
+
+- **WHEN** Nest subtasks is enabled and a user drops a task in the middle of a row in an editable project in the same sharing scope
+- **THEN** the task moves with its subtree as the last subtask of that row and one Undo reverses the structural change and any Today order update
+
+#### Scenario: Nest under an existing subtask
+
+- **WHEN** the user drops onto an existing visible subtask in another editable project in the same sharing scope with Nest subtasks enabled
+- **THEN** the task becomes its child, and a drop between rows with a nested depth places it at the sibling position indicated by the indented line
+
+#### Scenario: Keep a position after sync
+
+- **WHEN** a user places a task in Today while offline, then reconnects
+- **THEN** the placement is visible immediately on that device and syncs as personal Today order
+
+### Requirement: Reorder subtasks where a task lists them
+Where a task lists its subtasks with their add line (the task panel and the task page), each open subtask SHALL have a move handle when two or more subtasks are open and the user can edit the task. Dragging the handle with a mouse, a pen or touch SHALL show the new order while dragging and SHALL write it on release; Alt+Up and Alt+Down on the handle SHALL move the subtask one place, Alt+Shift+Up and Alt+Shift+Down to the top or bottom, and activating the handle SHALL offer Move up and Move down. The move SHALL write positions only, among the parent's open subtasks, in one operation batch, as a move in a project list does, and SHALL be announced to assistive technology. Completed subtasks SHALL have no handle and keep their place. At the edge of the list a key SHALL do nothing and queue no operation.
+
+#### Scenario: Move with the keyboard
+- **WHEN** a task lists the open subtasks Paint, Sand and Prime and the user presses Alt+Down on Paint's handle
+- **THEN** the list reads Sand, Paint, Prime, "Paint moved to position 2 of 3" is announced, only position fields are queued and focus stays on Paint's handle
+
+#### Scenario: Single pointer
+- **WHEN** the user clicks the handle of the first subtask
+- **THEN** a menu offers Move up, unavailable, and Move down, which moves it one place
+
+#### Scenario: Viewer and completed subtasks
+- **WHEN** a viewer opens the task, or a subtask is completed, or only one subtask is open
+- **THEN** no handle is shown for those rows and their places do not change
+
+### Requirement: Drag several ticked tasks within a list
+In a manually ordered project list or the Inbox, dragging a row that is ticked while other rows of that list are ticked SHALL move every ticked task, not only the dragged one, to the place the drop line shows, in the order the list showed them. The moved tasks SHALL land next to each other under the drop line's parent, in the section of the row they land beside, and the others SHALL keep their relative order. A ticked task SHALL carry its subtasks that are not ticked, keeping their structure; a ticked subtask of a ticked task SHALL leave its parent and land as a sibling right after it, in display order, with its own untouched subtasks. Dropping onto a ticked row, or into the line just above or below one, SHALL act as a drop right after that row at its level: the selection gathers there, nothing is refused. Rows inside the subtree a ticked task carries SHALL take no drop, as a dragged task's own subtree takes none today. The drag preview SHALL read how many tasks move ("3 tasks"). The move SHALL be one batch of ordinary position, parent and section operations with one Undo in the bulk toast ("4 tasks moved"), applied locally first, offline included, converging like every move; the ticks SHALL stay on the moved tasks. A list the user may not edit SHALL take no drop, as today. Dragging a row that is not ticked SHALL move only that row, as today. Drops on the sidebar, a section heading or another column keep their current behaviour.
+
+#### Scenario: Reorder three at once
+- **WHEN** a project lists A, B, C, D, E, the user ticks B and D and drags D above A
+- **THEN** the list reads B, D, A, C, E, and one Undo restores A, B, C, D, E
+
+#### Scenario: Nest several under a task
+- **WHEN** the user ticks C and E and drops them on the middle of A
+- **THEN** C and E are A's last subtasks, in that order
+
+#### Scenario: A parent carries its subtree
+- **WHEN** B has the subtasks B1 and B2, B and D are ticked, and they are dropped below E
+- **THEN** the list reads A, C, E, B (with B1 and B2 under it), D
+
+#### Scenario: A ticked subtask pops out
+- **WHEN** B with the subtasks B1 and B2 and its subtask B1 are both ticked and dropped below E
+- **THEN** the list reads A, C, D, E, B (with B2 under it), B1, and B1 is a top-level task
+
+#### Scenario: Dropped onto one of the ticked
+- **WHEN** B, C and E are ticked and the user drops them on the middle of C
+- **THEN** the list reads A, B, C, E, D: the three gather right after the row they were dropped on, in their order
+
+#### Scenario: Not into a carried subtree
+- **WHEN** B with the subtasks B1 and B2 is ticked with D, and the user drags over B1
+- **THEN** no drop line shows there, and releasing changes nothing
+
+#### Scenario: Offline
+- **WHEN** the device is offline and the user drags three ticked tasks to a new place
+- **THEN** the list shows them there at once and the positions are uploaded when the network returns

@@ -493,3 +493,56 @@ A task dragged from a list or a board SHALL be droppable on the Today entry of t
 #### Scenario: Offline
 - **WHEN** the phone is offline and the user drops a task on Today, and the laptop renames the same task meanwhile
 - **THEN** the task shows under Today at once, and after both sync every device shows the renamed task planned for today
+
+### Requirement: Project marks across the signed-in app
+
+Where a project picker displays a colour dot next to a project name, it SHALL display the configured icon in the project colour when available, including any marked selected value. Archived Projects, Notes rows, Monthly Look, Project Walk, Loop, the Activity Feed, Trash and Quick Add SHALL use the same rule at their existing project marks. The mark SHALL be decorative and SHALL use the local project fields, including offline. As project fields sync to other devices, each device SHALL show the resulting icon if its catalogue can render it. These views SHALL keep the coloured dot for an absent, unknown or unavailable icon.
+
+#### Scenario: A known icon identifies the same project across views
+
+- **WHEN** a project with a known icon appears in a project picker, archive, note row or review screen
+- **THEN** the mark uses the configured icon and the project colour, with the project name available as before
+
+#### Scenario: A device cannot render the project icon
+
+- **WHEN** a project has no icon, its icon name is unknown, or its icon is not yet available on the device
+- **THEN** the mark shows the project colour dot without changing project data
+
+#### Scenario: An option does not refer to a project
+
+- **WHEN** a picker offers No project, Top level or another choice that does not refer to a project
+- **THEN** the option retains its existing symbol and selection behaviour
+
+### Requirement: The sidebar's project menu
+A project's menu in the sidebar, in the Projects tree and in Favourites, SHALL be the project header's menu: the same items for the person's role, with the same handlers, confirmations and dialogs, led by the header's Share button as Share project (Members for a role that only sees the members), which opens the same Share dialog, and followed by Move up and Move down for the row where the person may reorder it. A right-click on a sidebar row that has a menu SHALL open that menu and suppress the browser's own, except in a text field (the inline rename) and over selected text; a right-click raised by touch SHALL be suppressed and left to the touch hold. Archiving or deleting a project from the sidebar SHALL go to the Inbox only when that project's page is open, and leave any other page as it is. The All projects page keeps its own row menu.
+
+#### Scenario: The whole menu from the sidebar
+- **WHEN** the owner right-clicks a project in the sidebar
+- **THEN** its menu opens with Share project and the header's items (Duplicate, Save as template, Fields, Move to, Rename, Icon, Archive, Delete, Activity, History, Routines, Display mode, the colours) and Move up and Move down, and the browser's menu does not appear
+
+#### Scenario: The same role rules
+- **WHEN** an editor of a shared project opens its sidebar menu
+- **THEN** it offers what the header offers an editor, without Rename, Icon, the colours, Archive or Delete
+
+#### Scenario: Share from the sidebar
+- **WHEN** the owner chooses Share project in a sidebar project's menu
+- **THEN** the project's Share dialog opens, as from the header's Share button, and a viewer of a shared project finds Members there instead
+
+#### Scenario: Archive from another page
+- **WHEN** the person is in Today and archives a project from its sidebar menu
+- **THEN** the project is archived after the confirmation and Today stays on screen
+
+#### Scenario: Rename keeps the field's menu
+- **WHEN** the person right-clicks inside the inline rename field of a sidebar project
+- **THEN** no app menu opens and the field's own menu appears
+
+### Requirement: Archive several projects at once
+The All projects table SHALL let the user tick several projects and archive them together. Ctrl or ⌘+click on a row SHALL tick it without opening it; Shift+click and Shift+↑/↓ SHALL extend from the last tick; Space or x on a row SHALL tick or untick it; while anything is ticked, Ctrl+A SHALL tick every listed row and Escape SHALL clear the selection. "Select projects" in the page's menu SHALL show the boxes without ticking anything, for touch screens. While the boxes show, each row's box SHALL stand where its colour mark is and a click on a row SHALL tick it. Only projects the user may archive from the Project menu SHALL be tickable. While projects are ticked, the selection bar SHALL show their count, Archive and Clear. Archive SHALL ask first, naming the count, and SHALL then archive every ticked project with its sub-projects in one batch with one Undo toast; a project already archived or listed twice through its parent SHALL be written once. The selection is device state, never synced, and archiving works offline.
+
+#### Scenario: Archive three projects after an import
+- **WHEN** the user Ctrl+clicks "Home", Shift+clicks "Work" (with "Garden" under "Home" between them) and chooses Archive in the bar, then confirms "Archive 3 projects?"
+- **THEN** Home, Garden and Work are archived in one batch and leave the table, the other projects stay, and the toast offers Undo, which brings all three back
+
+#### Scenario: A viewer's project
+- **WHEN** a project is shared with the user as a viewer and the user presses Space on its row
+- **THEN** nothing is ticked and the selection bar does not appear

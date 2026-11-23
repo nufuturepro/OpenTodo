@@ -113,7 +113,7 @@ The same guides are published, with screenshots and search, at [open-todo.app/do
 
 | Page | What it covers |
 | --- | --- |
-| [Quick add syntax](quick-add.md) | Natural-language capture in seven languages, preview chips, voice capture |
+| [Quick add syntax](quick-add.md) | Natural-language capture in nine languages, preview chips, voice capture |
 | [Filter queries](filters.md) | The filter language, the New view page, saved views and their display options, dashboards |
 | [Recurring task rules](recurrence.md) | Rule grammar, how next dates are computed, completing, skipping and detaching |
 | [Reminders reference](reminders.md) | Relative and absolute reminders, snooze, web push and its privacy |
@@ -168,6 +168,7 @@ The full list of environment variables is in the [configuration reference](self-
 | Guide | What it covers |
 | --- | --- |
 | [HTTP API](api.md) | Authentication, every route, entity fields, error codes, examples |
+| [Build your own client](build-a-client.md) | REST only, push-only sync or full offline: tokens, idempotency, device ids, the outbox, rate limits and the sync contract |
 | [Command-line client](cli.md) | `ot`: install, sign in, commands, JSON output and exit codes |
 | [Markdown vault](vault.md) | `ot vault`: a folder of Markdown files in two-way sync, for Obsidian Tasks and plain text |
 | [Webhooks](webhooks.md) | Events, payload, signature verification, retries, receiver recipes |

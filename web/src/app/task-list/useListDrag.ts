@@ -5,7 +5,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { beginDrag } from '../../lib/dnd'
 import { COMPLETED_COLUMN, type ListGroup, type ListRow } from '../../lib/listGroups'
-import { moveTask } from '../../lib/move'
+import { moveTask, type TaskTarget } from '../../lib/move'
+import { moveTasksUndoable } from '../../lib/undoActions'
 import type { Section, Task } from '../../lib/types'
 import { flattenTree, type Tree } from '../../lib/tree'
 import { act } from '../actionError'
@@ -13,8 +14,11 @@ import { withListTransition } from '../motion'
 import { dropTarget, sameDrop, zoneUnder, type DropAt } from '../listDrop'
 import { gapAround, gapDepths, gapRow, gapTarget, indentStep, pointedDepth } from './dropDepth'
 import { dropTasks } from '../taskDrop'
+import { showBulkToast, showUndoToast } from '../bulk/toastStore'
 import type { ViewPlacement } from '../../lib/viewOrder'
 import { t } from '../../lib/i18n'
+import type { GroupDrop } from '../../lib/viewOrderMove'
+import type { DragDepth } from './projectGroupPlacement'
 
 /** What a drag session reads at drop time; the latest render's values. */
 export interface DragSource {
@@ -50,6 +54,10 @@ export interface DragSource {
     canEdit: (projectId: string | null) => boolean
     move: (taskId: string, at: ViewPlacement, groupKey: string) => void
   }
+  today?: {
+    resolve: (task: Task, target: string | null, y: number, gesture: DragDepth) => { indicator?: DropAt; group?: string; drop: GroupDrop } | null
+    move: (id: string, drop: GroupDrop) => Promise<string | undefined>
+  }
   /** A task the user may not change: it can still be ordered in its own list, never dropped on the sidebar. */
   readOnly?: (task: Task) => boolean
 }
@@ -73,6 +81,7 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
   onDragStart?: () => void
 }) {
   const [dropAt, setDropAt] = useState<DropAt | null>(null)
+  const [dropGroup, setDropGroup] = useState<string | null>(null)
   // The row being dragged lifts (task-list-presentation "Drag feedback").
   const [draggingId, setDraggingId] = useState<string | null>(null)
   // On a board, the column under the pointer and the card's height (surfaces-v2 D7).
@@ -89,10 +98,19 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
     const host = e.currentTarget instanceof HTMLElement ? (e.currentTarget.closest('li') ?? e.currentTarget) : null
     const row = host
     const node = st.tree?.nodes.get(task.id)
-    const own = new Set(node ? flattenTree([node]).map((n) => n.id) : [task.id])
+    // A ticked row dragged with other ticked rows of a tree list takes them all
+    // along, in display order (drag-ticked-together D1); its rows and the subtrees
+    // they carry take no drop, except a ticked row, which gathers them after it (D2).
+    const group = manual && !st.board && !st.reorder && !st.today && !!st.tree && !!st.ticked?.has(task.id) && st.ticked.size > 1
+      ? st.rows.filter((r) => st.ticked?.has(r.task.id)).map((r) => r.task.id) : null
+    const own = new Set(group
+      ? group.flatMap((id) => { const n = st.tree?.nodes.get(id); return n ? flattenTree([n]).map((x) => x.id) : [id] })
+      : node ? flattenTree([node]).map((n) => n.id) : [task.id])
+    const gather = new Set(group?.filter((id) => id !== task.id) ?? [])
     // A tree list's drop line takes a depth from the pointer's sideways movement (drop-depth).
     const startX = e.clientX
     const startDepth = st.rows.find((r) => r.task.id === task.id)?.depth ?? 0
+    const contextual = st.rows.some((r) => r.task.id === task.id && r.contextual)
     const step = indentStep()
     const height = host?.offsetHeight ?? 0
     let column: string | null = null
@@ -113,8 +131,8 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
     const wasTicked = st.ticked?.has(task.id) ?? false
     beginDrag(e, {
       grip,
-      label: task.title,
-      taskDrops: true,
+      label: group ? t('{n, plural, one {# task} other {# tasks}}', { n: group.length }) : task.title,
+      taskDrops: !contextual,
       // Only the grip's hold selects (bulk-actions on touch); the row body's hold is the menu's.
       onHold: grip && hold ? () => hold(task) : undefined,
       // A hold that then drags gives its tick back — only for a row this press found
@@ -126,10 +144,17 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
         onDragStart?.()
       },
       onHoldChange: (held) => row?.toggleAttribute('data-touch-hold', held),
+      press: row,
       onHoldRelease: grip ? undefined : (x, y) => dragState.current.openRowMenu(task, x, y, row),
       onMove: (target, x, y) => {
         // Over a sidebar target the list shows no drop line (the target shows its ring).
         const now = dragState.current
+        if (now.today) {
+          const next = now.today.resolve(task, target, y, { start: startDepth, dx: x - startX, step })
+          setDropGroup(next?.group ?? null)
+          show(next?.indicator ?? null)
+          return
+        }
         let id = manual && target?.startsWith('task:') ? target.slice('task:'.length) : null
         // An own order moves within the task's group only (view-manual-order D4), or into another project's group (view-project-drops).
         let note: string | undefined
@@ -142,6 +167,11 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
         const doneColumn = now.board && id ? completedMove(now.sectionOfRow, task.id, id) : null
         if (doneColumn !== null) id = null
         const tree = !now.board && !now.reorder
+        // Over another ticked row the selection gathers right after it (D2).
+        if (id && gather.has(id)) {
+          show({ id, zone: 'after' })
+          return
+        }
         const zone = id && !own.has(id) ? zoneUnder('data-task-id', id, y, tree) : null
         const gap = tree && id && zone ? gapAround(now.groups, own, id, zone) : null
         const depth = gap ? pointedDepth(startDepth, x - startX, step, gapDepths(gap.above, gap.below)) : undefined
@@ -151,15 +181,21 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
         // A completed card's own column takes no drop: the column has no order (D3).
         showColumn(manual && now.board && !(over === COMPLETED_COLUMN && now.sectionOfRow.get(task.id) === COMPLETED_COLUMN) ? over : null)
       },
-      onDrop: (target) => {
+      onDrop: (target, x, y) => {
         const { rows: rs, groups, sectionOfRow: secs, board: b, ticked, reorder, readOnly, groupOf, across } = dragState.current
         if (target.startsWith('drop:')) {
-          if (readOnly?.(task)) return
+          if (contextual || readOnly?.(task) || rs.some((r) => r.task.id === task.id && r.contextual)) return
           const ids = ticked?.has(task.id) ? [...ticked] : [task.id]
           act(withListTransition(ids.length, () => dropTasks(target.slice('drop:'.length), ids)))
           return
         }
-        if (!manual) return
+        const today = dragState.current.today
+        if (today) {
+          const next = today.resolve(task, target, y, { start: startDepth, dx: x - startX, step })
+          if (next) act(today.move(task.id, next.drop).then((id) => { if (id) onDropped(id) }))
+          return
+        }
+        if (!manual || contextual) return
         if (target.startsWith('task:') && reorder) {
           if (!current || current.zone === 'inside') return
           const at = current.zone === 'before' ? { before: current.id } : { after: current.id }
@@ -176,12 +212,22 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
           const gap = current.depth !== undefined ? gapAround(groups, own, r.task.id, current.zone) : null
           const byId = gap ? new Map(rs.map((x) => [x.task.id, gapRow(x)])) : null
           const placed = gap && current.depth !== undefined ? gapTarget(gap.above, gap.below, current.depth, (id) => byId?.get(id)) : null
-          const entry = placed ?? dropTarget({ id: r.task.id, parent: r.parent, expanded: !b && r.hasChildren && !r.collapsed }, current.zone)
+          const entry = gather.has(r.task.id) ? { parent_id: r.parent, at: { after: r.task.id } }
+            : placed ?? dropTarget({ id: r.task.id, parent: r.parent, expanded: !b && r.hasChildren && !r.collapsed }, current.zone)
           // A top-level drop takes the section of the row it lands beside.
           const at = entry.at
           const beside = typeof at === 'object' ? ('before' in at ? at.before : at.after) : r.task.id
           const section = entry.parent_id === null ? secs.get(beside) : undefined
           onReorder?.()
+          if (group) {
+            const where: TaskTarget = { ...entry, ...(section !== undefined ? { section_id: section } : {}) }
+            act(withListTransition(group.length, async () => {
+              const res = await moveTasksUndoable(group, where)
+              if (res?.entry) showUndoToast(res.label, res.entry.id)
+            }))
+            onDropped(task.id)
+            return
+          }
           // The row travels to its new place and the others make room (motion-v2 D4).
           act(withListTransition(1, () => moveTask(task.id, { ...entry, ...(section !== undefined ? { section_id: section } : {}) })))
         } else if (target.startsWith('section:')) {
@@ -192,13 +238,19 @@ export function useListDrag({ manual, source, moveToSection, onDropped, onReorde
         } else return
         onDropped(task.id)
       },
-      onEnd: () => { show(null); showColumn(null); setDraggingId(null) },
+      // A list without an order of its own (Today, Upcoming, a filter) takes no drop among
+      // its rows: a release on one says why instead of doing nothing (#1507).
+      onMiss: (x, y) => {
+        if (manual || dragState.current.today) return
+        if (document.elementFromPoint(x, y)?.closest('[data-task-id]')) showBulkToast(t('Lists sorted by date or priority keep their order.'), null)
+      },
+      onEnd: () => { show(null); setDropGroup(null); showColumn(null); setDraggingId(null) },
     })
   }, [manual, moveToSection, onDropped, onReorder, onDragStart])
 
   /** The section map of the latest render, for code that runs later (an `o` insertion). */
   const latestSectionMap = useCallback(() => dragState.current.sectionMap, [])
-  return { dropAt, draggingId, placeholder, startDrag, latestSectionMap }
+  return { dropAt, dropGroup, draggingId, placeholder, startDrag, latestSectionMap }
 }
 
 /**

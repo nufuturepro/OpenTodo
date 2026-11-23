@@ -19,6 +19,7 @@ import { t } from './i18n'
 import { sha256, uuid } from './ids'
 import { safeUrl } from './share'
 import { createSignal } from './store'
+import { linkChange, parseLink } from './linkAttachment'
 
 /** The longest attachment name the server accepts. */
 export const MAX_NAME = 255
@@ -181,20 +182,7 @@ export async function queueFiles(taskId: AttachParent, files: File[], opts: { co
   return commitFiles(await planFiles(taskId, files, opts))
 }
 
-/** Attach one file. Returns its id. */
-export async function queueFile(taskId: string, file: File, commentId?: string | null): Promise<string> {
-  return (await queueFiles(taskId, [file], { commentId }))[0]
-}
-
-/** An http(s) address, or null. */
-export function parseLink(text: string): URL | null {
-  try {
-    const u = new URL(text.trim())
-    return u.protocol === 'http:' || u.protocol === 'https:' ? u : null
-  } catch {
-    return null
-  }
-}
+export { parseLink }
 
 /** Attach a link. Returns its id. */
 export async function queueLink(taskId: AttachParent, url: string, name?: string, commentId?: string | null): Promise<string> {
@@ -203,10 +191,7 @@ export async function queueLink(taskId: AttachParent, url: string, name?: string
   const author = await currentUserId()
   if (!author) throw new AttachmentError('signed_out', t('Sign in to add links.'))
   const id = uuid()
-  await mutateMany([{ entity: 'attachment', entityId: id, patch: {
-    ...parentFields(taskId), author_id: author, comment_id: commentId ?? null, name: cleanName(name?.trim() || u.hostname),
-    mime: 'text/uri-list', size: 0, sha256: '', url: u.href, encrypted: false, created_at: Date.now(), uploaded_at: null, deleted_at: null,
-  } }])
+  await mutateMany([linkChange(id, parentFields(taskId), u, author, { name, commentId })])
   return id
 }
 
@@ -401,6 +386,13 @@ export async function attachmentCounts(): Promise<Map<string, number>> {
   const commentIds = [...new Set(rows.map((a) => a.comment_id).filter((c): c is string => !!c))]
   const deadComments = new Set((await db.comments.bulkGet(commentIds)).filter((c) => !c || c.deleted_at).map((c, i) => c?.id ?? commentIds[i]))
   for (const a of rows) if (!a.note_id && (!a.comment_id || !deadComments.has(a.comment_id))) out.set(a.task_id, (out.get(a.task_id) ?? 0) + 1)
+  return out
+}
+
+/** Live attachments per standalone note (note-attachments), for the paperclip in the notes list. */
+export async function noteAttachmentCounts(): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  for (const a of await db.attachments.filter((x) => !x.deleted_at && !!x.note_id).toArray()) out.set(a.note_id as string, (out.get(a.note_id as string) ?? 0) + 1)
   return out
 }
 

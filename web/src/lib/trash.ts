@@ -12,6 +12,7 @@ import { api, ApiError, isNetworkError } from './api'
 import { db, entityTables, getMeta, setMeta } from './db'
 import type { Entity, Note, Project, Task } from './types'
 import { t } from './i18n'
+import { isOccurrenceRecord } from './recurring'
 import { readWorkspaceState, tasksIn } from './workspaces'
 import { platform } from './platform'
 
@@ -48,19 +49,27 @@ export interface TrashItem {
   deletedAt: number
   /** For tasks: the name of their project ("Inbox" when none); for notes: their project's, if any. */
   projectName?: string
-  color?: string
+  project?: Pick<Project, 'color' | 'icon'>
 }
 
 /** Deleted tasks, projects and standalone notes (notes-overview D10), newest deletion first. */
+/**
+ * An occurrence record an Undo put back (undo.ts applyBatch): trashed, open and skipped, a state no
+ * deletion leaves, so it is not a trashed item and the Trash leaves it out.
+ */
+export function undoneRecord(task: Task): boolean {
+  return !!task.deleted_at && !task.completed_at && task.skipped === true && isOccurrenceRecord(task)
+}
+
 export function trashItems(tasks: Iterable<Task>, projects: Iterable<Project>, notes: Iterable<Note> = []): TrashItem[] {
   const byId = new Map<string, Project>()
   const out: TrashItem[] = []
   for (const p of projects) {
     byId.set(p.id, p)
-    if (p.deleted_at) out.push({ entity: 'project', id: p.id, title: p.name || t('Untitled project'), deletedAt: p.deleted_at, color: p.color })
+    if (p.deleted_at) out.push({ entity: 'project', id: p.id, title: p.name || t('Untitled project'), deletedAt: p.deleted_at, project: p })
   }
   for (const task of tasks) {
-    if (!task.deleted_at) continue
+    if (!task.deleted_at || undoneRecord(task)) continue
     const project = task.project_id ? byId.get(task.project_id) : undefined
     out.push({ entity: 'task', id: task.id, title: task.title || t('Untitled'), deletedAt: task.deleted_at, projectName: project ? project.name : t('Inbox') })
   }

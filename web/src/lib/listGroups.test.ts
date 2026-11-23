@@ -2,6 +2,7 @@
 // web-component-structure): what TaskListView renders, tested without a DOM.
 import { describe, expect, it } from 'vitest'
 import { currentDateTime } from './dates'
+import { isDeferred } from './views'
 import { BLOCKED_OPEN_KEY, DONE_OPEN_KEY, WAITING_OPEN_KEY, EARLIER_KEY, EARLIER_OPEN_KEY, earlierCollapsed, boardColumns, completedBySection, flatRow, keepGroups, laterOpenKey, listGroups, sectionBuckets, sectionOfRows, siblingPositions, splitLater, tasksForView, type GroupInput, type ListGroup } from './listGroups'
 import { defaultListDisplay, type ListDisplay } from './listDisplay'
 import { setPriorityNames } from './priority'
@@ -226,6 +227,21 @@ describe('listGroups', () => {
     expect(titles(folded[1])).toEqual(['Paint fence'])
   })
 
+  // GitHub issue 1572 (spans-stay-in-sections): a span's first day places it in time, it does not hide it.
+  it('A span in a section stays among its tasks before its first day; a start without a span still defers', () => {
+    const call = task({ title: 'Call the hotel', project_id: 'p', section_id: 's' })
+    const conference = task({ title: 'Conference', project_id: 'p', section_id: 's', start: '2026-11-24', span: true, due: { date: '2026-11-26' } })
+    const agenda = task({ title: 'Agenda', project_id: 'p', parent_id: conference.id })
+    const passport = task({ title: 'Renew passport', project_id: 'p', section_id: 's', start: '2026-11-24', due: { date: '2026-11-30' } })
+    const flagOnly = task({ title: 'Not a span', project_id: 'p', start: '2026-11-24', span: true, due: { date: '2026-11-24' } })
+    const someday = task({ title: 'Someday span', project_id: 'p', start: 'someday', span: true, due: { date: '2026-11-30' } })
+    const { active, later } = splitLater([call, conference, agenda, passport, flagOnly, someday], TODAY)
+    expect(active.map((x) => x.title)).toEqual(['Call the hotel', 'Conference', 'Agenda'])
+    expect(later.map((x) => x.title)).toEqual(['Renew passport', 'Not a span', 'Someday span'])
+    // Today, Anytime and the counts still wait for its first day.
+    expect(isDeferred(conference, TODAY)).toBe(true)
+  })
+
   it('a deferred or parked subtask of an active parent stays under it; grouping by date keeps the subtree together', () => {
     const parent = task({ title: 'Plan trip', project_id: 'p', due: { date: TODAY } })
     const deferred = task({ title: 'Renew passport', project_id: 'p', parent_id: parent.id, start: '2026-12-01' })
@@ -395,6 +411,47 @@ describe('row positions and section counts', () => {
     expect(pos.get(parent.id)).toEqual({ pos: 1, size: 2 })
     expect(pos.get(other.id)).toEqual({ pos: 2, size: 2 })
     expect(pos.get(b.id)).toEqual({ pos: 2, size: 2 })
+  })
+
+  it('subtaskAdds marks nothing in a flat list (quick-subtask-add)', () => {
+    const parent = task({ title: 'Parent' })
+    const child = task({ title: 'Child', parent_id: parent.id })
+    const rows = listGroups(input({ view: 'today', tasks: [parent, child] })).flatMap((g) => g.rows)
+    expect(rows.every((r) => !r.subtaskAdds)).toBe(true)
+  })
+
+  it('subtaskAdds marks each parent\'s last visible descendant in a tree', () => {
+    const parent = task({ title: 'Parent' })
+    const a = task({ title: 'A', parent_id: parent.id })
+    const b = task({ title: 'B', parent_id: parent.id })
+    const other = task({ title: 'Other' })
+    const rows = listGroups(input({ tree: buildTaskTree([parent, a, b, other]) })).flatMap((g) => g.rows)
+    const byTitle = (t: string) => rows.find((r) => r.task.title === t)!
+    expect(byTitle('B').subtaskAdds?.map((m) => m.task.title)).toEqual(['Parent'])
+    expect(byTitle('B').subtaskAdds?.[0].depth).toBe(0)
+    expect(byTitle('A').subtaskAdds).toBeUndefined()
+    expect(byTitle('Parent').subtaskAdds).toBeUndefined()
+    expect(byTitle('Other').subtaskAdds).toBeUndefined()
+  })
+
+  it('subtaskAdds marks nothing while the subtasks are folded', () => {
+    const parent = task({ title: 'Parent' })
+    const a = task({ title: 'A', parent_id: parent.id })
+    const rows = listGroups(input({ tree: buildTaskTree([parent, a]), collapsed: new Set([parent.id]) })).flatMap((g) => g.rows)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].subtaskAdds).toBeUndefined()
+  })
+
+  it('subtaskAdds marks several parents ending at one row, innermost first', () => {
+    const gp = task({ title: 'Grandparent' })
+    const p = task({ title: 'Parent', parent_id: gp.id })
+    const c = task({ title: 'Child', parent_id: p.id })
+    const other = task({ title: 'Other' })
+    const rows = listGroups(input({ tree: buildTaskTree([gp, p, c, other]) })).flatMap((g) => g.rows)
+    const byTitle = (t: string) => rows.find((r) => r.task.title === t)!
+    // 'Other' ends both subtrees at once: Parent's line, then Grandparent's.
+    expect(byTitle('Child').subtaskAdds?.map((m) => m.task.title)).toEqual(['Parent', 'Grandparent'])
+    expect(byTitle('Other').subtaskAdds).toBeUndefined()
   })
 
   it('completedBySection buckets completed tasks of the project, not skipped occurrences', () => {
@@ -643,6 +700,56 @@ describe('built-in view options (builtin-view-options)', () => {
   describe('Nest subtasks (D5)', () => {
     const nested = d('today', { subtasks: true })
     const rows = (g: ListGroup) => g.rows.map((r) => [r.task.title, r.depth, r.breadcrumb])
+
+    it.each(['day', 'project'] as const)('adds contextual leaves only to regular Today parents (%s)', (groupBy) => {
+      const plan = task({ title: 'Plan', project_id: home.id, due: { date: TODAY } })
+      const todayChild = task({ title: 'Today child', project_id: home.id, parent_id: plan.id, due: { date: TODAY }, position: 20 })
+      const later = task({ title: 'Later', project_id: home.id, parent_id: plan.id, due: { date: '2026-10-16' }, position: 10 })
+      const undated = task({ title: 'Undated', project_id: home.id, parent_id: todayChild.id })
+      const leafChild = task({ title: 'Hidden grandchild', project_id: home.id, parent_id: later.id })
+      const dueGrandchild = task({ title: 'Due grandchild', project_id: home.id, parent_id: later.id, due: { date: TODAY } })
+      const earlier = task({ title: 'Earlier', project_id: home.id, parent_id: plan.id, due: { date: '2026-10-13' } })
+      const parked = task({ title: 'Parked', project_id: home.id, parent_id: plan.id, start: 'someday' })
+      const done = task({ title: 'Done', project_id: home.id, parent_id: plan.id, completed_at: 1 })
+      const graduated = task({ title: 'Graduated habit', project_id: home.id, parent_id: plan.id, habit_graduated_at: 1 })
+      const all = [plan, todayChild, later, undated, leafChild, dueGrandchild, earlier, parked, done, graduated]
+      const options = { taskMap: new Map(all.map((t) => [t.id, t])), display: { ...nested, groupBy } }
+      const listed = [earlier, plan, todayChild, dueGrandchild]
+      const g = listGroups(today(listed, options))
+      expect(titles(g[0])).toEqual(['Earlier'])
+      expect(g[1].rows.map((r) => [r.task.title, r.depth, !!r.contextual])).toEqual([
+        ['Plan', 0, false], ['Later', 1, true], ['Today child', 1, false],
+        ['Undated', 2, true], ['Due grandchild', 0, false],
+      ])
+      expect(titles(listGroups(today(listed, { ...options, collapsed: new Set([plan.id]) }))[1])).toEqual(['Plan', 'Due grandchild'])
+      expect(titles(listGroups(today(listed, { ...options, display: { ...options.display, subtasks: false } }))[1])).not.toContain('Later')
+      const upcoming = listGroups({ ...today([...listed, later], options), view: 'upcoming', upcomingToday: true, todayDisplay: options.display })
+      expect(upcoming.flatMap((group) => group.rows).filter((r) => r.task.id === later.id).map((r) => r.depth)).toEqual([0])
+    })
+
+    it('keeps reached start and deadline dates ordinary and respects Today visibility for contextual rows', () => {
+      const parent = task({ title: 'Parent', project_id: home.id, due: { date: TODAY } })
+      const step = { project_id: home.id, parent_id: parent.id, due: { date: '2026-10-16' } }
+      const started = task({ ...step, title: 'Started', start: TODAY })
+      const deadline = task({ ...step, title: 'Deadline today', deadline: TODAY })
+      const later = task({ ...step, title: 'Later', start: '2026-10-16' })
+      const filtered = task({ ...step, title: 'Outside duration' })
+      const assigned = task({ ...step, title: 'Other member', assignee_id: 'other' })
+      const all = [parent, started, deadline, later, filtered, assigned]
+      const options = {
+        taskMap: new Map(all.map((item) => [item.id, item])),
+        display: nested,
+        todayContextFilter: { assignees: { shared: new Set([home.id]), me: 'me' }, matches: (item: Task) => item.id !== filtered.id },
+      }
+      const regular = [parent, started, deadline]
+      const rowsOf = (tasks: Task[], over: Partial<GroupInput> = {}) => listGroups(today(tasks, { ...options, ...over })).flatMap((group) => group.rows)
+      const rows = rowsOf(regular)
+      expect(rows.filter((row) => row.contextual).map((row) => row.task.id)).toEqual([later.id])
+      expect(rows.filter((row) => !row.contextual).map((row) => row.task.id)).toEqual(regular.map((item) => item.id))
+      const rescheduled = { ...later, due: { date: TODAY } }
+      const changed = new Map(options.taskMap).set(later.id, rescheduled)
+      expect(rowsOf([...regular, rescheduled], { taskMap: changed }).filter((row) => row.task.id === later.id).map((row) => !!row.contextual)).toEqual([false])
+    })
 
     it('parent and child due today: nested to any depth', () => {
       const plan = task({ title: 'Plan trip', due: { date: TODAY } })

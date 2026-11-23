@@ -67,6 +67,10 @@ type Config struct {
 	// OPENTODO_CALDAV is unset; OpenSpec `caldav`). Afterwards the value set in
 	// Settings is authoritative.
 	CalDAV *bool
+	// CalDAVPush presets the owner's switch for push to calendar apps
+	// (WebDAV-Push) on first start only (nil when OPENTODO_CALDAV_PUSH is unset;
+	// OpenSpec caldav-push).
+	CalDAVPush *bool
 	// CalendarFeeds presets the owner's calendar feeds switch on first start only
 	// (nil when OPENTODO_CALENDAR_FEEDS is unset; OpenSpec calendar-feeds).
 	CalendarFeeds *bool
@@ -112,6 +116,10 @@ type Config struct {
 	// a request whose nearest hop is a Cloudflare edge may then name the client
 	// with CF-Connecting-IP.
 	TrustCloudflare bool
+	// CORSOrigins are the exact origins whose pages may call /api/v1/ with an
+	// API token (OPENTODO_CORS_ORIGINS, see cors.go; OpenSpec change
+	// cors-for-tokens). Empty, the default, sends no CORS headers.
+	CORSOrigins []string
 	// Host turns on host mode (OPENTODO_HOST_URL; OpenSpec `multi-tenant-host`,
 	// see host.go): many tenants in one process. Nil for a normal server.
 	Host *HostConfig
@@ -283,6 +291,14 @@ func Load() (Config, error) {
 	if c.Host != nil && c.Demo {
 		return c, fmt.Errorf("OPENTODO_HOST_URL (host mode) and OPENTODO_DEMO cannot be combined")
 	}
+	if err := c.loadCORS(); err != nil {
+		return c, err
+	}
+	// A demo holds no API tokens and a host's tenants have their own owners:
+	// neither has a use for one operator-wide list of origins.
+	if len(c.CORSOrigins) > 0 && (c.Demo || c.Host != nil) {
+		return c, fmt.Errorf("OPENTODO_CORS_ORIGINS cannot be combined with OPENTODO_DEMO or OPENTODO_HOST_URL (host mode)")
+	}
 	return c, nil
 }
 
@@ -345,6 +361,11 @@ func (c Config) PasskeysAvailable() bool {
 func (c *Config) loadServerVars() error {
 	if v := strings.TrimSpace(os.Getenv("OPENTODO_BASE_URL")); v != "" {
 		u, err := url.Parse(v)
+		if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host == "" {
+			// "https://" alone: the address was built from a variable that came out empty,
+			// such as a platform's public domain before the service has one.
+			return fmt.Errorf("OPENTODO_BASE_URL has no host name, got %q: if it is built from another variable (such as Railway's ${{RAILWAY_PUBLIC_DOMAIN}}), that variable is empty; give the service a public domain, or set the address itself", v)
+		}
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("OPENTODO_BASE_URL must be an absolute URL, got %q", v)
 		}
@@ -407,6 +428,9 @@ func (c *Config) loadToggles() error {
 		return err
 	}
 	if c.CalDAV, err = optionalBool("OPENTODO_CALDAV"); err != nil {
+		return err
+	}
+	if c.CalDAVPush, err = optionalBool("OPENTODO_CALDAV_PUSH"); err != nil {
 		return err
 	}
 	if c.CalendarFeeds, err = optionalBool("OPENTODO_CALENDAR_FEEDS"); err != nil {

@@ -16,10 +16,16 @@ import (
 
 	"github.com/OpenTodoApp/opentodo/internal/auth"
 	"github.com/OpenTodoApp/opentodo/internal/caldav"
+	"github.com/OpenTodoApp/opentodo/internal/davpush"
 	"github.com/OpenTodoApp/opentodo/internal/daypart"
 	opsync "github.com/OpenTodoApp/opentodo/internal/sync"
 	"github.com/OpenTodoApp/opentodo/internal/syncscope"
 )
+
+// davCompliance is the DAV header of every CalDAV answer. extended-mkcol: iOS
+// Reminders and Planify create a list with MKCOL (RFC 5689, #1432;
+// caldav-extended-mkcol D3).
+const davCompliance = "1, 3, calendar-access, extended-mkcol"
 
 // InboxCalendar is the path segment of the Inbox calendar (tasks without a project).
 const InboxCalendar = "inbox"
@@ -52,6 +58,8 @@ func parseDavPath(p, uid string) (davPath, bool) {
 	}
 	seg := strings.Split(rest, "/")
 	switch {
+	case seg[0] == "push" && len(seg) == 2 && seg[1] != "":
+		return davPath{kind: kindPush, name: seg[1]}, true
 	case seg[0] == "principals" && len(seg) == 2 && seg[1] == uid:
 		return davPath{kind: kindPrincipal}, true
 	case seg[0] == "calendars" && len(seg) >= 2 && seg[1] == uid:
@@ -101,16 +109,42 @@ func (s *Server) handleDAV(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "CalDAV is not available for accounts with end-to-end encryption", http.StatusForbidden)
 		return
 	}
-	w.Header().Set("DAV", "1, 3, calendar-access")
+	w.Header().Set("DAV", s.davHeader(r.Context()))
 	p, ok := parseDavPath(r.URL.Path, u.ID)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	d := &davRequest{s: s, w: w, r: r, user: u, device: "caldav:" + ap.ID, path: p, scope: ap.Scope, events: ap.Events}
+	d := &davRequest{s: s, w: w, r: r, user: u, device: "caldav:" + ap.ID, appPassword: ap.ID, path: p, scope: ap.Scope, events: ap.Events}
+	if p.kind == kindPush {
+		if r.Method != http.MethodDelete {
+			w.Header().Set("Allow", "DELETE")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		d.pushUnregister()
+		return
+	}
+	if r.Method == http.MethodPut || r.Method == http.MethodDelete {
+		// A write that names registrations in Push-Dont-Notify does not wake them (caldav-push D5).
+		sw := &statusWriter{ResponseWriter: w}
+		d.w = sw
+		// The cursor before the write: only the write's own ops are skipped.
+		var before int64 = -1
+		if r.Header.Get("Push-Dont-Notify") != "" {
+			if c, err := s.sync.Cursor(d.ctx(), d.user.ID); err == nil {
+				before = c
+			}
+		}
+		defer func() {
+			if sw.succeeded() && before >= 0 {
+				d.pushDontNotify(before)
+			}
+		}()
+	}
 	switch r.Method {
 	case http.MethodOptions:
-		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, REPORT, MKCALENDAR")
+		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, REPORT, MKCALENDAR, MKCOL")
 		w.WriteHeader(http.StatusOK)
 	case "PROPFIND":
 		d.propfind()
@@ -123,11 +157,15 @@ func (s *Server) handleDAV(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		d.delete()
 	case "MKCALENDAR":
-		d.mkcalendar()
+		d.mkcalendar(false)
+	case "MKCOL":
+		d.mkcalendar(true)
 	case "PROPPATCH":
 		d.proppatch()
+	case http.MethodPost:
+		d.pushRegister()
 	default:
-		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, REPORT, MKCALENDAR")
+		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, REPORT, MKCALENDAR, MKCOL")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
@@ -160,7 +198,7 @@ func (s *Server) handleDAVRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodOptions {
-		w.Header().Set("DAV", "1, 3, calendar-access")
+		w.Header().Set("DAV", davCompliance)
 		w.Header().Set("Allow", "OPTIONS, PROPFIND")
 		w.WriteHeader(http.StatusOK)
 		return
@@ -175,8 +213,10 @@ type davRequest struct {
 	r      *http.Request
 	user   *auth.User
 	device string
-	path   davPath
-	view   *davView
+	// appPassword is the id of the app password the request signed in with.
+	appPassword string
+	path        davPath
+	view        *davView
 	// scope is the app password's part of the account (sync-scope): calendars
 	// outside it are not listed and answer 404, so nothing in them is read or
 	// written.
@@ -499,6 +539,7 @@ func (d *davRequest) homeProps() map[caldav.PropName]propFunc {
 		pReports:      func() string { return reportSet },
 	}
 	d.commonProps(m)
+	d.pushProps(m, davpush.Home)
 	return m
 }
 
@@ -545,6 +586,7 @@ func (d *davRequest) calendarProps(v *davView, cal string) map[caldav.PropName]p
 		}
 	}
 	d.commonProps(m)
+	d.pushProps(m, cal)
 	return m
 }
 
@@ -678,7 +720,7 @@ func (d *davRequest) resource(v *davView) (opsync.Entity, error) {
 
 func (d *davRequest) get() {
 	if d.path.kind != kindResource {
-		d.w.Header().Set("Allow", "OPTIONS, PROPFIND, PROPPATCH, REPORT, MKCALENDAR, DELETE")
+		d.w.Header().Set("Allow", "OPTIONS, PROPFIND, PROPPATCH, REPORT, MKCALENDAR, MKCOL, DELETE")
 		http.Error(d.w, "collections have no body; use PROPFIND or REPORT", http.StatusMethodNotAllowed)
 		return
 	}
@@ -889,12 +931,20 @@ func (d *davRequest) syncCollection(v *davView, body *caldav.Node, names []calda
 		if !candidates[id] && !carriesLabel(v.byID[id], delta.Fields["label"]) {
 			continue
 		}
-		if t, live := v.byID[id]; live && v.calendarOf(t) == cal {
+		t, live := v.byID[id]
+		here := live && v.calendarOf(t) == cal
+		// An event calendar holds only the open dated tasks (index): a task here that
+		// is undated or completed is not encoded as an event (GitHub issue 1717).
+		if here && (!v.events || servedAsEvent(t)) {
 			respond(m, resourceHref(uid, cal, v.resourceName(id)), d.resourceProps(v, t), names, all)
 			continue
 		}
 		f := delta.Fields["task"][id]
-		if delta.Purged["task"][id] || f["deleted_at"] || f["project_id"] || f["workspace_id"] || f["parent_id"] {
+		// Removed: gone, moved, or (an event calendar) completed or undated since the
+		// token. A task that was never an event is reported only when it lost its date
+		// or was completed; one that was created undated is not mentioned.
+		left := here && (f["due"] || f["completed_at"])
+		if delta.Purged["task"][id] || f["deleted_at"] || f["project_id"] || f["workspace_id"] || f["parent_id"] || left {
 			name := id + ".ics"
 			if n, err := d.storedName(id); err == nil && n != "" {
 				name = n

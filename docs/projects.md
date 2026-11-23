@@ -23,7 +23,7 @@ The **Project** menu at the top right of a project lets you:
 - **Pin to sidebar**, which adds it to **Favourites** (see below),
 - **Move to…** another project, or back to the top level; <kbd>m</kbd> opens the menu straight at this step.
 - **Rename** it,
-- set the sidebar and row **Icon…**, or **No icon** for the dot,
+- set **Icon…** for project names in lists and pickers, or **No icon** for the dot,
 - choose a **Flow…** ([flows](project-flows.md)), **Review every…** or **Put in maintenance** ([intervals](review-intervals.md)),
 - make it a [reusable list](reusable-lists.md) with **List…**,
 - **Archive…** it: it and its sub-projects leave the sidebar, every task kept,
@@ -45,7 +45,7 @@ Inside a project you can also group tasks into sections and show them as a board
 
 **Pin to sidebar** adds a project, label or saved view to **Favourites**. Reorder it with **Move up**, **Move down** or <kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd>. Pins are personal and sync to your devices.
 
-Owners and admins can edit name, icon and colour from **⋯**. **Rename** is inline in **Projects** and opens a dialog in **Favourites**.
+**⋯** on a sidebar project, or a right-click, opens its whole menu, **Share project** first. **Rename** is inline in **Projects**, a dialog in **Favourites**.
 
 ## Sub-projects
 

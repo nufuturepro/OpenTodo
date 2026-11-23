@@ -81,9 +81,26 @@ Phones, Apple, Obsidian and voice.
 | [`focus-session-readable`](openspec/changes/archive/2026-10-31-focus-session-readable/) | **Shipped.** The running Focus session readable by the shells and agents | [#604](https://github.com/OpenTodoApp/OpenTodo/issues/604) |
 | [`obsidian-origin`](openspec/changes/archive/2026-10-31-obsidian-origin/) | **Shipped.** An `obsidian` origin that links a task back to its note | [#605](https://github.com/OpenTodoApp/OpenTodo/issues/605) |
 | [`view-project-drops`](openspec/changes/archive/2026-11-14-view-project-drops/) | **Shipped.** In views grouped by project, drop a task into another project's group to move it, or onto a task to nest it | [#1211](https://github.com/OpenTodoApp/OpenTodo/issues/1211) |
+| [`today-project-drops`](openspec/changes/archive/2026-11-14-today-project-drops/) | **Shipped.** Move, place and nest tasks in Today's project groups | [#1211](https://github.com/OpenTodoApp/OpenTodo/issues/1211) |
+| [`today-context-subtasks`](openspec/changes/archive/2026-11-16-today-context-subtasks/) | **Shipped.** Show undated and later subtasks as context in Today, with explicit moves in project groups | [#1404](https://github.com/OpenTodoApp/OpenTodo/issues/1404) |
 | [`board-completed-column`](openspec/changes/archive/2026-11-14-board-completed-column/) | **Shipped.** Show completed tasks on a project board: a Completed column at the end; drop a card there to complete it | [#1291](https://github.com/OpenTodoApp/OpenTodo/issues/1291) |
 | [`completed-view-review`](openspec/changes/archive/2026-11-14-completed-view-review/) | **Shipped.** Completed for reviews: narrow to projects, group by project, search, and done rows without a strikethrough | [#1325](https://github.com/OpenTodoApp/OpenTodo/issues/1325) |
-| [`app-links`](openspec/changes/app-links/) | Opt-in links to other apps (`zotero:`, `mid:`, `onenote:`…) in notes and origins, checked on the viewer's device | [#1287](https://github.com/OpenTodoApp/OpenTodo/issues/1287) |
+| [`click-selects-title`](openspec/changes/click-selects-title/) | One click rule in every list: a first click selects the row (and shows it beside the list), a second click edits its title, `a` adds a subtask after a click; "Click a task to" goes | [#1405](https://github.com/OpenTodoApp/OpenTodo/issues/1405) |
+| [`quick-add-links`](openspec/changes/archive/2026-11-22-quick-add-links/) | **Shipped.** A link typed or pasted into quick add becomes a link attachment, with a chip like a date's | [#1743](https://github.com/OpenTodoApp/OpenTodo/issues/1743) |
+| [`away-periods`](openspec/changes/archive/2026-11-20-away-periods/) | **Shipped.** Away: mark a period, also after the fact, that skips the repeating occurrences in it in one Undo, keeps streaks and pauses reminders | [#805](https://github.com/OpenTodoApp/OpenTodo/issues/805) |
+| [`workspace-activity`](openspec/changes/archive/2026-11-20-workspace-activity/) | **Shipped.** A workspace Activity page for retrospectives: every project, a date range, several kinds at once, tracked time, filters remembered on the device | [#1443](https://github.com/OpenTodoApp/OpenTodo/issues/1443) |
+| [`caldav-push`](openspec/changes/caldav-push/) | Push to calendar apps: a change on any device wakes a subscribed CalDAV client (WebDAV-Push), off until the owner turns it on | [#1585](https://github.com/OpenTodoApp/OpenTodo/issues/1585) |
+| [`drag-ticked-together`](openspec/changes/archive/2026-11-20-drag-ticked-together/) | **Shipped.** Drag several ticked tasks within a list to reorder or nest them in one move, with one Undo | [#1498](https://github.com/OpenTodoApp/OpenTodo/issues/1498) |
+| [`quarter-view-and-plan-spans`](openspec/changes/archive/2026-11-20-quarter-view-and-plan-spans/) | **Shipped.** A Quarter view in the Calendar (three months at a glance, `g q`), and 3-day and custom Plan spans | [#1026](https://github.com/OpenTodoApp/OpenTodo/issues/1026) |
+| [`spans-stay-in-sections`](openspec/changes/archive/2026-11-20-spans-stay-in-sections/) | **Shipped.** A multi-day task stays in its section with its dates instead of folding into Later before its first day | [#1572](https://github.com/OpenTodoApp/OpenTodo/issues/1572) |
+| [`notes-page-own-notes`](openspec/changes/archive/2026-11-20-notes-page-own-notes/) | **Shipped.** The Notes page lists your notes and project notes; task descriptions are one `kind:task` chip away | [#1478](https://github.com/OpenTodoApp/OpenTodo/issues/1478) |
+| [`calsync-repeat-marker`](openspec/changes/archive/2026-11-20-calsync-repeat-marker/) | **Shipped.** Repeating tasks show 🔁 before their title in a synced calendar; the marker never comes back as a rename | [#1231](https://github.com/OpenTodoApp/OpenTodo/issues/1231) |
+| [`cli-subtasks`](openspec/changes/archive/2026-11-19-cli-subtasks/) | **Shipped.** Subtasks in `ot`: `--parent` on `add`, `edit` and `list`, `--subtasks` cascades on `done`, `rm` and `edit`, and the tree in `list` and `task show` | [#1575](https://github.com/OpenTodoApp/OpenTodo/issues/1575) |
+| [`repeat-field-language`](openspec/changes/archive/2026-11-18-repeat-field-language/) | **Shipped.** A task's Repeat field reads repeat phrases in the languages quick add reads, and stores the English rule | [#1427](https://github.com/OpenTodoApp/OpenTodo/issues/1427) |
+| [`repeat-rule-words`](openspec/changes/archive/2026-11-18-repeat-rule-words/) | **Shipped.** A repeat rule is shown in the interface language wherever the app shows one; the Repeat field still takes English | [#1427](https://github.com/OpenTodoApp/OpenTodo/issues/1427) |
+| [`theme-title-weight`](openspec/changes/archive/2026-11-18-theme-title-weight/) | **Shipped.** A theme can set how heavy task titles are (`titleWeight`), with the control in the theme editor | [#1469](https://github.com/OpenTodoApp/OpenTodo/issues/1469) |
+| [`subtask-panel-order`](openspec/changes/archive/2026-11-19-subtask-panel-order/) | **Shipped.** Reorder a task's subtasks from the task panel and the task page: drag the handle, Alt+arrows on it, or Move up and Move down | [#1577](https://github.com/OpenTodoApp/OpenTodo/issues/1577) |
+| [`app-links`](openspec/changes/archive/2026-11-20-app-links/) | **Shipped.** Opt-in links to other apps (`zotero:`, `mid:`, `onenote:`…) in notes and origins, checked on the viewer's device | [#1287](https://github.com/OpenTodoApp/OpenTodo/issues/1287) |
 | [`obsidian-plugin`](openspec/changes/obsidian-plugin/) | An Obsidian community plugin, mobile included (built and released; waiting for the directory listing) | [#606](https://github.com/OpenTodoApp/OpenTodo/issues/606) |
 | [`obsidian-vault-sync`](openspec/changes/obsidian-vault-sync/) | Vault sync from inside Obsidian (built; waiting for the manual runs on devices) | [#607](https://github.com/OpenTodoApp/OpenTodo/issues/607) |
 | [`voice-ramble`](openspec/changes/archive/2026-10-31-voice-ramble/) | **Shipped.** Speak a brain dump or drop a photo of notes; review the proposed tasks | [#608](https://github.com/OpenTodoApp/OpenTodo/issues/608) |
@@ -218,11 +235,15 @@ These changes come from the owner's November review of the screens used every da
 | Change | What | Issues |
 | --- | --- | --- |
 | [`sidebar-brand-and-row-grid`](openspec/changes/archive/2026-11-10-sidebar-brand-and-row-grid/) | **Shipped.** The workspace gets its own picture and OpenTodo a quiet brand line with the version in the sidebar's footer. Task rows get one grid of fixed slots, with marks on the title's baseline. The task panel fits its width, with quieter subtasks and a compact estimate editor. Upcoming summarises later days | |
+| [`one-line-label-fit`](openspec/changes/archive/2026-11-14-one-line-label-fit/) | **Shipped.** One line rows fit labels in their column, with an ellipsis for a long first label and a count for labels that do not fit | [#1089](https://github.com/OpenTodoApp/OpenTodo/issues/1089) |
 | [`when-picker`](openspec/changes/archive/2026-11-10-when-picker/) | **Shipped.** The Do on editor gets a date field that shows an example, one "time of day" row (Any time, Morning, Afternoon, Evening, Time) and the zone beside the time | |
 | [`focus-redesign`](openspec/changes/archive/2026-11-10-focus-redesign/) | **Shipped.** Focus becomes one stage: the task, the time left and one control. Settings, the mode and today's sessions move behind a quiet menu, and breaks are a calm state | |
 | [`close-the-day-redesign`](openspec/changes/archive/2026-11-10-close-the-day-redesign/) | **Shipped.** Close the day becomes three steps (done, what moves, tomorrow's first thing), keyboard-first, with one write and one Undo | |
 | [`task-progress`](openspec/changes/archive/2026-11-10-task-progress/) | **Shipped.** A parent's progress as a small ring before its subtask count and a percentage in the task panel; a project's progress next to its title | [#1107](https://github.com/OpenTodoApp/OpenTodo/issues/1107) |
 | [`loop-guided-dashboard`](openspec/changes/archive/2026-11-10-loop-guided-dashboard/) | **Shipped.** The Loop home names the next step and why. A stepper shows only the moves with work, and each move opens in place | |
+| [`project-icons-in-ui`](openspec/changes/archive/2026-11-15-project-icons-in-ui/) | **Shipped.** Project icons appear at existing project marks across the app and beside tinted project group names | [#1089](https://github.com/OpenTodoApp/OpenTodo/issues/1089), [#1210](https://github.com/OpenTodoApp/OpenTodo/issues/1210) |
+| [`task-group-separators`](openspec/changes/archive/2026-11-21-task-group-separators/) | **Shipped.** Wide One line and Detailed lists show a faint separator between top-level task groups | [#1089](https://github.com/OpenTodoApp/OpenTodo/issues/1089) |
+| [`p3-completion-outline`](openspec/changes/archive/2026-11-22-p3-completion-outline/) | **Shipped.** Open P3 tasks use an empty blue completion circle | [#1752](https://github.com/OpenTodoApp/OpenTodo/issues/1752) |
 
 Each change ships on its own, in any order. Only `sidebar-brand-and-row-grid` adds an op field: an additive `user_prefs.upcoming_later`. The others change interface only, and every value they write reads the same in 1.0 clients.
 
@@ -274,20 +295,6 @@ The phone apps stay web-view shells and are made to feel like apps, in the order
 
 Push to the iPhone app needs a relay the project would run, or an app signed by whoever runs the server; not planned.
 
-### Native app
-
-**Paused (2026-11-13).** The phone apps stay web-view shells, made to feel native ([`mobile/AUDIT.md`](mobile/AUDIT.md)). The work below is kept, not scheduled.
-
-A phone app drawn with the platform's own views, replacing the web-view shells that testers found disappointing. It is built with React Native in `mobile/app/`, runs the web app's shared sync, encryption and parsing code, and is built and published by CI without Xcode. Its CI runs only when the app or a shared module it imports changes, so the web app's pipeline stays as fast as it is.
-
-| Change | What | Issues |
-| --- | --- | --- |
-| [`native-app-foundation`](openspec/changes/native-app-foundation/) | The app's place in the repo, a platform port for the shared code, local storage chosen by measurement, sign-in through the system browser, sync, lean CI lanes and an "OpenTodo Preview" in TestFlight next to the current app | [#600](https://github.com/OpenTodoApp/OpenTodo/issues/600) |
-| [`native-app-everyday`](openspec/changes/native-app-everyday/) | Five tabs, native lists with swipe and long-press, capture with the keyboard up at once, task detail, native pickers, Browse, Search, passphrase unlock, Android conventions | |
-| [`native-app-handover`](openspec/changes/native-app-handover/) | Widget, share, reminders with actions, background refresh, biometric unlock, iPad split view, Google Play and F-Droid; then a go/no-go gate and the switch from the shells | [#603](https://github.com/OpenTodoApp/OpenTodo/issues/603) |
-
-In order. No op field changes; the server gains only app sign-in.
-
 ## Shipped
 
 ### 1. Core engine and architecture
@@ -298,6 +305,7 @@ In order. No op field changes; the server gains only app sign-in.
 | Conflict-free multi-device sync | `bootstrap-core-platform` | Field-level last-writer-wins op log, convergent by construction. See [docs/sync.md](docs/sync.md) |
 | Single small container, runs on a Raspberry Pi | `bootstrap-core-platform` | Static Go binary of about 34 MB with the web app embedded, distroless image of about 40 MB (about 13 MB to download) |
 | Keyboard navigation (q, j/k, c, 1–4, g+key, ?) | `bootstrap-core-platform` | |
+| Keyboard shortcuts across layouts | `keyboard-layout-shortcuts` | Letter shortcuts on non-Latin layouts and number-row shortcuts on French AZERTY. |
 | Live push of changes between devices | `realtime-sync-channel` | Server-sent event wake-ups; the protocol stays op-based, polling is the fallback |
 | Rich text with collaborative editing for task notes | `collaborative-rich-text` | Yjs document in `task.notes_doc`, editor lazy-loaded; comments stay Markdown |
 | Vim-style modal navigation option | `vim-keybindings` | |
@@ -330,6 +338,7 @@ In order. No op field changes; the server gains only app sign-in.
 | Filter query language (`@work & due <= tomorrow & p1`) | `filter-query-language` |
 | Saved views pinned to the sidebar, with display options (list or board, grouping, order, completed tasks, the properties rows show: `views-and-display`), custom dashboards (boards whose columns carry on-drop rules, with an Eisenhower matrix template: `rule-boards`) | `custom-views` |
 | Filter by completion date (`completed = last week`), period dates (this, last or next week or month) and a Completed logbook (closes #86) | `completed-date-filters` |
+| Filter by section (`section: Review`, `no section`) across every project, with a Section condition in the builder (closes [#1640](https://github.com/OpenTodoApp/OpenTodo/issues/1640)) | `section-filter` |
 | Trash with restore, auto-archive of completed projects, revision history from the op log | `trash-and-history` |
 | Drag-and-drop ordering | `manual-ordering` |
 | Custom fields per project: text, number, date, choice, link and checkbox values on tasks, in the panel, on cards, as columns and in filters; sub-projects inherit their parent's fields; lists and saved views can be ordered by a Number or Date field (closes [#404](https://github.com/OpenTodoApp/OpenTodo/issues/404)) | `custom-fields`, `inherited-custom-fields`, `custom-field-sort` |

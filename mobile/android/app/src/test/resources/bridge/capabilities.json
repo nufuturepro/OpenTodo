@@ -4,11 +4,14 @@
     "share",
     "links",
     "obsidian-links",
+    "app-links",
     "system-bars",
     "microphone",
     "files",
     "haptics",
-    "alarm-settings"
+    "completion-sound",
+    "alarm-settings",
+    "first-paint"
   ],
   "backgroundOnly": [
     "background"
@@ -20,7 +23,9 @@
   ],
   "methods": {
     "openAlarmSettings": "alarm-settings",
-    "backgroundDone": "background"
+    "backgroundDone": "background",
+    "playCompletionSound": "completion-sound",
+    "painted": "first-paint"
   },
   "expect": {
     "visible": {

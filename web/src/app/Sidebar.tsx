@@ -1,6 +1,6 @@
 import { useHabitsEnabled } from '../lib/habitPrefs'
 import { useWorkspaceFilter } from './useWorkspaceFilter'
-import { Button, Icon, type IconName, MenuItem, MenuSeparator, pushOverlay, ReadAs, SIDEBAR_GROUP_ACTION, SIDEBAR_HEADING, SidebarGroup, SidebarGroupAction, SidebarHeader, SidebarItem, StatusDot, Menu, Tooltip, useMediaQuery, useScrollEdges } from '../ui'
+import { Button, hueFor, Icon, type IconName, MenuItem, MenuSeparator, pushOverlay, ReadAs, SIDEBAR_GROUP_ACTION, SIDEBAR_HEADING, SidebarGroup, SidebarGroupAction, SidebarHeader, SidebarItem, StatusDot, Menu, Tooltip, useMediaQuery, useScrollEdges } from '../ui'
 import { ProjectMark } from './ProjectMark'
 // ProjectHeader imports through this re-export to preserve the entry chunk split (see the bundle budget).
 export { ProjectMark } from './ProjectMark'
@@ -11,7 +11,8 @@ import { useShortcutHints } from './shortcuts/hints'
 const GO_KEYS: Record<string, string> = Object.fromEntries(SHORTCUTS.filter((s) => s.id.startsWith('go.')).map((s) => [s.id.slice(3), s.keys[0]]))
 import { requestTemplateDialog } from './TemplateDialogs'
 import { ProjectPickerField } from './ProjectPickerField'
-import { type FormEvent, Fragment, type KeyboardEvent, lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, Fragment, type KeyboardEvent, type ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy } from '../lib/lazy'
 import { orderDestinations, readAppearance, readSidebarCounts, type DestinationId, type Promotable } from '../lib/appearance'
 import { useAssistantStatus } from '../lib/assistantStatus'
 import { readCalendarMode } from '../lib/calendarMode'
@@ -41,7 +42,7 @@ import { navigate, type Route } from './router'
 import { taskIndexOf, useLiveTasks, useOpenTasks } from '../lib/liveTasks'
 import { useSettledValue } from '../lib/useSettledValue'
 import { beginDrag } from '../lib/dnd'
-import { holdForRowMenu } from './rowMenuHold'
+import { contextForRowMenu, holdForRowMenu } from './rowMenuHold'
 import { moveProjectBy, moveProjectTo } from '../lib/move'
 import { canEditProject, canEditTasks, roleOf } from '../lib/sharing'
 import { taskDrop } from './taskDrop'
@@ -318,7 +319,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   }
 
   function startAdding() {
-    setParentId(route.view === 'project' && tree.nodes.has(route.id) ? route.id : '')
+    setParentId('') // Top level: nested only by picking a parent (new-project-top-level, #1759)
     setGroupOpen('projects', true)
     setAdding(true)
   }
@@ -400,8 +401,8 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
   }
 
   const item = (r: Route, label: string, icon: IconName, count?: number, badge?: ReactNode, tip?: string) => {
-    // Day, Week, Month and Plan are one Calendar destination (ux-overhaul, planner-view).
-    const calendar = (v: string) => v === 'day' || v === 'week' || v === 'month' || v === 'plan' || v === 'year'
+    // Day, Week, Month, Quarter, Plan and Year are one Calendar destination (ux-overhaul, planner-view).
+    const calendar = (v: string) => v === 'day' || v === 'week' || v === 'month' || v === 'quarter' || v === 'plan' || v === 'year'
     // A Loop home address with a move open (/loop/<move>) is still the Loop home.
     // All notes and Graph: the Notes page's two modes, a note open beside them or not (notes-graph-page D1).
     const active = calendar(r.view) ? calendar(route.view) : r.view === 'loop' ? route.view === 'loop' : r.view === 'notes' && route.view === 'notes' ? (r.day ? route.day === r.day : !route.day && !!r.graph === !!route.graph) : JSON.stringify(r) === JSON.stringify(route)
@@ -459,7 +460,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
           )}
         </nav>}
       </div>
-      <div ref={scroller} className={`ui-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 ${collapsed ? 'px-1.5' : 'px-3'}`} data-sidebar-scroll onPointerDown={holdForRowMenu}>
+      <div ref={scroller} className={`ui-scroller relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 ${collapsed ? 'px-1.5' : 'px-3'}`} data-sidebar-scroll onPointerDown={holdForRowMenu} onContextMenu={contextForRowMenu}>
       {space === 'notes' ? <Suspense fallback={null}><NotesSidebar route={route} collapsed={collapsed} /></Suspense> : <>
       {finding && !collapsed && (
         <div className="pt-3" data-sidebar-find>
@@ -574,7 +575,7 @@ export function Sidebar({ route, user, onSearch, onShortcuts, onFeedback, onAssi
             <div key={v.id} data-menu-row className={`group flex items-center${countsAll ? ' ui-swap-row' : ''}`}>
               <SidebarItem data-view-id={v.id} active={active} collapsed={collapsed} onClick={() => navigate({ view: 'view', id: v.id })} label={v.name}
                 data-find-active={isActiveMatch('view', v.id) || undefined} className={isActiveMatch('view', v.id) ? 'ring-2 ring-focus' : undefined}
-                leading={<span style={{ color: v.color }}><ViewMark view={v} /></span>}
+                leading={<span data-hue={v.color ? hueFor(v.color) : undefined} className={v.color ? 'text-hue-solid' : undefined}><ViewMark view={v} /></span>}
                 count={!isDashboard(v) && c && c.ok ? c.count : undefined} countMode={countsAll ? 'swap' : 'hidden'} countLabel={openTasksLabel(c && c.ok ? c.count : undefined)}
                 badge={!isDashboard(v) && c && !c.ok ? <span className="text-meta text-danger"><ReadAs label={c.error}>!</ReadAs></span> : undefined} />
               {!collapsed && <ViewMenu view={v} className={countsAll ? 'ui-swap-menu' : 'hover-reveal'} />}

@@ -38,7 +38,7 @@ A change folder holds:
 
 The rules every artifact follows are in `openspec/config.yaml`. Check the whole tree with `make openspec-validate`.
 
-Archiving merges the delta into `openspec/specs/` and moves the folder to `openspec/changes/archive/<date>-<name>/`. It happens in the pull request that finishes the change, together with the changelog entry (`changelog.d/<Section>/<change-name>.md`, see [changelog.d/README.md](../../changelog.d/README.md)) and the **Shipped** mark in `ROADMAP.md`.
+Archiving merges the delta into `openspec/specs/` and moves the folder to `openspec/changes/archive/<date>-<name>/`. It happens in the pull request that finishes the change, together with the changelog entry (`changelog.d/<Section>/<change-name>.md`, see [changelog.d/README.md](../../changelog.d/README.md)) and the **Shipped** mark in `ROADMAP.md`. The [roadmap page](../roadmap.md) dates a shipped change by the oldest release whose changelog section names it, else by its archive date; a change archived in a later release than the one it shipped in records that release as `shipped_in: x.y.z` in its `.openspec.yaml`.
 
 ## What reviewers check
 
@@ -46,6 +46,6 @@ Archiving merges the delta into `openspec/specs/` and moves the folder to `opens
 - Every new route has an authentication scenario and an error scenario.
 - No write bypasses the op log; no op field is renamed or removed.
 - No new mandatory environment variable, no telemetry, no outbound request the user did not configure.
-- Size: a new dependency is justified, and the web app's first load stays inside `web/bundle-budget.json`.
+- Size: a new dependency says what it replaces and what it weighs, and the web app's first load stays inside `web/bundle-budget.json`.
 - The tasks are done and each one was verified the way it says.
 - The user docs in `docs/` describe the new behaviour.

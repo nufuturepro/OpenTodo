@@ -1089,6 +1089,7 @@ export interface Review extends ReviewFields {
 export type ActivityKind =
   | 'created' | 'completed' | 'reopened' | 'deleted' | 'restored' | 'rescheduled' | 'assigned' | 'unassigned'
   | 'moved' | 'dependencies' | 'archived' | 'unarchived' | 'edited' | 'commented' | 'comment_edited' | 'comment_deleted'
+  | 'time_tracked' | 'time_changed'
 
 /** One field transition inside an activity event. */
 export interface ActivityChange {
@@ -1107,9 +1108,11 @@ export interface ActivityEvent {
   id: string
   kind: ActivityKind
   actor: string
-  entity: 'task' | 'project' | 'comment'
+  entity: 'task' | 'project' | 'comment' | 'time_entry'
   entityId: string
   taskId?: string
+  /** A time entry's event: the tracked length in whole minutes (workspace-activity D3). */
+  minutes?: number
   ts: number
   opIds: string[]
   changes: ActivityChange[]
@@ -1132,7 +1135,7 @@ export interface ActivityEvent {
 export interface ActivityEntry {
   id: string
   actor: string
-  entity: 'task' | 'project' | 'comment'
+  entity: 'task' | 'project' | 'comment' | 'time_entry'
   entityId: string
   field: string
   value: unknown
@@ -1154,12 +1157,20 @@ export interface PushSubscriptionStatus {
   id: string
   deviceId: string
   includeContent: boolean
+  /** Assignment and status pushes this device opted in to (assignee-notifications D2); absent from an older server. */
+  notify?: PushNotify
   createdAt: number
   lastOkAt: number | null
   lastError: string
   failures: number
   /** The push service failed repeatedly: the device should re-enable notifications. */
   needsRenewal: boolean
+}
+
+/** A device's choice of assignment and status pushes, both off by default. */
+export interface PushNotify {
+  assigned: boolean
+  status: boolean
 }
 
 /** Answer of POST /api/v1/push/test (OpenSpec `push-test-delivery`). */
@@ -1844,15 +1855,6 @@ export interface WebhookInput {
 // server refused changes for one of its limits (multi-tenant-host); they are kept.
 export type SyncState = 'idle' | 'syncing' | 'reseeding' | 'offline' | 'error' | 'unauthenticated' | 'restricted' | 'locked' | 'limited'
 
-export const PROJECT_FIELDS = ['name', 'color', 'position', 'archived', 'parent_id', 'created_at', 'deleted_at'] as const
-export const TASK_FIELDS = [
-  'title', 'description', 'project_id', 'parent_id', 'priority', 'due', 'labels',
-  'position', 'created_at', 'completed_at', 'deleted_at', 'estimate_minutes', 'recurrence', 'series_id',
-  'assignee_id', 'section_id', 'notes_doc', 'deadline', 'start', 'evening', 'span', 'blocked_by', 'completed_by', 'note_mentions',
-] as const
-export const SECTION_FIELDS = ['name', 'project_id', 'position', 'created_at', 'deleted_at'] as const
-export const LABEL_FIELDS = ['name', 'color', 'position', 'created_at', 'deleted_at'] as const
-
 // ---- backups (owner-only server settings; never synced) ----
 
 export type BackupDestination = 'local' | 's3' | 'webdav'
@@ -2013,7 +2015,7 @@ export const AUDIT_EVENT_NAMES = [
   'calendar_connection.created', 'calendar_connection.updated', 'calendar_connection.deleted',
   'project.agent_access',
   'task_page.published', 'task_page.revoked',
-  'mcp_oauth.client_created', 'mcp_oauth.client_deleted', 'mcp_oauth.granted', 'mcp_oauth.revoked', 'mcp_oauth.refresh_reused',
+  'mcp_oauth.client_created', 'mcp_oauth.client_deleted', 'mcp_oauth.granted', 'mcp_oauth.revoked', 'mcp_oauth.refresh_reused', 'mcp_oauth.disconnected',
 ] as const
 export type AuditEventName = (typeof AUDIT_EVENT_NAMES)[number]
 
@@ -2169,20 +2171,10 @@ export interface ImportJob {
   undoneAt: number | null
 }
 
-export const REMINDER_FIELDS = [
-  'task_id', 'kind', 'offset_minutes', 'fire_at', 'delivered_at', 'dismissed_at', 'created_at', 'deleted_at',
-] as const
-
-export const VIEW_FIELDS = [
-  'name', 'query', 'kind', 'group_by', 'sort_by', 'sort_dir', 'pinned', 'position', 'color', 'panels', 'on_drop',
-  'created_at', 'deleted_at',
-] as const
-
 // ---- project sharing (OpenSpec `project-sharing`) ----
 
 /** A role on a shared project; an unshared project is implicitly the user's own ('owner'). */
 export type ProjectRole = 'owner' | 'admin' | 'editor' | 'viewer'
-export const MEMBER_ROLES: readonly Exclude<ProjectRole, 'owner'>[] = ['viewer', 'editor', 'admin']
 
 export interface ProjectMember {
   userId: string
@@ -2353,8 +2345,6 @@ export interface PurgeCounts {
   /** Time entries of purged tasks (time-tracking; absent on older servers). */
   timeEntries?: number
 }
-
-export const COMMENT_FIELDS = ['task_id', 'parent_id', 'body', 'author_id', 'mentions', 'created_at', 'edited_at', 'deleted_at'] as const
 
 /** Payload of a `mentioned` notification (comments-and-activity); names resolved by the server. */
 export interface MentionedPayload {

@@ -178,7 +178,7 @@ export function PageHeader({ title, subtitle, meta, leading, actions, barActions
   const toolsEnd = <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1" data-page-actions><PageActions actions={actions} overflow={overflow} menu={menu} help={help} helpInMenu={narrow} /></div>
   return (
     <header ref={room} data-page-header data-page-head={day ? 'day' : 'tool'} data-page-narrow={narrow || undefined} data-testid={testId}
-      className={`${sticky && !phoneDay ? 'sticky top-0 z-10 -mx-4 bg-canvas px-4 md:-mx-8 md:bg-surface md:px-8' : ''} ${ownRow || phoneDay || (actions && !barActions) ? (day ? 'mb-3 pb-3' : 'mb-2 border-b border-soft') : ''} ${level === 1 ? (ownRow || phoneDay ? (day ? 'pt-2' : '') : '') : 'pt-5'}`}>
+      className={`${sticky && !phoneDay ? 'sticky top-[var(--page-head-top,0px)] z-10 -mx-4 bg-canvas px-4 md:-mx-8 md:bg-surface md:px-8 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-[var(--page-head-top,0px)] before:bg-inherit' : ''} ${ownRow || phoneDay || (actions && !barActions) ? (day ? 'mb-3 pb-3' : 'mb-2 border-b border-soft') : ''} ${level === 1 ? (ownRow || phoneDay ? (day ? 'pt-2' : '') : '') : 'pt-5'}`}>
       {/* The phone's day head scrolls with the list; the bar above it stays (precision-phone D1). */}
       {phoneDay && <>
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1" data-page-header-row>
@@ -189,12 +189,8 @@ export function PageHeader({ title, subtitle, meta, leading, actions, barActions
         {briefing && <div className="mt-2 text-prose text-muted" data-page-briefing>{briefing}</div>}
       </>}
       {!ownRow && actions && !barActions && <div className="flex flex-wrap items-center gap-1 pt-2" data-page-actions>{actions}</div>}
-      {ownRow && day && <>
-        <div className="flex min-h-9 items-center gap-2" data-page-top-row>
-          <SidebarToggleButton />
-          {backLink}
-          {toolsEnd}
-        </div>
+      {/* The title comes first in reading order, the top row's buttons after it; the top row is still drawn first (order-first). */}
+      {ownRow && day && <div className="flex flex-col">
         <div className="mt-3 flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1" data-page-header-row>
           {icon && <span className="flex h-6 w-6 shrink-0 items-center justify-center self-center text-muted" aria-hidden="true"><Icon name={icon} size="md" /></span>}
           {leading}
@@ -202,7 +198,12 @@ export function PageHeader({ title, subtitle, meta, leading, actions, barActions
           {lead}
         </div>
         {briefing && <div className="mt-2 max-w-[72ch] text-prose text-muted" data-page-briefing>{briefing}</div>}
-      </>}
+        <div className="order-first flex min-h-9 items-center gap-2" data-page-top-row>
+          <SidebarToggleButton />
+          {backLink}
+          {toolsEnd}
+        </div>
+      </div>}
       {ownRow && !day && <div className="flex min-h-[2.875rem] min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1" data-page-header-row>
         <SidebarToggleButton />
         {backLink}

@@ -5,7 +5,8 @@
 // web-component-structure the days come from lib/calendarDays, the live reads from
 // lib/liveData, and the columns, agenda, planning list and keys live in ./calendar.
 import { Button, DESKTOP_HEADER_QUERY, MenuItem, PageBody, useMediaQuery } from '../ui'
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy } from '../lib/lazy'
 import { calendarTasks, DEFAULT_BLOCK_MINUTES, formatTime as toHHMM, placementStart, weekDates, type GridPrefs } from '../lib/calendar'
 import { fitInFrame, frameTarget, framesByDate, useFrames, type PlacedFrame } from '../lib/frames'
 import { clampSlotMinutes, slotAt, slotKey, slotName, type SlotView } from '../lib/slots'
@@ -15,10 +16,9 @@ import { CalendarsToggle } from './calendar/CalendarsToggle'
 import { addDaysISO, dueFromView, formatDate, formatShort, viewedTask } from '../lib/dates'
 import { formatMinutes } from '../lib/duration'
 import { getTask, readGridPrefs, useCalendarShowCompleted, useGridPrefs, useLiveProjects } from '../lib/liveData'
-import { updateTask } from '../lib/ops'
 import type { CalendarSubscription, Task } from '../lib/types'
 import { useCalendarDrag, type DragState, type DropTarget } from './calendarDrag'
-import { rescheduleWithUndo, setDueWithUndo, spanWithUndo } from './undoable'
+import { estimateWithUndo, rescheduleWithUndo, setDueWithUndo, spanWithUndo } from './undoable'
 import { useDateTimeFormat } from './DateTimePrefsProvider'
 import { CalendarRangeSwitch } from './CalendarRange'
 import { placement as placementSignal } from './signals'
@@ -32,6 +32,7 @@ import { act } from './actionError'
 import { DayColumn, DayHeader, HourGutter } from './calendar/DayColumn'
 import { formatTime, PX_PER_MIN, type Placement, type Preview } from './calendar/grid'
 import { usePlanActions, usePlanPanel, type PlanActions } from './calendar/PlanPanel'
+import { TapPlaceBar, usePlacementReturn, useTapPlace, type PlaceFrom } from './calendar/tapPlace'
 import { useCalendarKeys } from './calendar/useCalendarKeys'
 import { WeekAgenda } from './calendar/WeekAgenda'
 import { requestFrames } from './calendar/framesRequest'
@@ -170,7 +171,7 @@ export function CalendarView({ mode, date }: { mode: 'day' | 'week'; date?: stri
   }, [prefs.startHour, mode, wide])
 
   /** The planning-list task being placed with the keys, to give focus back to the list after. */
-  const placeFrom = useRef<{ id: string; next: string | null; placed: boolean } | null>(null)
+  const placeFrom = useRef<PlaceFrom | null>(null)
   const commit = useCallback((taskId: string, target: DropTarget) => {
     const task = taskMap.get(taskId)
     if (task?.completed_at) return
@@ -193,20 +194,18 @@ export function CalendarView({ mode, date }: { mode: 'day' | 'week'; date?: stri
       const time = toHHMM(target.start)
       if (task.due?.time !== time || target.estimate !== task.estimate_minutes) act(rescheduleWithUndo(taskId, dueFromView(stored, { date: target.date, time })!, target.estimate))
     } else if (target.estimate !== task.estimate_minutes) {
-      act(updateTask(taskId, { estimate_minutes: target.estimate }))
+      act(estimateWithUndo(taskId, target.estimate))
     }
     setSelectedId(taskId)
   }, [taskMap, rawMap, slotIndex, heldBy, zone])
+  // Where the planning list covers the calendar: tap a list task, then a time (plan-list-tap-to-place D1–D4).
+  const tap = useTapPlace(mode === 'day' || wide, !!placing, (id) => {
+    planActions.current.onPlace(id)
+    return placeFrom.current?.id === id && (placeFrom.current.tap = true)
+  }, (d, start) => { if (placing) commit(placing.taskId, { type: 'slot', date: d, start }); setPlacing(null) })
 
-  useEffect(() => {
-    const from = placeFrom.current
-    if (placing || !from) return
-    placeFrom.current = null
-    const list = document.querySelector('[data-panel-frame="calendar-plan"]')
-    const item = (id: string | null) => (id ? list?.querySelector<HTMLElement>(`[data-tray-task="${id}"]`) : null)
-    const back = (from.placed ? item(from.next) ?? item(from.id) : item(from.id)) ?? list?.querySelector<HTMLElement>('[data-tray-task]') ?? scroller.current
-    back?.focus({ preventScroll: true })
-  }, [placing])
+  // After a placement from the list: focus back on it, or for a tap placement the list itself back (D2).
+  usePlacementReturn(placing, placeFrom, scroller, tap.end)
 
   const { drag, start } = useCalendarDrag({ pxPerMinute: PX_PER_MIN, scroller, onDrop: (id, target) => { if (!commitProjectionDrop(id, target, toHHMM)) commit(id, target) } })
   const startDrag = useCallback<typeof start>((event, info) => {
@@ -284,6 +283,7 @@ export function CalendarView({ mode, date }: { mode: 'day' | 'week'; date?: stri
       scroller.current?.focus({ preventScroll: true })
     },
     onOpen: (id) => setOpenId(id),
+    onTap: tap.onTap,
     onEscape: () => { if (!placing) return false; setPlacing(null); return true },
   }
   const select = (id: string) => setSelectedId(id), open = (id: string) => { setSelectedId(id); setOpenId(id) }
@@ -325,16 +325,18 @@ export function CalendarView({ mode, date }: { mode: 'day' | 'week'; date?: stri
 
         {/* Focusable, so the grid scrolls with the keyboard even when no block is in view (axe scrollable-region-focusable). */}
         <div ref={scroller} className="add-room-end relative min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
-          data-calendar-scroller data-scroll-x tabIndex={0} role="region" aria-label={mode === 'week' ? t('Week calendar') : t('Day calendar')}>
+          data-calendar-scroller data-main-scroller data-scroll-x tabIndex={0} role="region" aria-label={mode === 'week' ? t('Week calendar') : t('Day calendar')}>
           {mode === 'week' && !wide ? (
             <WeekAgenda days={days} today={today} prefs={prefs} tasks={shown} meetings={meetings} frames={frames} taskMap={taskMap} hueOf={hueOf} projectionHue={projectionHue} deadlines={deadlines} selectedId={selectedId} subMap={feeds.subMap} zone={zone}
               onSelect={select} onOpen={open} onAdd={(d) => chrome.add.add({ date: d })} />
           ) : (
             <CalendarGrid mode={mode} days={days} today={today} nowMinutes={nowMinutes} prefs={prefs} shown={shown} meetings={meetings} frames={frames} taskMap={taskMap} rawMap={rawMap} hueOf={hueOf} projectionHue={projectionHue} deadlines={deadlines} hidden={hidden} gestures={gestures} dragSlot={dragSlot}
               subMap={feeds.subMap} zone={zone} selectedId={selectedId} expanded={expanded} setExpanded={setExpanded} drag={drag} dragTask={dragTask}
-              placing={placing} placingTask={placingTask} replanFor={previewing && desktopHead ? rp.ghostsFor : undefined} onSelect={select} onOpen={open} onDragStart={dragStart} />
+              placing={placing} placingTask={placingTask} replanFor={previewing && desktopHead ? rp.ghostsFor : undefined} onSelect={select} onOpen={open} onDragStart={dragStart}
+              onTapTime={tap.onTapTime} />
           )}
         </div>
+        {tap.tapping && placingTask && <TapPlaceBar title={placingTask.title} onCancel={() => setPlacing(null)} />}
       </div>
 
       {previewing && !desktopHead && <Suspense fallback={null}><ReplanPreview variant="sheet" {...previewProps(rp, taskMap, today)} /></Suspense>}
@@ -372,7 +374,7 @@ function previewProps(rp: ReplanPreviewState, taskMap: Map<string, Task>, today:
   }
 }
 
-function CalendarGrid({ mode, days, today, nowMinutes, prefs, shown, meetings, frames, taskMap, rawMap, hueOf, projectionHue, deadlines, hidden, gestures, subMap, zone, selectedId, expanded, setExpanded, drag, dragTask, dragSlot, placing, placingTask, replanFor, onSelect, onOpen, onDragStart }: {
+function CalendarGrid({ mode, days, today, nowMinutes, prefs, shown, meetings, frames, taskMap, rawMap, hueOf, projectionHue, deadlines, hidden, gestures, subMap, zone, selectedId, expanded, setExpanded, drag, dragTask, dragSlot, placing, placingTask, replanFor, onTapTime, onSelect, onOpen, onDragStart }: {
   /** The stored rows by id: span writes keep the due's time and zone (multi-day-tasks). */
   rawMap: Map<string, Task>
   /** The slot being dragged or resized (calendar-slots D5). */
@@ -404,6 +406,8 @@ function CalendarGrid({ mode, days, today, nowMinutes, prefs, shown, meetings, f
   placingTask?: Task
   /** The re-plan preview's ghosts of a day, while it is open on the grid. */
   replanFor?: (date: string) => ReplanGhosts | null
+  /** During a tap placement: a tap on a day's time places the task there (plan-list-tap-to-place D3). */
+  onTapTime?: (date: string, start: number) => void
   onSelect: (id: string) => void
   onOpen: (id: string) => void
   onDragStart: ReturnType<typeof useCalendarDrag>['start']
@@ -482,7 +486,7 @@ function CalendarGrid({ mode, days, today, nowMinutes, prefs, shown, meetings, f
         {days.map((d) => (
           <DayColumn key={d.date} day={d} prefs={prefs} isToday={d.date === today} isPast={d.date < today} nowMinutes={nowMinutes} taskMap={taskMap} hueOf={hueOf} projectionHue={projectionHue} gestures={gestures}
             subMap={subMap} zone={zone} selectedId={selectedId} draggingId={drag?.taskId ?? null} slotDrop={drag?.target?.type === 'into-slot' ? drag.target.slotId : null} expanded={expanded} setExpanded={setExpanded}
-            preview={previewFor(d)} replan={replanFor?.(d.date)} frames={frames.get(d.date)} onSelect={onSelect} onOpen={onOpen} onDragStart={onDragStart} />
+            preview={previewFor(d)} replan={replanFor?.(d.date)} frames={frames.get(d.date)} onTapTime={onTapTime} onSelect={onSelect} onOpen={onOpen} onDragStart={onDragStart} />
         ))}
       </div>
     </div>

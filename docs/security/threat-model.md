@@ -78,6 +78,7 @@ The model describes the code on `main` at the time of writing. An external revie
 - `TestRouteMatrix` (`internal/httpapi/route_matrix_test.go`): every route, anonymous, with each token scope, as a member, as a viewer, cross-site and with a stale session. Public routes are called anonymously, with the owner's and a member's session, with each token scope and cross-site, and each answer is checked against what the route's reason promises (`route_matrix_public_test.go`); a public route without a declared promise fails the test.
 - `TestLoginRateLimit`, `TestCrossSiteCookieWritesAreRejected` (`server_test.go`), including writes without `Origin` or `Sec-Fetch-Site`; the route matrix's pass of a form post with neither header on every write route.
 - `TestSecurityHeaders` (`security_headers_test.go`): no framing, no sniffing, scripts only from the server.
+- `TestCORSOffByDefault`, `TestCORSCookieRequestsStaySameOrigin`, `TestCORSUnlistedOrigin`, `TestCORSOtherRoutesUntouched` (`cors_test.go`): CORS only for listed origins and bearer tokens, never for the session cookie or the sign-in flows.
 - `TestAccountLockout`, `TestForwardedForOnlyFromTrustedPeers`, `TestOriginMustMatchBaseURL` (`client_identity_test.go`).
 - `TestLimitsSurviveRestart` (`internal/tenant/limits_test.go`): a sign-in window used up before the tenant closes still refuses after it opens again, and no stored key holds an address or email. `TestStoredLimiterRestores` (`internal/httpapi/ratelimit_bench_test.go`).
 - `TestSetupHostVerified`, `TestSetupUnderDomainNameNeedsCode`, `TestNoHostCheckWithBaseURL` (`setuphost_test.go`); `TestSetupHostCheck` (`internal/auth/setupcode_test.go`).
@@ -85,7 +86,7 @@ The model describes the code on `main` at the time of writing. An external revie
 
 **Not defended.**
 - Without `OPENTODO_BASE_URL`, the origin check compares against the request's own `Host`, so after setup a rebound name passes it. The session cookie belongs to the server's real name, so such a page has no session; it can reach public routes and try passwords against the rate limits. The docs tell operators to set the base URL.
-- A JSON write with neither `Origin` nor `Sec-Fetch-Site` is accepted, so that non-browser clients signed in with a password (`ot login`) keep working. From another site it would need a CORS preflight, which the server never grants.
+- A JSON write with neither `Origin` nor `Sec-Fetch-Site` is accepted, so that non-browser clients signed in with a password (`ot login`) keep working. From another site it would need a CORS preflight, which the server never grants for a cookie request: with `OPENTODO_CORS_ORIGINS` set it answers preflights from the listed origins, but a browser that preflights also sends `Origin`, which the cookie check refuses, and no `Access-Control-Allow-Credentials` is ever sent.
 - Rate limits count in memory and are written to the database within a second (`internal/ratelimit`), so a crash can forget the last second of attempts. A clean restart forgets nothing.
 - Anyone who knows an email address can keep that account's password sign-in locked. Passkeys, single sign-on and open sessions keep working.
 - The route matrix checks a public route's answer against its declared promise with a wrong secret and with the credentials it holds; what a valid secret unlocks is tested by each feature's own tests.
@@ -296,7 +297,7 @@ The person turned on end-to-end encryption and does not trust the server, its op
 - `internal/outbound`. Addresses are resolved, filtered and pinned. Loopback, private, link-local, CGNAT, ULA, multicast, NAT64 and 6to4 embeddings and metadata addresses are refused. With "allow private networks" on, metadata, link-local and `0.0.0.0/8` stay refused.
 - Redirects are not followed, or followed at most 3 times with every hop re-checked. No environment proxy is used.
 - Size and time limits:
-  - calendar feeds: 2 MiB, 200,000 content lines, 5,000 occurrences, an expansion work budget and 5 seconds;
+  - calendar feeds: 32 MiB read as it arrives (one event at a time, at most 1 MiB and 5,000 content lines each, at most 4 MiB of events kept), 5,000 occurrences, an expansion work budget and 5 seconds;
   - issues: 2 MiB, 10 pages;
   - calendar sync: 4 MiB, 3 redirects, never to another site;
   - email: 10 MiB, MIME depth 12, 500 parts.
@@ -497,7 +498,7 @@ Each item of the [review scope](review-scope.md) has a section here: where the c
 
 ### App sign-in
 
-- **Code:** `internal/mcpoauth/app.go`, `internal/httpapi/app_sign_in.go`, `internal/auth/appsessions.go`, `web/src/app/AppSignIn.tsx` (OpenSpec `native-app-foundation`, design D5).
+- **Code:** `internal/mcpoauth/app.go`, `internal/httpapi/app_sign_in.go`, `internal/auth/appsessions.go`, `web/src/app/AppSignIn.tsx` (OpenSpec `app-sign-in`).
 - **How it works:** the OpenTodo app opens `/app/sign-in` in the system's authentication sheet. The server's own sign-in runs in it, then a confirmation; Confirm is a same-origin POST from a session, never a token, so a link alone grants nothing. The server then redirects to `opentodo://signed-in` with a code, and the app exchanges the code and its PKCE verifier at `POST /api/v1/app/token`.
 - **Controls:**
   - **PKCE (S256 only).** The code is bound to the challenge and the `state`, single-use, and valid for 60 seconds. The first exchange attempt uses it up, right or wrong, so a code tried without the verifier is gone for everyone.

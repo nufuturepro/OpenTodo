@@ -28,6 +28,7 @@ import { useFollowing, useOccurrenceView } from './occurrenceView'
 import { TaskNotes } from './TaskNotes'
 import { TaskPageDialog } from './TaskPageDialog'
 import { TaskPath } from './TaskPath'
+import { useFooterKeepsScroll } from './pinnedFooterScroll'
 import { useTaskDetail } from './useTaskDetail'
 
 export interface TaskPageNav {
@@ -67,6 +68,7 @@ export function TaskPageView({ taskId, userId, readOnly: viewer, projects, label
   const [rootRef, narrow] = useNarrow(root)
   // The pinned bottom of the content column: the comment composer renders here while Comments is shown.
   const [footer, setFooter] = useState<HTMLDivElement | null>(null)
+  useFooterKeepsScroll(footer)
   // The header's height, so the conversation's tab bar and the facts pin just under it.
   useLayoutEffect(() => {
     const el = root.current
@@ -101,8 +103,8 @@ export function TaskPageView({ taskId, userId, readOnly: viewer, projects, label
           <span className="sr-only">{t('Task {n} of {total}', { n: nav.position.index + 1, total: nav.position.total })}</span>
         </span>
       )}
-      {nav.position && <IconButton icon="arrow-down" size="sm" label={t('Next task')} shortcut={keysOf('task.next')} disabled={!nav.hasNext} onClick={() => nav.onStep(1)} data-task-next />}
       {nav.position && <IconButton icon="arrow-up" size="sm" label={t('Previous task')} shortcut={keysOf('task.prev')} disabled={!nav.hasPrev} onClick={() => nav.onStep(-1)} data-task-prev />}
+      {nav.position && <IconButton icon="arrow-down" size="sm" label={t('Next task')} shortcut={keysOf('task.next')} disabled={!nav.hasNext} onClick={() => nav.onStep(1)} data-task-next />}
     </>
   )
   // The first crumb leads back to the list the task was opened from (Today, a view, a

@@ -23,15 +23,15 @@ upstream → pixari/OpenTodo           (upstream; redirects to OpenTodoApp/OpenT
 
 ## Branches, tags and versions
 
-- `release-X.Y.Z` branches are the shipped lines; the current one is `release-1.5.0`.
+- `release-X.Y.Z` branches are the shipped lines; the current one is `release-1.7.0`.
   `main` is the older development line (it still carries the 1.4.2-era history and does
-  not contain `release-1.5.0`; see the cutover below).
+  not contain the 1.5-onward release lines; see the cutover below).
 - Every synced upstream release is marked with a local tag **`upstream-vX.Y.Z`**
   (same commit as upstream's `vX.Y.Z`). `git log upstream-vX.Y.Z..HEAD --oneline`
   is this fork's exact delta on top of that release.
 - Fork releases are tagged **`opentodo-X.Y.Z-N`** (for example `opentodo-1.5.0-1`)
   and published by CI (binaries, GitHub release). The in-app version string comes from
-  the build's `VERSION` argument, so a server built from `release-1.5.0` reads `v1.5.0`.
+  the build's `VERSION` argument, so a server built from `release-1.7.0` reads `v1.7.0`.
 - Feature work happens on branches off the current release line; merge back with a PR.
 
 ## When upstream re-creates its history (the 1.5.0 cutover)

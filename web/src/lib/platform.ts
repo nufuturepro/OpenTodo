@@ -1,11 +1,8 @@
-// The host the shared library runs in (OpenSpec change native-app-foundation, design
-// D3). Modules the native app shares (mobile/app/shared-modules.json) ask the host
-// for visibility, the network, the sync lock, the other tabs, device storage and
-// IndexedDB, the languages, the time zone and the native shell through `platform`,
-// never through browser globals; the repo check (scripts/shared-boundary.mjs)
-// refuses a global in a listed module. The web implementation is today's browser
-// code and is installed by default; the app installs its own at start-up, and a
-// test may install a fake (reset before each test).
+// The host the sync path runs in: visibility, the network, the sync lock, the other
+// tabs, device storage and IndexedDB, the languages, the time zone and the native
+// shell, asked through `platform` instead of browser globals. The web implementation
+// is the browser's and is installed by default; a test may install a fake (reset
+// before each test).
 import { resettable } from './moduleState'
 import type Dexie from 'dexie'
 import type { OpenTodoShell } from './shell'
@@ -35,7 +32,8 @@ export interface Platform {
    * across tabs), or null when there is no other instance to share with or no
    * channel to reach it: then this one leads at once.
    */
-  readonly leader: { request<T>(name: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> } | null
+  /** `steal` takes the lock from a holder that stopped answering (sync-leader-takeover D2); it cannot be combined with `signal`. */
+  readonly leader: { request<T>(name: string, fn: () => Promise<T>, signal?: AbortSignal, steal?: boolean): Promise<T> } | null
   /** A channel to the other instances (BroadcastChannel), or null without one. */
   broadcast(name: string): Channel | null
   /**
@@ -53,7 +51,7 @@ export interface Platform {
   indexedDB(): IDBFactory | undefined
   /**
    * The local database for the schema db.ts declares on `declared`, when the host keeps
-   * its own (the app: the Dexie subset on SQLite, native-app-foundation D4). Absent on
+   * its own. Absent on
    * the web, where `declared` itself opens on IndexedDB.
    */
   database?<D extends Dexie>(declared: D): D
@@ -120,7 +118,7 @@ const web: Platform = {
     if (typeof navigator === 'undefined' || typeof BroadcastChannel === 'undefined') return null
     const locks = navigator.locks
     return typeof locks?.request === 'function'
-      ? { request: <T>(name: string, fn: () => Promise<T>, signal?: AbortSignal) => locks.request(name, { signal }, fn) as Promise<T> }
+      ? { request: <T>(name: string, fn: () => Promise<T>, signal?: AbortSignal, steal?: boolean) => locks.request(name, steal ? { steal: true } : { signal }, fn) as Promise<T> }
       : null
   },
   broadcast(name) {
