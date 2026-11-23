@@ -17,12 +17,14 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg"></a>
-  <a href="https://github.com/OpenTodoApp/OpenTodo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenTodoApp/OpenTodo/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/OpenTodoApp/OpenTodo/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/OpenTodoApp/OpenTodo?sort=semver"></a>
+  <a href="https://github.com/nufuturepro/OpenTodo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nufuturepro/OpenTodo/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="FORKING.md"><img alt="Fork of OpenTodoApp/OpenTodo" src="https://img.shields.io/badge/fork-of%20OpenTodoApp%2FOpenTodo-6E7781?logo=github&logoColor=white"></a>
   <a href="https://github.com/sponsors/pixari"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/sponsor-pixari-EA4AAA?logo=githubsponsors&logoColor=white"></a>
   <a href="https://buymeacoffee.com/pixari"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-pixari-FFDD00?logo=buymeacoffee&logoColor=black"></a>
   <a href="https://discord.gg/mmSsuCRduD"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white"></a>
 </p>
+
+<p align="center"><strong>This repository is a fork of <a href="https://github.com/OpenTodoApp/OpenTodo">OpenTodoApp/OpenTodo</a></strong>, kept close to upstream: features and general fixes arrive with upstream releases, generic fixes found here are proposed upstream first, and this fork's own additions ride on top. See <a href="FORKING.md">FORKING.md</a> for the sync workflow, including the one-time re-base upstream's re-created history needed at 1.5.0. The fork publishes no container image of its own; build it from source or run upstream's.</p>
 
 <p align="center">
   <img src="docs/screenshots/demo.gif" width="800" alt="Quick add in plain language with date, priority and project chips, a card moved across a project board, then a task added offline that syncs on reconnect">
@@ -106,7 +108,7 @@ No subscription, no lock-in, no tracking.
 ### Docker Compose
 
 ```bash
-git clone https://github.com/OpenTodoApp/OpenTodo.git
+git clone https://github.com/nufuturepro/OpenTodo.git
 cd OpenTodo
 docker compose up -d
 ```
