@@ -38,24 +38,27 @@ if [ -n "$(git merge-base HEAD "$tag" 2>/dev/null || true)" ]; then
     echo "tagged upstream-$tag at $tag"
   fi
 
-  git checkout main
+  if [ -z "$here" ]; then
+    echo "error: detached HEAD; check out the release branch to merge into first" >&2
+    exit 1
+  fi
   if ! git merge --no-ff "$tag" -m "Merge upstream $tag"; then
     echo ""
     echo "Merge conflicts. Resolve them (take upstream's side where this fork's change"
     echo "no longer applies; re-apply ours on top where it still matters), then:"
     echo "  1. make check   (CI on ubuntu is authoritative on Windows)"
-    echo "  2. git push origin main"
+    echo "  2. git push fork $here"
     exit 1
   fi
 
   cat <<EOF
 
-Merged $tag into main.
+Merged $tag into $here.
 
 Next:
   1. Note the sync in CHANGELOG.md and run: make check
   2. Tag a fork release:
-       git tag opentodo-$version-1 && git push fork main --tags
+       git tag opentodo-$version-1 && git push fork $here --tags
 EOF
   exit 0
 fi
