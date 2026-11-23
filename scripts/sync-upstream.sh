@@ -16,7 +16,7 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   exit 1
 fi
 
-git fetch upstream --tags
+git fetch upstream --tags || true   # rejected renamed-history tags are fine
 if ! git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
   echo "error: no such upstream tag: $tag (fetch brought: $(git tag -l 'v*' | tail -3 | tr '\n' ' '))" >&2
   exit 1
