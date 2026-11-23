@@ -11,7 +11,7 @@ base_override=${2:-}
 # Deliberately unquoted where used: the paths are split into arguments.
 fork_paths='web/src/app web/src/lib web/src/index.css web/src/globals.d.ts web/vite.config.ts internal/sync/ops.go'
 
-if [ -n "$(git status --porcelain)" ]; then
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "error: working tree is dirty; commit or stash first" >&2
   exit 1
 fi
